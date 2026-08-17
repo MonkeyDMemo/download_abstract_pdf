@@ -1,0 +1,1782 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tablero GRN - ETL de PubMed</title>
+<style>
+/* Sin librerias externas: la maquina de laboratorio puede no tener salida a
+   internet. Todo el CSS y el JavaScript viven en este archivo, por la misma
+   razon por la que el Python es solo libreria estandar. */
+
+:root {
+  --fondo: #eef2f7;
+  --panel: #ffffff;
+  --panel2: #f7f9fc;
+  --borde: #d3dbe6;
+  --borde2: #e6ecf3;
+  --texto: #16202e;
+  --tenue: #5b6b80;
+  --acento: #1a5cab;
+  --acento2: #e6effa;
+  --ok: #16713d;
+  --ok2: #e0f2e7;
+  --alerta: #855200;
+  --alerta2: #fbf0d6;
+  --malo: #ad2318;
+  --malo2: #fbe5e2;
+  --consola-fondo: #131a26;
+  --consola-texto: #d5e2f2;
+  --consola-hora: #7f93ad;
+  --radio: 8px;
+  --sombra: 0 1px 2px rgba(16, 30, 54, .06), 0 4px 12px rgba(16, 30, 54, .05);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #10151d;
+    --panel: #182130;
+    --panel2: #141c28;
+    --borde: #2b3849;
+    --borde2: #232f3f;
+    --texto: #e6edf6;
+    --tenue: #9aabc0;
+    --acento: #6ba7f0;
+    --acento2: #1d2c42;
+    --ok: #6ed99b;
+    --ok2: #16301f;
+    --alerta: #f0c368;
+    --alerta2: #33280f;
+    --malo: #f79a90;
+    --malo2: #3a1d19;
+    --sombra: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 14px rgba(0, 0, 0, .25);
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+
+body {
+  background: var(--fondo);
+  color: var(--texto);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -.01em; }
+h1 { font-size: 19px; }
+h2 { font-size: 17px; }
+h3 { font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: var(--tenue); }
+p { margin: 0; }
+
+/* ------------------------------------------------------------- cabecera */
+
+.cabecera {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+  padding: 12px 20px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--borde);
+}
+.marca { display: flex; align-items: center; gap: 12px; }
+.logo {
+  width: 30px; height: 30px; flex: 0 0 30px; border-radius: 7px;
+  background: var(--acento);
+  position: relative;
+}
+/* Icono dibujado con CSS: dos nodos y una arista, la figura del dominio.
+   Nada de archivos de imagen ni de iconos externos. */
+.logo::before, .logo::after {
+  content: ""; position: absolute; border-radius: 50%; background: #fff;
+}
+.logo::before { width: 8px; height: 8px; top: 6px; left: 6px; }
+.logo::after { width: 8px; height: 8px; bottom: 6px; right: 6px; }
+.sub { font-size: 12.5px; color: var(--tenue); }
+
+.conexion { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--tenue); }
+.punto { width: 9px; height: 9px; border-radius: 50%; background: var(--tenue); flex: 0 0 9px; }
+.punto.viva { background: var(--ok); }
+.punto.caida { background: var(--malo); }
+
+.barra-caida pre {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  background: rgba(0,0,0,.07); border-radius: 6px;
+  padding: 8px 12px; margin: 8px 0; font-weight: 700;
+  overflow-x: auto; white-space: pre;
+}
+.barra-caida strong { display: block; margin-bottom: 4px; }
+.barra-caida div { font-weight: 500; }
+
+.barra-caida {
+  background: var(--malo2); color: var(--malo);
+  border-bottom: 1px solid var(--malo);
+  padding: 9px 20px; font-size: 13.5px; font-weight: 600;
+}
+[hidden] { display: none !important; }
+
+/* ------------------------------------------------------------- pestanas */
+
+.pestanas {
+  display: flex; gap: 2px; flex-wrap: wrap;
+  padding: 0 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--borde);
+  position: sticky; top: 0; z-index: 20;
+}
+.pestana {
+  appearance: none; border: 0; background: none;
+  font: inherit; font-size: 14px; font-weight: 600; color: var(--tenue);
+  padding: 11px 14px; cursor: pointer;
+  border-bottom: 3px solid transparent;
+}
+.pestana:hover { color: var(--texto); }
+.pestana.activa { color: var(--acento); border-bottom-color: var(--acento); }
+.pestana:focus-visible { outline: 2px solid var(--acento); outline-offset: -3px; }
+
+main { padding: 18px 20px 60px; max-width: 1500px; margin: 0 auto; }
+.seccion { display: none; }
+.seccion.visible { display: block; }
+
+/* --------------------------------------------------------------- tarjetas */
+
+.tarjeta {
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  box-shadow: var(--sombra);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.tarjeta-cabeza {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.cifras {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+.cifra {
+  background: var(--panel2);
+  border: 1px solid var(--borde2);
+  border-radius: var(--radio);
+  padding: 12px 14px;
+}
+.cifra .n { font-size: 26px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.cifra .et { font-size: 12px; color: var(--tenue); margin-top: 3px; }
+
+.rejilla2 {
+  display: grid; gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  align-items: start;
+}
+
+/* ---------------------------------------------------------------- tablas */
+
+.tabla-envoltura {
+  overflow-x: auto;               /* la tabla ancha hace scroll aqui dentro,
+                                     nunca la pagina */
+  border: 1px solid var(--borde2);
+  border-radius: var(--radio);
+  background: var(--panel);
+}
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { padding: 8px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--borde2); }
+th {
+  background: var(--panel2); color: var(--tenue);
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em;
+  font-weight: 700; white-space: nowrap; position: sticky; top: 0;
+}
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover td { background: var(--panel2); }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.nw, th.nw { white-space: nowrap; }
+td.mono, .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace; font-size: 12.5px; }
+td.ancha { min-width: 280px; max-width: 520px; }
+td.nota { min-width: 220px; max-width: 420px; color: var(--tenue); font-size: 12.5px; }
+.vacio, .cargando, .fallo { color: var(--tenue); font-style: italic; }
+.fallo { color: var(--malo); font-style: normal; font-weight: 600; }
+
+/* --------------------------------------------------------------- insignias */
+
+.ins {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 700; white-space: nowrap;
+  background: var(--acento2); color: var(--acento);
+}
+.ins.ok { background: var(--ok2); color: var(--ok); }
+.ins.alerta { background: var(--alerta2); color: var(--alerta); }
+.ins.malo { background: var(--malo2); color: var(--malo); }
+.ins.gris { background: var(--borde2); color: var(--tenue); }
+
+/* ------------------------------------------------------------ formularios */
+
+.campos { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.campo { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.campo.crece { flex: 1 1 220px; }
+.campo > label { font-size: 12px; font-weight: 650; color: var(--tenue); }
+input[type=text], input[type=number], input[type=search], select, textarea {
+  font: inherit; font-size: 14px;
+  color: var(--texto); background: var(--panel);
+  border: 1px solid var(--borde); border-radius: 6px;
+  padding: 7px 9px; min-width: 0; width: 100%;
+}
+textarea { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; line-height: 1.5; resize: vertical; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); outline-offset: -1px; border-color: var(--acento); }
+.corto { width: 110px; }
+.medio { width: 190px; }
+.marca-campo { display: flex; align-items: center; gap: 6px; font-size: 13.5px; padding-bottom: 7px; }
+.marca-campo input { width: auto; }
+.pista { font-size: 12px; color: var(--tenue); margin-top: 8px; }
+
+.boton {
+  appearance: none; display: inline-block; font: inherit; font-size: 13.5px;
+  font-weight: 650; text-decoration: none;
+  padding: 8px 14px; border-radius: 6px; cursor: pointer;
+  background: var(--acento); color: #fff; border: 1px solid var(--acento);
+  white-space: nowrap;
+}
+.boton:hover { filter: brightness(1.08); }
+.boton:disabled { opacity: .5; cursor: not-allowed; filter: none; }
+.boton.suave { background: var(--panel); color: var(--texto); border-color: var(--borde); }
+.boton.suave:hover { background: var(--panel2); }
+.boton.peligro { background: var(--malo); border-color: var(--malo); color: #fff; }
+.boton.mini { padding: 4px 9px; font-size: 12.5px; }
+.acciones { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ---------------------------------------------------------------- trabajo */
+
+.trabajo-cabeza { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.consola {
+  background: var(--consola-fondo); color: var(--consola-texto);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  font-size: 12.5px; line-height: 1.55;
+  border-radius: var(--radio);
+  padding: 10px 12px; height: 260px; overflow: auto;
+  white-space: pre-wrap; word-break: break-word;
+}
+.consola .hora { color: var(--consola-hora); margin-right: 8px; }
+.consola .aviso-consola { color: var(--consola-hora); font-style: italic; }
+.resultado { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.resultado .par {
+  background: var(--panel2); border: 1px solid var(--borde2);
+  border-radius: 6px; padding: 6px 10px; font-size: 12.5px;
+}
+.resultado .par b { font-variant-numeric: tabular-nums; }
+.caja-error {
+  margin-top: 12px; padding: 10px 12px; border-radius: 6px;
+  background: var(--malo2); color: var(--malo);
+  border: 1px solid var(--malo); font-size: 13px; word-break: break-word;
+}
+
+/* ---------------------------------------------------------------- avisos */
+
+.avisos { position: fixed; right: 16px; top: 14px; z-index: 90; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, 90vw); }
+.aviso {
+  background: var(--panel); border: 1px solid var(--borde);
+  border-left: 4px solid var(--acento);
+  border-radius: 6px; box-shadow: var(--sombra);
+  padding: 10px 12px; font-size: 13.5px; cursor: pointer;
+}
+.aviso.ok { border-left-color: var(--ok); }
+.aviso.malo { border-left-color: var(--malo); }
+.aviso .titulo { font-weight: 700; }
+.aviso .cuerpo { color: var(--tenue); font-size: 12.5px; margin-top: 2px; word-break: break-word; }
+
+/* ----------------------------------------------------------------- modal */
+
+.capa {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(12, 20, 33, .55);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 24px 16px; overflow: auto;
+}
+.capa[hidden] { display: none; }
+.modal {
+  background: var(--panel); border-radius: 10px; box-shadow: 0 12px 40px rgba(0, 0, 0, .3);
+  width: min(760px, 100%); max-width: 100%;
+  border: 1px solid var(--borde);
+}
+.modal-cabeza { padding: 14px 18px; border-bottom: 1px solid var(--borde2); display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.modal-cuerpo { padding: 16px 18px; max-height: 68vh; overflow: auto; }
+.modal-pie { padding: 12px 18px; border-top: 1px solid var(--borde2); display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.cerrar {
+  appearance: none; background: none; border: 0; cursor: pointer;
+  font: inherit; font-size: 20px; line-height: 1; color: var(--tenue); padding: 2px 6px;
+}
+.dato { margin-bottom: 12px; }
+.dato .et { font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--tenue); font-weight: 700; }
+.dato .va { margin-top: 2px; word-break: break-word; white-space: pre-wrap; }
+.fichas { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+.ficha { background: var(--panel2); border: 1px solid var(--borde2); border-radius: 999px; padding: 2px 9px; font-size: 12px; }
+.lista-confirma { margin: 10px 0 0; padding-left: 18px; }
+.lista-confirma li { margin-bottom: 5px; }
+
+.paginacion { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; font-size: 13px; color: var(--tenue); }
+
+@media (max-width: 620px) {
+  main { padding: 14px 12px 50px; }
+  .tarjeta { padding: 12px; }
+  .cifra .n { font-size: 22px; }
+}
+</style>
+</head>
+<body>
+
+<header class="cabecera">
+  <div class="marca">
+    <span class="logo" aria-hidden="true"></span>
+    <div>
+      <h1>Tablero GRN</h1>
+      <p class="sub">ETL de literatura de PubMed para la red de regulación de P. aeruginosa</p>
+    </div>
+  </div>
+  <div class="conexion">
+    <span class="punto" id="punto-conexion"></span>
+    <span id="texto-conexion">Conectando...</span>
+  </div>
+</header>
+
+<div class="barra-caida" id="barra-caida" hidden>
+  Sin respuesta del servidor. Revisa que el proceso siga corriendo en esta máquina (127.0.0.1) y vuelve a intentar.
+</div>
+
+<nav class="pestanas" id="pestanas" role="tablist">
+  <button class="pestana activa" role="tab" aria-selected="true" data-seccion="panel">Panel</button>
+  <button class="pestana" role="tab" aria-selected="false" data-seccion="consultas">Consultas</button>
+  <button class="pestana" role="tab" aria-selected="false" data-seccion="documentos">Documentos</button>
+  <button class="pestana" role="tab" aria-selected="false" data-seccion="descargas">Descargas</button>
+  <button class="pestana" role="tab" aria-selected="false" data-seccion="bitacora">Bitácora</button>
+</nav>
+
+<div class="avisos" id="avisos"></div>
+
+<main>
+
+<!-- ============================================================== PANEL -->
+<section class="seccion visible" id="sec-panel">
+
+  <div class="tarjeta">
+    <div class="tarjeta-cabeza">
+      <h2>Estado de la base</h2>
+      <button class="boton suave mini" id="b-refrescar-estado">Actualizar</button>
+    </div>
+    <div class="cifras" id="cifras">
+      <div class="cifra"><div class="n cargando">...</div><div class="et">cargando</div></div>
+    </div>
+    <div id="bloque-descargas" style="margin-top:16px">
+      <h3 style="margin-bottom:8px">Descargas de full text</h3>
+      <div class="tabla-envoltura">
+        <table>
+          <thead><tr><th>Tipo</th><th>Estatus</th><th class="num">Artículos</th></tr></thead>
+          <tbody id="t-estado-descargas"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <div class="tarjeta-cabeza">
+      <h2>Trabajo en curso</h2>
+      <div class="trabajo-cabeza">
+        <span class="ins gris" id="ins-trabajo">sin trabajo</span>
+        <span class="mono" id="tiempo-trabajo" style="color:var(--tenue)"></span>
+      </div>
+    </div>
+    <p class="sub mono" id="param-trabajo" style="margin-bottom:8px"></p>
+    <div class="consola" id="consola"><span class="aviso-consola">Sin trabajo en curso.</span></div>
+    <div class="resultado" id="resultado-trabajo"></div>
+    <div class="caja-error" id="error-trabajo" hidden></div>
+  </div>
+
+  <div class="rejilla2">
+
+    <div class="tarjeta">
+      <div class="tarjeta-cabeza"><h2>Correr una consulta (run)</h2></div>
+      <div class="campos">
+        <div class="campo crece">
+          <label for="r-nombre">Consulta</label>
+          <select id="r-nombre" data-consultas="1"></select>
+        </div>
+        <div class="campo">
+          <label for="r-orden">Orden</label>
+          <select id="r-orden" class="medio">
+            <option value="relevance">relevance</option>
+            <option value="pub_date">pub_date</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label for="r-limite">Límite</label>
+          <input type="number" id="r-limite" class="corto" min="1" step="1" placeholder="todos">
+        </div>
+        <div class="campo">
+          <label for="r-desde">Desde (año)</label>
+          <input type="text" id="r-desde" class="corto" inputmode="numeric" placeholder="2000">
+        </div>
+        <div class="campo">
+          <label for="r-hasta">Hasta (año)</label>
+          <input type="text" id="r-hasta" class="corto" inputmode="numeric" placeholder="2026">
+        </div>
+        <button class="boton" id="b-run">Lanzar corrida</button>
+      </div>
+      <p class="pista">Baja los abstracts que falten. Lo que ya está en la base no se
+        vuelve a descargar: solo se liga a esta consulta.</p>
+    </div>
+
+    <div class="tarjeta">
+      <div class="tarjeta-cabeza"><h2>Bajar full text (fulltext)</h2></div>
+      <div class="campos">
+        <div class="campo">
+          <label for="f-tipo-archivo">Tipo</label>
+          <select id="f-tipo-archivo" class="medio">
+            <option value="xml">xml (PMC)</option>
+            <option value="pdf">pdf (acceso abierto)</option>
+          </select>
+        </div>
+        <div class="campo crece">
+          <label for="f-nombre">Consulta</label>
+          <select id="f-nombre" data-consultas="1" data-todas="todas las consultas"></select>
+        </div>
+        <div class="campo">
+          <label for="f-limite">Límite</label>
+          <input type="number" id="f-limite" class="corto" min="1" step="1" placeholder="todos">
+        </div>
+        <div class="marca-campo">
+          <input type="checkbox" id="f-reintentar">
+          <label for="f-reintentar">Reintentar los de error</label>
+        </div>
+        <div class="marca-campo">
+          <input type="checkbox" id="f-sin-unpaywall">
+          <label for="f-sin-unpaywall">Sin Unpaywall</label>
+        </div>
+        <button class="boton" id="b-fulltext">Lanzar descarga</button>
+      </div>
+      <p class="pista">Corre después del run. Primero xml y luego pdf: el JATS de PMC
+        conserva secciones y subíndices de genes; un PDF re-parseado los pierde.
+        Los marcados "no_disponible" no se reintentan (no tienen acceso abierto).</p>
+    </div>
+
+  </div>
+</section>
+
+<!-- ========================================================== CONSULTAS -->
+<section class="seccion" id="sec-consultas">
+
+  <div class="tarjeta">
+    <div class="tarjeta-cabeza"><h2>Nueva consulta</h2></div>
+    <div class="campos" style="margin-bottom:10px">
+      <div class="campo crece">
+        <label for="c-nombre">Nombre</label>
+        <input type="text" id="c-nombre" placeholder="pa_regulacion">
+      </div>
+      <div class="campo crece">
+        <label for="c-descripcion">Descripción</label>
+        <input type="text" id="c-descripcion" placeholder="opcional">
+      </div>
+    </div>
+    <div class="campo">
+      <label for="c-texto">Query booleana</label>
+      <textarea id="c-texto" rows="7" placeholder='("Pseudomonas aeruginosa"[MeSH] OR ...) AND (...)'></textarea>
+    </div>
+    <div class="campos" style="margin-top:10px">
+      <button class="boton" id="b-alta-consulta">Guardar consulta</button>
+      <button class="boton suave" id="b-limpiar-consulta">Limpiar</button>
+      <span class="pista" style="margin:0">Si el nombre ya existe, se actualiza el texto y se
+        conservan los documentos ya vinculados.</span>
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <div class="tarjeta-cabeza">
+      <h2>Consultas registradas</h2>
+      <button class="boton suave mini" id="b-refrescar-consultas">Actualizar</button>
+    </div>
+    <div class="tabla-envoltura">
+      <table>
+        <thead>
+          <tr>
+            <th>Nombre</th><th class="num">Documentos</th><th>Activa</th>
+            <th>Última corrida</th><th>Descripción</th><th>Query</th><th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="t-consultas"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ========================================================= DOCUMENTOS -->
+<section class="seccion" id="sec-documentos">
+  <div class="tarjeta">
+    <div class="tarjeta-cabeza"><h2>Buscar documentos</h2></div>
+    <div class="campos">
+      <div class="campo crece">
+        <label for="d-q">Texto (título, abstract, pmid)</label>
+        <input type="search" id="d-q" placeholder="lasR, quorum sensing, 12345678">
+      </div>
+      <div class="campo">
+        <label for="d-consulta">Consulta</label>
+        <select id="d-consulta" class="medio" data-consultas="1" data-todas="todas"></select>
+      </div>
+      <div class="campo">
+        <label for="d-anio">Año</label>
+        <select id="d-anio" class="corto"><option value="">todos</option></select>
+      </div>
+      <div class="campo">
+        <label for="d-abstract">Abstract</label>
+        <select id="d-abstract" class="medio">
+          <option value="">con y sin</option>
+          <option value="1">solo con abstract</option>
+          <option value="0">solo sin abstract</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="d-por-pagina">Por página</label>
+        <select id="d-por-pagina" class="corto">
+          <option>25</option><option>50</option><option>100</option>
+        </select>
+      </div>
+      <button class="boton" id="b-buscar-docs">Buscar</button>
+      <button class="boton suave" id="b-limpiar-docs">Limpiar</button>
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <div class="tarjeta-cabeza">
+      <h2>Resultados</h2>
+      <span class="sub" id="docs-total"></span>
+    </div>
+    <div class="tabla-envoltura">
+      <table>
+        <thead>
+          <tr>
+            <th class="nw">PMID</th><th class="nw">Año</th><th>Revista</th>
+            <th>Título</th><th class="nw">Abstract</th><th class="nw">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="t-documentos"></tbody>
+      </table>
+    </div>
+    <div class="paginacion">
+      <button class="boton suave mini" id="b-docs-antes">Anterior</button>
+      <span id="docs-pagina">-</span>
+      <button class="boton suave mini" id="b-docs-despues">Siguiente</button>
+    </div>
+  </div>
+</section>
+
+<!-- ========================================================== DESCARGAS -->
+<section class="seccion" id="sec-descargas">
+  <div class="tarjeta">
+    <div class="tarjeta-cabeza"><h2>Registro de descargas</h2></div>
+    <div class="campos">
+      <div class="campo">
+        <label for="g-tipo">Tipo</label>
+        <select id="g-tipo" class="medio">
+          <option value="">xml y pdf</option>
+          <option value="xml">xml</option>
+          <option value="pdf">pdf</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="g-estatus">Estatus</label>
+        <select id="g-estatus" class="medio">
+          <option value="">todos</option>
+          <option value="ok">ok</option>
+          <option value="no_disponible">no_disponible</option>
+          <option value="error">error</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="g-por-pagina">Por página</label>
+        <select id="g-por-pagina" class="corto">
+          <option>25</option><option>50</option><option>100</option>
+        </select>
+      </div>
+      <button class="boton" id="b-buscar-descargas">Buscar</button>
+    </div>
+    <p class="pista">La nota dice por qué algo quedó en "no_disponible" o en "error".
+      Borrar la fila hace que ese PMID vuelva a contar como pendiente; el archivo en
+      disco, si existe, no se toca.</p>
+  </div>
+
+  <div class="tarjeta">
+    <div class="tarjeta-cabeza">
+      <h2>Resultados</h2>
+      <span class="sub" id="descargas-total"></span>
+    </div>
+    <div class="tabla-envoltura">
+      <table>
+        <thead>
+          <tr>
+            <th class="nw">PMID</th><th class="nw">Tipo</th><th class="nw">Estatus</th>
+            <th class="nw">Fuente</th><th class="num">Tamaño</th><th class="num">Intentos</th>
+            <th class="nw">Actualizado</th><th>Nota</th><th class="nw">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="t-descargas"></tbody>
+      </table>
+    </div>
+    <div class="paginacion">
+      <button class="boton suave mini" id="b-desc-antes">Anterior</button>
+      <span id="descargas-pagina">-</span>
+      <button class="boton suave mini" id="b-desc-despues">Siguiente</button>
+    </div>
+  </div>
+</section>
+
+<!-- =========================================================== BITACORA -->
+<section class="seccion" id="sec-bitacora">
+  <div class="tarjeta">
+    <div class="tarjeta-cabeza"><h2>Bitácora de ejecuciones</h2></div>
+    <div class="campos">
+      <div class="campo">
+        <label for="e-nombre">Consulta</label>
+        <select id="e-nombre" class="medio" data-consultas="1" data-todas="todas"></select>
+      </div>
+      <div class="campo">
+        <label for="e-n">Cuántas</label>
+        <input type="number" id="e-n" class="corto" min="1" step="1" value="30">
+      </div>
+      <button class="boton" id="b-buscar-ejecuciones">Actualizar</button>
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <div class="tabla-envoltura">
+      <table>
+        <thead>
+          <tr>
+            <th class="num">ID</th><th>Consulta</th><th class="nw">Estatus</th>
+            <th class="num">PubMed</th><th class="num">Nuevos</th><th class="num">Previos</th>
+            <th class="num">Bajados</th><th class="nw">Iniciada</th><th class="nw">Terminada</th>
+            <th>Error</th>
+          </tr>
+        </thead>
+        <tbody id="t-ejecuciones"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<div class="capa" id="capa" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-titulo">
+    <div class="modal-cabeza">
+      <h2 id="modal-titulo">-</h2>
+      <button class="cerrar" id="b-cerrar-modal" aria-label="Cerrar">x</button>
+    </div>
+    <div class="modal-cuerpo" id="modal-cuerpo"></div>
+    <div class="modal-pie" id="modal-pie"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* Tablero del ETL. JavaScript de a pie, sin dependencias.
+   Regla de oro de este archivo: nada que venga de la base se inserta con
+   innerHTML. Todo pasa por textContent (helper 'el'), porque los titulos y
+   abstracts traen < > & de formulas y de nombres de genes, y porque el
+   contenido viene de PubMed, no de nosotros. */
+
+/* ------------------------------------------------------------ utilidades */
+
+function el(etiqueta, clase, texto) {
+  var n = document.createElement(etiqueta);
+  if (clase) { n.className = clase; }
+  if (texto !== undefined && texto !== null) { n.textContent = String(texto); }
+  return n;
+}
+
+function vaciar(nodo) {
+  while (nodo.firstChild) { nodo.removeChild(nodo.firstChild); }
+  return nodo;
+}
+
+function $(id) { return document.getElementById(id); }
+
+function texto(v, alterno) {
+  if (v === null || v === undefined || v === "") { return alterno === undefined ? "-" : alterno; }
+  return String(v);
+}
+
+function recortar(s, n) {
+  s = String(s === null || s === undefined ? "" : s);
+  return s.length > n ? s.slice(0, n - 3) + "..." : s;
+}
+
+function miles(n) {
+  var x = Number(n);
+  if (isNaN(x)) { return "-"; }
+  return x.toLocaleString("es-MX");
+}
+
+function tamano(b) {
+  if (b === null || b === undefined || b === "") { return "-"; }
+  var n = Number(b);
+  if (isNaN(n)) { return "-"; }
+  if (n < 1024) { return n + " B"; }
+  if (n < 1048576) { return (n / 1024).toFixed(0) + " KB"; }
+  return (n / 1048576).toFixed(1) + " MB";
+}
+
+function dosDig(n) { return (n < 10 ? "0" : "") + n; }
+
+/* Los timestamps llegan en ISO 8601 UTC (db.ahora()). Se muestran en la hora
+   local de la maquina, que es lo que espera quien opera; el ISO original se
+   deja en el title por si hay que comparar entre maquinas. */
+function fechaCorta(iso) {
+  if (!iso) { return "-"; }
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) { return String(iso); }
+  return dosDig(d.getDate()) + "/" + dosDig(d.getMonth() + 1) + "/" + d.getFullYear() +
+         " " + dosDig(d.getHours()) + ":" + dosDig(d.getMinutes());
+}
+
+function celdaFecha(iso) {
+  var td = el("td", "nw", fechaCorta(iso));
+  if (iso) { td.title = String(iso); }
+  return td;
+}
+
+function transcurrido(desdeIso, hastaIso) {
+  if (!desdeIso) { return ""; }
+  var a = new Date(desdeIso).getTime();
+  var b = hastaIso ? new Date(hastaIso).getTime() : Date.now();
+  if (isNaN(a) || isNaN(b)) { return ""; }
+  var s = Math.max(0, Math.round((b - a) / 1000));
+  var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  return (h > 0 ? h + ":" + dosDig(m) : m) + ":" + dosDig(r);
+}
+
+/* ------------------------------------------------------------------ api */
+
+function ErrorApi(mensaje, codigo) {
+  this.name = "ErrorApi";
+  this.message = mensaje;
+  this.codigo = codigo;
+}
+ErrorApi.prototype = Object.create(Error.prototype);
+
+var servidorVivo = null;
+
+function marcarConexion(viva, detalle) {
+  if (servidorVivo === viva) { return; }
+  servidorVivo = viva;
+  var punto = $("punto-conexion");
+  punto.className = "punto " + (viva ? "viva" : "caida");
+  $("texto-conexion").textContent = viva ? "Servidor conectado" : (detalle || "Sin conexión");
+  $("barra-caida").hidden = viva;
+}
+
+function api(metodo, ruta, cuerpo) {
+  var opciones = { method: metodo, headers: {} };
+  if (cuerpo !== undefined && cuerpo !== null) {
+    opciones.headers["Content-Type"] = "application/json";
+    opciones.body = JSON.stringify(cuerpo);
+  }
+  return fetch(ruta, opciones).then(function (resp) {
+    marcarConexion(true);
+    return resp.text().then(function (crudo) {
+      var datos = null;
+      if (crudo) {
+        try { datos = JSON.parse(crudo); } catch (e) { datos = null; }
+      }
+      if (!resp.ok) {
+        var msg = (datos && datos.error) ? datos.error
+                  : ("El servidor respondió " + resp.status + " sin detalle");
+        throw new ErrorApi(msg, resp.status);
+      }
+      return datos;
+    });
+  }, function () {
+    // Falla de red: el proceso se cayo o el puerto cambio. Se dice en pantalla
+    // en vez de dejar las tablas en blanco.
+    marcarConexion(false, "Sin conexión");
+    throw new ErrorApi("No se pudo contactar al servidor.", 0);
+  });
+}
+
+function paramsDe(obj) {
+  var p = new URLSearchParams();
+  Object.keys(obj).forEach(function (k) {
+    var v = obj[k];
+    if (v !== null && v !== undefined && v !== "") { p.append(k, String(v)); }
+  });
+  var s = p.toString();
+  return s ? "?" + s : "";
+}
+
+/* --------------------------------------------------------------- avisos */
+
+function avisar(titulo, cuerpo, clase) {
+  var caja = el("div", "aviso " + (clase || ""));
+  caja.appendChild(el("div", "titulo", titulo));
+  if (cuerpo) { caja.appendChild(el("div", "cuerpo", cuerpo)); }
+  caja.addEventListener("click", function () { quitar(); });
+  $("avisos").appendChild(caja);
+  var reloj = setTimeout(quitar, clase === "malo" ? 12000 : 6000);
+  function quitar() {
+    clearTimeout(reloj);
+    if (caja.parentNode) { caja.parentNode.removeChild(caja); }
+  }
+}
+
+function avisarError(e) {
+  avisar("No se pudo completar", e && e.message ? e.message : String(e), "malo");
+}
+
+/* ---------------------------------------------------------------- modal */
+
+var alCerrarModal = null;
+
+function abrirModal(titulo, cuerpo, botones) {
+  $("modal-titulo").textContent = titulo;
+  var c = vaciar($("modal-cuerpo"));
+  c.appendChild(cuerpo);
+  var pie = vaciar($("modal-pie"));
+  (botones || []).forEach(function (b) {
+    var boton = el("button", "boton " + (b.clase || "suave"), b.texto);
+    boton.addEventListener("click", b.alHacerClic);
+    pie.appendChild(boton);
+  });
+  $("capa").hidden = false;
+  var primero = c.querySelector("input, textarea, select");
+  if (primero) { primero.focus(); }
+}
+
+function cerrarModal() {
+  $("capa").hidden = true;
+  vaciar($("modal-cuerpo"));
+  vaciar($("modal-pie"));
+  if (alCerrarModal) { var f = alCerrarModal; alCerrarModal = null; f(); }
+}
+
+$("b-cerrar-modal").addEventListener("click", cerrarModal);
+$("capa").addEventListener("mousedown", function (ev) {
+  if (ev.target === $("capa")) { cerrarModal(); }
+});
+document.addEventListener("keydown", function (ev) {
+  if (ev.key === "Escape" && !$("capa").hidden) { cerrarModal(); }
+});
+
+/* Confirmacion explicita. Recibe la lista de consecuencias y las muestra tal
+   cual: el usuario pidio CRUD completo a sabiendas, asi que la interfaz dice
+   exactamente que se lleva por delante en vez de esconderlo. */
+function confirmar(titulo, lineas, textoBoton) {
+  return new Promise(function (resolver) {
+    var cuerpo = el("div");
+    cuerpo.appendChild(el("p", null, "Esta acción no se puede deshacer."));
+    var ul = el("ul", "lista-confirma");
+    lineas.forEach(function (t) { ul.appendChild(el("li", null, t)); });
+    cuerpo.appendChild(ul);
+    var decidido = false;
+    alCerrarModal = function () { if (!decidido) { decidido = true; resolver(false); } };
+    abrirModal(titulo, cuerpo, [
+      { texto: "Cancelar", clase: "suave", alHacerClic: function () { cerrarModal(); } },
+      { texto: textoBoton || "Borrar", clase: "peligro", alHacerClic: function () {
+          decidido = true; alCerrarModal = null; cerrarModal(); resolver(true);
+        } }
+    ]);
+  });
+}
+
+/* -------------------------------------------------------------- pestanas */
+
+var seccionActual = "panel";
+var yaCargada = {};
+
+function mostrarSeccion(nombre) {
+  seccionActual = nombre;
+  var botones = document.querySelectorAll(".pestana");
+  for (var i = 0; i < botones.length; i++) {
+    var activa = botones[i].getAttribute("data-seccion") === nombre;
+    botones[i].classList.toggle("activa", activa);
+    botones[i].setAttribute("aria-selected", activa ? "true" : "false");
+  }
+  var secciones = document.querySelectorAll(".seccion");
+  for (var j = 0; j < secciones.length; j++) {
+    secciones[j].classList.toggle("visible", secciones[j].id === "sec-" + nombre);
+  }
+  if (!yaCargada[nombre]) {
+    yaCargada[nombre] = true;
+    if (nombre === "consultas") { cargarConsultas(); }
+    if (nombre === "documentos") { cargarAnios(); buscarDocumentos(1); }
+    if (nombre === "descargas") { buscarDescargas(1); }
+    if (nombre === "bitacora") { cargarEjecuciones(); }
+  }
+  ajustarSondeo();
+}
+
+document.querySelectorAll(".pestana").forEach(function (b) {
+  b.addEventListener("click", function () { mostrarSeccion(b.getAttribute("data-seccion")); });
+});
+
+/* ----------------------------------------------------- filas de mensaje */
+
+function filaMensaje(tbody, columnas, mensaje, clase) {
+  vaciar(tbody);
+  var tr = el("tr");
+  var td = el("td", clase || "vacio", mensaje);
+  td.colSpan = columnas;
+  tr.appendChild(td);
+  tbody.appendChild(tr);
+}
+
+/* =========================================================== PANEL */
+
+function cargarPanel() {
+  var caja = $("cifras");
+  api("GET", "/api/estado").then(function (r) {
+    vaciar(caja);
+    var docs = Number(r.documentos || 0), con = Number(r.con_abstract || 0);
+    [["Consultas", r.consultas], ["Documentos únicos", r.documentos],
+     ["Con abstract", r.con_abstract], ["Sin abstract", docs - con],
+     ["Vínculos consulta-documento", r.vinculos]].forEach(function (par) {
+      var d = el("div", "cifra");
+      d.appendChild(el("div", "n", miles(par[1])));
+      d.appendChild(el("div", "et", par[0]));
+      caja.appendChild(d);
+    });
+
+    var tb = vaciar($("t-estado-descargas"));
+    var filas = r.descargas || [];
+    if (!filas.length) {
+      filaMensaje(tb, 3, "Sin descargas de full text todavía.");
+      return;
+    }
+    filas.forEach(function (f) {
+      var tr = el("tr");
+      tr.appendChild(el("td", "nw mono", texto(f.tipo)));
+      var td = el("td", "nw");
+      td.appendChild(insigniaEstatus(f.estatus));
+      tr.appendChild(td);
+      tr.appendChild(el("td", "num", miles(f.n)));
+      tb.appendChild(tr);
+    });
+  }).catch(function (e) {
+    vaciar(caja).appendChild(el("p", "fallo", "No se pudo leer el estado: " + e.message));
+    filaMensaje($("t-estado-descargas"), 3, "Sin datos.", "fallo");
+  });
+}
+
+function insigniaEstatus(estatus) {
+  var s = String(estatus || "");
+  var clase = "gris";
+  if (s === "ok") { clase = "ok"; }
+  else if (s === "no_disponible") { clase = "alerta"; }
+  else if (s === "error") { clase = "malo"; }
+  else if (s === "corriendo") { clase = ""; }
+  return el("span", "ins " + clase, s || "-");
+}
+
+/* -------------------------------------------------------------- trabajo */
+
+var trabajo = null;
+var sondeo = null;
+var ticker = null;
+var firmaLineas = "";
+
+function pintarTrabajo(t) {
+  var previo = trabajo;
+  trabajo = t || null;
+  var activo = !!(t && t.activo);
+
+  var ins = $("ins-trabajo");
+  if (activo) {
+    ins.className = "ins";
+    ins.textContent = "corriendo: " + texto(t.tipo, "trabajo");
+  } else if (t && t.error) {
+    ins.className = "ins malo";
+    ins.textContent = "terminó con error";
+  } else if (t && t.terminado_en) {
+    ins.className = "ins ok";
+    ins.textContent = "terminó bien";
+  } else {
+    ins.className = "ins gris";
+    ins.textContent = "sin trabajo";
+  }
+
+  var par = t && t.parametros ? t.parametros : null;
+  $("param-trabajo").textContent = par ? Object.keys(par).map(function (k) {
+    return k + "=" + (par[k] === null || par[k] === undefined ? "" : par[k]);
+  }).join("   ") : "";
+
+  actualizarTiempo();
+
+  var lineas = (t && t.lineas) ? t.lineas : [];
+  var firma = lineas.length + "|" + (lineas.length ? String(lineas[lineas.length - 1].texto) : "");
+  if (firma !== firmaLineas) {
+    firmaLineas = firma;
+    var c = $("consola");
+    var pegado = (c.scrollHeight - c.scrollTop - c.clientHeight) < 48;
+    vaciar(c);
+    if (!lineas.length) {
+      c.appendChild(el("span", "aviso-consola",
+        activo ? "Arrancando..." : "Sin trabajo en curso."));
+    } else {
+      lineas.forEach(function (ln) {
+        var fila = el("div");
+        fila.appendChild(el("span", "hora", horaDe(ln.t)));
+        fila.appendChild(el("span", null, texto(ln.texto, "")));
+        c.appendChild(fila);
+      });
+    }
+    if (pegado) { c.scrollTop = c.scrollHeight; }
+  }
+
+  var res = vaciar($("resultado-trabajo"));
+  if (t && t.resultado && typeof t.resultado === "object") {
+    Object.keys(t.resultado).forEach(function (k) {
+      var p = el("div", "par");
+      p.appendChild(el("span", null, k + ": "));
+      p.appendChild(el("b", null, texto(t.resultado[k])));
+      res.appendChild(p);
+    });
+  }
+
+  var caja = $("error-trabajo");
+  if (t && t.error) {
+    caja.hidden = false;
+    caja.textContent = "Error: " + String(t.error);
+  } else {
+    caja.hidden = true;
+    caja.textContent = "";
+  }
+
+  $("b-run").disabled = activo;
+  $("b-fulltext").disabled = activo;
+
+  // Al terminar un trabajo cambian las cifras y la bitacora.
+  var seguiaActivo = !!(previo && previo.activo);
+  if (seguiaActivo && !activo) {
+    avisar("Trabajo terminado", t && t.error ? "Terminó con error, revisa la consola."
+                                             : "Terminó sin error.",
+           t && t.error ? "malo" : "ok");
+    cargarPanel();
+    cargarConsultas(true);
+    if (yaCargada.bitacora) { cargarEjecuciones(); }
+  }
+  ajustarSondeo();
+}
+
+/* La marca de tiempo de cada linea llega en ISO ('...T20:11:02+00:00') o ya
+   recortada a la hora; en la consola solo interesa hh:mm:ss. */
+function horaDe(t) {
+  if (!t) { return ""; }
+  var s = String(t);
+  var i = s.indexOf("T");
+  if (i >= 0) { return s.slice(i + 1, i + 9); }
+  return s.length > 12 ? s.slice(-8) : s;
+}
+
+function actualizarTiempo() {
+  var n = $("tiempo-trabajo");
+  if (!trabajo || !trabajo.iniciado_en) { n.textContent = ""; return; }
+  var t = transcurrido(trabajo.iniciado_en, trabajo.terminado_en);
+  n.textContent = t ? (trabajo.activo ? "corriendo " : "duró ") + t : "";
+}
+
+function sondearTrabajo() {
+  return api("GET", "/api/trabajo").then(pintarTrabajo).catch(function (e) {
+    // Con el servidor caido se sigue sondeando, pero lento: es lo que hace
+    // que el tablero se recupere solo cuando el proceso vuelve.
+    if (e.codigo === 0) { ajustarSondeo(); }
+  });
+}
+
+function detenerSondeo() {
+  if (sondeo) { clearInterval(sondeo); sondeo = null; }
+}
+
+/* Cada 1.5 s mientras hay trabajo activo. Sin trabajo se baja a 5 s y solo
+   con el Panel a la vista, para enterarse de una corrida lanzada por otra
+   persona sin castigar al servidor con sondeos inutiles. */
+var periodoSondeo = 0;
+function ajustarSondeo() {
+  var activo = !!(trabajo && trabajo.activo);
+  var quiere;
+  if (servidorVivo === false) { quiere = 10000; }
+  else if (activo) { quiere = 1500; }
+  else { quiere = (seccionActual === "panel" ? 5000 : 0); }
+  if (quiere === periodoSondeo && (sondeo || quiere === 0)) { return; }
+  detenerSondeo();
+  periodoSondeo = quiere;
+  if (quiere) { sondeo = setInterval(sondearTrabajo, quiere); }
+}
+
+function lanzar(cuerpo, etiqueta) {
+  return api("POST", "/api/trabajo", cuerpo).then(function () {
+    avisar("Trabajo lanzado", etiqueta, "ok");
+    firmaLineas = "";
+    return sondearTrabajo();
+  }).catch(function (e) {
+    if (e.codigo === 409) {
+      avisar("Ya hay un trabajo en curso",
+             "Espera a que termine; solo corre uno a la vez.", "malo");
+      sondearTrabajo();
+    } else {
+      avisarError(e);
+    }
+  });
+}
+
+$("b-run").addEventListener("click", function () {
+  var nombre = $("r-nombre").value;
+  if (!nombre) { avisar("Falta la consulta", "Elige una consulta registrada.", "malo"); return; }
+  var cuerpo = { tipo: "run", nombre: nombre, orden: $("r-orden").value };
+  var limite = $("r-limite").value.trim();
+  if (limite) { cuerpo.limite = Number(limite); }
+  var desde = $("r-desde").value.trim(), hasta = $("r-hasta").value.trim();
+  if (desde) { cuerpo.desde = desde; }
+  if (hasta) { cuerpo.hasta = hasta; }
+  lanzar(cuerpo, "run de '" + nombre + "'");
+});
+
+$("b-fulltext").addEventListener("click", function () {
+  var cuerpo = {
+    tipo: "fulltext",
+    tipo_archivo: $("f-tipo-archivo").value,
+    reintentar: $("f-reintentar").checked,
+    sin_unpaywall: $("f-sin-unpaywall").checked
+  };
+  var nombre = $("f-nombre").value;
+  if (nombre) { cuerpo.nombre = nombre; }
+  var limite = $("f-limite").value.trim();
+  if (limite) { cuerpo.limite = Number(limite); }
+  lanzar(cuerpo, "fulltext " + cuerpo.tipo_archivo + (nombre ? " de '" + nombre + "'" : ""));
+});
+
+$("b-refrescar-estado").addEventListener("click", function () {
+  cargarPanel(); sondearTrabajo();
+});
+
+/* ======================================================== CONSULTAS */
+
+var listaConsultas = [];
+
+function refrescarSelectsConsulta() {
+  document.querySelectorAll("select[data-consultas]").forEach(function (sel) {
+    var previo = sel.value;
+    vaciar(sel);
+    var todas = sel.getAttribute("data-todas");
+    if (todas !== null) {
+      var vacia = el("option", null, todas);
+      vacia.value = "";
+      sel.appendChild(vacia);
+    }
+    listaConsultas.forEach(function (c) {
+      var o = el("option", null, c.nombre + " (" + miles(c.n_documentos || 0) + ")");
+      o.value = c.nombre;
+      sel.appendChild(o);
+    });
+    if (previo) { sel.value = previo; }
+  });
+}
+
+function cargarConsultas(silencioso) {
+  var tb = $("t-consultas");
+  if (!silencioso) { filaMensaje(tb, 7, "Cargando...", "cargando"); }
+  return api("GET", "/api/consultas").then(function (filas) {
+    listaConsultas = filas || [];
+    refrescarSelectsConsulta();
+    vaciar(tb);
+    if (!listaConsultas.length) {
+      filaMensaje(tb, 7, "No hay consultas registradas. Da de alta la primera arriba.");
+      return;
+    }
+    listaConsultas.forEach(function (c) {
+      var tr = el("tr");
+      tr.appendChild(el("td", "nw", texto(c.nombre)));
+      tr.appendChild(el("td", "num", miles(c.n_documentos || 0)));
+      var tdA = el("td", "nw");
+      tdA.appendChild(Number(c.activa) ? el("span", "ins ok", "sí")
+                                       : el("span", "ins gris", "no"));
+      tr.appendChild(tdA);
+      tr.appendChild(celdaFecha(c.ultima_corrida));
+      tr.appendChild(el("td", null, texto(c.descripcion, "")));
+      var tdQ = el("td", "mono", recortar(texto(c.texto, ""), 70));
+      tdQ.title = texto(c.texto, "");
+      tr.appendChild(tdQ);
+
+      var tdAcc = el("td");
+      var acc = el("div", "acciones");
+      var bE = el("button", "boton suave mini", "Editar");
+      bE.addEventListener("click", function () { editarConsulta(c); });
+      var bB = el("button", "boton peligro mini", "Borrar");
+      bB.addEventListener("click", function () { borrarConsulta(c); });
+      acc.appendChild(bE); acc.appendChild(bB);
+      tdAcc.appendChild(acc);
+      tr.appendChild(tdAcc);
+      tb.appendChild(tr);
+    });
+  }).catch(function (e) {
+    filaMensaje(tb, 7, "No se pudieron leer las consultas: " + e.message, "fallo");
+  });
+}
+
+$("b-refrescar-consultas").addEventListener("click", function () { cargarConsultas(); });
+$("b-limpiar-consulta").addEventListener("click", function () {
+  $("c-nombre").value = ""; $("c-descripcion").value = ""; $("c-texto").value = "";
+});
+
+$("b-alta-consulta").addEventListener("click", function () {
+  var nombre = $("c-nombre").value.trim();
+  var texto_ = $("c-texto").value.trim();
+  if (!nombre || !texto_) {
+    avisar("Faltan datos", "El nombre y la query booleana son obligatorios.", "malo");
+    return;
+  }
+  api("POST", "/api/consultas", {
+    nombre: nombre, texto: texto_, descripcion: $("c-descripcion").value.trim()
+  }).then(function (r) {
+    avisar("Consulta guardada",
+           "'" + nombre + "': " + texto(r && r.estado, "guardada") +
+           " (" + texto_.length + " caracteres)", "ok");
+    $("c-nombre").value = ""; $("c-descripcion").value = ""; $("c-texto").value = "";
+    cargarConsultas();
+    cargarPanel();
+  }).catch(avisarError);
+});
+
+function editarConsulta(c) {
+  var cuerpo = el("div");
+
+  var d1 = el("div", "campo");
+  d1.appendChild(el("label", null, "Nombre (no se edita)"));
+  var iN = el("input"); iN.type = "text"; iN.value = texto(c.nombre, ""); iN.disabled = true;
+  d1.appendChild(iN); cuerpo.appendChild(d1);
+
+  var d2 = el("div", "campo"); d2.style.marginTop = "12px";
+  d2.appendChild(el("label", null, "Descripción"));
+  var iD = el("input"); iD.type = "text"; iD.value = texto(c.descripcion, "");
+  d2.appendChild(iD); cuerpo.appendChild(d2);
+
+  var d3 = el("div", "campo"); d3.style.marginTop = "12px";
+  d3.appendChild(el("label", null, "Query booleana"));
+  var iT = el("textarea"); iT.rows = 12; iT.value = texto(c.texto, "");
+  d3.appendChild(iT); cuerpo.appendChild(d3);
+
+  var d4 = el("div", "marca-campo"); d4.style.marginTop = "12px";
+  var iA = el("input"); iA.type = "checkbox"; iA.checked = !!Number(c.activa);
+  iA.id = "chk-activa";
+  var lA = el("label", null, "Activa");
+  lA.setAttribute("for", "chk-activa");
+  d4.appendChild(iA); d4.appendChild(lA); cuerpo.appendChild(d4);
+
+  cuerpo.appendChild(el("p", "pista",
+    "Cambiar el texto no borra nada: los documentos ya vinculados se conservan y " +
+    "el próximo run agrega lo que traiga la nueva versión."));
+
+  abrirModal("Editar consulta", cuerpo, [
+    { texto: "Cancelar", clase: "suave", alHacerClic: cerrarModal },
+    { texto: "Guardar", clase: "", alHacerClic: function () {
+        var cambios = {};
+        if (iT.value.trim() !== texto(c.texto, "")) { cambios.texto = iT.value.trim(); }
+        if (iD.value !== texto(c.descripcion, "")) { cambios.descripcion = iD.value; }
+        if (iA.checked !== !!Number(c.activa)) { cambios.activa = iA.checked ? 1 : 0; }
+        if (!Object.keys(cambios).length) {
+          cerrarModal(); avisar("Sin cambios", "No se modificó nada.", "");
+          return;
+        }
+        api("PUT", "/api/consultas/" + encodeURIComponent(c.id), cambios).then(function () {
+          cerrarModal();
+          avisar("Consulta actualizada", "'" + c.nombre + "'", "ok");
+          cargarConsultas();
+        }).catch(avisarError);
+      } }
+  ]);
+}
+
+function borrarConsulta(c) {
+  /* Los conteos salen del detalle, que los saca con COUNT sobre la base.
+     Antes se pedian hasta 1000 renglones de la bitacora y se media el largo
+     del arreglo: pasando ese tope el dialogo prometia mil ejecuciones y el
+     borrado se llevaba las mil doscientas. Una confirmacion que se queda
+     corta sobre el alcance de un borrado es lo peor que puede hacer esta
+     pantalla, asi que o dice el numero exacto o no dice numero. */
+  api("GET", "/api/consultas/" + encodeURIComponent(c.id))
+    .catch(function () { return null; })
+    .then(function (d) {
+      var nv = conteoDe(d, ["n_vinculos"]);
+      var ne = conteoDe(d, ["n_ejecuciones"]);
+      var lineas = [
+        "Se borra la consulta '" + c.nombre + "'.",
+        "Se borran también " + (nv === null ? "sus" : miles(nv)) +
+          " vínculos consulta-documento y " +
+          (ne === null ? "sus" : miles(ne)) + " ejecuciones de la bitácora.",
+        "Los documentos NO se borran: siguen en la base y conservan sus vínculos " +
+          "con otras consultas.",
+        "Se pierde la trazabilidad de qué corrida trajo esos documentos."
+      ];
+      return confirmar("Borrar consulta", lineas, "Borrar consulta");
+    })
+    .then(function (si) {
+      if (!si) { return; }
+      return api("DELETE", "/api/consultas/" + encodeURIComponent(c.id)).then(function (r) {
+        var b = (r && r.borrados) || {};
+        avisar("Consulta borrada",
+               "Se llevó " + miles(b.vinculos || 0) + " vínculos y " +
+               miles(b.ejecuciones || 0) + " ejecuciones.", "ok");
+        cargarConsultas();
+        cargarPanel();
+        if (yaCargada.bitacora) { cargarEjecuciones(); }
+      });
+    })
+    .catch(avisarError);
+}
+
+/* ======================================================= DOCUMENTOS */
+
+var docs = { pagina: 1, por_pagina: 25, total: 0 };
+
+function cargarAnios() {
+  api("GET", "/api/anios").then(function (anios) {
+    var sel = $("d-anio");
+    var previo = sel.value;
+    vaciar(sel);
+    var o = el("option", null, "todos"); o.value = ""; sel.appendChild(o);
+    (anios || []).forEach(function (a) {
+      var x = el("option", null, String(a)); x.value = String(a); sel.appendChild(x);
+    });
+    if (previo) { sel.value = previo; }
+  }).catch(function () { /* el filtro de anio es opcional; sin el se sigue buscando */ });
+}
+
+function buscarDocumentos(pagina) {
+  docs.pagina = pagina || 1;
+  docs.por_pagina = Number($("d-por-pagina").value) || 25;
+  var tb = $("t-documentos");
+  filaMensaje(tb, 6, "Cargando...", "cargando");
+
+  var q = paramsDe({
+    q: $("d-q").value.trim(),
+    consulta: $("d-consulta").value,
+    anio: $("d-anio").value,
+    abstract: $("d-abstract").value,
+    pagina: docs.pagina,
+    por_pagina: docs.por_pagina
+  });
+
+  api("GET", "/api/documentos" + q).then(function (r) {
+    r = r || {};
+    docs.total = Number(r.total || 0);
+    docs.pagina = Number(r.pagina || docs.pagina);
+    docs.por_pagina = Number(r.por_pagina || docs.por_pagina);
+    $("docs-total").textContent = miles(docs.total) + " documentos";
+    pintarPaginacion(docs, $("docs-pagina"), $("b-docs-antes"), $("b-docs-despues"));
+
+    var filas = r.filas || [];
+    vaciar(tb);
+    if (!filas.length) {
+      filaMensaje(tb, 6, "Ningún documento con esos filtros.");
+      return;
+    }
+    filas.forEach(function (f) {
+      var tr = el("tr");
+      tr.appendChild(el("td", "nw mono", texto(f.pmid)));
+      tr.appendChild(el("td", "nw", texto(f.anio, "-")));
+      tr.appendChild(el("td", null, recortar(texto(f.revista, ""), 40)));
+      var tdT = el("td", "ancha", recortar(texto(f.titulo, "(sin título)"), 160));
+      tdT.title = texto(f.titulo, "");
+      tr.appendChild(tdT);
+      var tdA = el("td", "nw");
+      tdA.appendChild(Number(f.tiene_abstract) ? el("span", "ins ok", "sí")
+                                               : el("span", "ins alerta", "no"));
+      tr.appendChild(tdA);
+
+      var tdAcc = el("td", "nw");
+      var acc = el("div", "acciones");
+      var bV = el("button", "boton suave mini", "Ver");
+      bV.addEventListener("click", function () { verDocumento(f.pmid); });
+      var bE = el("button", "boton suave mini", "Editar");
+      bE.addEventListener("click", function () { editarDocumento(f.pmid); });
+      var bB = el("button", "boton peligro mini", "Borrar");
+      bB.addEventListener("click", function () { borrarDocumento(f.pmid, f.titulo); });
+      acc.appendChild(bV); acc.appendChild(bE); acc.appendChild(bB);
+      tdAcc.appendChild(acc);
+      tr.appendChild(tdAcc);
+      tb.appendChild(tr);
+    });
+  }).catch(function (e) {
+    filaMensaje(tb, 6, "No se pudieron leer los documentos: " + e.message, "fallo");
+    $("docs-total").textContent = "";
+  });
+}
+
+function pintarPaginacion(estado, nodo, antes, despues) {
+  var paginas = Math.max(1, Math.ceil(estado.total / (estado.por_pagina || 1)));
+  nodo.textContent = "Página " + estado.pagina + " de " + paginas;
+  antes.disabled = estado.pagina <= 1;
+  despues.disabled = estado.pagina >= paginas;
+}
+
+$("b-buscar-docs").addEventListener("click", function () { buscarDocumentos(1); });
+$("d-q").addEventListener("keydown", function (ev) {
+  if (ev.key === "Enter") { buscarDocumentos(1); }
+});
+$("d-por-pagina").addEventListener("change", function () { buscarDocumentos(1); });
+$("d-consulta").addEventListener("change", function () { buscarDocumentos(1); });
+$("d-anio").addEventListener("change", function () { buscarDocumentos(1); });
+$("d-abstract").addEventListener("change", function () { buscarDocumentos(1); });
+$("b-limpiar-docs").addEventListener("click", function () {
+  $("d-q").value = ""; $("d-consulta").value = ""; $("d-anio").value = "";
+  $("d-abstract").value = "";
+  buscarDocumentos(1);
+});
+$("b-docs-antes").addEventListener("click", function () { buscarDocumentos(docs.pagina - 1); });
+$("b-docs-despues").addEventListener("click", function () { buscarDocumentos(docs.pagina + 1); });
+
+function bloqueDato(etiqueta, valor) {
+  var d = el("div", "dato");
+  d.appendChild(el("div", "et", etiqueta));
+  d.appendChild(el("div", "va", texto(valor, "-")));
+  return d;
+}
+
+function bloqueLista(etiqueta, valor) {
+  var d = el("div", "dato");
+  d.appendChild(el("div", "et", etiqueta));
+  var lista = valor;
+  if (typeof lista === "string") {
+    // Por si el servidor no alcanzo a deserializar el campo JSON.
+    try { lista = JSON.parse(lista); } catch (e) { lista = lista ? [lista] : []; }
+  }
+  if (!lista || !lista.length) {
+    d.appendChild(el("div", "va", "-"));
+    return d;
+  }
+  var caja = el("div", "fichas");
+  lista.forEach(function (v) { caja.appendChild(el("span", "ficha", String(v))); });
+  d.appendChild(caja);
+  return d;
+}
+
+/* Solo se arma la liga si el identificador tiene la forma esperada. Un valor
+   raro en la base no debe terminar como href ejecutable. */
+function ligaExterna(etiqueta, url) {
+  var a = el("a", "boton suave mini", etiqueta);
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  return a;
+}
+
+function ligasDe(d) {
+  var caja = el("div", "acciones");
+  caja.style.margin = "0 0 14px";
+  if (d.pmid && /^\d+$/.test(String(d.pmid))) {
+    caja.appendChild(ligaExterna("Abrir en PubMed",
+      "https://pubmed.ncbi.nlm.nih.gov/" + encodeURIComponent(String(d.pmid)) + "/"));
+  }
+  if (d.pmcid && /^PMC\d+$/i.test(String(d.pmcid))) {
+    caja.appendChild(ligaExterna("Abrir en PMC",
+      "https://www.ncbi.nlm.nih.gov/pmc/articles/" + encodeURIComponent(String(d.pmcid)) + "/"));
+  }
+  if (d.doi && /^10\.\S+$/.test(String(d.doi))) {
+    caja.appendChild(ligaExterna("Abrir DOI", "https://doi.org/" + encodeURI(String(d.doi))));
+  }
+  return caja.childNodes.length ? caja : null;
+}
+
+function verDocumento(pmid) {
+  api("GET", "/api/documentos/" + encodeURIComponent(pmid)).then(function (d) {
+    d = d || {};
+    var cuerpo = el("div");
+    cuerpo.appendChild(bloqueDato("Título", d.titulo));
+    var ligas = ligasDe(d);
+    if (ligas) { cuerpo.appendChild(ligas); }
+    var meta = el("div", "campos");
+    meta.appendChild(bloqueDato("PMID", d.pmid));
+    meta.appendChild(bloqueDato("PMCID", d.pmcid));
+    meta.appendChild(bloqueDato("DOI", d.doi));
+    meta.appendChild(bloqueDato("Año", d.anio));
+    cuerpo.appendChild(meta);
+    cuerpo.appendChild(bloqueDato("Revista", d.revista));
+    cuerpo.appendChild(bloqueLista("Autores", d.autores));
+    cuerpo.appendChild(bloqueDato("Abstract", d.abstract || "(sin abstract)"));
+    cuerpo.appendChild(bloqueLista("MeSH terms", d.mesh_terms));
+    cuerpo.appendChild(bloqueLista("Keywords", d.keywords));
+    cuerpo.appendChild(bloqueLista("Tipos de publicación", d.tipos_publicacion));
+    cuerpo.appendChild(bloqueDato("Extraído en", fechaCorta(d.extraido_en)));
+    cuerpo.appendChild(el("p", "pista",
+      "Las ligas de arriba salen a internet; si la máquina no tiene salida, no abren. " +
+      "El tablero en sí funciona sin red."));
+
+    abrirModal("Documento " + texto(d.pmid, pmid), cuerpo, [
+      { texto: "Cerrar", clase: "suave", alHacerClic: cerrarModal },
+      { texto: "Editar", clase: "", alHacerClic: function () {
+          cerrarModal(); editarDocumento(pmid);
+        } }
+    ]);
+  }).catch(avisarError);
+}
+
+function editarDocumento(pmid) {
+  api("GET", "/api/documentos/" + encodeURIComponent(pmid)).then(function (d) {
+    d = d || {};
+    var cuerpo = el("div");
+    var entradas = {};
+
+    [["titulo", "Título"], ["revista", "Revista"], ["anio", "Año"],
+     ["doi", "DOI"], ["pmcid", "PMCID"]].forEach(function (par) {
+      var caja = el("div", "campo"); caja.style.marginBottom = "12px";
+      caja.appendChild(el("label", null, par[1]));
+      var i = el("input"); i.type = "text"; i.value = texto(d[par[0]], "");
+      caja.appendChild(i);
+      entradas[par[0]] = i;
+      cuerpo.appendChild(caja);
+    });
+
+    var cajaA = el("div", "campo");
+    cajaA.appendChild(el("label", null, "Abstract"));
+    var ta = el("textarea"); ta.rows = 10; ta.value = texto(d.abstract, "");
+    cajaA.appendChild(ta);
+    entradas.abstract = ta;
+    cuerpo.appendChild(cajaA);
+
+    cuerpo.appendChild(el("p", "pista",
+      "Editar a mano rompe la correspondencia con el registro de PubMed. " +
+      "Queda como fuente de verdad lo que escribas aquí."));
+
+    abrirModal("Editar documento " + texto(d.pmid, pmid), cuerpo, [
+      { texto: "Cancelar", clase: "suave", alHacerClic: cerrarModal },
+      { texto: "Guardar", clase: "", alHacerClic: function () {
+          var cambios = {};
+          Object.keys(entradas).forEach(function (k) {
+            var nuevo = entradas[k].value;
+            if (nuevo !== texto(d[k], "")) { cambios[k] = nuevo; }
+          });
+          if (!Object.keys(cambios).length) {
+            cerrarModal(); avisar("Sin cambios", "No se modificó nada.", "");
+            return;
+          }
+          api("PUT", "/api/documentos/" + encodeURIComponent(pmid), cambios)
+            .then(function () {
+              cerrarModal();
+              avisar("Documento actualizado", "PMID " + pmid, "ok");
+              buscarDocumentos(docs.pagina);
+              cargarPanel();
+            }).catch(avisarError);
+        } }
+    ]);
+  }).catch(avisarError);
+}
+
+/* Saca de un detalle el conteo de lo que se va a borrar con el. Sirve para
+   documentos y para consultas: el detalle puede traer el conteo ya hecho
+   (n_vinculos, n_descargas, n_ejecuciones) o la lista; si no trae ninguno
+   devuelve null y quien llama dice la frase sin numero, en vez de inventar
+   una cifra o quedarse corto. */
+function conteoDe(obj, claves) {
+  if (!obj) { return null; }
+  for (var i = 0; i < claves.length; i++) {
+    var v = obj[claves[i]];
+    if (typeof v === "number") { return v; }
+    if (Array.isArray(v)) { return v.length; }
+  }
+  return null;
+}
+
+function borrarDocumento(pmid, titulo) {
+  api("GET", "/api/documentos/" + encodeURIComponent(pmid))
+    .catch(function () { return null; })
+    .then(function (d) {
+      var nv = conteoDe(d, ["n_vinculos", "vinculos", "consultas"]);
+      var nd = conteoDe(d, ["n_descargas", "descargas"]);
+      var lineas = ["Se borra el documento PMID " + pmid +
+                    (titulo ? ": " + recortar(titulo, 90) : "") + "."];
+      if (nv !== null || nd !== null) {
+        lineas.push("Se borran también " + (nv === null ? "sus" : miles(nv)) +
+                    " vínculos con consultas y " +
+                    (nd === null ? "sus" : miles(nd)) + " registros de descarga.");
+      } else {
+        lineas.push("Se borran también todos sus vínculos con consultas y sus " +
+                    "registros de descarga; el conteo exacto se informa al terminar.");
+      }
+      lineas.push("Los archivos de full text en disco NO se borran: quedan huérfanos " +
+                  "en datos/fulltext.");
+      lineas.push("Se pierde la trazabilidad: el próximo run de una consulta que lo " +
+                  "traiga lo volverá a descargar como si fuera nuevo.");
+      return confirmar("Borrar documento", lineas, "Borrar documento");
+    })
+    .then(function (si) {
+      if (!si) { return; }
+      return api("DELETE", "/api/documentos/" + encodeURIComponent(pmid)).then(function (r) {
+        var b = (r && r.borrados) || {};
+        avisar("Documento borrado",
+               "Se llevó " + miles(b.vinculos || 0) + " vínculos y " +
+               miles(b.descargas || 0) + " descargas.", "ok");
+        buscarDocumentos(docs.pagina);
+        cargarPanel();
+        if (yaCargada.descargas) { buscarDescargas(descargas.pagina); }
+        cargarConsultas(true);
+      });
+    })
+    .catch(avisarError);
+}
+
+/* ======================================================== DESCARGAS */
+
+var descargas = { pagina: 1, por_pagina: 25, total: 0 };
+
+function buscarDescargas(pagina) {
+  descargas.pagina = pagina || 1;
+  descargas.por_pagina = Number($("g-por-pagina").value) || 25;
+  var tb = $("t-descargas");
+  filaMensaje(tb, 9, "Cargando...", "cargando");
+
+  var q = paramsDe({
+    tipo: $("g-tipo").value,
+    estatus: $("g-estatus").value,
+    pagina: descargas.pagina,
+    por_pagina: descargas.por_pagina
+  });
+
+  api("GET", "/api/descargas" + q).then(function (r) {
+    r = r || {};
+    descargas.total = Number(r.total || 0);
+    descargas.pagina = Number(r.pagina || descargas.pagina);
+    descargas.por_pagina = Number(r.por_pagina || descargas.por_pagina);
+    $("descargas-total").textContent = miles(descargas.total) + " registros";
+    pintarPaginacion(descargas, $("descargas-pagina"),
+                     $("b-desc-antes"), $("b-desc-despues"));
+
+    var filas = r.filas || [];
+    vaciar(tb);
+    if (!filas.length) {
+      filaMensaje(tb, 9, "Ningún registro de descarga con esos filtros.");
+      return;
+    }
+    filas.forEach(function (f) {
+      var tr = el("tr");
+      tr.appendChild(el("td", "nw mono", texto(f.pmid)));
+      tr.appendChild(el("td", "nw mono", texto(f.tipo)));
+      var tdE = el("td", "nw");
+      tdE.appendChild(insigniaEstatus(f.estatus));
+      tr.appendChild(tdE);
+      tr.appendChild(el("td", "nw", texto(f.fuente, "-")));
+      tr.appendChild(el("td", "num", tamano(f.bytes)));
+      tr.appendChild(el("td", "num", texto(f.intentos, "-")));
+      tr.appendChild(celdaFecha(f.actualizado_en));
+      var tdN = el("td", "nota", texto(f.nota, ""));
+      if (f.ruta) { tdN.title = String(f.ruta); }
+      tr.appendChild(tdN);
+
+      var tdAcc = el("td", "nw");
+      var bB = el("button", "boton peligro mini", "Borrar");
+      bB.addEventListener("click", function () { borrarDescarga(f); });
+      tdAcc.appendChild(bB);
+      tr.appendChild(tdAcc);
+      tb.appendChild(tr);
+    });
+  }).catch(function (e) {
+    filaMensaje(tb, 9, "No se pudieron leer las descargas: " + e.message, "fallo");
+    $("descargas-total").textContent = "";
+  });
+}
+
+$("b-buscar-descargas").addEventListener("click", function () { buscarDescargas(1); });
+$("g-tipo").addEventListener("change", function () { buscarDescargas(1); });
+$("g-estatus").addEventListener("change", function () { buscarDescargas(1); });
+$("g-por-pagina").addEventListener("change", function () { buscarDescargas(1); });
+$("b-desc-antes").addEventListener("click", function () { buscarDescargas(descargas.pagina - 1); });
+$("b-desc-despues").addEventListener("click", function () { buscarDescargas(descargas.pagina + 1); });
+
+function borrarDescarga(f) {
+  var lineas = [
+    "Se borra el registro de descarga del PMID " + texto(f.pmid) +
+      " (tipo " + texto(f.tipo) + ", estatus " + texto(f.estatus) + ").",
+    "El PMID vuelve a contar como pendiente: el próximo fulltext de ese tipo lo " +
+      "intenta otra vez y gasta una petición.",
+    "El archivo en disco NO se borra" + (f.ruta ? " (" + f.ruta + ")." : "."),
+    "Se pierde la nota que explicaba por qué quedó así."
+  ];
+  confirmar("Borrar registro de descarga", lineas, "Borrar registro").then(function (si) {
+    if (!si) { return; }
+    return api("DELETE", "/api/descargas/" + encodeURIComponent(f.pmid) + "/" +
+                          encodeURIComponent(f.tipo)).then(function () {
+      avisar("Registro borrado",
+             "PMID " + f.pmid + " vuelve a estar pendiente de " + f.tipo + ".", "ok");
+      buscarDescargas(descargas.pagina);
+      cargarPanel();
+    });
+  }).catch(avisarError);
+}
+
+/* ========================================================= BITACORA */
+
+function cargarEjecuciones() {
+  var tb = $("t-ejecuciones");
+  filaMensaje(tb, 10, "Cargando...", "cargando");
+  var q = paramsDe({ nombre: $("e-nombre").value, n: $("e-n").value });
+  api("GET", "/api/ejecuciones" + q).then(function (filas) {
+    filas = filas || [];
+    vaciar(tb);
+    if (!filas.length) {
+      filaMensaje(tb, 10, "Sin ejecuciones registradas.");
+      return;
+    }
+    filas.forEach(function (f) {
+      var tr = el("tr");
+      tr.appendChild(el("td", "num", texto(f.id)));
+      tr.appendChild(el("td", null, texto(f.consulta, "-")));
+      var tdE = el("td", "nw");
+      tdE.appendChild(insigniaEstatus(f.estatus));
+      tr.appendChild(tdE);
+      tr.appendChild(el("td", "num", texto(f.total_pubmed, "-")));
+      tr.appendChild(el("td", "num", texto(f.pmids_nuevos, "-")));
+      tr.appendChild(el("td", "num", texto(f.pmids_previos, "-")));
+      tr.appendChild(el("td", "num", texto(f.descargados, "-")));
+      tr.appendChild(celdaFecha(f.iniciada_en));
+      tr.appendChild(celdaFecha(f.terminada_en));
+      var tdErr = el("td", "nota", texto(f.error, ""));
+      if (f.error) { tdErr.className = "nota fallo"; }
+      tr.appendChild(tdErr);
+      tb.appendChild(tr);
+    });
+  }).catch(function (e) {
+    filaMensaje(tb, 10, "No se pudo leer la bitácora: " + e.message, "fallo");
+  });
+}
+
+$("b-buscar-ejecuciones").addEventListener("click", cargarEjecuciones);
+$("e-nombre").addEventListener("change", cargarEjecuciones);
+
+/* =========================================================== ARRANQUE */
+
+/* Abrir este archivo directamente con doble clic (file://) pinta la pagina
+   completa, pero ningun fetch("/api/...") tiene a donde ir: se veria un
+   tablero encendido y vacio, que parece un tablero descompuesto. Es el
+   error mas facil de cometer, porque el archivo esta ahi a la vista en el
+   editor. Mas vale decirlo que dejar que lo adivine quien lo abra. */
+if (location.protocol === "file:") {
+  var aviso = $("barra-caida");
+  vaciar(aviso);
+  aviso.appendChild(el("strong", null,
+    "Este archivo se abrió directamente, no a través del servidor."));
+  aviso.appendChild(el("div", null,
+    "El tablero necesita el servidor para leer la base. Cierra esta pestaña "
+    + "y corre en una terminal, dentro de la carpeta del proyecto:"));
+  aviso.appendChild(el("pre", "mono", "python servidor.py --abrir"));
+  aviso.appendChild(el("div", null,
+    "Eso abre el tablero en http://127.0.0.1:8765/ , que es de donde sí "
+    + "funciona."));
+  aviso.hidden = false;
+  $("texto-conexion").textContent = "Abierto como archivo";
+  $("punto-conexion").className = "punto caida";
+} else {
+  cargarConsultas(true);
+  cargarPanel();
+  sondearTrabajo();
+  ticker = setInterval(actualizarTiempo, 1000);
+  ajustarSondeo();
+}
+</script>
+
+</body>
+</html>
