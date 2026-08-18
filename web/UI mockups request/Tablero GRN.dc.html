@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/nocturne-c3b4392e-0214-48ff-a438-a5ba98f71b46/styles.css">
+<script src="_ds/nocturne-c3b4392e-0214-48ff-a438-a5ba98f71b46/_ds_bundle.js"></script>
+<style>
+html,body{margin:0;height:100%;background:#0b1a30}
+:root{
+  --color-bg:#0b1a30; --color-surface:#122340; --color-divider:#1e3557;
+  --color-accent:#c8a951; --color-accent-100:#f4e7c4; --color-accent-200:#e9d59d;
+  --color-accent-300:#dcc27b; --color-accent-400:#d2b566; --color-accent-500:#c8a951;
+  --color-accent-600:#a88c3d; --color-accent-800:#4d3f17; --color-accent-900:#332a0f;
+  --color-neutral-200:#dbe3ef; --color-neutral-300:#c2cee1; --color-neutral-400:#9aa9c2;
+  --color-neutral-500:#7c8ca8; --color-neutral-600:#61708b; --color-neutral-800:#1c3053;
+  --color-text:#eef2f8;
+}
+.btn-primary{border-color:#c8a951;color:#e9d59d}
+.btn-primary:hover{background:rgba(200,169,81,.12)}
+.tag-accent{background:#4d3f17;color:#f4e7c4}
+::selection{background:rgba(200,169,81,.28)}
+:focus-visible{outline:2px solid #c8a951;outline-offset:2px}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#2a4469;border-radius:8px}
+::-webkit-scrollbar-track{background:transparent}
+a{color:var(--color-accent)}
+a:hover{color:var(--color-accent-300)}
+</style>
+</helmet>
+
+<div style="display:flex;height:100vh;overflow:hidden;font-family:var(--font-body);color:var(--color-text);background:var(--color-bg)">
+
+  <aside style="width:236px;flex:none;display:flex;flex-direction:column;gap:16.8px;padding:16.8px 11.2px;border-right:1px solid var(--color-divider);background:#081524">
+    <div style="display:flex;align-items:center;gap:10px;padding:0 8px 4px">
+      <svg width="26" height="26" viewBox="0 0 26 26" fill="none" style="flex:none">
+        <circle cx="8" cy="8" r="4" stroke="#c8a951" stroke-width="1.6"></circle>
+        <circle cx="18" cy="18" r="4" stroke="#c8a951" stroke-width="1.6"></circle>
+        <path d="M10.9 10.9 L15.1 15.1" stroke="#c8a951" stroke-width="1.6"></path>
+        <circle cx="18.5" cy="7.5" r="2" fill="#8a7331"></circle>
+      </svg>
+      <div>
+        <div style="font-family:var(--font-heading);font-weight:500;font-size:15px;letter-spacing:-.01em">Tablero GRN</div>
+        <div style="font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--color-neutral-500)">ETL PubMed</div>
+      </div>
+    </div>
+
+    <nav style="display:flex;flex-direction:column;gap:2px">
+      <sc-for list="{{ navItems }}" as="it" hint-placeholder-count="5">
+        <button onClick="{{ it.onClick }}" style="{{ it.style }}">
+          <span style="display:flex;align-items:center;gap:9px;min-width:0">
+            <span style="{{ it.markStyle }}"></span>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ it.label }}</span>
+          </span>
+          <span style="{{ it.countStyle }}">{{ it.count }}</span>
+        </button>
+      </sc-for>
+    </nav>
+
+    <div style="margin-top:auto;display:flex;flex-direction:column;gap:8.4px;padding:11.2px 10px;border-radius:8px;background:#152941;box-shadow:var(--shadow-sm)">
+      <div style="display:flex;align-items:center;gap:8px;font-size:12.5px">
+        <span style="{{ puntoStyle }}"></span>
+        <span style="color:var(--color-neutral-300)">{{ textoConexion }}</span>
+      </div>
+      <div style="font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--color-neutral-600)">127.0.0.1:8765</div>
+      <div style="height:1px;background:var(--color-divider)"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;font-size:11.5px;color:var(--color-neutral-500)">
+        <span>Base local</span><span style="font-family:ui-monospace,Consolas,monospace">grn.sqlite</span>
+      </div>
+    </div>
+  </aside>
+
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden">
+
+    <header style="flex:none;display:flex;align-items:flex-end;justify-content:space-between;gap:16.8px;padding:16.8px 22.4px 14px;border-bottom:1px solid var(--color-divider)">
+      <div style="min-width:0">
+        <h4 style="margin:0 0 2px;font-size:20px">{{ tituloSeccion }}</h4>
+        <p style="margin:0;font-size:12.5px;color:var(--color-neutral-500)">{{ subtituloSeccion }}</p>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex:none">
+        <span style="{{ insTrabajoStyle }}">{{ insTrabajoTexto }}</span>
+        <button class="btn btn-secondary" onClick="{{ refrescar }}">Actualizar</button>
+      </div>
+    </header>
+
+    <sc-if value="{{ sinConexion }}" hint-placeholder-val="{{ false }}">
+      <div style="flex:none;padding:9px 22.4px;font-size:13px;color:#f79a90;background:#33191c;border-bottom:1px solid #6b3a35">
+        Sin respuesta del servidor. Revisa que el proceso siga corriendo en esta máquina (127.0.0.1) y vuelve a intentar.
+      </div>
+    </sc-if>
+
+    <main style="flex:1;overflow:auto;padding:16.8px 22.4px 44px">
+
+      <!-- ─────────────────────────────── PANEL -->
+      <sc-if value="{{ esPanel }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-direction:column;gap:16.8px;max-width:1320px">
+
+          <div style="display:grid;gap:8.4px;grid-template-columns:repeat(auto-fit,minmax(168px,1fr))">
+            <sc-for list="{{ cifras }}" as="c" hint-placeholder-count="5">
+              <div style="padding:12px 14px;border-radius:8px;background:var(--color-surface);box-shadow:var(--shadow-sm)">
+                <div style="font-size:27px;line-height:1.1;font-variant-numeric:tabular-nums;font-family:var(--font-heading);font-weight:500">{{ c.n }}</div>
+                <div style="margin-top:3px;font-size:11.5px;color:var(--color-neutral-500)">{{ c.et }}</div>
+              </div>
+            </sc-for>
+          </div>
+
+          <section style="border-radius:8px;background:var(--color-surface);box-shadow:var(--shadow-sm);overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16.8px;border-bottom:1px solid var(--color-divider)">
+              <div style="display:flex;align-items:center;gap:10px">
+                <h5 style="margin:0;font-size:15px">Trabajo en curso</h5>
+                <span style="{{ insTrabajoStyle }}">{{ insTrabajoTexto }}</span>
+                <span style="font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--color-neutral-500)">{{ tiempoTrabajo }}</span>
+              </div>
+              <span style="font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:var(--color-neutral-600)">{{ paramTrabajo }}</span>
+            </div>
+            <div style="padding:14px 16.8px">
+              <div style="height:236px;overflow:auto;padding:10px 12px;border-radius:8px;background:#08182b;box-shadow:inset 0 0 0 1px #1e3557;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.6">
+                <sc-for list="{{ consola }}" as="ln" hint-placeholder-count="8">
+                  <div style="display:flex;gap:10px">
+                    <span style="color:var(--color-neutral-600);flex:none">{{ ln.hora }}</span>
+                    <span style="{{ ln.style }}">{{ ln.texto }}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:11.2px">
+                <sc-for list="{{ resultado }}" as="r" hint-placeholder-count="4">
+                  <span style="padding:5px 10px;border-radius:6px;font-size:12px;background:#16294a;box-shadow:inset 0 0 0 1px #24406a;color:var(--color-neutral-300)">{{ r.k }} <b style="color:var(--color-text);font-variant-numeric:tabular-nums">{{ r.v }}</b></span>
+                </sc-for>
+              </div>
+            </div>
+          </section>
+
+          <div style="display:grid;gap:16.8px;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));align-items:start">
+
+            <section style="padding:16.8px;border-radius:8px;background:var(--color-surface);box-shadow:var(--shadow-sm)">
+              <h5 style="margin:0 0 3px;font-size:15px">Correr una consulta <span style="color:var(--color-neutral-600);font-family:ui-monospace,Consolas,monospace;font-size:12px">run</span></h5>
+              <p style="margin:0 0 14px;font-size:12px;color:var(--color-neutral-500)">Baja los abstracts que falten.</p>
+              <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr">
+                <div class="field" style="grid-column:1/-1"><label>Consulta</label>
+                  <select class="input"><option>pa_regulacion (1,842)</option><option>pa_quorum_sensing (963)</option><option>pa_biofilm_reg (511)</option></select>
+                </div>
+                <div class="field"><label>Orden</label><select class="input"><option>relevance</option><option>pub_date</option></select></div>
+                <div class="field"><label>Límite</label><input class="input" type="text" placeholder="todos"></div>
+                <div class="field"><label>Desde (año)</label><input class="input" type="text" placeholder="2000"></div>
+                <div class="field"><label>Hasta (año)</label><input class="input" type="text" placeholder="2026"></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:14px">
+                <button class="btn btn-primary">Lanzar corrida</button>
+                <sc-if value="{{ mostrarAyudas }}" hint-placeholder-val="{{ true }}">
+                  <span style="font-size:11.5px;color:var(--color-neutral-600)">Lo que ya está en la base no se vuelve a descargar: solo se liga a esta consulta.</span>
+                </sc-if>
+              </div>
+            </section>
+
+            <section style="padding:16.8px;border-radius:8px;background:var(--color-surface);box-shadow:var(--shadow-sm)">
+              <h5 style="margin:0 0 3px;font-size:15px">Bajar full text <span style="color:var(--color-neutral-600);font-family:ui-monospace,Consolas,monospace;font-size:12px">fulltext</span></h5>
+              <p style="margin:0 0 14px;font-size:12px;color:var(--color-neutral-500)">Corre después del run. Primero xml y luego pdf.</p>
+              <div style="display:grid;gap:10px;grid-template-columns:1fr 1fr">
+                <div class="field"><label>Tipo</label><select class="input"><option>xml (PMC)</option><option>pdf (acceso abierto)</option></select></div>
+                <div class="field"><label>Límite</label><input class="input" type="text" placeholder="todos"></div>
+                <div class="field" style="grid-column:1/-1"><label>Consulta</label><select class="input"><option>todas las consultas</option><option>pa_regulacion (1,842)</option></select></div>
+              </div>
+              <div style="display:flex;gap:16.8px;margin-top:12px;font-size:13px">
+                <label style="display:flex;align-items:center;gap:7px;cursor:pointer"><input type="checkbox" style="accent-color:#c8a951">Reintentar los de error</label>
+                <label style="display:flex;align-items:center;gap:7px;cursor:pointer"><input type="checkbox" style="accent-color:#c8a951">Sin Unpaywall</label>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:14px">
+                <button class="btn btn-primary">Lanzar descarga</button>
+                <sc-if value="{{ mostrarAyudas }}" hint-placeholder-val="{{ true }}">
+                  <span style="font-size:11.5px;color:var(--color-neutral-600)">El JATS de PMC conserva secciones y subíndices de genes.</span>
+                </sc-if>
+              </div>
+            </section>
+          </div>
+
+          <section style="border-radius:8px;background:var(--color-surface);box-shadow:var(--shadow-sm);overflow:hidden">
+            <div style="padding:12px 16.8px;border-bottom:1px solid var(--color-divider)"><h5 style="margin:0;font-size:15px">Descargas de full text</h5></div>
+            <div style="padding:4px 5px 8px">
+              <table class="table">
+                <thead><tr><th style="padding-left:16.8px">Tipo</th><th>Estatus</th><th style="text-align:right;padding-right:16.8px">Artículos</th></tr></thead>
+                <tbody>
+                  <sc-for list="{{ estadoDescargas }}" as="f" hint-placeholder-count="5">
+                    <tr>
+                      <td style="padding-left:16.8px;font-family:ui-monospace,Consolas,monospace">{{ f.tipo }}</td>
+                      <td><span style="{{ f.estatusStyle }}">{{ f.estatus }}</span></td>
+                      <td style="text-align:right;padding-right:16.8px;font-variant-numeric:tabular-nums">{{ f.n }}</td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </sc-if>
+
+      <!-- ─────────────────────────────── CONSULTAS -->
+      <sc-if value="{{ esConsultas }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:16.8px;max-width:1320px">
+          <section style="padding:16.8px;border-radius:8px;background:var(--color-surface);box-shadow:var(--shadow-sm)">
+            <h5 style="margin:0 0 14px;font-size:15px">Nueva consulta</h5>
+            <div style="display:grid;gap:11.2px;grid-template-columns:1fr 1fr">
+              <div class="field"><label>Nombre</label><input class="input" type="text" placeholder="pa_regulacion"></div>
+              <div class="field"><label>Descripción</label><input class="input" type="text" placeholder="opcional"></div>
+              <div class="field" style="grid-column:1/-1"><label>Query booleana</label>
+                <textarea class="input" rows="6" style="font-family:ui-monospace,Consolas,monospace;font-size:13px;line-height:1.6">("Pseudomonas aeruginosa"[MeSH] OR "P. aeruginosa"[tiab]) AND (regulon[tiab] OR "transcriptional regulator"[tiab] OR "gene regulatory network"[tiab])</textarea>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:14px">
+              <button class="btn btn-primary">Guardar consulta</button>
+              <button class="btn btn-secondary">Limpiar</button>
+              <sc-if value="{{ mostrarAyudas }}" hint-placeholder-val="{{ true }}">
+                <span style="font-size:11.5px;color:var(--color-neutral-600);margin-left:6px">Si el nombre ya existe, se actualiza el texto y se conservan los documentos ya vinculados.</span>
+              </sc-if>
+            </div>
+          </section>
+
+          <section style="border-radius:8px;background:var(--color-surface);box-shadow:var(--shadow-sm);overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16.8px;border-bottom:1px solid var(--color-divider)">
+              <h5 style="margin:0;font-size:15px">Consultas registradas</h5>
+              <span style="font-size:12px;color:var(--color-neutral-500)">4 consultas</span>
+            </div>
+            <div style="overflow-x:auto;padding:4px 5px 8px">
+              <table class="table">
+                <thead><tr>
+                  <th style="padding-left:16.8px">Nombre</th><th style="text-align:right">Documentos</th><th>Activa</th>
+                  <th style="white-space:nowrap">Última corrida</th><th>Descripción</th><th>Query</th><th style="padding-right:16.8px">Acciones</th>
+                </tr></thead>
+                <tbody>
+                  <sc-for list="{{ consultas }}" as="c" hint-placeholder-count="4">
+                    <tr>
+                      <td style="padding-left:16.8px;white-space:nowrap;font-family:ui-monospace,Consolas,monospace;font-size:13px">{{ c.nombre }}</td>
+                      <td style="text-align:right;font-variant-numeric:tabular-nums">{{ c.docs }}</td>
+                      <td><span style="{{ c.activaStyle }}">{{ c.activa }}</span></td>
+                      <td style="white-space:nowrap;color:var(--color-neutral-400);font-size:13px">{{ c.ultima }}</td>
+                      <td style="font-size:13px;color:var(--color-neutral-300);max-width:220px">{{ c.descripcion }}</td>
+                      <td style="font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:var(--color-neutral-500);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ c.query }}</td>
+                      <td style="padding-right:16.8px;white-space:nowrap">
+                        <span style="display:flex;gap:6px">
+                          <button class="btn btn-secondary" style="font-size:12.5px;padding:3px 9px">Editar</button>
+                          <button class="btn btn-secondary" style="font-size:12.5px;padding:3px 9px;color:#f79a90;border-color:#593434">Borrar</button>
+                        </span>
+                      </td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </sc-if>
+
+      <!-- ─────────────────────────────── DOCUMENTOS -->
+      <sc-if value="{{ esDocumentos }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:16.8px;max-width:1320px">
+          <section style="padding:14px 16.8px;border-radius:8px;background:var(--color-surface);box-shadow:var(--shadow-sm);display:flex;flex-wrap:wrap;gap:11.2px;align-items:flex-end">
+            <div class="field" style="flex:1 1 260px"><label>Texto (título, abstract, pmid)</label><input class="input" type="search" placeholder="lasR, quorum sensing, 12345678"></div>
+            <div class="field" style="width:180px"><label>Consulta</label><select class="input"><option>todas</option><option>pa_regulacion</option></select></div>
+            <div class="field" style="width:104px"><label>Año</label><select class="input"><option>todos</option><option>2025</option><option>2024</option></select></div>
+            <div class="field" style="width:172px"><label>Abstract</label><select class="input"><option>con y sin</option><option>solo con abstract</option><option>solo sin abstract</option></select></div>
+            <div class="field" style="width:104px"><label>Por página</label><select class="input"><option>25</option><option>50</option><option>100</option></select></div>
+            <button class="btn btn-primary" style="margin-bottom:1px">Buscar</button>
+            <button class="btn btn-secondary" style="margin-bottom:1px">Limpiar</button>
+          </section>
+
+          <section style="border-radius:8px;background:var(--color-surface);box-shadow:var(--shadow-sm);overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16.8px;border-bottom:1px solid var(--color-divider)">
+              <h5 style="margin:0;font-size:15px">Resultados</h5>
+              <span style="font-size:12px;color:var(--color-neutral-500)">2,614 documentos</span>
+            </div>
+            <div style="overflow-x:auto;padding:4px 5px 8px">
+              <table class="table">
+                <thead><tr>
+                  <th style="padding-left:16.8px">PMID</th><th>Año</th><th>Revista</th><th>Título</th><th>Abstract</th><th style="padding-right:16.8px">Acciones</th>
+                </tr></thead>
+                <tbody>
+                  <sc-for list="{{ documentos }}" as="d" hint-placeholder-count="8">
+                    <tr>
+                      <td style="padding-left:16.8px;white-space:nowrap;font-family:ui-monospace,Consolas,monospace;font-size:13px">{{ d.pmid }}</td>
+                      <td style="white-space:nowrap;font-variant-numeric:tabular-nums">{{ d.anio }}</td>
+                      <td style="font-size:13px;color:var(--color-neutral-300);white-space:nowrap">{{ d.revista }}</td>
+                      <td style="min-width:320px;max-width:520px;font-size:13.5px;text-wrap:pretty">{{ d.titulo }}</td>
+                      <td><span style="{{ d.abstractStyle }}">{{ d.abstractTexto }}</span></td>
+                      <td style="padding-right:16.8px;white-space:nowrap">
+                        <span style="display:flex;gap:6px">
+                          <button class="btn btn-secondary" style="font-size:12.5px;padding:3px 9px" onClick="{{ d.ver }}">Ver</button>
+                          <button class="btn btn-secondary" style="font-size:12.5px;padding:3px 9px">Editar</button>
+                          <button class="btn btn-secondary" style="font-size:12.5px;padding:3px 9px;color:#f79a90;border-color:#593434">Borrar</button>
+                        </span>
+                      </td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:11.2px 16.8px;border-top:1px solid var(--color-divider);font-size:12.5px;color:var(--color-neutral-500)">
+              <button class="btn btn-secondary" style="font-size:12.5px;padding:3px 9px">Anterior</button>
+              <span>Página 1 de 105</span>
+              <button class="btn btn-secondary" style="font-size:12.5px;padding:3px 9px">Siguiente</button>
+            </div>
+          </section>
+        </div>
+      </sc-if>
+
+      <!-- ─────────────────────────────── DESCARGAS -->
+      <sc-if value="{{ esDescargas }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:16.8px;max-width:1320px">
+          <section style="padding:14px 16.8px;border-radius:8px;background:var(--color-surface);box-shadow:var(--shadow-sm)">
+            <div style="display:flex;flex-wrap:wrap;gap:11.2px;align-items:flex-end">
+              <div class="field" style="width:172px"><label>Tipo</label><select class="input"><option>xml y pdf</option><option>xml</option><option>pdf</option></select></div>
+              <div class="field" style="width:172px"><label>Estatus</label><select class="input"><option>todos</option><option>ok</option><option>no_disponible</option><option>error</option></select></div>
+              <div class="field" style="width:104px"><label>Por página</label><select class="input"><option>25</option><option>50</option><option>100</option></select></div>
+              <button class="btn btn-primary" style="margin-bottom:1px">Buscar</button>
+            </div>
+            <sc-if value="{{ mostrarAyudas }}" hint-placeholder-val="{{ true }}">
+              <p style="margin:12px 0 0;font-size:11.5px;color:var(--color-neutral-600);max-width:760px">La nota dice por qué algo quedó en "no_disponible" o en "error". Borrar la fila hace que ese PMID vuelva a contar como pendiente; el archivo en disco, si existe, no se toca.</p>
+            </sc-if>
+          </section>
+
+          <section style="border-radius:8px;background:var(--color-surface);box-shadow:var(--shadow-sm);overflow:hidden">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16.8px;border-bottom:1px solid var(--color-divider)">
+              <h5 style="margin:0;font-size:15px">Registro de descargas</h5>
+              <span style="font-size:12px;color:var(--color-neutral-500)">1,187 registros</span>
+            </div>
+            <div style="overflow-x:auto;padding:4px 5px 8px">
+              <table class="table">
+                <thead><tr>
+                  <th style="padding-left:16.8px">PMID</th><th>Tipo</th><th>Estatus</th><th>Fuente</th>
+                  <th style="text-align:right">Tamaño</th><th style="text-align:right">Intentos</th>
+                  <th style="white-space:nowrap">Actualizado</th><th>Nota</th><th style="padding-right:16.8px">Acciones</th>
+                </tr></thead>
+                <tbody>
+                  <sc-for list="{{ descargas }}" as="g" hint-placeholder-count="8">
+                    <tr>
+                      <td style="padding-left:16.8px;white-space:nowrap;font-family:ui-monospace,Consolas,monospace;font-size:13px">{{ g.pmid }}</td>
+                      <td style="font-family:ui-monospace,Consolas,monospace;font-size:13px">{{ g.tipo }}</td>
+                      <td><span style="{{ g.estatusStyle }}">{{ g.estatus }}</span></td>
+                      <td style="font-size:13px;color:var(--color-neutral-300);white-space:nowrap">{{ g.fuente }}</td>
+                      <td style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap">{{ g.tamano }}</td>
+                      <td style="text-align:right;font-variant-numeric:tabular-nums">{{ g.intentos }}</td>
+                      <td style="white-space:nowrap;color:var(--color-neutral-400);font-size:13px">{{ g.actualizado }}</td>
+                      <td style="min-width:200px;max-width:360px;font-size:12.5px;color:var(--color-neutral-500);text-wrap:pretty">{{ g.nota }}</td>
+                      <td style="padding-right:16.8px"><button class="btn btn-secondary" style="font-size:12.5px;padding:3px 9px;color:#f79a90;border-color:#593434">Borrar</button></td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:11.2px 16.8px;border-top:1px solid var(--color-divider);font-size:12.5px;color:var(--color-neutral-500)">
+              <button class="btn btn-secondary" style="font-size:12.5px;padding:3px 9px">Anterior</button>
+              <span>Página 1 de 48</span>
+              <button class="btn btn-secondary" style="font-size:12.5px;padding:3px 9px">Siguiente</button>
+            </div>
+          </section>
+        </div>
+      </sc-if>
+
+      <!-- ─────────────────────────────── BITÁCORA -->
+      <sc-if value="{{ esBitacora }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:16.8px;max-width:1320px">
+          <section style="padding:14px 16.8px;border-radius:8px;background:var(--color-surface);box-shadow:var(--shadow-sm);display:flex;flex-wrap:wrap;gap:11.2px;align-items:flex-end">
+            <div class="field" style="width:200px"><label>Consulta</label><select class="input"><option>todas</option><option>pa_regulacion</option></select></div>
+            <div class="field" style="width:104px"><label>Cuántas</label><input class="input" type="text" value="30"></div>
+            <button class="btn btn-primary" style="margin-bottom:1px">Actualizar</button>
+          </section>
+
+          <section style="border-radius:8px;background:var(--color-surface);box-shadow:var(--shadow-sm);overflow:hidden">
+            <div style="padding:12px 16.8px;border-bottom:1px solid var(--color-divider)"><h5 style="margin:0;font-size:15px">Bitácora de ejecuciones</h5></div>
+            <div style="overflow-x:auto;padding:4px 5px 8px">
+              <table class="table">
+                <thead><tr>
+                  <th style="text-align:right;padding-left:16.8px">ID</th><th>Consulta</th><th>Estatus</th>
+                  <th style="text-align:right">PubMed</th><th style="text-align:right">Nuevos</th><th style="text-align:right">Previos</th><th style="text-align:right">Bajados</th>
+                  <th style="white-space:nowrap">Iniciada</th><th style="white-space:nowrap">Terminada</th><th style="padding-right:16.8px">Error</th>
+                </tr></thead>
+                <tbody>
+                  <sc-for list="{{ ejecuciones }}" as="e" hint-placeholder-count="6">
+                    <tr>
+                      <td style="text-align:right;padding-left:16.8px;font-variant-numeric:tabular-nums;color:var(--color-neutral-500)">{{ e.id }}</td>
+                      <td style="font-family:ui-monospace,Consolas,monospace;font-size:13px;white-space:nowrap">{{ e.consulta }}</td>
+                      <td><span style="{{ e.estatusStyle }}">{{ e.estatus }}</span></td>
+                      <td style="text-align:right;font-variant-numeric:tabular-nums">{{ e.pubmed }}</td>
+                      <td style="text-align:right;font-variant-numeric:tabular-nums">{{ e.nuevos }}</td>
+                      <td style="text-align:right;font-variant-numeric:tabular-nums">{{ e.previos }}</td>
+                      <td style="text-align:right;font-variant-numeric:tabular-nums">{{ e.bajados }}</td>
+                      <td style="white-space:nowrap;color:var(--color-neutral-400);font-size:13px">{{ e.iniciada }}</td>
+                      <td style="white-space:nowrap;color:var(--color-neutral-400);font-size:13px">{{ e.terminada }}</td>
+                      <td style="padding-right:16.8px;min-width:160px;font-size:12.5px;color:#f79a90">{{ e.error }}</td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </sc-if>
+
+    </main>
+  </div>
+
+  <!-- ─────────────────────────────── MODAL DOCUMENTO -->
+  <sc-if value="{{ docAbierto }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto;background:color-mix(in srgb,#04101d 70%,transparent)" onClick="{{ cerrarDoc }}">
+      <div style="width:min(760px,100%);border-radius:14px;background:var(--color-surface);box-shadow:var(--shadow-lg)" onClick="{{ noCerrar }}">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:16.8px 22.4px 12px;border-bottom:1px solid var(--color-divider)">
+          <div>
+            <div style="font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent)">Documento · PMID {{ doc.pmid }}</div>
+            <h5 style="margin:5px 0 0;font-size:18px;line-height:1.3;text-wrap:pretty">{{ doc.titulo }}</h5>
+          </div>
+          <button class="btn btn-secondary" style="flex:none" onClick="{{ cerrarDoc }}">Cerrar</button>
+        </div>
+
+        <div style="padding:16.8px 22.4px;max-height:64vh;overflow:auto">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16.8px">
+            <a class="btn btn-primary" href="https://pubmed.ncbi.nlm.nih.gov/" target="_blank" rel="noopener noreferrer">Abrir en PubMed</a>
+            <a class="btn btn-secondary" href="https://www.ncbi.nlm.nih.gov/pmc/" target="_blank" rel="noopener noreferrer">Abrir en PMC</a>
+            <a class="btn btn-secondary" href="https://doi.org/" target="_blank" rel="noopener noreferrer">Abrir DOI</a>
+          </div>
+
+          <div style="display:grid;gap:11.2px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));padding:11.2px 14px;border-radius:8px;background:#16294a;margin-bottom:16.8px">
+            <sc-for list="{{ docMeta }}" as="m" hint-placeholder-count="4">
+              <div>
+                <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-500)">{{ m.et }}</div>
+                <div style="margin-top:2px;font-family:ui-monospace,Consolas,monospace;font-size:13px">{{ m.va }}</div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="margin-bottom:14px">
+            <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-500);margin-bottom:4px">Revista</div>
+            <div style="font-size:14px">{{ doc.revista }}</div>
+          </div>
+
+          <div style="margin-bottom:14px">
+            <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-500);margin-bottom:5px">Autores</div>
+            <div style="display:flex;flex-wrap:wrap;gap:5px">
+              <sc-for list="{{ doc.autores }}" as="a" hint-placeholder-count="5">
+                <span class="tag tag-neutral">{{ a }}</span>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="margin-bottom:14px">
+            <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-500);margin-bottom:4px">Abstract</div>
+            <p style="margin:0;font-size:14px;line-height:1.65;color:var(--color-neutral-200);text-wrap:pretty">{{ doc.abstract }}</p>
+          </div>
+
+          <div style="margin-bottom:14px">
+            <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-500);margin-bottom:5px">MeSH terms</div>
+            <div style="display:flex;flex-wrap:wrap;gap:5px">
+              <sc-for list="{{ doc.mesh }}" as="m" hint-placeholder-count="4">
+                <span class="tag tag-accent">{{ m }}</span>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="margin-bottom:14px">
+            <div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-500);margin-bottom:5px">Keywords</div>
+            <div style="display:flex;flex-wrap:wrap;gap:5px">
+              <sc-for list="{{ doc.keywords }}" as="k" hint-placeholder-count="4">
+                <span class="tag tag-outline">{{ k }}</span>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="display:flex;justify-content:space-between;gap:12px;padding-top:12px;border-top:1px solid var(--color-divider);font-size:11.5px;color:var(--color-neutral-600)">
+            <span>Extraído en {{ doc.extraido }}</span>
+            <span>Las ligas salen a internet; el tablero en sí funciona sin red.</span>
+          </div>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 22.4px;border-top:1px solid var(--color-divider)">
+          <button class="btn btn-secondary" onClick="{{ cerrarDoc }}">Cerrar</button>
+          <button class="btn btn-primary">Editar documento</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;estadoServidor&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;conectado&quot;,&quot;sin conexión&quot;],&quot;default&quot;:&quot;conectado&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Estado&quot;},&quot;trabajoActivo&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Estado&quot;},&quot;mostrarAyudas&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Contenido&quot;}}">
+const PILL = "display:inline-flex;align-items:center;padding:2px 9px;border-radius:6px;font-size:11.5px;letter-spacing:.02em;white-space:nowrap;";
+const EST = {
+  ok: PILL + "background:#123b28;color:#7fd3a1",
+  no_disponible: PILL + "background:#3d3312;color:#e8c579",
+  error: PILL + "background:#43201c;color:#f0968c",
+  corriendo: PILL + "background:var(--color-accent-800);color:var(--color-accent-100)",
+  gris: PILL + "background:var(--color-neutral-800);color:var(--color-neutral-200)"
+};
+const est = s => EST[s] || EST.gris;
+
+const SECCIONES = [
+  { id: "panel", label: "Panel", count: "", titulo: "Panel", sub: "Estado de la base y trabajo en curso" },
+  { id: "consultas", label: "Consultas", count: "4", titulo: "Consultas", sub: "Queries booleanas registradas contra PubMed" },
+  { id: "documentos", label: "Documentos", count: "2,614", titulo: "Documentos", sub: "Registros únicos extraídos de PubMed" },
+  { id: "descargas", label: "Descargas", count: "1,187", titulo: "Descargas", sub: "Registro de full text: xml de PMC y pdf de acceso abierto" },
+  { id: "bitacora", label: "Bitácora", count: "30", titulo: "Bitácora", sub: "Historial de ejecuciones por consulta" }
+];
+
+const DOCS = [
+  { pmid: "39218447", anio: "2025", revista: "Nucleic Acids Res", titulo: "Global mapping of the LasR regulon reveals condition-dependent promoter occupancy in Pseudomonas aeruginosa", abs: 1 },
+  { pmid: "39104512", anio: "2025", revista: "mBio", titulo: "RhlR-dependent control of rhamnolipid biosynthesis under iron limitation", abs: 1 },
+  { pmid: "38977301", anio: "2024", revista: "J Bacteriol", titulo: "AmrZ binds the pel operon promoter and represses biofilm matrix production", abs: 1 },
+  { pmid: "38812066", anio: "2024", revista: "PLoS Pathog", titulo: "A two-component system links c-di-GMP signalling to type VI secretion", abs: 0 },
+  { pmid: "38644190", anio: "2024", revista: "Environ Microbiol", titulo: "Transcriptomic reconstruction of the anaerobic nitrate regulatory network", abs: 1 },
+  { pmid: "38401755", anio: "2023", revista: "Cell Rep", titulo: "Quorum sensing heterogeneity across clonal populations of P. aeruginosa PAO1", abs: 1 },
+  { pmid: "38220914", anio: "2023", revista: "Front Microbiol", titulo: "Comparative analysis of sigma factor binding sites in clinical isolates", abs: 0 },
+  { pmid: "37995028", anio: "2023", revista: "Microbiol Spectr", titulo: "MexT-mediated efflux regulation and its crosstalk with the quorum sensing cascade", abs: 1 }
+];
+
+class Component extends DCLogic {
+  state = { tab: "panel", doc: null };
+
+  renderVals() {
+    const p = this.props;
+    const conectado = (p.estadoServidor ?? "conectado") === "conectado";
+    const activo = p.trabajoActivo ?? true;
+    const tab = this.state.tab;
+    const sec = SECCIONES.find(s => s.id === tab) || SECCIONES[0];
+
+    const navItems = SECCIONES.map(s => {
+      const on = s.id === tab;
+      return {
+        label: s.label, count: s.count,
+        onClick: () => this.setState({ tab: s.id }),
+        style: "display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:7px 10px;border:0;border-radius:8px;cursor:pointer;font:inherit;font-size:13.5px;text-align:left;" +
+          (on ? "background:#16294a;color:var(--color-accent-200);box-shadow:inset 0 0 0 1px var(--color-accent-800);"
+              : "background:transparent;color:var(--color-neutral-400);"),
+        markStyle: "width:3px;height:14px;border-radius:2px;flex:none;background:" + (on ? "var(--color-accent)" : "transparent"),
+        countStyle: "font-size:11px;font-variant-numeric:tabular-nums;color:" + (on ? "var(--color-accent-400)" : "var(--color-neutral-600)")
+      };
+    });
+
+    const consola = [
+      ["20:11:02", "run 'pa_regulacion' — orden=relevance límite=todos", 0],
+      ["20:11:03", "esearch: 1,842 PMIDs en PubMed", 0],
+      ["20:11:05", "1,331 ya en la base, 511 nuevos por bajar", 0],
+      ["20:11:06", "efetch lote 1/6 (100 registros)", 0],
+      ["20:11:12", "efetch lote 2/6 (100 registros)", 0],
+      ["20:11:19", "efetch lote 3/6 (100 registros)", 0],
+      ["20:11:24", "aviso: 3 registros sin abstract, se guardan igual", 1],
+      ["20:11:25", "efetch lote 4/6 (100 registros)", 0]
+    ].map(l => ({ hora: l[0], texto: l[1], style: l[2] ? "color:#f0c368" : "color:var(--color-neutral-200)" }));
+
+    return {
+      navItems,
+      tituloSeccion: sec.titulo,
+      subtituloSeccion: sec.sub,
+      esPanel: tab === "panel", esConsultas: tab === "consultas", esDocumentos: tab === "documentos",
+      esDescargas: tab === "descargas", esBitacora: tab === "bitacora",
+      mostrarAyudas: p.mostrarAyudas ?? true,
+      sinConexion: !conectado,
+      textoConexion: conectado ? "Servidor conectado" : "Sin conexión",
+      puntoStyle: "width:8px;height:8px;border-radius:50%;flex:none;background:" + (conectado ? "#6ed99b" : "#f79a90") +
+        ";box-shadow:0 0 0 3px " + (conectado ? "rgba(110,217,155,.14)" : "rgba(247,154,144,.14)"),
+      insTrabajoStyle: activo ? est("corriendo") : est("gris"),
+      insTrabajoTexto: activo ? "corriendo: run" : "sin trabajo",
+      tiempoTrabajo: activo ? "corriendo 3:41" : "",
+      paramTrabajo: activo ? "nombre=pa_regulacion   orden=relevance   límite=" : "",
+      refrescar: () => this.forceUpdate(),
+
+      cifras: [
+        { n: "4", et: "Consultas" }, { n: "2,614", et: "Documentos únicos" },
+        { n: "2,388", et: "Con abstract" }, { n: "226", et: "Sin abstract" },
+        { n: "3,317", et: "Vínculos consulta-documento" }
+      ],
+      consola,
+      resultado: activo
+        ? [{ k: "nuevos:", v: "511" }, { k: "bajados:", v: "400" }, { k: "previos:", v: "1,331" }]
+        : [{ k: "nuevos:", v: "511" }, { k: "bajados:", v: "511" }, { k: "previos:", v: "1,331" }, { k: "duración:", v: "6:02" }],
+      estadoDescargas: [
+        { tipo: "xml", estatus: "ok", n: "742", estatusStyle: est("ok") },
+        { tipo: "xml", estatus: "no_disponible", n: "168", estatusStyle: est("no_disponible") },
+        { tipo: "xml", estatus: "error", n: "11", estatusStyle: est("error") },
+        { tipo: "pdf", estatus: "ok", n: "231", estatusStyle: est("ok") },
+        { tipo: "pdf", estatus: "no_disponible", n: "35", estatusStyle: est("no_disponible") }
+      ],
+
+      consultas: [
+        { nombre: "pa_regulacion", docs: "1,842", activa: "sí", activaStyle: est("ok"), ultima: "17/08/2026 20:11", descripcion: "Red de regulación transcripcional de P. aeruginosa", query: '("Pseudomonas aeruginosa"[MeSH] OR "P. aeruginosa"[tiab]) AND (regulon[tiab] OR...' },
+        { nombre: "pa_quorum_sensing", docs: "963", activa: "sí", activaStyle: est("ok"), ultima: "15/08/2026 09:24", descripcion: "Circuitos las/rhl/pqs", query: '("Pseudomonas aeruginosa"[MeSH]) AND ("quorum sensing"[MeSH] OR lasR[tiab] OR...' },
+        { nombre: "pa_biofilm_reg", docs: "511", activa: "sí", activaStyle: est("ok"), ultima: "11/08/2026 18:02", descripcion: "Reguladores de matriz y biopelícula", query: '("Pseudomonas aeruginosa"[tiab]) AND (biofilm[MeSH] AND (amrZ OR pel OR psl))...' },
+        { nombre: "pa_sigma_factores", docs: "204", activa: "no", activaStyle: est("gris"), ultima: "02/07/2026 12:47", descripcion: "Borrador: factores sigma alternativos", query: '("Pseudomonas aeruginosa"[tiab]) AND ("sigma factor"[tiab] OR rpoS OR algU)...' }
+      ],
+
+      documentos: DOCS.map(d => ({
+        pmid: d.pmid, anio: d.anio, revista: d.revista, titulo: d.titulo,
+        abstractTexto: d.abs ? "sí" : "no",
+        abstractStyle: d.abs ? est("ok") : est("no_disponible"),
+        ver: () => this.setState({ doc: d })
+      })),
+
+      descargas: [
+        { pmid: "39218447", tipo: "xml", estatus: "ok", fuente: "PMC", tamano: "412 KB", intentos: "1", actualizado: "17/08/2026 20:09", nota: "", estatusStyle: est("ok") },
+        { pmid: "39104512", tipo: "xml", estatus: "ok", fuente: "PMC", tamano: "298 KB", intentos: "1", actualizado: "17/08/2026 20:08", nota: "", estatusStyle: est("ok") },
+        { pmid: "38977301", tipo: "pdf", estatus: "ok", fuente: "Unpaywall", tamano: "1.8 MB", intentos: "2", actualizado: "17/08/2026 19:58", nota: "primer intento cortado por timeout", estatusStyle: est("ok") },
+        { pmid: "38812066", tipo: "xml", estatus: "no_disponible", fuente: "-", tamano: "-", intentos: "1", actualizado: "17/08/2026 19:51", nota: "sin PMCID: el artículo no está depositado en PMC", estatusStyle: est("no_disponible") },
+        { pmid: "38644190", tipo: "pdf", estatus: "no_disponible", fuente: "Unpaywall", tamano: "-", intentos: "1", actualizado: "17/08/2026 19:47", nota: "sin versión de acceso abierto registrada", estatusStyle: est("no_disponible") },
+        { pmid: "38401755", tipo: "xml", estatus: "error", fuente: "PMC", tamano: "-", intentos: "3", actualizado: "17/08/2026 19:40", nota: "HTTP 429: límite de peticiones de NCBI, reintentar más tarde", estatusStyle: est("error") },
+        { pmid: "38220914", tipo: "pdf", estatus: "error", fuente: "Unpaywall", tamano: "-", intentos: "2", actualizado: "17/08/2026 19:33", nota: "respuesta no es PDF (HTML de portal editorial)", estatusStyle: est("error") },
+        { pmid: "37995028", tipo: "xml", estatus: "ok", fuente: "PMC", tamano: "377 KB", intentos: "1", actualizado: "17/08/2026 19:28", nota: "", estatusStyle: est("ok") }
+      ],
+
+      ejecuciones: [
+        { id: "142", consulta: "pa_regulacion", estatus: "corriendo", pubmed: "1,842", nuevos: "511", previos: "1,331", bajados: "400", iniciada: "17/08/2026 20:11", terminada: "-", error: "", estatusStyle: est("corriendo") },
+        { id: "141", consulta: "pa_quorum_sensing", estatus: "ok", pubmed: "963", nuevos: "88", previos: "875", bajados: "88", iniciada: "15/08/2026 09:24", terminada: "15/08/2026 09:31", error: "", estatusStyle: est("ok") },
+        { id: "140", consulta: "pa_biofilm_reg", estatus: "ok", pubmed: "511", nuevos: "34", previos: "477", bajados: "34", iniciada: "11/08/2026 18:02", terminada: "11/08/2026 18:06", error: "", estatusStyle: est("ok") },
+        { id: "139", consulta: "pa_regulacion", estatus: "error", pubmed: "1,830", nuevos: "12", previos: "1,818", bajados: "4", iniciada: "09/08/2026 22:15", terminada: "09/08/2026 22:19", error: "HTTP 429 de eutils tras 3 reintentos", estatusStyle: est("error") },
+        { id: "138", consulta: "pa_sigma_factores", estatus: "ok", pubmed: "204", nuevos: "204", previos: "0", bajados: "204", iniciada: "02/07/2026 12:47", terminada: "02/07/2026 13:02", error: "", estatusStyle: est("ok") },
+        { id: "137", consulta: "pa_quorum_sensing", estatus: "ok", pubmed: "875", nuevos: "61", previos: "814", bajados: "61", iniciada: "28/06/2026 10:03", terminada: "28/06/2026 10:09", error: "", estatusStyle: est("ok") }
+      ],
+
+      docAbierto: !!this.state.doc,
+      cerrarDoc: () => this.setState({ doc: null }),
+      noCerrar: (ev) => ev.stopPropagation(),
+      doc: this.state.doc ? {
+        pmid: this.state.doc.pmid,
+        titulo: this.state.doc.titulo,
+        revista: this.state.doc.revista + " · " + this.state.doc.anio,
+        abstract: this.state.doc.abs
+          ? "Transcription factor occupancy was mapped across growth conditions by ChIP-seq and paired RNA-seq in Pseudomonas aeruginosa PAO1. Binding at the target promoters shifted with cell density and iron availability, and a subset of sites was occupied only in stationary phase. The resulting network reconstruction assigns 214 genes to the regulon, 63 of them not previously reported."
+          : "(sin abstract)",
+        autores: ["Rivera-Salgado M", "Okafor C", "Lindqvist A", "Tanaka H", "Bermúdez J", "Whitfield E"],
+        mesh: ["Pseudomonas aeruginosa", "Gene Expression Regulation, Bacterial", "Trans-Activators", "Quorum Sensing", "Promoter Regions, Genetic"],
+        keywords: ["lasR", "regulon", "ChIP-seq", "PAO1"],
+        extraido: "17/08/2026 20:12"
+      } : {},
+      docMeta: this.state.doc ? [
+        { et: "PMID", va: this.state.doc.pmid },
+        { et: "PMCID", va: "PMC11284" + this.state.doc.pmid.slice(-3) },
+        { et: "DOI", va: "10.1093/nar/gkae" + this.state.doc.pmid.slice(-3) },
+        { et: "Año", va: this.state.doc.anio }
+      ] : []
+    };
+  }
+}
+
+</script>
+</body>
+</html>

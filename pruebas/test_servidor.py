@@ -754,3 +754,40 @@ class PruebasTrabajoConBase(PruebaSinRed):
         escritos = sorted(p.name for p in (Path(self.salida) / "xml").iterdir())
         self.assertEqual(escritos, ["111_PMC1.txt", "111_PMC1.xml"])
         self.assertFalse(Path("C:/no/debe/usarse").exists())
+
+
+class PruebasLogo(BasePruebaServidor):
+    """El logo institucional se sirve como archivo, no incrustado.
+
+    Es el segundo y ultimo archivo de la lista blanca. Lo que importa
+    probar no es que se sirva, sino que agregarlo no haya abierto la
+    puerta al resto del directorio: ahi viven .key, la base y el codigo.
+    """
+
+    def test_el_logo_se_sirve_con_su_tipo(self):
+        codigo, cuerpo = servidor.manejar("GET", "/logo.png", {}, None, self.ctx)
+
+        self.assertEqual(codigo, 200)
+        self.assertEqual(cuerpo.tipo_mime, "image/png")
+        self.assertTrue(cuerpo.ruta.exists(), "el archivo del logo no esta")
+
+    def test_el_logo_solo_se_sirve_por_GET(self):
+        for metodo in ("POST", "PUT", "DELETE"):
+            codigo, _ = servidor.manejar(metodo, "/logo.png", {}, None, self.ctx)
+            self.assertEqual(codigo, 404, metodo)
+
+    def test_la_lista_blanca_es_de_dos_y_por_igualdad_exacta(self):
+        """Un prefijo o una variante de mayusculas no debe colarse: si la
+        comparacion fuera por 'empieza con', /logo.png/../.key entraria."""
+        for ruta in ("/logo.PNG", "/logo.png/../.key", "/logo.png.key",
+                     "/web/logo.png", "/logo.png%00.key", "/servidor.py"):
+            codigo, _ = servidor.manejar("GET", ruta, {}, None, self.ctx)
+            self.assertEqual(codigo, 404, ruta)
+
+    def test_la_pagina_apunta_al_logo_servido_y_no_a_un_archivo_local(self):
+        """Si el src fuera relativo al disco, el tablero se veria bien al
+        abrirlo como archivo y roto al servirlo, que es al reves de como
+        se usa."""
+        html = servidor.RUTA_PAGINA.read_text(encoding="utf-8")
+
+        self.assertIn('src="/logo.png"', html)

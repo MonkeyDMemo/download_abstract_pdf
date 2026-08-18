@@ -9,51 +9,56 @@
    internet. Todo el CSS y el JavaScript viven en este archivo, por la misma
    razon por la que el Python es solo libreria estandar. */
 
-:root {
-  --fondo: #eef2f7;
-  --panel: #ffffff;
-  --panel2: #f7f9fc;
-  --borde: #d3dbe6;
-  --borde2: #e6ecf3;
-  --texto: #16202e;
-  --tenue: #5b6b80;
-  --acento: #1a5cab;
-  --acento2: #e6effa;
-  --ok: #16713d;
-  --ok2: #e0f2e7;
-  --alerta: #855200;
-  --alerta2: #fbf0d6;
-  --malo: #ad2318;
-  --malo2: #fbe5e2;
-  --consola-fondo: #131a26;
-  --consola-texto: #d5e2f2;
-  --consola-hora: #7f93ad;
-  --radio: 8px;
-  --sombra: 0 1px 2px rgba(16, 30, 54, .06), 0 4px 12px rgba(16, 30, 54, .05);
-}
+/* Paleta Nocturne: fondo azul-gris casi neutro, un solo acento blurple usado
+   como linea y resplandor, nunca como relleno grande. Los valores salen de
+   web/UI mockups request/_ds/.../styles.css, que es la hoja de referencia
+   del diseno; aqui viven copiados porque el tablero es un solo archivo.
+   No se importa la tipografia Inter que aquella hoja pide: vendria de un CDN
+   y la maquina de laboratorio puede no tener salida a internet. El propio
+   token la declara con respaldo del sistema, y eso es lo que se usa.
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --fondo: #10151d;
-    --panel: #182130;
-    --panel2: #141c28;
-    --borde: #2b3849;
-    --borde2: #232f3f;
-    --texto: #e6edf6;
-    --tenue: #9aabc0;
-    --acento: #6ba7f0;
-    --acento2: #1d2c42;
-    --ok: #6ed99b;
-    --ok2: #16301f;
-    --alerta: #f0c368;
-    --alerta2: #33280f;
-    --malo: #f79a90;
-    --malo2: #3a1d19;
-    --sombra: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 14px rgba(0, 0, 0, .25);
-  }
+   Es oscuro por decision de diseno, no por preferencia del sistema, asi que
+   no hay bloque de prefers-color-scheme: seria pintar dos tableros. */
+:root {
+  --fondo: #161826;          /* color-bg */
+  --panel: #232532;          /* color-surface */
+  --panel2: #1c1e2b;         /* un escalon entre el fondo y la superficie */
+  --borde: #3f424d;          /* neutral-800 */
+  --borde2: #292b31;         /* neutral-900 */
+  --texto: #e9e9ed;          /* color-text */
+  --tenue: #9397ab;          /* neutral-500 */
+  --acento: #9184d9;         /* color-accent */
+  --acento2: #2b2741;        /* accent-900, para rellenos tenidos */
+
+  /* Los estatus son informacion, no decoracion: son los tres colores que
+     se salen del esquema mono. Se eligieron a la misma claridad que el
+     acento para que no griten al lado suyo. */
+  --ok: #7ddba4;
+  --ok2: #1a3326;
+  --alerta: #e8c37a;
+  --alerta2: #352c14;
+  --malo: #f0a09a;
+  --malo2: #3b201e;
+
+  --consola-fondo: #12131d;
+  --consola-texto: #cfd3e5;  /* neutral-300 */
+  --consola-hora: #75798c;   /* neutral-600 */
+
+  --radio: 8px;              /* radius-md */
+  --radio-sm: 4px;
+  --radio-lg: 14px;
+  /* En fondo oscuro la elevacion es un filo mas oscuridad ambiental, no una
+     sombra suave: shadow-md de la hoja de referencia. */
+  --sombra: 0 0 0 1px #595d6c, 0 6px 18px rgba(0, 0, 0, .55);
 }
 
 * { box-sizing: border-box; }
+
+/* Estados tematizados, nunca los del navegador: el anillo azul por
+   omision no existe en esta paleta. */
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+::selection { background: color-mix(in srgb, var(--acento) 35%, transparent); }
 
 html, body { margin: 0; padding: 0; }
 
@@ -81,19 +86,16 @@ p { margin: 0; }
   background: var(--panel);
   border-bottom: 1px solid var(--borde);
 }
-.marca { display: flex; align-items: center; gap: 12px; }
+.marca { display: flex; align-items: center; gap: 14px; }
+/* El logo institucional lo sirve servidor.py en /logo.png. No va incrustado
+   en base64 porque son 109 KB que en el archivo se vuelven 145 KB de texto,
+   y este archivo se edita a mano. Se sirve desde la misma lista blanca que
+   index.html, asi que la regla de no exponer el directorio sigue intacta.
+   La altura manda y el ancho se ajusta solo: el PNG es apaisado. */
 .logo {
-  width: 30px; height: 30px; flex: 0 0 30px; border-radius: 7px;
-  background: var(--acento);
-  position: relative;
+  height: 34px; width: auto; flex: 0 0 auto;
+  display: block;
 }
-/* Icono dibujado con CSS: dos nodos y una arista, la figura del dominio.
-   Nada de archivos de imagen ni de iconos externos. */
-.logo::before, .logo::after {
-  content: ""; position: absolute; border-radius: 50%; background: #fff;
-}
-.logo::before { width: 8px; height: 8px; top: 6px; left: 6px; }
-.logo::after { width: 8px; height: 8px; bottom: 6px; right: 6px; }
 .sub { font-size: 12.5px; color: var(--tenue); }
 
 .conexion { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--tenue); }
@@ -103,7 +105,7 @@ p { margin: 0; }
 
 .barra-caida pre {
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-  background: rgba(0,0,0,.07); border-radius: 6px;
+  background: rgba(255, 255, 255, .07); border-radius: var(--radio-sm);
   padding: 8px 12px; margin: 8px 0; font-weight: 700;
   overflow-x: auto; white-space: pre;
 }
@@ -231,18 +233,27 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); ou
 .marca-campo input { width: auto; }
 .pista { font-size: 12px; color: var(--tenue); margin-top: 8px; }
 
+/* Delineados, no rellenos. Es la regla del diseno: el acento se usa como
+   linea, no como superficie. En fondo oscuro ademas se lee mejor, porque un
+   boton relleno de acento a tamano de interfaz compite con el contenido. */
 .boton {
   appearance: none; display: inline-block; font: inherit; font-size: 13.5px;
-  font-weight: 650; text-decoration: none;
-  padding: 8px 14px; border-radius: 6px; cursor: pointer;
-  background: var(--acento); color: #fff; border: 1px solid var(--acento);
+  font-weight: 600; text-decoration: none;
+  padding: 8px 14px; border-radius: var(--radio-sm); cursor: pointer;
+  background: transparent; color: var(--acento);
+  border: 1px solid var(--acento);
   white-space: nowrap;
+  transition: background-color .12s ease, border-color .12s ease;
 }
-.boton:hover { filter: brightness(1.08); }
-.boton:disabled { opacity: .5; cursor: not-allowed; filter: none; }
-.boton.suave { background: var(--panel); color: var(--texto); border-color: var(--borde); }
-.boton.suave:hover { background: var(--panel2); }
-.boton.peligro { background: var(--malo); border-color: var(--malo); color: #fff; }
+.boton:hover { background: color-mix(in srgb, var(--acento) 14%, transparent); }
+.boton:active { background: color-mix(in srgb, var(--acento) 24%, transparent); }
+.boton:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+.boton:disabled { opacity: .45; cursor: not-allowed; background: transparent; }
+.boton.suave { color: var(--texto); border-color: var(--borde); }
+.boton.suave:hover { background: color-mix(in srgb, var(--texto) 9%, transparent); }
+.boton.peligro { color: var(--malo); border-color: var(--malo); }
+.boton.peligro:hover { background: color-mix(in srgb, var(--malo) 15%, transparent); }
+.boton.peligro:focus-visible { outline-color: var(--malo); }
 .boton.mini { padding: 4px 9px; font-size: 12.5px; }
 .acciones { display: flex; gap: 6px; flex-wrap: wrap; }
 
@@ -289,13 +300,14 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); ou
 
 .capa {
   position: fixed; inset: 0; z-index: 100;
-  background: rgba(12, 20, 33, .55);
+  background: rgba(0, 0, 0, .66);
   display: flex; align-items: flex-start; justify-content: center;
   padding: 24px 16px; overflow: auto;
 }
 .capa[hidden] { display: none; }
 .modal {
-  background: var(--panel); border-radius: 10px; box-shadow: 0 12px 40px rgba(0, 0, 0, .3);
+  background: var(--panel); border-radius: var(--radio-lg);
+  box-shadow: 0 0 0 1px #9397ab, 0 16px 40px rgba(0, 0, 0, .65);
   width: min(760px, 100%); max-width: 100%;
   border: 1px solid var(--borde);
 }
@@ -327,7 +339,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); ou
 
 <header class="cabecera">
   <div class="marca">
-    <span class="logo" aria-hidden="true"></span>
+    <img class="logo" src="/logo.png"
+         alt="Universidad Nacional Autónoma de México · IIMAS">
     <div>
       <h1>Tablero GRN</h1>
       <p class="sub">ETL de literatura de PubMed para la red de regulación de P. aeruginosa</p>

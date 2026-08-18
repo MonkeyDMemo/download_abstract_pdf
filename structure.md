@@ -10,6 +10,16 @@ servidor.py            tablero HTTP local (127.0.0.1); hermano de cli.py
 web/
   index.html           el tablero entero en un archivo: HTML, CSS y JS sin
                        dependencias ni CDN. Se sirve desde servidor.py
+  cropped-cropped-LogoUNAM_IIMAS_Color.png
+                       el escudo del encabezado; servidor.py lo sirve en
+                       /logo.png. Es el segundo y ultimo archivo que sale
+                       por HTTP: la lista blanca compara por igualdad
+                       exacta, no por prefijo
+  UI mockups request/  la referencia visual del tablero (sistema Nocturne).
+                       NO se sirve ni se ejecuta: es un lienzo de diseno y
+                       carga React e Inter desde CDN. Vive aqui porque la
+                       herramienta de diseno espera esta disposicion de
+                       carpetas; los tokens estan copiados a index.html
 grn_etl/
   __init__.py
   db.py                esquema SQLite y todo el SQL

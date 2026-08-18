@@ -42,6 +42,8 @@ from grn_etl import db, etl, pubmed, trabajos
 # contra __file__ y no contra el directorio de trabajo: asi 'python
 # servidor.py' funciona igual desde donde sea.
 RUTA_PAGINA = Path(__file__).resolve().parent / "web" / "index.html"
+RUTA_LOGO = (Path(__file__).resolve().parent / "web"
+             / "cropped-cropped-LogoUNAM_IIMAS_Color.png")
 
 PUERTO_POR_OMISION = 8765
 SALIDA_POR_OMISION = "datos/fulltext"
@@ -114,6 +116,10 @@ class Archivo:
 
 
 PAGINA = Archivo(RUTA_PAGINA, "text/html; charset=utf-8")
+# El escudo de la UNAM y del IIMAS, en el encabezado del tablero. Se sirve
+# como archivo y no incrustado en el HTML porque en base64 creceria a 145 KB
+# dentro de un archivo que se edita a mano.
+LOGO = Archivo(RUTA_LOGO, "image/png")
 
 
 class ErrorPeticion(Exception):
@@ -486,10 +492,20 @@ def _rutear(metodo, ruta, params, cuerpo, ctx):
         # nada de la peticion, asi que no hay '..' que sirva de nada.
         return 200, PAGINA
 
+    if partes == ["logo.png"]:
+        if metodo != "GET":
+            _no_encontrado(metodo, ruta)
+        return 200, LOGO
+
     if partes[0] != "api":
         # Cualquier otra cosa es 404 a proposito. Servir el directorio del
         # proyecto (SimpleHTTPRequestHandler y parecidos) expondria .key,
         # datos/ y el codigo entero a quien abra el navegador.
+        #
+        # Los archivos que si se sirven son una lista blanca de dos, cada uno
+        # comparado por igualdad exacta contra su propia ruta fija. No hay
+        # concatenacion con nada que venga de la peticion, asi que no existe
+        # un '..' ni un %2e%2e que lleve a otro archivo.
         _no_encontrado(metodo, ruta)
 
     recurso = partes[1] if len(partes) > 1 else ""
