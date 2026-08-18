@@ -711,3 +711,62 @@ class PruebasEjecucionYAnios(BasePruebaTablero):
 
     def test_una_base_vacia_devuelve_lista_vacia(self):
         self.assertEqual(db.anios_disponibles(self.con), [])
+
+
+class PruebasPendientesBiblioteca(BasePruebaTablero):
+    """La lista que alguien lleva a la biblioteca.
+
+    No es la misma que la del clasificador: un articulo con PDF ya esta
+    resuelto para un humano aunque siga sin servir de insumo al pipeline.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.cid, _ = db.alta_consulta(self.con, "pa", "q")
+        db.guardar_documentos(self.con, [
+            {"pmid": "111", "anio": "2020", "titulo": "Con XML"},
+            {"pmid": "222", "anio": "2019", "titulo": "Solo PDF"},
+            {"pmid": "333", "anio": "2018", "titulo": "Con nada"},
+        ])
+        db.vincular(self.con, self.cid, ["111", "222", "333"])
+        db.registrar_descarga(self.con, "111", "xml", "ok", ruta="/x.txt")
+        db.registrar_descarga(self.con, "222", "pdf", "ok", ruta="/x.pdf")
+        db.registrar_descarga(self.con, "333", "pdf", "no_disponible",
+                              nota="el editor nego el acceso",
+                              url="https://editor.com/333")
+
+    def pmids(self, **kw):
+        return [f["pmid"] for f in db.pendientes_biblioteca(self.con, **kw)]
+
+    def test_un_documento_con_xml_no_es_pendiente(self):
+        self.assertNotIn("111", self.pmids())
+
+    def test_un_documento_con_pdf_tampoco_es_pendiente(self):
+        """Antes el filtro miraba solo el XML, asi que un articulo con PDF
+        ya bajado seguia saliendo en la lista de la biblioteca."""
+        self.assertNotIn("222", self.pmids())
+
+    def test_el_que_no_tiene_nada_si_es_pendiente(self):
+        self.assertEqual(self.pmids(), ["333"])
+
+    def test_viaja_la_razon_y_la_liga_del_ultimo_intento(self):
+        """Sin la nota, quien lleva el CSV no sabe si el articulo no existe
+        abierto o si el editor lo bloqueo, que se piden distinto."""
+        fila = db.pendientes_biblioteca(self.con)[0]
+
+        self.assertEqual(fila["nota"], "el editor nego el acceso")
+        self.assertEqual(fila["url_intentada"], "https://editor.com/333")
+
+    def test_se_puede_acotar_a_una_consulta(self):
+        otra, _ = db.alta_consulta(self.con, "otra", "q2")
+        db.guardar_documentos(self.con, [{"pmid": "444", "anio": "2017"}])
+        db.vincular(self.con, otra, ["444"])
+
+        self.assertEqual(self.pmids(nombre="otra"), ["444"])
+        self.assertNotIn("444", self.pmids(nombre="pa"))
+
+    def test_un_documento_en_dos_consultas_no_se_duplica(self):
+        otra, _ = db.alta_consulta(self.con, "otra", "q2")
+        db.vincular(self.con, otra, ["333"])
+
+        self.assertEqual(self.pmids().count("333"), 1)

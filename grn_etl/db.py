@@ -669,21 +669,60 @@ def pendientes_descarga(con, tipo, nombre=None, limite=None, reintentar=False):
     # la condicion de arriba la que decide. Filtrar aqui por estatus dejaria
     # los 'error' fuera del join, o sea pendientes en cada corrida, y haria
     # imposible que se cumpla la condicion de reintentar.
-    sql = f"""SELECT DISTINCT d.pmid, d.doi, d.pmcid, d.titulo
+    sql = f"""SELECT DISTINCT d.pmid, d.doi, d.pmcid, d.titulo,
+                     (otro.pmid IS NOT NULL) AS ya_hay_texto
                 FROM documentos d
                 JOIN consulta_documento cd ON cd.pmid = d.pmid
                 JOIN consultas c ON c.id = cd.consulta_id
                 LEFT JOIN descargas dz
                        ON dz.pmid = d.pmid AND dz.tipo = ?
+                LEFT JOIN descargas otro
+                       ON otro.pmid = d.pmid AND otro.tipo <> ?
+                      AND otro.estatus = 'ok'
                WHERE {condicion}"""
-    params = [tipo]
+    params = [tipo, tipo]
     if nombre:
         sql += " AND c.nombre = ?"
         params.append(nombre)
-    sql += " ORDER BY d.anio DESC, d.pmid"
+    # Primero lo que no tiene texto de ninguna forma. Sin esto la etapa de
+    # PDF gasta sus primeras horas en articulos que ya estan en XML, que es
+    # el formato mejor: el orden por anio los pone adelante porque lo
+    # reciente es lo que mas cubre el subset abierto de PMC. Nada se
+    # excluye, solo se atiende primero lo que de verdad falta.
+    sql += " ORDER BY ya_hay_texto, d.anio DESC, d.pmid"
     if limite:
         sql += " LIMIT ?"
         params.append(limite)
+    return con.execute(sql, params).fetchall()
+
+
+def pendientes_biblioteca(con, nombre=None):
+    """Documentos sin full text de NINGUN tipo, con lo que se intento.
+
+    Es la lista que alguien lleva a la biblioteca. Se exige que falten
+    los dos formatos: un articulo con PDF ya esta resuelto para un
+    humano, aunque siga sin servir de insumo al clasificador. Son dos
+    listas distintas y conviene no confundirlas; la del clasificador es
+    'descargas WHERE tipo = xml AND estatus = ok'.
+
+    La 'nota' y la 'url' del ultimo intento viajan con cada fila: son la
+    diferencia entre "no existe copia abierta" y "el editor nos nego el
+    acceso", y entre las dos cambia lo que hay que pedir.
+    """
+    sql = """SELECT d.pmid, d.doi, d.anio, d.revista, d.titulo, d.pmcid,
+                    dz.nota AS nota, dz.url AS url_intentada
+               FROM documentos d
+               JOIN consulta_documento cd ON cd.pmid = d.pmid
+               JOIN consultas c ON c.id = cd.consulta_id
+               LEFT JOIN descargas ok ON ok.pmid = d.pmid
+                    AND ok.estatus = 'ok'
+               LEFT JOIN descargas dz ON dz.pmid = d.pmid AND dz.tipo = 'pdf'
+              WHERE ok.pmid IS NULL"""
+    params = []
+    if nombre:
+        sql += " AND c.nombre = ?"
+        params.append(nombre)
+    sql += " GROUP BY d.pmid ORDER BY d.anio DESC, d.pmid"
     return con.execute(sql, params).fetchall()
 
 

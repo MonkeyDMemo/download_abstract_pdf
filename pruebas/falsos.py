@@ -144,6 +144,29 @@ def oa_error_xml():
             b"no esta en el subset abierto</error></OA>")
 
 
+def epmc_json(pmcid, url=None, estilo="pdf", codigo="OA", sitio="Europe_PMC"):
+    """Respuesta de busqueda de Europe PMC con una liga de texto completo.
+
+    Los valores por omision son los de un articulo abierto alojado en
+    Europe PMC, que es el unico caso que liga_pdf_europepmc acepta.
+    Cambiando 'sitio' o 'codigo' se prueban los que debe descartar.
+    """
+    url = url or f"https://europepmc.org/articles/{pmcid}?pdf=render"
+    return {"resultList": {"result": [{
+        "pmcid": pmcid,
+        "fullTextUrlList": {"fullTextUrl": [
+            {"documentStyle": estilo, "site": sitio,
+             "availabilityCode": codigo, "url": url},
+        ]},
+    }]}}
+
+
+def epmc_vacio():
+    """Lo que contesta Europe PMC cuando no tiene el articulo: 200 con la
+    lista vacia. NO es lo mismo que no contestar."""
+    return {"resultList": {"result": []}}
+
+
 PDF_VALIDO = b"%PDF-1.7\n1 0 obj\n<< >>\nendobj\ntrailer\n%%EOF\n"
 
 
@@ -161,7 +184,8 @@ class ClienteFalso:
 
     def __init__(self, universo=None, universos=None, articulos=None,
                  xml_pmc=None, mapa_ids=None, oa=None, unpaywall=None,
-                 cuerpos=None, fallas=None, email="prueba@unam.mx",
+                 cuerpos=None, fallas=None, europepmc=None,
+                 email="prueba@unam.mx",
                  tool="grn-etl-prueba"):
         self.universo = list(universo) if universo else None
         self.universos = universos or {}
@@ -171,6 +195,7 @@ class ClienteFalso:
         self.oa = oa or {}
         self.unpaywall = unpaywall or {}
         self.cuerpos = cuerpos or {}
+        self.europepmc = europepmc or {}
         self.fallas = fallas or {}
         self.email = email
         self.tool = tool
@@ -219,8 +244,16 @@ class ClienteFalso:
             return self._efetch_pubmed(params)
         raise AssertionError(f"endpoint no previsto en la prueba: {endpoint}")
 
-    def get(self, url, params=None, intentos=4, pausa=None, tolerar_404=True):
+    def get(self, url, params=None, intentos=4, pausa=None,
+            definitivos=pubmed.HTTP_DEFINITIVOS):
         self.llamadas.append(("get", url, dict(params or {})))
+
+        # 'fallas' por URL simula el servicio que no contesta. Hace falta
+        # ahora que None significa "contesto que no": sin esto no habria
+        # forma declarativa de probar la otra mitad del contrato.
+        falla = self.fallas.get(url)
+        if falla:
+            raise falla
 
         if url == pubmed.IDCONV:
             pedidos = (params or {}).get("ids", "").split(",")
@@ -233,6 +266,15 @@ class ClienteFalso:
 
         if url == pubmed.OA_SERVICE:
             return self.oa.get((params or {}).get("id"))
+
+        if url == pubmed.EPMC:
+            # Por omision contesta "no lo tengo" con una lista vacia, no
+            # None: un PMCID desconocido es una respuesta valida, y asi
+            # las pruebas de PDF que ya existian siguen significando lo
+            # mismo sin tener que declarar este canal.
+            pmcid = (params or {}).get("query", "").replace("PMCID:", "")
+            return json.dumps(
+                self.europepmc.get(pmcid) or epmc_vacio()).encode()
 
         if url.startswith(pubmed.UNPAYWALL):
             # El DOI trae diagonales, que quote() no escapa: se corta por

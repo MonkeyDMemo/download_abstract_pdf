@@ -74,8 +74,7 @@ Seis reglas que no se rompen:
 
 1. **Solo `db.py` escribe SQL.** Si otra capa necesita una consulta nueva, se
    agrega una funcion en `db.py`. Nunca un `con.execute()` en `etl.py`,
-   `servidor.py` ni `trabajos.py`. (Queda una violacion viva en `cli.py`,
-   anotada en la deuda.)
+   `servidor.py`, `cli.py` ni `trabajos.py`. Ya no queda ninguna excepcion.
 2. **`pubmed.py` no conoce la base.** Recibe parametros, devuelve
    diccionarios. No importa `db`. Eso la hace probable sin red.
 3. **`etl.py` no imprime.** Recibe un callable `log`. Default: funcion vacia.
@@ -153,7 +152,7 @@ columnas. El XML alimenta al clasificador; el PDF es para lectura humana.
 python3 -m unittest discover        # desde la raiz del proyecto
 ```
 
-263 pruebas con `unittest` de la estandar, en `pruebas/`. No tocan la red: se inyecta
+300 pruebas con `unittest` de la estandar, en `pruebas/`. No tocan la red: se inyecta
 `pruebas.falsos.ClienteFalso`, que devuelve XML o JSON fijo y registra cada
 llamada. Ademas `PruebaSinRed` deja `urlopen` inutilizable, asi que una
 prueba que arme un `Cliente` de verdad falla en vez de salir a NCBI.
@@ -169,6 +168,7 @@ que la segunda no llama a `efetch`
 | NCBI E-utilities | `esearch`, `efetch` de PubMed y PMC | 3 req/s sin key, 10 con |
 | PMC ID Converter | PMID a PMCID/DOI | 200 IDs por peticion |
 | PMC OA Service | localizar PDF del subset abierto | sin limite documentado |
+| Europe PMC | localizar PDF de articulos de PMC fuera del subset abierto | sin limite documentado |
 | Unpaywall | localizar PDF abierto por DOI | 100k/dia, exige correo |
 
 Las queries booleanas van por **POST**, nunca GET: rebasan los 700 caracteres.
@@ -178,9 +178,14 @@ reintentar. HTTP 404 de Unpaywall es DOI no registrado, devolver `None`. Los
 fallos de un articulo no abortan el lote; se registran en `descargas` con
 estatus `error`.
 
-Solo se descarga lo que PMC y Unpaywall exponen legalmente. No implementar
-nada que evada muros de pago. Lo que no es abierto se exporta como lista de
-pendientes.
+Solo se descarga lo que PMC, Europe PMC y Unpaywall exponen legalmente, y en
+el caso de Europe PMC se respeta su campo `availabilityCode`: no se adivina.
+No implementar nada que evada muros de pago ni controles de acceso, y eso
+incluye un navegador headless para pasar los desafios de las editoriales: es
+dependencia y es evasion. La via formal para contenido con suscripcion es el
+acceso institucional de la UNAM y, para Elsevier, su API de TDM con clave
+institucional. Lo que no es abierto se exporta como lista de pendientes con su
+liga, para pedirlo por biblioteca.
 
 ## Dominio
 
@@ -209,18 +214,12 @@ donde se use.
    mientras el ETL escribe), no dos escritores de verdad. La migracion a
    Postgres toca solo `db.py`. No migrar antes de tiempo: con un solo escritor
    SQLite basta.
-3. **El 403 de los editores se reintenta cuatro veces por articulo.**
-   `Cliente.get()` solo trata 404 y 422 como definitivos; todo lo demas entra
-   al retroceso exponencial. Un editor que responde 403 a los robots lo va a
-   responder igual las cuatro veces, asi que cada articulo cerrado cuesta
-   cuatro peticiones y hasta 14 segundos de espera. En la etapa de PDF, que es
-   donde se sale a los sitios de las editoriales, eso es la mayor parte del
-   tiempo de corrida. Arreglo: sumar 401, 403 y 451 a los codigos definitivos.
-4. **`cli.py::cmd_export` tiene un `con.execute()` crudo.** Es el unico SQL
-   que quedo fuera de `db.py`: la consulta de `--pendientes`, que hace su
-   propio `LEFT JOIN` contra `descargas`. Debe pasar a una funcion de `db.py`
-   (el tablero va a necesitar la misma lista) y, mientras siga ahi, la
-   migracion a Postgres no toca solo `db.py` como dice el punto 2.
+3. **El PDF no alimenta al clasificador.** De los articulos que estan en PMC
+   fuera del subset abierto no existe texto legible por maquina en ninguna
+   parte: lo que se obtiene son PDFs para lectura humana. Re-parsearlos no es
+   opcion (pediria una dependencia, y el propio JATS existe justamente porque
+   un PDF re-parseado pierde subindices de genes y entrelaza columnas). O sea
+   que el corpus del clasificador solo crece con `fulltext --tipo xml`.
 
 ## Pendientes de la auditoria contra la documentacion de NCBI
 
@@ -267,6 +266,22 @@ articulo, 180 IDs por llamada al ID Converter). Lo que quedo abierto:
    paginacion sino la descarga local de MEDLINE/PubMed.
 
 ## Deuda resuelta
+
+**El 403 de los editores costaba cuatro peticiones y 14 segundos por
+articulo.** `Cliente.get()` ahora trata 401, 403, 404, 422 y 451 como
+definitivos: una peticion y cero espera. Y como parte del mismo cambio, `get()`
+lanza `ErrorPubMed` al agotar los intentos en vez de devolver `None`, para que
+el contrato sea el mismo en todas las capas: **`None` = el servidor contesto y
+la respuesta es no; excepcion = no pude preguntar.** Sin eso, tratar el 403
+como `no_disponible` habria hecho que un corte de red marcara un lote entero
+como permanentemente inaccesible.
+
+**`cli.py::cmd_export` ya no tiene SQL crudo.** La consulta de `--pendientes`
+paso a `db.pendientes_biblioteca()`, que ademas corrige el filtro (antes solo
+miraba el XML, asi que un articulo con PDF ya bajado seguia saliendo en la
+lista) y agrega la nota y la liga del ultimo intento. Ya no queda SQL fuera de
+`db.py`.
+
 
 **Corridas largas no caben en una peticion HTTP.** Lo resolvio
 `trabajos.Gestor`: `POST /api/trabajo` lanza la funcion en un hilo daemon,

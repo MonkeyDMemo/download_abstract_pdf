@@ -89,6 +89,7 @@ escribir API keys, correos personales ni credenciales en ninguno de los dos.
 | NCBI E-utilities | `esearch`, `efetch` de PubMed y PMC | 3 req/s sin key, 10 con key |
 | PMC ID Converter | PMID a PMCID/DOI | hasta 200 IDs por peticion |
 | PMC OA Service | localizar PDF del subset abierto | sin limite documentado |
+| Europe PMC | localizar PDF de articulos de PMC fuera del subset abierto | sin limite documentado |
 | Unpaywall | localizar PDF abierto por DOI | 100k/dia, exige correo |
 
 Las queries booleanas van por **POST**, nunca GET: las consultas del proyecto

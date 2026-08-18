@@ -181,37 +181,95 @@ def _bajar_xml(cliente, con, base, pmid, pmcid, log, prefijo):
     return "ok"
 
 
-def _bajar_pdf(cliente, con, base, pmid, pmcid, doi, usar_unpaywall, log, prefijo):
-    url, fuente = None, ""
+def _fuentes_pdf(cliente, pmcid, doi, usar_unpaywall, fallas):
+    """Genera (fuente, url) de PDF, en orden de rendimiento medido.
+
+    Es generador a proposito: cada fuente se consulta solo si ninguna
+    anterior entrego un PDF que se pudiera bajar. Para los articulos que
+    resuelve Europe PMC eso son cientos de peticiones a Unpaywall que no
+    se hacen.
+
+    Una fuente que no pudo contestar se anota en 'fallas' y no produce
+    URL. Quien llama necesita esa lista para no escribir 'no_disponible'
+    cuando en realidad nadie contesto.
+    """
     if pmcid:
-        url = pubmed.liga_pdf_pmc(cliente, pmcid)
-        fuente = "PMC OA" if url else ""
-    if not url and usar_unpaywall and doi:
-        url, repo = pubmed.liga_pdf_unpaywall(cliente, doi, cliente.email)
-        fuente = f"Unpaywall{' / ' + repo if repo else ''}" if url else ""
+        try:
+            url = pubmed.liga_pdf_pmc(cliente, pmcid)
+            if url:
+                yield "PMC OA", url
+        except pubmed.ErrorPubMed as e:
+            fallas.append(f"PMC OA: {e}")
 
-    if not url:
-        db.registrar_descarga(con, pmid, "pdf", "no_disponible",
-                              nota="sin PDF de acceso abierto",
-                              url=(pubmed.url_articulo_pmc(pmcid)
-                                   or pubmed.url_articulo_pubmed(pmid)))
-        log(f"{prefijo} sin PDF abierto")
-        return "no_disponible"
+        # Solo con PMCID. Medido sobre los que no estan en PMC: 0 de 18
+        # ofrecen PDF. Preguntar por ellos son cientos de peticiones a EBI
+        # por corrida a cambio de nada.
+        try:
+            url = pubmed.liga_pdf_europepmc(cliente, pmcid)
+            if url:
+                yield "Europe PMC", url
+        except pubmed.ErrorPubMed as e:
+            fallas.append(f"Europe PMC: {e}")
 
-    datos = cliente.get(url)
-    # Verificar la firma: muchos servidores responden HTML de error con 200
-    if not datos or datos[:4] != b"%PDF":
-        # Se guarda la liga que fallo, no una generica: sin ella no hay
-        # forma de saber a que editor hay que ir ni que se intento.
-        db.registrar_descarga(con, pmid, "pdf", "error", fuente=fuente,
-                              nota="la liga no devolvio un PDF valido",
-                              url=url)
-        log(f"{prefijo} la liga no dio PDF")
+    if usar_unpaywall and doi:
+        try:
+            url, repo = pubmed.liga_pdf_unpaywall(cliente, doi, cliente.email)
+            if url:
+                yield f"Unpaywall{' / ' + repo if repo else ''}", url
+        except pubmed.ErrorPubMed as e:
+            fallas.append(f"Unpaywall: {e}")
+
+
+def _bajar_pdf(cliente, con, base, pmid, pmcid, doi, usar_unpaywall, log, prefijo):
+    """Recorre las fuentes bajando en cada una, no solo resolviendo.
+
+    Antes se tomaba la primera liga que apareciera y, si fallaba, el
+    articulo moria ahi. Eso perdia PDFs que si existian: para un articulo
+    de PMC fuera del subset abierto, Unpaywall suele devolver la liga del
+    editor, que contesta 403; si esa URL ganaba la carrera, Europe PMC no
+    se consultaba nunca.
+    """
+    fallas = []
+    ultima = None
+
+    for fuente, url in _fuentes_pdf(cliente, pmcid, doi, usar_unpaywall, fallas):
+        ultima = url
+        try:
+            datos = cliente.get(url)
+        except pubmed.ErrorPubMed as e:
+            fallas.append(f"{fuente}: {e}")
+            continue
+
+        # Verificar la firma: muchos servidores responden HTML de error
+        # con 200, y un muro de pago se ve igual que un articulo.
+        if datos and datos[:4] == b"%PDF":
+            ruta = base / f"{pmid}.pdf"
+            ruta.write_bytes(datos)
+            db.registrar_descarga(con, pmid, "pdf", "ok", fuente=fuente,
+                                  ruta=str(ruta), tam=len(datos), url=url)
+            log(f"{prefijo} PDF {len(datos) / 1024:.0f} KB ({fuente})")
+            return "ok"
+
+        log(f"{prefijo} {fuente} no dio PDF, sigo")
+
+    # Si alguien no contesto, el articulo NO puede quedar como
+    # 'no_disponible': ese estatus no se reintenta nunca. La regla es la
+    # misma de siempre ("no hay" contra "no pude preguntar"), aplicada a
+    # una cadena en vez de a una sola funcion.
+    if fallas:
+        db.registrar_descarga(con, pmid, "pdf", "error",
+                              nota="; ".join(fallas)[:300],
+                              url=ultima or pubmed.url_articulo_pmc(pmcid)
+                                  or pubmed.url_articulo_pubmed(pmid))
+        log(f"{prefijo} error: {fallas[0]}")
         return "error"
 
-    ruta = base / f"{pmid}.pdf"
-    ruta.write_bytes(datos)
-    db.registrar_descarga(con, pmid, "pdf", "ok", fuente=fuente,
-                          ruta=str(ruta), tam=len(datos), url=url)
-    log(f"{prefijo} PDF {len(datos) / 1024:.0f} KB ({fuente})")
-    return "ok"
+    # Todas contestaron y ninguna tiene el PDF abierto. Se guarda la
+    # ultima liga intentada: es la que alguien va a abrir a mano.
+    nota = ("la liga no devolvio un PDF" if ultima
+            else "sin PDF de acceso abierto")
+    db.registrar_descarga(con, pmid, "pdf", "no_disponible", nota=nota,
+                          url=ultima or pubmed.url_articulo_pmc(pmcid)
+                              or pubmed.url_articulo_pubmed(pmid))
+    log(f"{prefijo} sin PDF abierto")
+    return "no_disponible"

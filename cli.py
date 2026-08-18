@@ -161,18 +161,7 @@ ENCABEZADOS = {
 
 def cmd_export(con, args):
     if args.pendientes:
-        filas = con.execute(
-            """SELECT DISTINCT d.pmid, d.doi, d.anio, d.revista, d.titulo,
-                      d.pmcid
-                 FROM documentos d
-                 JOIN consulta_documento cd ON cd.pmid = d.pmid
-                 JOIN consultas c ON c.id = cd.consulta_id
-                 LEFT JOIN descargas dz ON dz.pmid = d.pmid
-                       AND dz.tipo = 'xml' AND dz.estatus = 'ok'
-                WHERE dz.pmid IS NULL AND (? IS NULL OR c.nombre = ?)
-                ORDER BY d.anio DESC""",
-            (args.nombre, args.nombre),
-        ).fetchall()
+        filas = db.pendientes_biblioteca(con, args.nombre)
         ruta = Path(args.salida or "salidas/pendientes_biblioteca.csv")
         ruta.parent.mkdir(parents=True, exist_ok=True)
         with open(ruta, "w", encoding="utf-8", newline="") as f:
@@ -180,14 +169,18 @@ def cmd_export(con, args):
             # url_pmc va primero de las tres ligas: cuando existe, es la que
             # lleva al texto completo legible. Las otras dos llevan a la
             # ficha o al editor, que es donde hay que pedirlo o pagarlo.
+            # 'nota' dice por que no se pudo, que es lo que decide si hay
+            # que pedirlo por prestamo interbibliotecario o solo abrirlo.
             w.writerow(["pmid", "doi", "año", "revista", "título",
-                        "url_pmc", "url_pubmed", "url_doi"])
+                        "url_pmc", "url_pubmed", "url_doi",
+                        "por_qué_no_se_pudo", "última_liga_intentada"])
             for r in filas:
                 w.writerow([r["pmid"], r["doi"], r["anio"], r["revista"],
                             r["titulo"],
                             pubmed.url_articulo_pmc(r["pmcid"]),
                             pubmed.url_articulo_pubmed(r["pmid"]),
-                            f"https://doi.org/{r['doi']}" if r["doi"] else ""])
+                            f"https://doi.org/{r['doi']}" if r["doi"] else "",
+                            r["nota"] or "", r["url_intentada"] or ""])
         log(f"{len(filas)} sin full text -> {ruta}")
         return
 

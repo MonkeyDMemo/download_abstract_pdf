@@ -21,7 +21,19 @@ EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 IDCONV = "https://pmc.ncbi.nlm.nih.gov/tools/idconv/api/v1/articles/"
 OA_SERVICE = "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi"
 UNPAYWALL = "https://api.unpaywall.org/v2"
+EPMC = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
 TOOL = "grn-etl"
+
+# Codigos donde el servidor contesto y la respuesta es no. Reintentarlos no
+# cambia nada y cuesta hasta 14 segundos por articulo.
+#   401  hace falta suscripcion
+#   403  el editor no atiende clientes automaticos. Medido: journals.asm.org,
+#        academic.oup.com, onlinelibrary.wiley.com y www.genetics.org lo
+#        contestan, y lo contestarian igual las cuatro veces.
+#   404  no existe (o el DOI no esta registrado en Unpaywall)
+#   422  peticion mal formada
+#   451  bloqueado por razones legales
+HTTP_DEFINITIVOS = (401, 403, 404, 422, 451)
 
 
 class ErrorPubMed(RuntimeError):
@@ -87,8 +99,20 @@ class Cliente:
                     raise ErrorPubMed(f"{endpoint} fallo tras {intentos} intentos: {e}")
                 time.sleep(min(2 ** i, 30))
 
-    def get(self, url, params=None, intentos=4, pausa=None, tolerar_404=True):
-        """GET generico. Devuelve bytes o None si no se pudo."""
+    def get(self, url, params=None, intentos=4, pausa=None,
+            definitivos=HTTP_DEFINITIVOS):
+        """GET generico.
+
+        Devuelve bytes, o None si el servidor contesto que no. Si NO se
+        pudo preguntar (transporte caido, 5xx tras agotar los intentos)
+        lanza ErrorPubMed.
+
+        Es el mismo contrato que las funciones liga_pdf_*, y no es un
+        capricho de simetria: quien llama traduce None a 'no_disponible',
+        que por diseno no se reintenta nunca. Si un corte de red se
+        colara como None, un lote entero quedaria marcado como sin acceso
+        abierto de forma permanente.
+        """
         if params:
             url = f"{url}?{urllib.parse.urlencode(params)}"
         for i in range(1, intentos + 1):
@@ -96,16 +120,19 @@ class Cliente:
             try:
                 return self._abrir(url)
             except urllib.error.HTTPError as e:
-                if e.code in (404, 422) and tolerar_404:
+                if e.code in definitivos:
                     return None
                 if i == intentos:
-                    return None
+                    raise ErrorPubMed(
+                        f"{url.split('?')[0]} fallo tras {intentos} "
+                        f"intentos: HTTP {e.code}")
                 time.sleep(min(2 ** i, 20))
-            except Exception:
+            except Exception as e:
                 if i == intentos:
-                    return None
+                    raise ErrorPubMed(
+                        f"{url.split('?')[0]} fallo tras {intentos} "
+                        f"intentos: {e}")
                 time.sleep(min(2 ** i, 20))
-        return None
 
 
 # ------------------------------------------------------------------ buscar
@@ -432,19 +459,78 @@ def liga_pdf_pmc(cliente, pmcid):
     return None
 
 
+def liga_pdf_europepmc(cliente, pmcid):
+    """Europe PMC. Devuelve la URL del PDF, o None si no hay.
+
+    Mismo contrato que liga_pdf_pmc: None = contesto y no hay PDF
+    abierto; ErrorPubMed = no se pudo preguntar.
+
+    Es la unica fuente que rinde para los articulos que estan en PMC pero
+    fuera del subset de acceso abierto, donde la API de PMC entrega solo
+    metadatos. La razon es que Europe PMC hospeda el archivo el mismo, en
+    vez de mandar a la pagina del editor.
+    """
+    datos = cliente.get(EPMC, {
+        "query": f"PMCID:{pmcid}", "resultType": "core",
+        "format": "json", "pageSize": "1",
+    })
+    if datos is None:
+        # Un 404 en un endpoint de busqueda no es "no esta el articulo":
+        # es la ruta rota. Un articulo ausente devuelve 200 con la lista
+        # vacia, que es el caso de mas abajo.
+        raise ErrorPubMed(
+            f"Europe PMC no respondio por {pmcid}. No se marca como sin "
+            f"PDF: puede ser una caida.")
+    try:
+        j = json.loads(datos)
+    except json.JSONDecodeError:
+        raise ErrorPubMed(
+            f"Europe PMC respondio algo que no es JSON por {pmcid}.")
+
+    for res in (j.get("resultList") or {}).get("result", []) or []:
+        for liga in (res.get("fullTextUrlList") or {}).get("fullTextUrl", []) or []:
+            if liga.get("documentStyle") != "pdf":
+                continue
+            # 'availabilityCode' es el campo estable; 'availability' es la
+            # cadena para humanos. Respetar lo que Europe PMC declara es
+            # lo que sostiene "solo se descarga lo que se expone
+            # legalmente": no adivinamos.
+            if liga.get("availabilityCode") not in ("OA", "F"):
+                continue
+            # Las copias alojadas en el editor se descartan sin
+            # intentarlas. Medido: los PDFs que bajaron vinieron todos de
+            # europepmc.org, y los hosts de editorial contestaron 403.
+            if liga.get("site") != "Europe_PMC":
+                continue
+            if liga.get("url"):
+                return liga["url"]
+    return None
+
+
 def liga_pdf_unpaywall(cliente, doi, email):
     """Unpaywall indexa copias legales de acceso abierto (repositorios,
-    preprints, versiones de autor). Devuelve (url, fuente) o (None, None)."""
+    preprints, versiones de autor). Devuelve (url, fuente) o (None, None).
+
+    Solo el 404 cuenta como respuesta legitima: significa que el DOI no
+    esta registrado. Cualquier otro fallo lanza ErrorPubMed.
+
+    La distincion importa mas de lo que parece. Unpaywall responde 422 a
+    un correo invalido (verificado), y con el tope generico eso devolvia
+    (None, None): correr la etapa con un typo en --email marcaba como
+    permanentemente inaccesible todo lo que esta fuera de PMC, sin forma
+    de recuperarlo con --reintentar.
+    """
     if not doi:
         return None, None
     datos = cliente.get(f"{UNPAYWALL}/{urllib.parse.quote(doi)}",
-                        {"email": email}, pausa=0.15)
+                        {"email": email}, pausa=0.15, definitivos=(404,))
     if not datos:
         return None, None
     try:
         j = json.loads(datos)
     except json.JSONDecodeError:
-        return None, None
+        raise ErrorPubMed(
+            f"Unpaywall respondio algo que no es JSON por {doi}.")
     mejor = j.get("best_oa_location")
     if not mejor:
         return None, None

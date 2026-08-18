@@ -386,6 +386,82 @@ class PruebasCliente(PruebaSinRed):
         with self.assertRaises(pubmed.ErrorPubMed):
             cliente.eutils("efetch.fcgi", {"db": "pubmed"}, intentos=2)
 
+    def test_un_403_del_editor_no_se_reintenta(self):
+        """El editor no atiende clientes automaticos, y lo va a contestar
+        igual las cuatro veces. Reintentar cuesta 14 segundos y tres
+        peticiones a un servidor que ya dijo que no."""
+        cliente = pubmed.Cliente("yo@unam.mx")
+        intentos = []
+
+        def falso_abrir(url, datos=None, timeout=120):
+            intentos.append(url)
+            raise self._http_error(403)
+
+        cliente._abrir = falso_abrir
+
+        self.assertIsNone(cliente.get("https://journals.asm.org/x.pdf"))
+        self.assertEqual(len(intentos), 1)
+
+    def test_401_y_451_tambien_son_definitivos(self):
+        cliente = pubmed.Cliente("yo@unam.mx")
+        for codigo in (401, 451):
+            intentos = []
+
+            def falso_abrir(url, datos=None, timeout=120, _c=codigo):
+                intentos.append(url)
+                raise self._http_error(_c)
+
+            cliente._abrir = falso_abrir
+            self.assertIsNone(cliente.get("https://editor/x.pdf"), codigo)
+            self.assertEqual(len(intentos), 1, codigo)
+
+    def test_agotados_los_intentos_get_lanza_en_vez_de_devolver_none(self):
+        """La mitad del contrato que sostiene todo lo demas.
+
+        Quien llama traduce None a 'no_disponible', que no se reintenta
+        nunca. Si una caida de red se colara como None, un corte de dos
+        minutos marcaria un lote entero como sin acceso abierto, de forma
+        permanente y sin manera de recuperarlo con --reintentar.
+        """
+        cliente = pubmed.Cliente("yo@unam.mx")
+
+        def falso_abrir(url, datos=None, timeout=120):
+            raise self._http_error(500)
+
+        cliente._abrir = falso_abrir
+
+        with self.assertRaises(pubmed.ErrorPubMed) as ctx:
+            cliente.get("https://ebi.ac.uk/x", intentos=2)
+
+        self.assertIn("2 intentos", str(ctx.exception))
+
+    def test_un_corte_de_transporte_en_get_lanza_ErrorPubMed(self):
+        cliente = pubmed.Cliente("yo@unam.mx")
+
+        def falso_abrir(url, datos=None, timeout=120):
+            raise OSError("se corto la conexion")
+
+        cliente._abrir = falso_abrir
+
+        with self.assertRaises(pubmed.ErrorPubMed):
+            cliente.get("https://ebi.ac.uk/x", intentos=2)
+
+    def test_get_no_filtra_la_query_string_en_el_mensaje_de_error(self):
+        """El correo viaja en la query string de Unpaywall; el mensaje de
+        error puede acabar en la bitacora y en el tablero."""
+        cliente = pubmed.Cliente("yo@unam.mx")
+
+        def falso_abrir(url, datos=None, timeout=120):
+            raise self._http_error(500)
+
+        cliente._abrir = falso_abrir
+
+        with self.assertRaises(pubmed.ErrorPubMed) as ctx:
+            cliente.get("https://api.unpaywall.org/v2/10.1/x",
+                        {"email": "yo@unam.mx"}, intentos=1)
+
+        self.assertNotIn("yo@unam.mx", str(ctx.exception))
+
     def test_un_404_devuelve_none_sin_reintentar(self):
         """404 de Unpaywall es un DOI no registrado, no una falla."""
         cliente = pubmed.Cliente("yo@unam.mx")

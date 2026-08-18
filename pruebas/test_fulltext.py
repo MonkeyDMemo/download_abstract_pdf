@@ -14,8 +14,8 @@ from pathlib import Path
 
 from grn_etl import db, etl, pubmed
 
-from .falsos import (PDF_VALIDO, ClienteFalso, PruebaSinRed, jats_xml,
-                     oa_error_xml, oa_xml)
+from .falsos import (PDF_VALIDO, ClienteFalso, PruebaSinRed, epmc_json,
+                     epmc_vacio, jats_xml, oa_error_xml, oa_xml)
 
 
 class BasePruebaFulltext(PruebaSinRed):
@@ -244,9 +244,15 @@ class PruebasPdf(BasePruebaFulltext):
         self.assertTrue(any(u.startswith("https://ftp.ncbi.nlm.nih.gov")
                             for u in self.cliente.urls_pedidas()))
 
-    def test_una_respuesta_que_no_es_pdf_se_registra_como_error(self):
+    def test_una_respuesta_que_no_es_pdf_queda_como_no_disponible(self):
         """Varios repositorios contestan HTML de error con codigo 200. Sin
-        revisar la firma se guardarian paginas de error como articulos."""
+        revisar la firma se guardarian paginas de error como articulos.
+
+        Queda 'no_disponible' y no 'error': que un editor sirva su pagina
+        de suscripcion no es una falla del sistema, es la respuesta, y
+        reintentarla cada corrida solo gasta peticiones. El escape para
+        los casos raros es db.borrar_descarga, expuesta en el tablero.
+        """
         self.sembrar({"pmid": "111", "pmcid": "PMC1"})
         url = "https://ftp.ncbi.nlm.nih.gov/x.pdf"
         self.cliente = ClienteFalso(
@@ -256,9 +262,15 @@ class PruebasPdf(BasePruebaFulltext):
 
         r = self.correr("pdf")
 
-        self.assertEqual(r["error"], 1)
+        self.assertEqual(r["no_disponible"], 1)
+        self.assertEqual(r["error"], 0)
         self.assertEqual(self.archivos("pdf"), [])
         self.assertIn("no devolvio un PDF", self.descarga("111", "pdf")["nota"])
+
+        # Y por ser 'no_disponible', no vuelve ni con --reintentar
+        pendientes = [f["pmid"] for f in
+                      db.pendientes_descarga(self.con, "pdf", reintentar=True)]
+        self.assertNotIn("111", pendientes)
 
     def test_unpaywall_como_segunda_fuente(self):
         self.sembrar({"pmid": "111", "pmcid": "PMC1", "doi": "10.1128/JB.001-20"})
@@ -431,7 +443,7 @@ class PruebasRegistroDeUrl(BasePruebaFulltext):
         self.correr("pdf")
 
         fila = self.descarga("111", "pdf")
-        self.assertEqual(fila["estatus"], "error")
+        self.assertEqual(fila["estatus"], "no_disponible")
         self.assertEqual(fila["url"], url)
 
     def test_una_base_vieja_gana_la_columna_sin_perder_datos(self):
@@ -537,3 +549,241 @@ class PruebasCaidaEnElLote(BasePruebaFulltext):
         pendientes = [f["pmid"] for f in
                       db.pendientes_descarga(self.con, "pdf", reintentar=True)]
         self.assertIn("111", pendientes)
+
+
+# ------------------------------------------------- la cascada de fuentes
+
+class PruebasCascadaPdf(BasePruebaFulltext):
+    """Las fuentes se recorren bajando en cada una, no resolviendo una vez.
+
+    Antes se tomaba la primera liga que apareciera y, si fallaba, el
+    articulo moria ahi. Para un articulo de PMC fuera del subset abierto,
+    Unpaywall suele devolver la liga del editor, que contesta 403; si esa
+    URL ganaba la carrera, Europe PMC no se consultaba nunca y se perdia
+    un PDF que si existia.
+    """
+
+    def test_si_la_primera_liga_no_da_pdf_se_prueba_la_siguiente_fuente(self):
+        """La prueba que no puede faltar de esta etapa."""
+        self.sembrar({"pmid": "111", "pmcid": "PMC1"})
+        rota = "https://journals.asm.org/bloqueado.pdf"
+        buena = "https://europepmc.org/articles/PMC1?pdf=render"
+        self.cliente = ClienteFalso(
+            oa={"PMC1": oa_xml("PMC1", rota)},
+            europepmc={"PMC1": epmc_json("PMC1", buena)},
+            cuerpos={rota: b"<html>403</html>", buena: PDF_VALIDO},
+        )
+
+        r = self.correr("pdf")
+
+        self.assertEqual(r["ok"], 1, "la cascada se detuvo en la primera liga")
+        self.assertEqual(self.descarga("111", "pdf")["fuente"], "Europe PMC")
+        self.assertEqual(self.descarga("111", "pdf")["url"], buena)
+
+    def test_si_pmc_oa_entrega_el_pdf_no_se_consulta_europe_pmc(self):
+        """La pereza del generador vale cientos de peticiones por corrida."""
+        self.sembrar({"pmid": "111", "pmcid": "PMC1"})
+        url = "https://ftp.ncbi.nlm.nih.gov/x.pdf"
+        self.cliente = ClienteFalso(oa={"PMC1": oa_xml("PMC1", url)},
+                                    cuerpos={url: PDF_VALIDO})
+
+        self.correr("pdf")
+
+        self.assertEqual(self.descarga("111", "pdf")["fuente"], "PMC OA")
+        self.assertNotIn(pubmed.EPMC, self.cliente.urls_pedidas())
+
+    def test_europe_pmc_se_consulta_antes_que_unpaywall(self):
+        """Para el grupo objetivo Unpaywall apunta al editor, que bloquea;
+        preguntarle primero gasta dos peticiones para nada."""
+        self.sembrar({"pmid": "111", "pmcid": "PMC1", "doi": "10.1/x"})
+        buena = "https://europepmc.org/articles/PMC1?pdf=render"
+        self.cliente = ClienteFalso(
+            oa={"PMC1": oa_error_xml()},
+            europepmc={"PMC1": epmc_json("PMC1", buena)},
+            unpaywall={"10.1/x": {"best_oa_location": {"url_for_pdf": "https://editor/x"}}},
+            cuerpos={buena: PDF_VALIDO},
+        )
+
+        self.correr("pdf")
+
+        urls = self.cliente.urls_pedidas()
+        self.assertIn(pubmed.EPMC, urls)
+        self.assertFalse(any(u.startswith(pubmed.UNPAYWALL) for u in urls),
+                         "se pregunto a Unpaywall aunque Europe PMC resolvio")
+
+    def test_sin_pmcid_no_se_le_pregunta_a_europe_pmc(self):
+        """Medido sobre los que no estan en PMC: 0 de 18 ofrecen PDF."""
+        self.sembrar({"pmid": "111", "doi": "10.1/x"})
+        self.cliente = ClienteFalso(unpaywall={})
+
+        self.correr("pdf")
+
+        self.assertNotIn(pubmed.EPMC, self.cliente.urls_pedidas())
+
+    def test_una_fuente_caida_no_deja_escribir_no_disponible(self):
+        """La doctrina de "no hay" contra "no pude preguntar", aplicada a
+        una cadena: si ALGUIEN no contesto, el articulo queda 'error'
+        aunque los demas hayan dicho que no. Con 'no_disponible' quedaria
+        condenado para siempre por una caida de unos minutos.
+        """
+        self.sembrar({"pmid": "111", "pmcid": "PMC1", "doi": "10.1/x"})
+        self.cliente = ClienteFalso(
+            oa={},                                  # PMC OA no contesta
+            europepmc={"PMC1": epmc_vacio()},       # contesta: no lo tengo
+            unpaywall={},                           # contesta: no hay
+        )
+
+        r = self.correr("pdf")
+
+        self.assertEqual(r["error"], 1)
+        self.assertEqual(r["no_disponible"], 0)
+        fila = self.descarga("111", "pdf")
+        self.assertEqual(fila["estatus"], "error")
+        self.assertIn("PMC OA", fila["nota"])
+
+    def test_si_todas_contestan_que_no_queda_no_disponible(self):
+        self.sembrar({"pmid": "111", "pmcid": "PMC1", "doi": "10.1/x"})
+        self.cliente = ClienteFalso(
+            oa={"PMC1": oa_error_xml()},
+            europepmc={"PMC1": epmc_vacio()},
+            unpaywall={},
+        )
+
+        r = self.correr("pdf")
+
+        self.assertEqual(r["no_disponible"], 1)
+        self.assertEqual(self.descarga("111", "pdf")["estatus"], "no_disponible")
+
+    def test_una_caida_al_bajar_el_pdf_queda_reintentable(self):
+        self.sembrar({"pmid": "111", "pmcid": "PMC1"})
+        url = "https://europepmc.org/articles/PMC1?pdf=render"
+        self.cliente = ClienteFalso(
+            oa={"PMC1": oa_error_xml()},
+            europepmc={"PMC1": epmc_json("PMC1", url)},
+            fallas={url: pubmed.ErrorPubMed("se corto la conexion")},
+        )
+
+        r = self.correr("pdf")
+
+        self.assertEqual(r["error"], 1)
+        pendientes = [f["pmid"] for f in
+                      db.pendientes_descarga(self.con, "pdf", reintentar=True)]
+        self.assertIn("111", pendientes)
+
+
+class PruebasEuropePmc(PruebaSinRed):
+    """liga_pdf_europepmc: mismo contrato que liga_pdf_pmc."""
+
+    def test_devuelve_la_liga_de_acceso_abierto(self):
+        cliente = ClienteFalso(europepmc={"PMC1": epmc_json("PMC1")})
+
+        self.assertEqual(pubmed.liga_pdf_europepmc(cliente, "PMC1"),
+                         "https://europepmc.org/articles/PMC1?pdf=render")
+
+    def test_ignora_la_copia_alojada_en_el_editor(self):
+        """Medido: los PDFs que bajaron vinieron todos de europepmc.org;
+        los hosts de editorial contestaron 403. Intentarlos cuesta una
+        peticion y ensucia la etiqueta de la fuente."""
+        cliente = ClienteFalso(europepmc={"PMC1": epmc_json(
+            "PMC1", "https://editor.com/x.pdf", sitio="PUBMED_CENTRAL")})
+
+        self.assertIsNone(pubmed.liga_pdf_europepmc(cliente, "PMC1"))
+
+    def test_ignora_lo_que_no_esta_marcado_como_abierto(self):
+        """No adivinamos: se respeta lo que Europe PMC declara."""
+        cliente = ClienteFalso(europepmc={"PMC1": epmc_json("PMC1", codigo="S")})
+
+        self.assertIsNone(pubmed.liga_pdf_europepmc(cliente, "PMC1"))
+
+    def test_ignora_las_ligas_que_no_son_pdf(self):
+        cliente = ClienteFalso(europepmc={"PMC1": epmc_json("PMC1", estilo="html")})
+
+        self.assertIsNone(pubmed.liga_pdf_europepmc(cliente, "PMC1"))
+
+    def test_un_articulo_que_no_esta_devuelve_none(self):
+        """200 con lista vacia es una respuesta legitima: no lo tengo."""
+        cliente = ClienteFalso(europepmc={"PMC1": epmc_vacio()})
+
+        self.assertIsNone(pubmed.liga_pdf_europepmc(cliente, "PMC1"))
+
+    def test_sin_respuesta_falla_en_vez_de_decir_que_no_hay(self):
+        cliente = ClienteFalso()
+        cliente.get = lambda *a, **k: None
+
+        with self.assertRaises(pubmed.ErrorPubMed):
+            pubmed.liga_pdf_europepmc(cliente, "PMC1")
+
+    def test_un_json_roto_falla(self):
+        cliente = ClienteFalso()
+        cliente.get = lambda *a, **k: b"<html>Not Found</html>"
+
+        with self.assertRaises(pubmed.ErrorPubMed):
+            pubmed.liga_pdf_europepmc(cliente, "PMC1")
+
+
+class PruebasUnpaywallTolerante(PruebaSinRed):
+
+    def test_un_422_de_unpaywall_ya_no_dice_que_no_hay(self):
+        """Unpaywall responde 422 a un correo invalido (verificado). Con el
+        tope generico, un typo en --email marcaba como permanentemente
+        inaccesible todo lo que esta fuera de PMC."""
+        cliente = ClienteFalso()
+        vistos = []
+
+        def get_falso(url, params=None, intentos=4, pausa=None, definitivos=None):
+            vistos.append(definitivos)
+            return None
+
+        cliente.get = get_falso
+        pubmed.liga_pdf_unpaywall(cliente, "10.1/x", "yo@unam.mx")
+
+        self.assertEqual(vistos, [(404,)], "Unpaywall tolera mas que el 404")
+
+
+class PruebasPrioridadDeFaltantes(BasePruebaFulltext):
+    """La etapa de PDF atiende primero lo que no tiene texto de ninguna forma.
+
+    El orden por anio pone adelante lo reciente, que es justo lo que mas
+    cubre el subset abierto de PMC. Sin corregirlo, una corrida de PDF
+    gasta sus primeras horas bajando articulos que ya estan en XML, que
+    para el clasificador es el formato mejor.
+    """
+
+    def test_lo_que_no_tiene_texto_va_primero_aunque_sea_mas_viejo(self):
+        self.sembrar({"pmid": "111", "anio": "2024", "titulo": "Reciente con XML"},
+                     {"pmid": "222", "anio": "1998", "titulo": "Viejo sin nada"})
+        db.registrar_descarga(self.con, "111", "xml", "ok", ruta="/x.txt")
+
+        orden = [f["pmid"] for f in db.pendientes_descarga(self.con, "pdf")]
+
+        self.assertEqual(orden, ["222", "111"])
+
+    def test_dentro_de_cada_grupo_sigue_mandando_el_anio(self):
+        self.sembrar({"pmid": "111", "anio": "2020"},
+                     {"pmid": "222", "anio": "2024"},
+                     {"pmid": "333", "anio": "2010"})
+
+        orden = [f["pmid"] for f in db.pendientes_descarga(self.con, "pdf")]
+
+        self.assertEqual(orden, ["222", "111", "333"])
+
+    def test_con_limite_se_atiende_lo_que_falta_de_verdad(self):
+        """Es donde el orden importa: con --limite chico, la corrida debe
+        gastarse en los que no tienen nada."""
+        self.sembrar({"pmid": "111", "anio": "2024"}, {"pmid": "222", "anio": "2023"},
+                     {"pmid": "333", "anio": "1995"})
+        db.registrar_descarga(self.con, "111", "xml", "ok", ruta="/a.txt")
+        db.registrar_descarga(self.con, "222", "xml", "ok", ruta="/b.txt")
+
+        orden = [f["pmid"] for f in db.pendientes_descarga(self.con, "pdf", limite=1)]
+
+        self.assertEqual(orden, ["333"])
+
+    def test_para_xml_el_orden_por_anio_no_cambia(self):
+        """Nada tiene texto todavia, asi que el criterio nuevo no aplica y
+        manda el anio, como siempre."""
+        self.sembrar({"pmid": "111", "anio": "2020"}, {"pmid": "222", "anio": "2024"})
+
+        orden = [f["pmid"] for f in db.pendientes_descarga(self.con, "xml")]
+
+        self.assertEqual(orden, ["222", "111"])

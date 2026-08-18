@@ -186,3 +186,126 @@ recuperables sólo borrando filas a mano.
 Ahora ambas funciones lanzan `ErrorPubMed` cuando no hay respuesta. Importa
 más de lo que parecía cuando se decidió: NCBI anunció el retiro del OA Web
 Service, así que el caso "el servicio no contesta" va a dejar de ser hipotético.
+
+## Las fuentes de PDF que se midieron y no se construyeron
+
+Esta es la entrada más útil de este archivo: sin ella, dentro de seis meses
+alguien vuelve a proponer Crossref y hay que volver a medir.
+
+Se propuso una cascada de cinco niveles (PMC OA, Unpaywall, Crossref, OpenAlex,
+Europe PMC, después el HTML de la landing page, después un navegador headless).
+Antes de escribir nada se midió cada fuente contra muestras del corpus real, y
+la medición que importa **no es cuántas URLs encuentra sino cuántos PDFs baja**:
+
+| fuente | encuentra URL | **baja un PDF** |
+|---|---|---|
+| Europe PMC, grupo "en PMC pero solo metadatos" | 18/18 | **15/20** |
+| Europe PMC, grupo "fuera de PMC" | 0/18 | 0/18 |
+| Crossref | 7/15 | **0** |
+| OpenAlex | 4/15 | **0** |
+| `citation_pdf_url` de la landing page | 0/12 | **0** |
+| Europe PMC `fullTextXML` | — | 404 en 18/18 |
+
+Crossref y OpenAlex sí encuentran ligas, pero apuntan al sitio del editor:
+`journals.asm.org` 403, `academic.oup.com` 403, `onlinelibrary.wiley.com` 403,
+`link.springer.com` devuelve HTML. Los PDFs que sí bajaron vinieron **todos** de
+`europepmc.org`, y la razón es sencilla: Europe PMC hospeda el archivo él mismo
+en lugar de mandarte a la página del editor.
+
+El nivel de la landing page rinde cero por partida doble: siete de doce
+editoriales ni siquiera dejan cargar la página, y ninguna de las cinco que sí
+carga publica `citation_pdf_url`.
+
+El navegador headless se descartó por dos razones independientes, cualquiera de
+las cuales basta: es una dependencia, y el proyecto no tiene ninguna; y usarlo
+para pasar los controles de las editoriales es evadir un control de acceso, que
+es justo lo que este proyecto no hace. La vía formal para contenido con
+suscripción es el acceso institucional de la UNAM y, para Elsevier, su API de
+TDM con clave institucional.
+
+Y un dato que conviene tener presente al decidir cuánto esfuerzo merece esta
+etapa: de los artículos que están en PMC fuera del subset abierto **no existe
+texto legible por máquina en ninguna parte**. Lo que se obtiene son PDFs para
+lectura humana; el corpus que alimenta al clasificador no crece con esto.
+
+## La cascada baja en cada nivel, no resuelve una vez
+
+`_bajar_pdf` tomaba la primera liga que apareciera y, si esa liga fallaba, el
+artículo moría ahí. Con más de una fuente eso pierde PDFs que sí existen: para
+un artículo de PMC fuera del subset abierto, Unpaywall suele devolver la liga
+del editor, que contesta 403; si esa URL ganaba la carrera, Europe PMC no se
+consultaba nunca.
+
+Ahora `_fuentes_pdf` es un generador y el bucle intenta bajar en cada nivel. Es
+generador a propósito: cuando PMC OA entrega el PDF, Europe PMC y Unpaywall no
+se consultan, y eso son cientos de peticiones por corrida.
+
+El beneficio secundario resultó ser el mayor: el OA Service de PMC tiene retiro
+anunciado. Con la cadena vieja, el día que empiece a fallar la etapa entera
+rinde cero. Con la cascada, Europe PMC toma el relevo solo.
+
+En la primera corrida real de 60 artículos, la bitácora muestra el mecanismo
+funcionando: `PMC OA no dio PDF, sigo` seguido de `PDF 1753 KB (Europe PMC)`.
+Cuarenta y tres de esos sesenta se bajaron, todos por Europe PMC, y con el
+código anterior los cuarenta y tres se habrían perdido.
+
+## `None` contra excepción, ahora también en `Cliente.get`
+
+`Cliente.get` devolvía `None` por dos motivos incompatibles: "el servidor
+contestó 404" y "no pude preguntar tras cuatro intentos". Mientras nadie
+tradujera `None` a un estatus permanente, la ambigüedad era tolerable.
+
+Dejó de serlo al decidir que un 403 del editor se registra como
+`no_disponible`, que por diseño no se reintenta nunca. Con el contrato viejo,
+un corte de red de dos minutos habría marcado un lote entero como "sin acceso
+abierto", de forma permanente y sin manera de recuperarlo con `--reintentar`.
+
+El contrato quedó igual en las cuatro capas, y cabe en una línea:
+
+> `None` = el servidor contestó y la respuesta es no. Excepción = no pude preguntar.
+
+De paso cerró un defecto que ya estaba vivo: Unpaywall responde **422 a un
+correo inválido** (verificado contra su API). Como 422 estaba en los códigos
+definitivos genéricos, correr la etapa con un typo en `--email` marcaba como
+permanentemente inaccesible todo lo que está fuera de PMC. Ahora
+`liga_pdf_unpaywall` solo tolera el 404, que es el único "no" legítimo que ese
+servicio emite.
+
+## El 403 del editor es `no_disponible`, no `error`
+
+MDPI, ScienceDirect, OUP, Wiley y ACS contestan 403 a un cliente que no es un
+navegador. No es un muro de pago en todos los casos —el artículo de MDPI que se
+probó es CC BY— pero sí es una decisión del editor sobre quién puede descargar.
+
+Se registran como `no_disponible` y no como `error` por dos razones. La
+primera: `error` significa "el sistema falló, vuelve a intentar", y aquí no
+falló nada, el servidor contestó. La segunda es de costo: con `error`, cada
+corrida con `--reintentar` vuelve a gastar peticiones contra servidores que ya
+dijeron que no.
+
+Además, los códigos 401, 403 y 451 pasaron a la lista de definitivos de
+`Cliente.get`. Antes cada artículo bloqueado costaba cuatro peticiones y hasta
+catorce segundos de retroceso exponencial; ahora cuesta una petición y cero
+espera.
+
+Lo que **no** se hizo, y no se debe hacer, es disfrazar el cliente de navegador
+para pasar el bloqueo. Esos artículos salen en `export --pendientes` con su
+liga, que abierta en un navegador funciona sin problema, porque el bloqueo es
+contra el programa y no contra la persona.
+
+## La etapa de PDF atiende primero lo que no tiene texto de ninguna forma
+
+`pendientes_descarga` ordenaba por año descendente, y lo reciente es justo lo
+que mejor cubre el subset abierto de PMC. El efecto era que una corrida de PDF
+gastaba sus primeras horas bajando artículos que ya estaban en XML, que para el
+clasificador es el formato mejor. Se comprobó en la primera corrida real: los
+43 PDFs que bajó fueron los 43 a artículos que ya tenían XML, y ninguno al
+grupo que esta etapa existe para atender.
+
+Ahora el orden pone primero los que no tienen texto de ningún tipo. No se
+excluye nada: el resto sigue en la cola, detrás.
+
+Conviene no confundir dos listas que se parecen. "Sin full text" para la
+biblioteca incluye a quien no tiene ni XML ni PDF. "Sin insumo para el
+clasificador" es `descargas WHERE tipo = 'xml' AND estatus = 'ok'`, y un
+artículo con PDF sigue faltando ahí.

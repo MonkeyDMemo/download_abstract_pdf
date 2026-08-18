@@ -18,7 +18,7 @@ grn_etl/
   trabajos.py          gestor de trabajos en segundo plano, uno a la vez
 pruebas/
   falsos.py            cliente falso y fabricas de XML/JSON fijos
-  test_*.py            263 pruebas con unittest; ninguna toca la red
+  test_*.py            300 pruebas con unittest; ninguna toca la red
 docs/
   decisiones.md        las decisiones de diseno y por que se tomaron asi
 pa_regulacion.txt      la consulta booleana, en texto plano
@@ -51,8 +51,8 @@ Reglas que no se rompen:
 
 - **Solo `db.py` escribe SQL.** Si otra capa necesita una consulta nueva, se
   agrega una funcion en `db.py`. Nunca un `con.execute()` en `etl.py`,
-  `servidor.py` ni `trabajos.py`. La unica violacion viva es la consulta de
-  `--pendientes` en `cli.py::cmd_export`, y esta anotada como deuda.
+  `servidor.py`, `cli.py` ni `trabajos.py`. Ya no queda ninguna excepcion:
+  la consulta de `--pendientes` vive en `db.pendientes_biblioteca()`.
 - **`pubmed.py` no conoce la base.** Recibe parametros, devuelve
   diccionarios y bytes. No importa `db`. Esto la hace probable sin red.
 - **`etl.py` no imprime.** Recibe un callable `log` y lo invoca. El default es
