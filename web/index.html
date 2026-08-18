@@ -201,6 +201,18 @@ p { margin: 0; }
 }
 .hero-cabeza h2 { font-size: 13px; text-transform: uppercase;
   letter-spacing: .07em; color: var(--tenue); }
+/* El nombre del tablero sobre la red. Es el mismo texto que el <title> de
+   la pestana del navegador a proposito: quien llega por un marcador o ve
+   una captura reconoce que es el mismo lugar.
+   Va como <p> y no como encabezado porque el titulo de la seccion sigue
+   siendo "Estado del corpus"; un h2 de mas aqui le rompe la jerarquia a un
+   lector de pantalla. */
+.hero-nombre {
+  font-size: 22px; font-weight: 650; letter-spacing: -.015em;
+  color: var(--texto); margin: 0 0 3px;
+}
+.hero-nombre span { color: var(--acento); font-weight: 400; }
+@media (max-width: 620px) { .hero-nombre { font-size: 18px; } }
 
 .intro { position: relative; }
 .intro-texto { position: relative; max-width: 62ch; }
@@ -518,7 +530,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); ou
            alt="Universidad Nacional Autónoma de México · IIMAS">
     </span>
     <div>
-      <h1>Tablero GRN <span class="et-nombre">·</span> ETL de PubMed</h1>
+      <h1>Tablero GRN</h1>
       <p class="sub">Descarga y control de literatura científica</p>
     </div>
   </div>
@@ -551,7 +563,10 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); ou
     <canvas id="lienzo-red" aria-hidden="true"></canvas>
     <div class="hero-contenido">
       <div class="hero-cabeza">
-        <h2>Estado del corpus</h2>
+        <div>
+          <p class="hero-nombre">Tablero GRN <span>·</span> ETL de PubMed</p>
+          <h2>Estado del corpus</h2>
+        </div>
         <button class="boton suave mini" id="b-refrescar-estado">Actualizar</button>
       </div>
       <div id="cobertura"></div>
