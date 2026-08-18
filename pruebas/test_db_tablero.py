@@ -15,7 +15,9 @@ errores mas faciles de cometer al agregar un filtro nuevo.
 import tempfile
 from pathlib import Path
 
-from grn_etl import db
+import os
+
+from grn_etl import credenciales, db
 
 from .falsos import PruebaSinRed
 
@@ -876,3 +878,69 @@ class PruebasDescargasDe(BasePruebaTablero):
 
     def test_un_pmid_que_no_existe_devuelve_lista_vacia(self):
         self.assertEqual(db.descargas_de(self.con, "999"), [])
+
+
+class PruebasCredenciales(PruebaSinRed):
+    """De donde salen el correo y la llave, y que se rechaza al guardar."""
+
+    def setUp(self):
+        super().setUp()
+        import tempfile, unittest.mock
+        from pathlib import Path
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        raiz = Path(tmp.name)
+        for nombre, valor in (("ARCHIVO_LLAVE", raiz / ".key"),
+                              ("ARCHIVO_CORREO", raiz / ".correo")):
+            parche = unittest.mock.patch.object(credenciales, nombre, valor)
+            parche.start()
+            self.addCleanup(parche.stop)
+        parche = unittest.mock.patch.dict(os.environ, {}, clear=False)
+        parche.start()
+        self.addCleanup(parche.stop)
+        os.environ.pop("NCBI_API_KEY", None)
+        os.environ.pop("NCBI_EMAIL", None)
+
+    def test_el_entorno_le_gana_al_archivo(self):
+        """Permite correr una vez con otra cuenta sin tocar los archivos."""
+        credenciales.guardar_correo("archivo@unam.mx")
+        os.environ["NCBI_EMAIL"] = "entorno@unam.mx"
+
+        self.assertEqual(credenciales.correo(), "entorno@unam.mx")
+        self.assertEqual(credenciales.origen_correo(), "entorno")
+
+    def test_sin_entorno_se_lee_el_archivo(self):
+        """Es el arreglo de fondo: la llave ya estaba en el disco y habia
+        que exportarla a mano en cada sesion."""
+        credenciales.guardar_llave("b" * 36)
+
+        self.assertEqual(credenciales.llave(), "b" * 36)
+        self.assertEqual(credenciales.origen_llave(), "archivo")
+
+    def test_sin_nada_no_hay_credenciales(self):
+        self.assertIsNone(credenciales.correo())
+        self.assertIsNone(credenciales.llave())
+        self.assertEqual(credenciales.origen_llave(), "ninguno")
+
+    def test_un_correo_con_dedazo_no_se_guarda(self):
+        for malo in ("sin-arroba", "@sindominio", "yo@", "yo@sinpunto",
+                     "", "  ", "dos@arrobas@x.com"):
+            with self.assertRaises(ValueError, msg=malo):
+                credenciales.guardar_correo(malo)
+
+    def test_una_llave_de_largo_equivocado_no_se_guarda(self):
+        for mala in ("", "abc", "a" * 35, "a" * 37, "-" * 36, "a b" + "c" * 33):
+            with self.assertRaises(ValueError, msg=mala):
+                credenciales.guardar_llave(mala)
+
+    def test_una_llave_valida_se_guarda_y_se_relee(self):
+        credenciales.guardar_llave("A1b2" * 9)
+
+        self.assertEqual(credenciales.llave(), "A1b2" * 9)
+
+    def test_borrar_la_llave_la_quita(self):
+        credenciales.guardar_llave("c" * 36)
+
+        credenciales.borrar_llave()
+
+        self.assertIsNone(credenciales.llave())

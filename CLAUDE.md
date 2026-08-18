@@ -51,8 +51,16 @@ Nombres de funciones y tablas en espanol. Los identificadores de dominio
 externo se quedan como estan: `pmid`, `pmcid`, `doi`, `abstract`,
 `mesh_terms`. Sin emojis en ningun lado.
 
-**Nunca escribir credenciales en el codigo.** API key en `NCBI_API_KEY`,
-correo en `NCBI_EMAIL` o flag `--email`.
+**Nunca escribir credenciales en el codigo.** La API key sale de
+`NCBI_API_KEY` o del archivo `.key`; el correo, de `NCBI_EMAIL`, del flag
+`--email` o del archivo `.correo`. El entorno gana sobre el archivo. Lo
+resuelve `grn_etl/credenciales.py`, que usan igual el CLI y el tablero, y los
+dos archivos los cubre el `.gitignore`.
+
+Desde el tablero se configuran en «Credenciales de NCBI». La regla ahi es que
+**la llave se puede escribir pero nunca leer**: `GET /api/config` dice si hay
+llave y de donde salio, jamas su valor, y hay una prueba que falla si la llave
+real aparece en alguna respuesta.
 
 ## Arquitectura
 
@@ -182,7 +190,7 @@ columnas. El XML alimenta al clasificador; el PDF es para lectura humana.
 python3 -m unittest discover        # desde la raiz del proyecto
 ```
 
-331 pruebas con `unittest` de la estandar, en `pruebas/`. No tocan la red: se inyecta
+349 pruebas con `unittest` de la estandar, en `pruebas/`. No tocan la red: se inyecta
 `pruebas.falsos.ClienteFalso`, que devuelve XML o JSON fijo y registra cada
 llamada. Ademas `PruebaSinRed` deja `urlopen` inutilizable, asi que una
 prueba que arme un `Cliente` de verdad falla en vez de salir a NCBI.

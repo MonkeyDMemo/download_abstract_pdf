@@ -498,3 +498,45 @@ O sea que registrar una consulta que se solapa costó **una** llamada a
 `efetch`, por el único artículo publicado desde la corrida anterior. Es la
 decisión de diseño central rindiendo en un caso real, y el número que hay que
 volver a ver si algún día se toca `ingestar()`.
+
+## Las credenciales se leen solas, y se escriben pero no se leen
+
+Lanzar un trabajo fallaba con un 400 seguido. El motivo no era el tablero:
+la API key vivía en `.key` desde siempre, pero el servidor solo la buscaba en
+la variable de entorno, así que en cada sesión había que hacer
+
+    $env:NCBI_API_KEY = (Get-Content .key -Raw).Trim()
+
+y el día que se olvidaba —o la primera vez que alguien más clonaba el
+proyecto— el lanzamiento moría sin explicar dónde estaba el problema.
+
+El arreglo de fondo va en `grn_etl/credenciales.py`, que lo usan el CLI y el
+tablero por igual: **entorno primero, archivo después**. El entorno gana
+porque es lo que permite correr una vez con otra cuenta sin tocar nada. Los
+archivos son `.key`, que ya existía con esa forma, y `.correo` para la
+dirección de contacto; los dos los cubre el `.gitignore`. El correo no es un
+secreto, pero es un dato personal que NCBI recibe en cada petición y no tiene
+por qué acabar en un repositorio público.
+
+Encima va el formulario del tablero, con una regla que no se negocia: **la
+llave se puede escribir pero nunca leer**. `GET /api/config` dice si hay
+llave y de dónde salió —entorno o archivo—, jamás su valor. Una llave que
+entra por un formulario y puede volver a salir por un GET es una llave que
+cualquier página abierta en el mismo navegador podría llevarse. Hay una
+prueba que serializa las respuestas de las tres rutas del panel y falla si la
+llave real aparece en alguna.
+
+Se valida antes de guardar, y no por gusto: NCBI responde **422 a un correo
+inválido**, y en la etapa de PDF ese 422 marcaba artículos como
+permanentemente inaccesibles. Un dedazo en el formulario habría vuelto a
+sembrar el mismo desastre, así que el correo tiene que tener forma de correo
+y la llave sus 36 caracteres alfanuméricos. Descubrirlo al guardar es gratis;
+descubrirlo a media corrida cuesta un lote.
+
+Dos detalles de la interfaz que salieron del mismo razonamiento. El campo de
+la llave se deja vacío al recargar aunque haya una guardada, porque su valor
+no viaja de vuelta; para quitarla hay que escribir algo en blanco a
+propósito, de forma que recargar y guardar no la borre sin querer. Y los
+botones de lanzar quedan deshabilitados mientras no haya correo, con el
+motivo en el `title`: vale más no dejar apretar que dejar apretar y contestar
+un 400 que hay que ir a leer.

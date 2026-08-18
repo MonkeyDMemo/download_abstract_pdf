@@ -5,9 +5,10 @@ salidas/
 *.db-journal
 *.db-wal
 
-# Secretos
+# Secretos y datos de contacto
 .env
 *.key
+.correo
 
 # Python
 __pycache__/

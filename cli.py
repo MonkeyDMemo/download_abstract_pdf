@@ -26,7 +26,7 @@ import os
 import sys
 from pathlib import Path
 
-from grn_etl import db, etl, pubmed
+from grn_etl import credenciales, db, etl, pubmed
 
 
 def log(msg):
@@ -34,11 +34,14 @@ def log(msg):
 
 
 def cliente_de(args):
-    email = args.email or os.environ.get("NCBI_EMAIL")
+    # Entorno primero, archivos de la raiz despues. Asi no hay que
+    # exportar en cada sesion una llave que ya esta en el disco.
+    email = credenciales.correo(args.email)
     if not email:
-        sys.exit("Falta --email (o la variable de entorno NCBI_EMAIL). "
-                 "NCBI lo exige para identificar el tráfico.")
-    api_key = os.environ.get("NCBI_API_KEY")
+        sys.exit("Falta el correo de contacto de NCBI. Dalo con --email, con "
+                 "la variable NCBI_EMAIL, o guárdalo una vez desde el tablero "
+                 "(python servidor.py --abrir), que lo deja en .correo.")
+    api_key = credenciales.llave()
     if not api_key:
         log("Sin NCBI_API_KEY: el límite será de 3 peticiones/segundo.")
     return pubmed.Cliente(email, api_key)

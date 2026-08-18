@@ -13,12 +13,14 @@ devuelva un archivo del disco fuera de la ruta '/'.
 """
 
 import json
+import os
 import tempfile
+import unittest.mock
 import threading
 from pathlib import Path
 
 import servidor
-from grn_etl import db, pubmed, trabajos
+from grn_etl import credenciales, db, pubmed, trabajos
 
 from .falsos import ClienteFalso, PruebaSinRed, jats_xml
 
@@ -497,7 +499,9 @@ class PruebasTrabajo(BasePruebaServidor):
                                     cuerpo={"tipo": "run", "nombre": "pa"}, ctx=ctx)
         self.assertEqual(codigo, 400)
         self.assertIn("correo", objeto["error"])
-        self.assertIn("NCBI_EMAIL", objeto["error"])
+        # El mensaje manda al lugar donde se arregla, que ya no es
+        # reiniciar con una variable de entorno.
+        self.assertIn("Credenciales", objeto["error"])
         # El resto del tablero sigue funcionando.
         codigo, _ = self.pedir("GET", "/api/documentos", ctx=ctx)
         self.assertEqual(codigo, 200)
@@ -1025,3 +1029,122 @@ class PruebasNombreDelTablero(BasePruebaServidor):
         palabras = lambda s: [p for p in re.split(
             r"[^\wÁÉÍÓÚÑáéíóúñ]+", re.sub(r"<[^>]+>", " ", s)) if p]
         self.assertEqual(palabras(sobre_la_red), palabras(titulo))
+
+
+class PruebasConfiguracion(BasePruebaServidor):
+    """Configurar el correo y la API key desde el tablero.
+
+    La regla que gobierna todo esto: la llave se puede escribir pero
+    NUNCA leer. Una llave que entra por un formulario y puede volver a
+    salir por un GET es una llave que cualquier pagina abierta en el
+    mismo navegador podria llevarse.
+    """
+
+    def setUp(self):
+        super().setUp()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        raiz = Path(tmp.name)
+        # Se apunta el modulo a un directorio temporal para no tocar el
+        # .key de verdad de quien corre la suite.
+        for nombre, valor in (("ARCHIVO_LLAVE", raiz / ".key"),
+                              ("ARCHIVO_CORREO", raiz / ".correo")):
+            parche = unittest.mock.patch.object(credenciales, nombre, valor)
+            parche.start()
+            self.addCleanup(parche.stop)
+        for var in ("NCBI_API_KEY", "NCBI_EMAIL"):
+            parche = unittest.mock.patch.dict(os.environ, {}, clear=False)
+            parche.start()
+            self.addCleanup(parche.stop)
+            os.environ.pop(var, None)
+        self.ctx.correo_explicito = None
+        self.LLAVE = "a" * 36
+
+    def test_la_llave_nunca_sale_en_la_respuesta(self):
+        """La prueba que no puede faltar. Se prueba en las dos rutas: la
+        que la guarda y la que informa."""
+        _, guardado = servidor.manejar(
+            "PUT", "/api/config", {}, {"llave": self.LLAVE}, self.ctx)
+        _, visto = servidor.manejar("GET", "/api/config", {}, None, self.ctx)
+
+        for cuerpo in (guardado, visto):
+            texto = json.dumps(cuerpo, ensure_ascii=False)
+            self.assertNotIn(self.LLAVE, texto)
+        self.assertTrue(visto["tiene_llave"])
+
+    def test_se_dice_que_hay_llave_y_de_donde_pero_no_cual(self):
+        servidor.manejar("PUT", "/api/config", {}, {"llave": self.LLAVE}, self.ctx)
+
+        _, r = servidor.manejar("GET", "/api/config", {}, None, self.ctx)
+
+        self.assertEqual(r["origen_llave"], "archivo")
+        self.assertEqual(r["peticiones_por_segundo"], 10)
+        self.assertNotIn("llave", r)
+
+    def test_sin_llave_el_limite_es_de_tres(self):
+        _, r = servidor.manejar("GET", "/api/config", {}, None, self.ctx)
+
+        self.assertFalse(r["tiene_llave"])
+        self.assertEqual(r["peticiones_por_segundo"], 3)
+
+    def test_guardar_el_correo_deja_lanzar_trabajos(self):
+        """Es el punto de todo el cambio: sin correo el lanzamiento daba
+        400 y habia que reiniciar el servidor con la variable puesta."""
+        _, antes = servidor.manejar("GET", "/api/config", {}, None, self.ctx)
+        self.assertFalse(antes["puede_lanzar"])
+
+        servidor.manejar("PUT", "/api/config", {},
+                         {"correo": "yo@unam.mx"}, self.ctx)
+
+        _, despues = servidor.manejar("GET", "/api/config", {}, None, self.ctx)
+        self.assertTrue(despues["puede_lanzar"])
+        self.assertIsNotNone(self.ctx.cliente)
+
+    def test_un_correo_con_dedazo_se_rechaza_antes_de_guardarse(self):
+        """NCBI responde 422 a un correo invalido, y en la etapa de PDF eso
+        marcaba articulos como permanentemente inaccesibles. Mejor pararlo
+        en el formulario."""
+        for malo in ("sin-arroba", "@sindominio", "yo@", "yo@sinpunto", ""):
+            codigo, _ = servidor.manejar(
+                "PUT", "/api/config", {}, {"correo": malo}, self.ctx)
+            self.assertEqual(codigo, 400, malo)
+
+        _, r = servidor.manejar("GET", "/api/config", {}, None, self.ctx)
+        self.assertEqual(r["correo"], "")
+
+    def test_una_llave_de_largo_equivocado_se_rechaza(self):
+        """Un pegado a medias no debe descubrirse hasta la primera
+        peticion, cuando ya se marcaron articulos como fallidos."""
+        for mala in ("abc", "a" * 35, "a" * 37, "-" * 36):
+            codigo, _ = servidor.manejar(
+                "PUT", "/api/config", {}, {"llave": mala}, self.ctx)
+            self.assertEqual(codigo, 400, mala)
+
+    def test_mandar_la_llave_vacia_la_quita(self):
+        servidor.manejar("PUT", "/api/config", {}, {"llave": self.LLAVE}, self.ctx)
+
+        servidor.manejar("PUT", "/api/config", {}, {"llave": ""}, self.ctx)
+
+        _, r = servidor.manejar("GET", "/api/config", {}, None, self.ctx)
+        self.assertFalse(r["tiene_llave"])
+
+    def test_un_cuerpo_sin_nada_util_es_400(self):
+        codigo, _ = servidor.manejar("PUT", "/api/config", {}, {}, self.ctx)
+
+        self.assertEqual(codigo, 400)
+
+    def test_el_correo_de_la_linea_de_comandos_gana(self):
+        """Quien lo puso en --email sabia lo que hacia; el archivo no lo
+        pisa."""
+        credenciales.guardar_correo("archivo@unam.mx")
+        self.ctx.correo_explicito = "flag@unam.mx"
+
+        _, r = servidor.manejar("GET", "/api/config", {}, None, self.ctx)
+
+        self.assertEqual(r["correo"], "flag@unam.mx")
+        self.assertEqual(r["origen_correo"], "argumento")
+
+    def test_config_no_acepta_otros_metodos(self):
+        for metodo in ("POST", "DELETE"):
+            codigo, _ = servidor.manejar(metodo, "/api/config", {}, {}, self.ctx)
+            self.assertEqual(codigo, 404, metodo)

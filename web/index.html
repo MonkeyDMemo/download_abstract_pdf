@@ -624,6 +624,37 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); ou
     <div class="caja-error" id="error-trabajo" hidden></div>
   </div>
 
+  <div class="tarjeta" id="tarjeta-config">
+    <div class="tarjeta-cabeza">
+      <h2>Credenciales de NCBI</h2>
+      <span class="ins gris" id="ins-config">...</span>
+    </div>
+    <p class="sub" id="config-estado">Consultando...</p>
+
+    <div class="campos" style="margin-top:12px">
+      <div class="campo crece">
+        <label for="c-correo">Correo de contacto</label>
+        <input id="c-correo" type="email" placeholder="tu@correo.unam.mx"
+               autocomplete="email">
+        <p class="pista">NCBI lo exige en cada petición. Es la dirección a la
+           que avisan antes de bloquear la IP, así que conviene que sea una
+           que alguien lea.</p>
+      </div>
+      <div class="campo crece">
+        <label for="c-llave">API key <span class="sub">(opcional)</span></label>
+        <input id="c-llave" type="password" placeholder="36 caracteres"
+               autocomplete="off" spellcheck="false">
+        <p class="pista">Sube el límite de 3 a 10 peticiones por segundo.
+           Se guarda en el archivo <span class="mono">.key</span>, que el
+           <span class="mono">.gitignore</span> ya cubre. Déjalo vacío para
+           conservar la que haya; escribe un espacio y guarda para quitarla.</p>
+      </div>
+    </div>
+    <div class="acciones" style="margin-top:10px">
+      <button class="boton" id="b-guardar-config">Guardar</button>
+    </div>
+  </div>
+
   <div class="rejilla2">
 
     <div class="tarjeta">
@@ -1305,8 +1336,8 @@ function pintarTrabajo(t) {
     caja.textContent = "";
   }
 
-  $("b-run").disabled = activo;
-  $("b-fulltext").disabled = activo;
+  trabajoActivo = activo;
+  actualizarBotonesDeLanzar();
 
   // Al terminar un trabajo cambian las cifras y la bitacora.
   var seguiaActivo = !!(previo && previo.activo);
@@ -2148,6 +2179,94 @@ function verPdf(pmid) {
   cuerpo.appendChild(marco);
 }
 
+/* ============================================ credenciales de NCBI */
+
+/* El correo y la API key se configuran desde aqui y quedan guardados, asi
+   que no hay que exportarlos a mano en cada sesion: esa era la friccion
+   que hacia que lanzar un trabajo fallara con un 400.
+
+   La llave se puede escribir pero NUNCA leer. El servidor solo dice si
+   hay una y de donde salio; su valor no vuelve en ninguna respuesta. Por
+   eso el campo se deja vacio al recargar aunque haya llave guardada. */
+
+var puedeLanzar = false;
+
+function cargarConfig() {
+  return api("GET", "/api/config").then(function (c) {
+    puedeLanzar = !!c.puede_lanzar;
+
+    var ins = $("ins-config");
+    ins.className = "ins " + (c.puede_lanzar ? "ok" : "malo");
+    ins.textContent = c.puede_lanzar ? "lista" : "falta el correo";
+
+    var partes = [];
+    partes.push(c.correo
+      ? "Correo: " + c.correo + " (" + c.origen_correo + ")"
+      : "Sin correo configurado: no se pueden lanzar trabajos.");
+    partes.push(c.tiene_llave
+      ? "API key configurada (" + c.origen_llave + ")."
+      : "Sin API key.");
+    partes.push(c.peticiones_por_segundo + " peticiones por segundo.");
+    $("config-estado").textContent = partes.join(" ");
+
+    // El campo del correo se rellena porque no es secreto; el de la llave
+    // no, porque su valor no sale del servidor.
+    if (c.correo && !$("c-correo").value) { $("c-correo").value = c.correo; }
+
+    // El correo de --email manda: no tiene caso editarlo aqui.
+    var fijo = c.origen_correo === "argumento";
+    $("c-correo").disabled = fijo;
+    $("c-correo").title = fijo
+      ? "Viene de --email en la línea de comandos; ahí se cambia." : "";
+
+    actualizarBotonesDeLanzar();
+    return c;
+  }).catch(function (e) {
+    $("config-estado").textContent = "No se pudo leer la configuración: "
+                                     + e.message;
+  });
+}
+
+/* Sin correo, los botones de lanzar no se habilitan. Vale mas no dejar
+   apretar que dejar apretar y contestar un 400 que hay que ir a leer. */
+var trabajoActivo = false;
+
+function actualizarBotonesDeLanzar() {
+  var ocupado = trabajoActivo;
+  ["b-run", "b-fulltext"].forEach(function (id) {
+    var b = $(id);
+    if (!b) { return; }
+    b.disabled = ocupado || !puedeLanzar;
+    b.title = !puedeLanzar
+      ? "Configura el correo de contacto en «Credenciales de NCBI»"
+      : (ocupado ? "Hay un trabajo en curso" : "");
+  });
+}
+
+$("b-guardar-config").addEventListener("click", function () {
+  var cuerpo = {};
+  var correo = $("c-correo").value.trim();
+  var llave = $("c-llave").value;
+
+  if (correo) { cuerpo.correo = correo; }
+  // Un campo vacio significa "no lo toques"; para quitar la llave hay que
+  // escribir algo en blanco a proposito. Asi recargar la pagina y guardar
+  // no borra la llave sin querer.
+  if (llave !== "") { cuerpo.llave = llave.trim(); }
+
+  if (!cuerpo.correo && cuerpo.llave === undefined) {
+    avisar("Nada que guardar", "Escribe el correo o la API key.", "alerta");
+    return;
+  }
+
+  api("PUT", "/api/config", cuerpo).then(function (c) {
+    $("c-llave").value = "";
+    avisar("Credenciales guardadas",
+           (c.cambios || []).join(" y ") + ". Ya puedes lanzar trabajos.", "ok");
+    cargarConfig();
+  }).catch(avisarError);
+});
+
 /* =========================================== cobertura del corpus */
 
 /* Los elementos de SVG no se crean con createElement: hay que darles el
@@ -2424,6 +2543,7 @@ if (location.protocol === "file:") {
   $("punto-conexion").className = "punto caida";
 } else {
   arrancarRed();
+  cargarConfig();
   cargarConsultas(true);
   cargarPanel();
   sondearTrabajo();

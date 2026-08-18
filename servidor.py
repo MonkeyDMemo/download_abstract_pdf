@@ -36,7 +36,7 @@ import urllib.parse
 import webbrowser
 from pathlib import Path
 
-from grn_etl import db, etl, pubmed, trabajos
+from grn_etl import credenciales, db, etl, pubmed, trabajos
 
 # El tablero es un solo archivo, sin recursos externos. La ruta se resuelve
 # contra __file__ y no contra el directorio de trabajo: asi 'python
@@ -95,11 +95,36 @@ class Contexto:
              escritura en cualquier parte del disco.
     """
 
-    def __init__(self, con, gestor, cliente=None, salida=SALIDA_POR_OMISION):
+    def __init__(self, con, gestor, cliente=None, salida=SALIDA_POR_OMISION,
+                 correo_explicito=None, al_cambiar_cliente=None):
         self.con = con
         self.gestor = gestor
         self.cliente = cliente
         self.salida = salida
+        # El Contexto se arma de nuevo en cada peticion, asi que un cliente
+        # nuevo tiene que subir a quien lo guarda entre peticiones o se
+        # perderia al terminar esta. El callable lo pone la capa HTTP; en
+        # las pruebas no hace falta.
+        self.al_cambiar_cliente = al_cambiar_cliente
+        # Si el correo vino por --email, gana sobre lo guardado y no se
+        # pisa desde el tablero: quien lo puso en la linea de comandos
+        # sabia lo que hacia.
+        self.correo_explicito = correo_explicito
+
+    def rehacer_cliente(self):
+        """Arma de nuevo el cliente con las credenciales de ahora.
+
+        Se llama al guardar la configuracion, para no tener que reiniciar
+        el servidor. Sigue habiendo UNO solo por proceso: el limitador de
+        tasa vive en la instancia, y dos clientes creerian cada uno que
+        respetan el limite mientras el conjunto lo rebasa.
+        """
+        correo = credenciales.correo(self.correo_explicito)
+        self.cliente = (pubmed.Cliente(correo, credenciales.llave())
+                        if correo else None)
+        if self.al_cambiar_cliente:
+            self.al_cambiar_cliente(self.cliente)
+        return self.cliente
 
 
 class Archivo:
@@ -250,6 +275,70 @@ def _consulta_por_nombre(ctx, nombre):
 
 
 # ------------------------------------------------------------------ estado
+
+def _ver_config(ctx):
+    """Que credenciales hay, SIN decir cual es la llave.
+
+    Devuelve si hay llave y de donde salio, nunca su valor. Una llave que
+    entra por un formulario y puede volver a salir por un GET es una
+    llave que cualquier pagina abierta en el mismo navegador podria
+    leerse; que solo se pueda escribir es lo que lo impide.
+    """
+    correo = credenciales.correo(ctx.correo_explicito)
+    return 200, {
+        "correo": correo or "",
+        "origen_correo": ("argumento" if ctx.correo_explicito
+                          else credenciales.origen_correo()),
+        "tiene_llave": bool(credenciales.llave()),
+        "origen_llave": credenciales.origen_llave(),
+        "puede_lanzar": bool(correo),
+        "peticiones_por_segundo": 10 if credenciales.llave() else 3,
+    }
+
+
+def _guardar_config(ctx, cuerpo):
+    """Guarda correo y llave, y rearma el cliente sin reiniciar nada.
+
+    Escribe en los mismos archivos que ya se leian al arrancar, asi que
+    la proxima vez el tablero ya sirve sin exportar nada a mano: esa era
+    la friccion que hacia fallar el lanzamiento.
+    """
+    cuerpo = _objeto(cuerpo)
+    cambios = []
+
+    if "correo" in cuerpo:
+        valor = _texto(cuerpo, "correo", obligatorio=True)
+        try:
+            credenciales.guardar_correo(valor)
+        except ValueError as e:
+            raise ErrorPeticion(400, str(e))
+        cambios.append("correo")
+
+    if "llave" in cuerpo:
+        valor = (cuerpo.get("llave") or "").strip()
+        if valor:
+            try:
+                credenciales.guardar_llave(valor)
+            except ValueError as e:
+                raise ErrorPeticion(400, str(e))
+            cambios.append("llave")
+        else:
+            # Cadena vacia significa quitarla, no ignorarla.
+            credenciales.borrar_llave()
+            cambios.append("llave quitada")
+
+    if not cambios:
+        raise ErrorPeticion(400, "no llegó ni 'correo' ni 'llave'")
+
+    # El cliente se rehace con lo nuevo. Sigue siendo uno solo por
+    # proceso: el limitador de tasa vive en la instancia, y dos clientes
+    # creerian cada uno que respeta el limite mientras el conjunto lo
+    # rebasa.
+    ctx.rehacer_cliente()
+    codigo, estado = _ver_config(ctx)
+    estado["cambios"] = cambios
+    return codigo, estado
+
 
 def _estado(ctx):
     r = db.resumen(ctx.con)
@@ -514,9 +603,11 @@ def _lanzar_trabajo(ctx, cuerpo):
         # se puede es salir a NCBI, que lo exige para identificar el
         # trafico.
         raise ErrorPeticion(
-            400, "falta el correo de contacto de NCBI: arranca el servidor con "
-                 "--email o con la variable de entorno NCBI_EMAIL. Sin él se "
-                 "puede ver y editar, pero no lanzar trabajos.")
+            400,
+            "Falta el correo de contacto de NCBI. Ponlo en «Credenciales "
+            "de NCBI», en el Panel, y se guarda para las próximas veces. "
+            "NCBI lo exige en cada petición: es la dirección a la que "
+            "avisan antes de bloquear la IP del laboratorio.")
 
     if tipo == "run":
         nombre = _texto(cuerpo, "nombre", obligatorio=True)
@@ -596,6 +687,12 @@ def _rutear(metodo, ruta, params, cuerpo, ctx):
 
     recurso = partes[1] if len(partes) > 1 else ""
     resto = partes[2:]
+
+    if recurso == "config" and not resto:
+        if metodo == "GET":
+            return _ver_config(ctx)
+        if metodo == "PUT":
+            return _guardar_config(ctx, cuerpo)
 
     if recurso == "estado" and metodo == "GET" and not resto:
         return _estado(ctx)
@@ -724,8 +821,15 @@ class ManejadorHTTP(http.server.BaseHTTPRequestHandler):
             # daria ProgrammingError. Es la misma decision que tomo
             # trabajos.Gestor, que abre la suya dentro del hilo del trabajo.
             con = db.conectar(self.server.ruta_db)
+            servidor_obj = self.server
+
+            def guardar_cliente(nuevo):
+                servidor_obj.cliente = nuevo
+
             ctx = Contexto(con, self.server.gestor, self.server.cliente,
-                           self.server.salida)
+                           self.server.salida,
+                           correo_explicito=self.server.correo_explicito,
+                           al_cambiar_cliente=guardar_cliente)
             codigo, objeto = manejar(metodo, url.path, params, cuerpo, ctx)
         except Exception:
             # El detalle va a la terminal y no a la respuesta: un traceback
@@ -826,11 +930,13 @@ class Servidor(http.server.ThreadingHTTPServer):
     # y ahi si sirve para no esperar el TIME_WAIT al reiniciar: se deja.
     allow_reuse_address = (sys.platform != "win32")
 
-    def __init__(self, puerto, ruta_db, gestor, cliente, salida):
+    def __init__(self, puerto, ruta_db, gestor, cliente, salida,
+                 correo_explicito=None):
         self.ruta_db = ruta_db
         self.gestor = gestor
         self.cliente = cliente
         self.salida = salida
+        self.correo_explicito = correo_explicito
         # 127.0.0.1 y nada mas. Ver el docstring del modulo: sin
         # autenticacion, con capacidad de borrar y de gastar el limite de
         # NCBI de todo el laboratorio, atarlo a 0.0.0.0 seria abrirle eso a
@@ -856,8 +962,10 @@ def main():
     # encuentre una base vacia a medio construir.
     db.conectar(args.db).close()
 
-    email = args.email or os.environ.get("NCBI_EMAIL")
-    api_key = os.environ.get("NCBI_API_KEY")
+    # Lee el entorno y, si no hay nada ahi, los archivos de la raiz. Eso
+    # es lo que evita tener que exportar la llave a mano en cada sesion.
+    email = credenciales.correo(args.email)
+    api_key = credenciales.llave()
 
     # Un solo Cliente para todo el servidor, reusado por todos los
     # trabajos. El control de tasa vive en la instancia (pubmed.Cliente
@@ -869,7 +977,8 @@ def main():
     gestor = trabajos.Gestor(args.db)
 
     try:
-        servidor = Servidor(args.puerto, args.db, gestor, cliente, args.salida)
+        servidor = Servidor(args.puerto, args.db, gestor, cliente,
+                            args.salida, correo_explicito=args.email)
     except OSError as e:
         sys.exit(f"No se pudo abrir el puerto {args.puerto}: {e}\n"
                  f"Si ya hay otro tablero corriendo, usa --puerto.")
