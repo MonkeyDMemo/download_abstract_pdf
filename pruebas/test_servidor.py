@@ -791,3 +791,43 @@ class PruebasLogo(BasePruebaServidor):
         html = servidor.RUTA_PAGINA.read_text(encoding="utf-8")
 
         self.assertIn('src="/logo.png"', html)
+
+
+class PruebasIntroYRed(BasePruebaServidor):
+    """La pagina de entrada explica que es la herramienta, y su red animada
+    no puede meter una dependencia por la puerta de atras."""
+
+    def setUp(self):
+        super().setUp()
+        self.pagina = servidor.RUTA_PAGINA.read_text(encoding="utf-8")
+
+    def test_el_tablero_no_carga_nada_de_internet(self):
+        """Es la restriccion que gobierna el proyecto entero: la maquina de
+        laboratorio puede no tener salida a internet. Un CDN deja el tablero
+        en blanco justo ahi."""
+        import re
+        externos = re.findall(r'(?:src|href)\s*=\s*["\'](?:https?:)?//[^"\']*',
+                              self.pagina)
+
+        self.assertEqual(externos, [], "el tablero carga algo de fuera")
+
+    def test_la_red_se_dibuja_sin_biblioteca_de_terceros(self):
+        self.assertIn("getContext", self.pagina)
+        self.assertNotIn("three.min.js", self.pagina)
+        self.assertNotIn("THREE.", self.pagina)
+
+    def test_la_animacion_respeta_a_quien_pidio_menos_movimiento(self):
+        self.assertIn("prefers-reduced-motion", self.pagina)
+
+    def test_el_subtitulo_no_amarra_la_herramienta_a_una_sola_consulta(self):
+        """Sirve para cualquier corpus de PubMed, no solo para el de
+        P. aeruginosa con el que se estreno."""
+        cabecera = self.pagina[:self.pagina.find("</header>")]
+
+        self.assertNotIn("aeruginosa", cabecera)
+
+    def test_el_escudo_va_sobre_una_placa_clara(self):
+        """El 87% de sus pixeles opacos son muy oscuros: sobre el fondo de la
+        pagina daria 2.6:1. La placa es lo que lo hace visible sin tener que
+        recolorear un escudo institucional."""
+        self.assertIn("placa-logo", self.pagina)

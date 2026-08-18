@@ -77,6 +77,40 @@ h2 { font-size: 17px; }
 h3 { font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: var(--tenue); }
 p { margin: 0; }
 
+/* -------------------------------------------------- introduccion y red */
+
+/* La tarjeta de entrada: el texto manda y el lienzo va detras, sangrado a
+   la derecha. Es la direccion que pide el sistema: alineado a la izquierda,
+   asimetrico, el contenido pegado al borde izquierdo y el aire a la derecha. */
+.intro { position: relative; overflow: hidden; }
+.intro-texto { position: relative; max-width: 62ch; }
+.intro h2 { font-size: 21px; margin-bottom: 6px; }
+.intro h3 {
+  margin: 18px 0 8px; font-size: 12.5px; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--tenue);
+}
+.intro p { margin-bottom: 9px; }
+.intro .sub { font-size: 13px; }
+.pasos { margin: 0; padding-left: 20px; }
+.pasos li { margin-bottom: 7px; }
+.pasos li::marker { color: var(--acento); font-weight: 600; }
+
+/* El lienzo de la red. Detras del texto y sin capturar el raton: es fondo,
+   no control. En pantallas chicas se apaga: ahi el texto ocupa todo el
+   ancho y la animacion solo estorbaria. */
+#lienzo-red {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  width: 46%; pointer-events: none;
+  /* Se difumina hacia la izquierda para que el texto nunca compita con la
+     animacion, en vez de recortarla con un borde duro. */
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 38%);
+          mask-image: linear-gradient(to right, transparent, #000 38%);
+}
+@media (max-width: 900px) {
+  #lienzo-red { display: none; }
+  .intro-texto { max-width: none; }
+}
+
 /* ------------------------------------------------------------- cabecera */
 
 .cabecera {
@@ -89,11 +123,23 @@ p { margin: 0; }
 .marca { display: flex; align-items: center; gap: 14px; }
 /* El logo institucional lo sirve servidor.py en /logo.png. No va incrustado
    en base64 porque son 109 KB que en el archivo se vuelven 145 KB de texto,
-   y este archivo se edita a mano. Se sirve desde la misma lista blanca que
-   index.html, asi que la regla de no exponer el directorio sigue intacta.
-   La altura manda y el ancho se ajusta solo: el PNG es apaisado. */
+   y este archivo se edita a mano.
+
+   Va sobre una placa clara y no directamente sobre el fondo: el 87% de sus
+   pixeles opacos son muy oscuros (el 60% es casi negro, #1d1d1b), asi que
+   sobre el fondo de la pagina daria 2.6:1 y se perderia. La alternativa
+   seria invertirlo o recolorearlo, y eso no se hace con un escudo
+   institucional. La placa usa neutral-100 en vez de blanco puro porque el
+   sistema no admite blanco puro; sobre ella el logo da 5.9:1. */
+.placa-logo {
+  background: #f3f5fe;
+  border-radius: var(--radio);
+  padding: 7px 11px;
+  display: flex; align-items: center;
+  flex: 0 0 auto;
+}
 .logo {
-  height: 34px; width: auto; flex: 0 0 auto;
+  height: 30px; width: auto;
   display: block;
 }
 .sub { font-size: 12.5px; color: var(--tenue); }
@@ -339,11 +385,13 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); ou
 
 <header class="cabecera">
   <div class="marca">
-    <img class="logo" src="/logo.png"
-         alt="Universidad Nacional Autónoma de México · IIMAS">
+    <span class="placa-logo">
+      <img class="logo" src="/logo.png"
+           alt="Universidad Nacional Autónoma de México · IIMAS">
+    </span>
     <div>
       <h1>Tablero GRN</h1>
-      <p class="sub">ETL de literatura de PubMed para la red de regulación de P. aeruginosa</p>
+      <p class="sub">Descarga y control de literatura científica de PubMed</p>
     </div>
   </div>
   <div class="conexion">
@@ -370,6 +418,38 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); ou
 
 <!-- ============================================================== PANEL -->
 <section class="seccion visible" id="sec-panel">
+
+  <div class="tarjeta intro">
+    <canvas id="lienzo-red" aria-hidden="true"></canvas>
+    <div class="intro-texto">
+      <h2>Qué es esto</h2>
+      <p>Una herramienta para armar y mantener un corpus de literatura
+         científica desde PubMed. Le das una consulta booleana y ella baja los
+         artículos, guarda el estado y <strong>no vuelve a descargar lo que ya
+         tiene</strong>.</p>
+      <p class="sub">Eso último es el punto. Sin un registro compartido, cada
+         persona corre su propio script y baja los mismos artículos otra vez;
+         y NCBI limita por dirección IP, no por usuario, así que el gasto lo
+         paga todo el laboratorio.</p>
+
+      <h3>Cómo se usa</h3>
+      <ol class="pasos">
+        <li><strong>Registra una consulta</strong> en la pestaña Consultas:
+            un nombre y la consulta booleana de PubMed.</li>
+        <li><strong>Baja los abstracts</strong> con «Correr una consulta».
+            Trae título, resumen, autores, DOI y términos MeSH.</li>
+        <li><strong>Baja el texto completo</strong>, primero en XML y luego en
+            PDF. El XML llega con secciones y pies de figura separados; un PDF
+            re-parseado pierde subíndices y entrelaza columnas.</li>
+        <li><strong>Exporta lo que faltó</strong> para pedirlo a la
+            biblioteca, con su liga incluida.</li>
+      </ol>
+      <p class="sub">Solo se descarga lo que los servicios de acceso abierto
+         exponen legalmente. Lo que está detrás de una suscripción no se toca:
+         sale en la lista de pendientes para conseguirlo por la vía
+         institucional.</p>
+    </div>
+  </div>
 
   <div class="tarjeta">
     <div class="tarjeta-cabeza">
@@ -923,6 +1003,9 @@ function mostrarSeccion(nombre) {
     if (nombre === "bitacora") { cargarEjecuciones(); }
   }
   ajustarSondeo();
+  // La red solo se anima con el Panel a la vista: repintar detras de una
+  // pestana que nadie mira gasta bateria y nada mas.
+  redAlCambiarSeccion();
 }
 
 document.querySelectorAll(".pestana").forEach(function (b) {
@@ -1760,6 +1843,142 @@ function cargarEjecuciones() {
 $("b-buscar-ejecuciones").addEventListener("click", cargarEjecuciones);
 $("e-nombre").addEventListener("change", cargarEjecuciones);
 
+/* ============================================== la red que se mueve */
+
+/* Nodos que flotan y se ligan cuando se acercan: son genes y relaciones de
+   regulacion, que es de lo que trata el corpus que este tablero administra.
+
+   Va en Canvas 2D y no con una biblioteca de 3D. La razon es la misma que
+   gobierna el resto del proyecto: cero dependencias. Una biblioteca por CDN
+   deja el tablero en blanco en una maquina sin salida a internet, que es
+   justo el caso de varias del laboratorio, y vendorearla serian cientos de
+   kilobytes para un adorno. Con el 2D se consigue el mismo efecto en una
+   pantalla de codigo y sin pedirle nada a nadie. */
+
+function arrancarRed() {
+  var lienzo = $("lienzo-red");
+  if (!lienzo || !lienzo.getContext) { return; }
+
+  /* Respetar a quien pidio menos movimiento en su sistema: se pinta un
+     cuadro fijo y no se anima. La red se sigue viendo, nada mas quieta. */
+  var quieto = window.matchMedia
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  var ctx = lienzo.getContext("2d");
+  var nodos = [];
+  var ancho = 0, alto = 0;
+  var LIGA = 132;          // distancia a la que dos nodos se consideran ligados
+
+  function medir() {
+    var caja = lienzo.getBoundingClientRect();
+    if (!caja.width || !caja.height) { return false; }
+    // En pantallas densas se pinta al doble y se escala, o se ve borroso.
+    var densidad = Math.min(window.devicePixelRatio || 1, 2);
+    ancho = caja.width; alto = caja.height;
+    lienzo.width = Math.round(ancho * densidad);
+    lienzo.height = Math.round(alto * densidad);
+    ctx.setTransform(densidad, 0, 0, densidad, 0, 0);
+    return true;
+  }
+
+  function sembrar() {
+    // La cantidad sigue al area: en una tarjeta chica, menos nodos.
+    var cuantos = Math.max(14, Math.min(38, Math.round(ancho * alto / 7000)));
+    nodos = [];
+    for (var i = 0; i < cuantos; i++) {
+      nodos.push({
+        x: Math.random() * ancho,
+        y: Math.random() * alto,
+        vx: (Math.random() - 0.5) * 0.22,
+        vy: (Math.random() - 0.5) * 0.22,
+        r: 1.6 + Math.random() * 2.2,
+        // Unos pocos nodos mas grandes hacen de concentradores, como los
+        // factores sigma en una red de regulacion de verdad.
+        eje: Math.random() < 0.18,
+      });
+    }
+  }
+
+  function pintar() {
+    ctx.clearRect(0, 0, ancho, alto);
+
+    for (var i = 0; i < nodos.length; i++) {
+      var a = nodos[i];
+      for (var j = i + 1; j < nodos.length; j++) {
+        var b = nodos[j];
+        var dx = a.x - b.x, dy = a.y - b.y;
+        var d = Math.sqrt(dx * dx + dy * dy);
+        if (d > LIGA) { continue; }
+        // La arista se desvanece con la distancia: el acento entra como
+        // linea y como resplandor, nunca como relleno.
+        ctx.strokeStyle = "rgba(145, 132, 217, " + (0.30 * (1 - d / LIGA)).toFixed(3) + ")";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+    }
+
+    for (var k = 0; k < nodos.length; k++) {
+      var n = nodos[k];
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.eje ? n.r * 1.7 : n.r, 0, Math.PI * 2);
+      ctx.fillStyle = n.eje ? "rgba(181, 171, 252, .85)" : "rgba(145, 132, 217, .55)";
+      ctx.fill();
+      if (n.eje) {
+        ctx.strokeStyle = "rgba(181, 171, 252, .28)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.r * 3.4, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  }
+
+  function paso() {
+    for (var i = 0; i < nodos.length; i++) {
+      var n = nodos[i];
+      n.x += n.vx; n.y += n.vy;
+      // Rebote en los bordes: mantiene la nube dentro sin teletransportar
+      // nodos de un lado a otro, que se nota feo.
+      if (n.x < 0 || n.x > ancho) { n.vx *= -1; n.x = Math.max(0, Math.min(ancho, n.x)); }
+      if (n.y < 0 || n.y > alto)  { n.vy *= -1; n.y = Math.max(0, Math.min(alto, n.y)); }
+    }
+    pintar();
+    animacion = requestAnimationFrame(paso);
+  }
+
+  var animacion = null;
+
+  function reiniciar() {
+    if (animacion) { cancelAnimationFrame(animacion); animacion = null; }
+    if (!medir()) { return; }
+    sembrar();
+    if (quieto) { pintar(); } else { animacion = requestAnimationFrame(paso); }
+  }
+
+  /* Solo se anima mientras el Panel esta a la vista. Un lienzo repintando
+     sesenta veces por segundo detras de una pestana que nadie mira gasta
+     bateria en una laptop de laboratorio. */
+  function segunVisibilidad() {
+    var visible = $("sec-panel").classList.contains("visible")
+                  && !document.hidden;
+    if (visible && !animacion && !quieto) {
+      if (medir()) { animacion = requestAnimationFrame(paso); }
+    } else if (!visible && animacion) {
+      cancelAnimationFrame(animacion); animacion = null;
+    }
+  }
+
+  window.addEventListener("resize", reiniciar);
+  document.addEventListener("visibilitychange", segunVisibilidad);
+  redAlCambiarSeccion = segunVisibilidad;
+  reiniciar();
+}
+
+var redAlCambiarSeccion = function () {};
+
 /* =========================================================== ARRANQUE */
 
 /* Abrir este archivo directamente con doble clic (file://) pinta la pagina
@@ -1783,6 +2002,7 @@ if (location.protocol === "file:") {
   $("texto-conexion").textContent = "Abierto como archivo";
   $("punto-conexion").className = "punto caida";
 } else {
+  arrancarRed();
   cargarConsultas(true);
   cargarPanel();
   sondearTrabajo();
