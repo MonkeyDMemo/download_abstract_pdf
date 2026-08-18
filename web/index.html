@@ -266,6 +266,11 @@ p { margin: 0; }
   display: block;
 }
 .sub { font-size: 12.5px; color: var(--tenue); }
+/* El nombre del encabezado es el mismo texto que el <title> de la pestana
+   del navegador, a proposito: quien llega por un marcador o ve una captura
+   de pantalla reconoce que es el mismo lugar. El separador va en el acento
+   para dividir sin pesar. */
+.et-nombre { color: var(--acento); font-weight: 400; }
 
 .conexion { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--tenue); }
 .punto { width: 9px; height: 9px; border-radius: 50%; background: var(--tenue); flex: 0 0 9px; }
@@ -513,8 +518,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); ou
            alt="Universidad Nacional Autónoma de México · IIMAS">
     </span>
     <div>
-      <h1>Tablero GRN</h1>
-      <p class="sub">Descarga y control de literatura científica de PubMed</p>
+      <h1>Tablero GRN <span class="et-nombre">·</span> ETL de PubMed</h1>
+      <p class="sub">Descarga y control de literatura científica</p>
     </div>
   </div>
   <div class="conexion">

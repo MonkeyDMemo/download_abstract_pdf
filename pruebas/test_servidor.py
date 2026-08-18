@@ -1006,3 +1006,22 @@ class PruebasPmcidEditable(BasePruebaServidor):
 
         self.assertEqual(codigo, 200)
         self.assertIn("Hola", cuerpo["texto"])
+
+
+class PruebasNombreDelTablero(BasePruebaServidor):
+
+    def test_el_encabezado_dice_el_mismo_nombre_que_la_pestana(self):
+        """El <title> del navegador y el encabezado tienen que coincidir:
+        quien llega por un marcador o ve una captura reconoce que es el
+        mismo lugar. Si alguien cambia uno y olvida el otro, esto falla."""
+        import re
+        pagina = servidor.RUTA_PAGINA.read_text(encoding="utf-8")
+        titulo = re.search(r"<title>(.*?)</title>", pagina).group(1)
+        encabezado = pagina[pagina.find("<header"):pagina.find("</header>")]
+        h1 = re.sub(r"<[^>]+>", " ", re.search(r"<h1>(.*?)</h1>", encabezado,
+                                               re.S).group(1))
+
+        # El separador difiere a proposito: '-' en el title, '·' en la
+        # pagina. Lo que tiene que coincidir son las palabras.
+        palabras = lambda s: [p for p in re.split(r"[^\wÁÉÍÓÚÑáéíóúñ]+", s) if p]
+        self.assertEqual(palabras(h1), palabras(titulo))
