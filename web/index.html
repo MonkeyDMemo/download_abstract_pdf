@@ -146,8 +146,14 @@ p { margin: 0; }
 #cobertura {
   display: flex; flex-wrap: wrap; gap: 24px;
   align-items: center; justify-content: space-between;
-  margin-bottom: 18px; padding-bottom: 18px;
-  border-bottom: 1px solid var(--borde2);
+  margin-bottom: 16px; padding-bottom: 16px;
+  border-bottom: 1px solid var(--borde);
+}
+/* Sobre la animacion las cifras necesitan fondo propio, o los nodos se
+   cuelan entre los digitos y el numero deja de leerse de un golpe. */
+.hero .cifra {
+  background: color-mix(in srgb, var(--panel2) 88%, transparent);
+  backdrop-filter: blur(2px);
 }
 .titular { flex: 1 1 320px; min-width: 0; }
 .titular-n {
@@ -183,10 +189,20 @@ p { margin: 0; }
 
 /* -------------------------------------------------- introduccion y red */
 
-/* La tarjeta de entrada: el texto manda y el lienzo va detras, sangrado a
-   la derecha. Es la direccion que pide el sistema: alineado a la izquierda,
-   asimetrico, el contenido pegado al borde izquierdo y el aire a la derecha. */
-.intro { position: relative; overflow: hidden; }
+/* La franja de entrada: la red se mueve de fondo y las metricas van
+   encima. Los nodos son genes y aristas de regulacion, o sea el objeto del
+   que hablan las cifras que se leen sobre ellos; ponerlos juntos es lo que
+   hace que la animacion sea contexto y no adorno. */
+.hero { position: relative; overflow: hidden; padding: 20px 22px; }
+.hero-contenido { position: relative; }
+.hero-cabeza {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.hero-cabeza h2 { font-size: 13px; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--tenue); }
+
+.intro { position: relative; }
 .intro-texto { position: relative; max-width: 62ch; }
 .intro h2 { font-size: 21px; margin-bottom: 6px; }
 .intro h3 {
@@ -199,18 +215,21 @@ p { margin: 0; }
 .pasos li { margin-bottom: 7px; }
 .pasos li::marker { color: var(--acento); font-weight: 600; }
 
-/* El lienzo de la red. Detras del texto y sin capturar el raton: es fondo,
-   no control. En pantallas chicas se apaga: ahi el texto ocupa todo el
-   ancho y la animacion solo estorbaria. */
+/* El lienzo cubre la franja entera y no captura el raton: es fondo, no
+   control. Se atenua para que las cifras siempre ganen en contraste; la
+   animacion tiene que leerse como textura detras del dato, no competir con
+   el. El degradado la deja mas presente a la derecha, donde no hay texto
+   grande. */
 #lienzo-red {
-  position: absolute; top: 0; right: 0; bottom: 0;
-  width: 46%; pointer-events: none;
-  /* Se difumina hacia la izquierda para que el texto nunca compita con la
-     animacion, en vez de recortarla con un borde duro. */
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 38%);
-          mask-image: linear-gradient(to right, transparent, #000 38%);
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; pointer-events: none;
+  opacity: .5;
+  -webkit-mask-image: linear-gradient(105deg, transparent 12%, #000 62%);
+          mask-image: linear-gradient(105deg, transparent 12%, #000 62%);
 }
 @media (max-width: 900px) {
+  /* En pantalla angosta las cifras ocupan todo el ancho y la animacion
+     quedaria justo debajo del texto, donde si estorba. */
   #lienzo-red { display: none; }
   .intro-texto { max-width: none; }
 }
@@ -523,8 +542,21 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); ou
 <!-- ============================================================== PANEL -->
 <section class="seccion visible" id="sec-panel">
 
-  <div class="tarjeta intro">
+  <div class="tarjeta hero">
     <canvas id="lienzo-red" aria-hidden="true"></canvas>
+    <div class="hero-contenido">
+      <div class="hero-cabeza">
+        <h2>Estado del corpus</h2>
+        <button class="boton suave mini" id="b-refrescar-estado">Actualizar</button>
+      </div>
+      <div id="cobertura"></div>
+      <div class="cifras" id="cifras">
+        <div class="cifra"><div class="n cargando">...</div><div class="et">cargando</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tarjeta intro">
     <div class="intro-texto">
       <h2>Qué es esto</h2>
       <p>Una herramienta para armar y mantener un corpus de literatura
@@ -556,15 +588,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); ou
   </div>
 
   <div class="tarjeta">
-    <div class="tarjeta-cabeza">
-      <h2>Estado de la base</h2>
-      <button class="boton suave mini" id="b-refrescar-estado">Actualizar</button>
-    </div>
-    <div id="cobertura"></div>
-    <div class="cifras" id="cifras">
-      <div class="cifra"><div class="n cargando">...</div><div class="et">cargando</div></div>
-    </div>
-    <div id="bloque-descargas" style="margin-top:16px">
+    <div id="bloque-descargas">
       <h3 style="margin-bottom:8px">Descargas de full text</h3>
       <div class="tabla-envoltura">
         <table>

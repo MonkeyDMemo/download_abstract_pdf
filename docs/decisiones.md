@@ -370,6 +370,14 @@ unos pocos nodos mayores que hacen de concentradores, como los factores sigma
 en una red de regulación real. La figura no es un adorno cualquiera: es el
 objeto del que trata el corpus.
 
+Por eso mismo la red va arriba de todo y **las métricas van encima de ella**:
+los nodos son genes y aristas de regulación, o sea justo lo que cuentan las
+cifras que se leen sobre ellos. Puestos juntos, la animación es contexto; en
+una tarjeta aparte sería decoración. El lienzo va al 50% de opacidad con un
+degradado, y las cifras llevan fondo propio: si los nodos se cuelan entre los
+dígitos, el número deja de leerse de un golpe y la animación pasó de contexto
+a estorbo.
+
 Dos cuidados que no se ven pero importan en una laptop. La animación se
 detiene cuando el Panel no está a la vista o la pestaña del navegador está
 oculta, porque repintar sesenta veces por segundo detrás de algo que nadie
