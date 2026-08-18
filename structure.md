@@ -28,7 +28,7 @@ grn_etl/
   trabajos.py          gestor de trabajos en segundo plano, uno a la vez
 pruebas/
   falsos.py            cliente falso y fabricas de XML/JSON fijos
-  test_*.py            300 pruebas con unittest; ninguna toca la red
+  test_*.py            309 pruebas con unittest; ninguna toca la red
 docs/
   decisiones.md        las decisiones de diseno y por que se tomaron asi
 pa_regulacion.txt      la consulta booleana, en texto plano

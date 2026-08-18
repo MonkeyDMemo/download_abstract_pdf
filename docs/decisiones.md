@@ -309,3 +309,88 @@ Conviene no confundir dos listas que se parecen. "Sin full text" para la
 biblioteca incluye a quien no tiene ni XML ni PDF. "Sin insumo para el
 clasificador" es `descargas WHERE tipo = 'xml' AND estatus = 'ok'`, y un
 artículo con PDF sigue faltando ahí.
+
+## El tablero es oscuro por decisión, no por preferencia del sistema
+
+El tablero nació con tema claro y un bloque de `prefers-color-scheme: dark`
+que lo repintaba si el sistema operativo lo pedía. Al adoptar el sistema
+visual del laboratorio —Nocturne, en `web/UI mockups request/`— se quitó ese
+bloque.
+
+Mantener los dos era mantener dos tableros: cada color nuevo hay que elegirlo
+dos veces y verificarlo dos veces, y el que casi nadie mira se degrada sin que
+nadie se entere. El diseño acordado es oscuro; el tablero es oscuro.
+
+El cambio fue de tokens, no de estructura. El CSS ya estaba escrito contra
+variables —noventa usos de `var(--…)` contra veintitrés colores incrustados—,
+así que bastó sustituir el bloque `:root` y ajustar cinco reglas que asumían
+fondo claro. Ninguna de las setenta y dos clases cambió de nombre y ningún
+`id` se tocó, así que el JavaScript no se enteró.
+
+Dos cosas de la hoja de referencia **no** se copiaron, y las dos por la misma
+razón: la tipografía Inter y los iconos Phosphor vienen de un CDN. El token de
+la fuente ya declara el respaldo del sistema, y eso es lo que se usa.
+
+Del sistema sí se tomó una regla que cambia cómo se ve el tablero más que la
+paleta: **los botones van delineados, nunca rellenos**. El acento se usa como
+línea, no como superficie.
+
+## El escudo institucional va sobre una placa clara
+
+Sobre el fondo oscuro el escudo casi no se veía. En vez de ajustarlo a ojo se
+decodificó el PNG y se contaron sus píxeles: **el 87% de los opacos son muy
+oscuros** —el 60% es casi negro (`#1d1d1b`) y el 21% azul institucional
+(`#253371`)—, lo que sobre `#161826` da 2.6:1.
+
+Las salidas eran tres. Invertirlo o recolorearlo se descartó de entrada: es un
+escudo institucional y sus colores no son nuestros para cambiarlos. Aclarar el
+fondo de toda la página contradecía el diseño acordado. Queda la tercera, que
+además es el tratamiento habitual: una placa clara detrás del escudo, que sube
+el contraste a 5.9:1 y deja los colores intactos.
+
+La placa usa `neutral-100` y no blanco puro porque el sistema no admite blanco
+puro; la diferencia no se nota y la regla se respeta.
+
+## La red animada se dibuja en Canvas 2D, no con una biblioteca de 3D
+
+Se pidió `three.js` para los nodos del panel de entrada. Se resolvió con
+Canvas 2D de a pie, y conviene dejar escrito por qué para no volver a
+discutirlo.
+
+La restricción que gobierna el proyecto entero es cero dependencias, y su
+razón es de despliegue: las máquinas del laboratorio a veces no tienen salida
+a internet. Una biblioteca por CDN no degrada con elegancia en ese caso —deja
+el panel de entrada vacío justo en la máquina donde más cuesta diagnosticarlo—
+y vendorearla serían cientos de kilobytes dentro de un archivo que hoy pesa
+setenta y ocho, para un elemento decorativo.
+
+Canvas 2D da el mismo efecto en una pantalla de código: nodos que flotan,
+aristas que aparecen cuando dos se acercan y se desvanecen con la distancia, y
+unos pocos nodos mayores que hacen de concentradores, como los factores sigma
+en una red de regulación real. La figura no es un adorno cualquiera: es el
+objeto del que trata el corpus.
+
+Dos cuidados que no se ven pero importan en una laptop. La animación se
+detiene cuando el Panel no está a la vista o la pestaña del navegador está
+oculta, porque repintar sesenta veces por segundo detrás de algo que nadie
+mira solo gasta batería. Y con `prefers-reduced-motion` se pinta un cuadro
+fijo en lugar de animar: la red se sigue viendo, quieta.
+
+Si algún día hace falta 3D de verdad, la vía es vendorear el archivo y
+servirlo desde la lista blanca de `servidor.py`, la misma del escudo. Pero
+entonces el tablero deja de ser un archivo autocontenido, y eso se decide a
+sabiendas, no de pasada.
+
+## La lista blanca de archivos servidos, y por qué es por igualdad exacta
+
+`servidor.py` sirve dos archivos y nada más: la página y el escudo. No sirve
+un directorio, y la diferencia no es de estilo. En la raíz del proyecto viven
+`.key` con la llave de NCBI, la base con el corpus entero y todo el código;
+apuntar un manejador de archivos estático a esa carpeta los expone a quien
+abra el navegador.
+
+Cada ruta se compara **por igualdad exacta** contra su propia ruta fija, que
+sale de `__file__` y no se compone con nada de la petición. Por eso no existe
+un `..` que sirva de nada, y por eso `/logo.PNG` también da 404: la lista es
+de dos cadenas, no de un patrón. Hay pruebas que lo fijan, incluidas las
+variantes codificadas.

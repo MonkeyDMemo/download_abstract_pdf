@@ -141,6 +141,26 @@ a mano un titulo o un anio que llego mal. Escucha solo en 127.0.0.1 y corre un
 trabajo a la vez. `web/index.html` abierto con doble clic no sirve: la pagina
 pide sus datos a `/api/...`, que lo sirve `servidor.py`.
 
+**El tablero no carga nada de internet, y eso no es negociable.** Todo el CSS
+y el JavaScript viven dentro de `web/index.html`. Una tipografia, un paquete
+de iconos o una biblioteca de graficos traidos de un CDN dejan la pagina rota
+justo en la maquina sin salida a internet, que es la que este proyecto tiene
+que atender. Si hace falta algo asi, se vendora y se sirve desde la lista
+blanca de `servidor.py`, a sabiendas de que el tablero deja de ser un archivo
+autocontenido. Hay una prueba que falla si aparece un `src` o `href` externo.
+
+`servidor.py` sirve **dos** archivos y nada mas: `/` (la pagina) y `/logo.png`
+(el escudo). La comparacion es por igualdad exacta contra rutas fijas que
+salen de `__file__`, no por prefijo: en la raiz viven `.key`, la base y el
+codigo, y apuntar un manejador de archivos estatico ahi los expondria.
+
+El aspecto es el sistema Nocturne, cuya referencia esta en
+`web/UI mockups request/` (no se sirve ni se ejecuta: es un lienzo de diseno y
+carga React desde CDN). Los tokens estan copiados al `:root` de `index.html`.
+Es oscuro por decision, sin bloque de `prefers-color-scheme`: mantener los dos
+temas era mantener dos tableros. Los botones van delineados, nunca rellenos.
+Ver `docs/decisiones.md`.
+
 `run` siempre antes que `fulltext`. Dentro de `fulltext`, `xml` antes que
 `pdf`: el JATS de PMC llega con secciones separadas y pies de figura
 identificados; un PDF re-parseado pierde subindices de genes y entrelaza
@@ -152,7 +172,7 @@ columnas. El XML alimenta al clasificador; el PDF es para lectura humana.
 python3 -m unittest discover        # desde la raiz del proyecto
 ```
 
-300 pruebas con `unittest` de la estandar, en `pruebas/`. No tocan la red: se inyecta
+309 pruebas con `unittest` de la estandar, en `pruebas/`. No tocan la red: se inyecta
 `pruebas.falsos.ClienteFalso`, que devuelve XML o JSON fijo y registra cada
 llamada. Ademas `PruebaSinRed` deja `urlopen` inutilizable, asi que una
 prueba que arme un `Cliente` de verdad falla en vez de salir a NCBI.

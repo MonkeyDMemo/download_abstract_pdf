@@ -175,6 +175,9 @@ Lo mismo que hace el CLI, pero en el navegador: ver las consultas, buscar entre
 los documentos, corregir a mano un título o un año que llegó mal, revisar las
 descargas y lanzar un `run` o un `fulltext` viendo la bitácora avanzar en vivo.
 
+Al entrar explica qué es la herramienta y los cuatro pasos para usarla, así que
+alguien que llega nuevo al laboratorio puede abrirlo sin haber leído esto.
+
 ```bash
 python3 servidor.py --abrir
 ```
@@ -189,6 +192,12 @@ Dos cosas que conviene saber antes de usarlo:
   datos adentro: los pide por HTTP a `/api/...`, y ese API lo sirve
   `servidor.py`. Abierta como archivo no hay nadie del otro lado y la pantalla
   se queda vacía. Siempre por `python3 servidor.py`.
+- **No carga nada de internet.** Todo el CSS y el JavaScript viven dentro de
+  `web/index.html`, y el escudo institucional lo sirve el propio
+  `servidor.py`. Es la misma razón por la que el Python es solo biblioteca
+  estándar: en una máquina sin salida a internet el tablero se ve igual. Si
+  algo va a agregarse ahí —una tipografía, un paquete de iconos, una
+  biblioteca de gráficos— tiene que venir vendorado, nunca desde un CDN.
 - **Escucha solo en 127.0.0.1**, es decir, únicamente desde la misma máquina.
   No tiene autenticación de ninguna clase y puede borrar documentos y gastar el
   límite de NCBI de todo el laboratorio, así que exponerlo a la red sería
@@ -261,7 +270,7 @@ De los 2263, siete no traen abstract: son registros donde PubMed no lo publica
 python3 -m unittest discover     # desde la raíz del proyecto
 ```
 
-300 pruebas con `unittest` de la biblioteca estándar, en `pruebas/`. **Ninguna
+309 pruebas con `unittest` de la biblioteca estándar, en `pruebas/`. **Ninguna
 toca la red.** Se inyecta `pruebas.falsos.ClienteFalso`, que devuelve XML o
 JSON fijo y registra cada llamada; además, la clase base deja `urlopen`
 inutilizable, así que una prueba que arme un cliente de verdad falla en vez de
@@ -281,7 +290,7 @@ grn_etl/
   etl.py               orquestación; no imprime, reporta por callback
   pubmed.py            clientes de E-utilities, PMC y Unpaywall
   trabajos.py          corre un trabajo en segundo plano, uno a la vez
-pruebas/               300 pruebas; ninguna toca la red
+pruebas/               309 pruebas; ninguna toca la red
 datos/grn.db           la base (fuera del repositorio)
 datos/fulltext/        XML, texto derivado y PDF (fuera del repositorio)
 salidas/               exportaciones CSV y JSONL (fuera del repositorio)
