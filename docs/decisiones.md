@@ -394,3 +394,99 @@ sale de `__file__` y no se compone con nada de la petición. Por eso no existe
 un `..` que sirva de nada, y por eso `/logo.PNG` también da 404: la lista es
 de dos cadenas, no de un patrón. Hay pruebas que lo fijan, incluidas las
 variantes codificadas.
+
+## La ruta de un archivo se arma con identificadores, nunca con la base
+
+El tablero sirve el texto y el PDF de un documento. Componer esa ruta es el
+punto donde un tablero local se convierte en un lector de archivos arbitrarios,
+y en la raíz del proyecto viven `.key` con la llave de NCBI, la base y el
+código.
+
+La salida obvia era leer `descargas.ruta`, que es donde el ETL apuntó lo que
+escribió. Se descartó por dos razones. La primera es práctica: esa columna
+guarda una ruta **relativa** al directorio desde donde corrió el ETL —y con
+diagonales de Windows, `datos\fulltext\pdf\41212033.pdf`—, que no tiene por qué
+ser el directorio del servidor. La segunda es de fondo: meter una cadena
+guardada en una ruta de disco convierte cualquier escritura en la base en una
+lectura de archivo, y la base se puede editar desde el propio tablero.
+
+En vez de eso la ruta se arma con el PMID y el PMCID, validados contra
+`^\d{1,12}$` y `^PMC\d{1,12}$`, más la convención de nombres de
+`structure.md`. No es una suposición: se verificó contra los 2263 documentos
+que **todos** los PMID son dígitos y **todos** los PMCID casan su patrón, y que
+el 100% de los archivos se localizan así —300 de 300 de texto, 43 de 43 de PDF.
+
+Encima va una comprobación de contención: la ruta resuelta tiene que quedar
+dentro de la raíz de salida resuelta. Es redundante con la validación anterior
+y se queda de todas formas, porque cuesta tres líneas y cubre el descuido de
+mañana. Ojo con una trampa: `Path.is_relative_to` existe desde Python 3.9 y el
+proyecto apunta a 3.8, así que la comparación se hace sobre `parents`.
+
+Las rutas viven bajo `/api/` a propósito. La lista blanca de la raíz sigue
+siendo de dos archivos comparados por igualdad exacta; esto no la toca.
+
+## El lector no cabía en el modal
+
+El detalle de un documento vive en un modal de `min(760px, 100%)` con
+`max-height: 68vh`. El texto extraído de un artículo tiene una mediana de 56
+mil caracteres y un máximo de 108 mil. Leer eso ahí es un castigo, así que el
+lector es una vista propia.
+
+No tiene pestaña. Se llega desde el botón «Leer» de la tabla y se sale con
+«Volver», que regresa a donde estabas: no es un lugar al que se entre, sino al
+que se va por un documento.
+
+El texto se manda como JSON y no como archivo, para que el tablero lo pinte
+con su helper y sin `innerHTML`: los artículos traen `<` y `>` de fórmulas y de
+nombres de genes, y ahí es exactamente donde se cuela una inyección.
+
+El índice de secciones sale gratis: `jats_a_texto` ya deja el texto con
+jerarquía tipo markdown (`#` título, `##` sección, hasta `#####`). La sección
+`PIES DE FIGURA Y TABLA` se marca aparte porque ahí se concentran las
+relaciones factor-gen, que es lo que alguien viene a revisar.
+
+El PDF va en un `<iframe>` con el visor nativo del navegador. Sin PDF.js ni
+ninguna otra biblioteca, por la misma razón de siempre.
+
+## La portada dice cuánto sirve, no cuántos hay
+
+«Cuántos documentos tenemos» y «cuánto del corpus sirve para el clasificador»
+son preguntas distintas, y se confundieron una y otra vez mientras se armaba
+esto. Un artículo con abstract está en la base pero no alimenta la extracción
+de relaciones: para eso hace falta el texto completo.
+
+Por eso la cifra grande de la portada no es el total de documentos sino el
+porcentaje que tiene texto completo —hoy 40.6%, 918 de 2263—, y la dona reparte
+por cobertura de texto y no por estado de descargas.
+
+La dona es SVG y no canvas: escala sin verse borrosa, se puede etiquetar para
+lectores de pantalla y no hay que repintarla. Se dibuja con un círculo por
+tramo y `stroke-dasharray`, sin rutas ni trigonometría. Un detalle de
+implementación que cuesta encontrar: los elementos de SVG no se crean con
+`createElement` sino con `createElementNS`, o el navegador los trata como
+etiquetas desconocidas y no pinta nada.
+
+Al lado va siempre la leyenda con las cifras y los porcentajes. La gráfica
+nunca es la única forma de leer el dato, ni para quien usa lector de pantalla
+ni para quien no distingue los colores.
+
+## La idempotencia, comprobada contra PubMed
+
+Se registró una segunda consulta que es la primera menos ocho términos, y se
+corrió:
+
+```
+PubMed reporta      : 1434
+Ya estaban          : 1433
+Nuevos descargados  :    1
+```
+
+Después, la base: **2264 documentos y 3697 vínculos**, con 1433 artículos
+ligados a las dos consultas. La suma ingenua de las dos consultas da
+justamente 3697, que es el número de vínculos; los documentos son 2264 porque
+lo compartido se almacena una vez.
+
+O sea que registrar una consulta que se solapa costó **una** llamada a
+`efetch`, por el único artículo publicado desde la corrida anterior. Es la
+decisión de diseño central rindiendo en un caso real, y el número que hay que
+volver a ver si algún día se toca `ingestar()`.

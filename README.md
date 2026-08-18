@@ -270,7 +270,7 @@ De los 2263, siete no traen abstract: son registros donde PubMed no lo publica
 python3 -m unittest discover     # desde la raíz del proyecto
 ```
 
-309 pruebas con `unittest` de la biblioteca estándar, en `pruebas/`. **Ninguna
+331 pruebas con `unittest` de la biblioteca estándar, en `pruebas/`. **Ninguna
 toca la red.** Se inyecta `pruebas.falsos.ClienteFalso`, que devuelve XML o
 JSON fijo y registra cada llamada; además, la clase base deja `urlopen`
 inutilizable, así que una prueba que arme un cliente de verdad falla en vez de
@@ -290,7 +290,7 @@ grn_etl/
   etl.py               orquestación; no imprime, reporta por callback
   pubmed.py            clientes de E-utilities, PMC y Unpaywall
   trabajos.py          corre un trabajo en segundo plano, uno a la vez
-pruebas/               309 pruebas; ninguna toca la red
+pruebas/               331 pruebas; ninguna toca la red
 datos/grn.db           la base (fuera del repositorio)
 datos/fulltext/        XML, texto derivado y PDF (fuera del repositorio)
 salidas/               exportaciones CSV y JSONL (fuera del repositorio)

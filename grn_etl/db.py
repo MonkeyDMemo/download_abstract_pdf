@@ -637,6 +637,61 @@ def conteos_documento(con, pmid):
     }
 
 
+def cobertura_texto(con):
+    """Cuanto texto tenemos de cada documento: la cifra que de verdad importa.
+
+    Devuelve {"total", "completo", "solo_abstract", "sin_texto"}, y las tres
+    ultimas suman la primera: cada documento cae en exactamente una.
+
+    Existe porque "cuantos documentos hay" y "cuanto del corpus sirve para
+    el clasificador" son preguntas distintas que se confunden todo el
+    tiempo. Un articulo con abstract esta en la base pero no alimenta la
+    extraccion de relaciones; para eso hace falta el texto completo.
+
+    'completo' es tener texto completo de cualquier tipo. Hoy eso siempre
+    es el XML, porque ningun documento tiene PDF sin tener XML, pero la
+    condicion se escribe sobre el estatus y no sobre el tipo: el dia que
+    haya un PDF suelto, cuenta.
+    """
+    total = con.execute("SELECT COUNT(*) c FROM documentos").fetchone()["c"]
+    completo = con.execute(
+        """SELECT COUNT(DISTINCT d.pmid) c FROM documentos d
+             JOIN descargas dz ON dz.pmid = d.pmid AND dz.estatus = 'ok'"""
+    ).fetchone()["c"]
+    solo_abstract = con.execute(
+        """SELECT COUNT(*) c FROM documentos d
+            WHERE d.tiene_abstract = 1
+              AND NOT EXISTS (SELECT 1 FROM descargas dz
+                               WHERE dz.pmid = d.pmid AND dz.estatus = 'ok')"""
+    ).fetchone()["c"]
+    return {
+        "total": total,
+        "completo": completo,
+        "solo_abstract": solo_abstract,
+        "sin_texto": total - completo - solo_abstract,
+    }
+
+
+def descargas_de(con, pmid):
+    """Las descargas de un documento, para saber que se puede abrir.
+
+    El detalle de un documento no traia nada de esta tabla salvo un
+    conteo, asi que el tablero no tenia como saber si ofrecer "Leer texto"
+    o "Ver PDF". Devuelve tambien 'nota', que es lo que explica por que no
+    hay nada cuando no lo hay.
+
+    No devuelve 'ruta' a proposito: quien sirve un archivo arma su ruta
+    desde el pmid validado y la convencion de nombres, nunca desde una
+    cadena guardada. Ver docs/decisiones.md.
+    """
+    filas = con.execute(
+        """SELECT tipo, estatus, fuente, bytes, nota, url, actualizado_en
+             FROM descargas WHERE pmid = ? ORDER BY tipo""",
+        (pmid,),
+    ).fetchall()
+    return [dict(f) for f in filas]
+
+
 def anios_disponibles(con):
     """Anios distintos que hay en documentos, del mas reciente al mas viejo.
 

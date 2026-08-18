@@ -770,3 +770,109 @@ class PruebasPendientesBiblioteca(BasePruebaTablero):
         db.vincular(self.con, otra, ["333"])
 
         self.assertEqual(self.pmids().count("333"), 1)
+
+
+class PruebasCoberturaTexto(BasePruebaTablero):
+    """"Cuantos documentos hay" y "cuanto sirve para el clasificador" son
+    preguntas distintas, y confundirlas es el error que esta funcion existe
+    para evitar."""
+
+    def setUp(self):
+        super().setUp()
+        self.cid, _ = db.alta_consulta(self.con, "pa", "q")
+
+    def sembrar(self, *docs):
+        db.guardar_documentos(self.con, list(docs))
+        db.vincular(self.con, self.cid, [d["pmid"] for d in docs])
+
+    def test_las_tres_categorias_suman_el_total(self):
+        """Cada documento cae en exactamente una: si no suman, alguna
+        condicion se solapa o deja un hueco."""
+        self.sembrar({"pmid": "111", "abstract": "hay"},
+                     {"pmid": "222", "abstract": "hay"},
+                     {"pmid": "333", "abstract": ""},
+                     {"pmid": "444", "abstract": "hay"})
+        db.registrar_descarga(self.con, "111", "xml", "ok", ruta="/a.txt")
+
+        c = db.cobertura_texto(self.con)
+
+        self.assertEqual(c["completo"] + c["solo_abstract"] + c["sin_texto"],
+                         c["total"])
+        self.assertEqual(c, {"total": 4, "completo": 1,
+                             "solo_abstract": 2, "sin_texto": 1})
+
+    def test_un_documento_con_los_dos_formatos_se_cuenta_una_vez(self):
+        self.sembrar({"pmid": "111", "abstract": "hay"})
+        db.registrar_descarga(self.con, "111", "xml", "ok", ruta="/a.txt")
+        db.registrar_descarga(self.con, "111", "pdf", "ok", ruta="/a.pdf")
+
+        c = db.cobertura_texto(self.con)
+
+        self.assertEqual(c["completo"], 1)
+        self.assertEqual(c["total"], 1)
+
+    def test_un_pdf_sin_xml_tambien_cuenta_como_texto_completo(self):
+        """Hoy no pasa, pero la condicion se escribe sobre el estatus y no
+        sobre el tipo justamente para que el dia que pase, cuente."""
+        self.sembrar({"pmid": "111", "abstract": "hay"})
+        db.registrar_descarga(self.con, "111", "pdf", "ok", ruta="/a.pdf")
+
+        self.assertEqual(db.cobertura_texto(self.con)["completo"], 1)
+
+    def test_una_descarga_fallida_no_cuenta_como_texto(self):
+        self.sembrar({"pmid": "111", "abstract": "hay"})
+        db.registrar_descarga(self.con, "111", "xml", "no_disponible")
+
+        c = db.cobertura_texto(self.con)
+
+        self.assertEqual(c["completo"], 0)
+        self.assertEqual(c["solo_abstract"], 1)
+
+    def test_una_base_vacia_no_truena(self):
+        self.assertEqual(db.cobertura_texto(self.con),
+                         {"total": 0, "completo": 0,
+                          "solo_abstract": 0, "sin_texto": 0})
+
+
+class PruebasDescargasDe(BasePruebaTablero):
+
+    def setUp(self):
+        super().setUp()
+        cid, _ = db.alta_consulta(self.con, "pa", "q")
+        db.guardar_documentos(self.con, [{"pmid": "111"}])
+        db.vincular(self.con, cid, ["111"])
+
+    def test_devuelve_lo_que_hace_falta_para_saber_que_se_puede_abrir(self):
+        db.registrar_descarga(self.con, "111", "xml", "ok", fuente="PMC",
+                              ruta="/a.txt", tam=1234)
+
+        filas = db.descargas_de(self.con, "111")
+
+        self.assertEqual(len(filas), 1)
+        self.assertEqual(filas[0]["tipo"], "xml")
+        self.assertEqual(filas[0]["estatus"], "ok")
+        self.assertEqual(filas[0]["bytes"], 1234)
+
+    def test_no_devuelve_la_ruta_del_disco(self):
+        """Quien sirve un archivo arma su ruta desde el pmid validado y la
+        convencion de nombres, nunca desde una cadena guardada. Mandarla al
+        navegador solo invita a que alguien la use para eso."""
+        db.registrar_descarga(self.con, "111", "pdf", "ok", ruta="/secreto/a.pdf")
+
+        self.assertNotIn("ruta", db.descargas_de(self.con, "111")[0])
+
+    def test_trae_la_nota_que_explica_por_que_no_hay_nada(self):
+        db.registrar_descarga(self.con, "111", "pdf", "no_disponible",
+                              nota="el editor nego el acceso",
+                              url="https://editor/111")
+
+        fila = db.descargas_de(self.con, "111")[0]
+
+        self.assertEqual(fila["nota"], "el editor nego el acceso")
+        self.assertEqual(fila["url"], "https://editor/111")
+
+    def test_un_documento_sin_descargas_devuelve_lista_vacia(self):
+        self.assertEqual(db.descargas_de(self.con, "111"), [])
+
+    def test_un_pmid_que_no_existe_devuelve_lista_vacia(self):
+        self.assertEqual(db.descargas_de(self.con, "999"), [])

@@ -259,6 +259,9 @@ def _estado(ctx):
         "con_abstract": r["con_abstract"],
         "vinculos": r["vinculos"],
         "descargas": [dict(f) for f in r["descargas"]],
+        # Cuanto del corpus sirve para el clasificador, que no es lo mismo
+        # que cuantos documentos hay y se confunde todo el tiempo.
+        "cobertura": db.cobertura_texto(ctx.con),
     }
 
 
@@ -353,7 +356,90 @@ def _ver_documento(ctx, pmid):
     conteos = db.conteos_documento(ctx.con, pmid)
     doc["n_vinculos"] = conteos["vinculos"]
     doc["n_descargas"] = conteos["descargas"]
+    # Con esto el tablero sabe si ofrecer "Leer texto" o "Ver PDF" sin tener
+    # que preguntar por separado, y que decir cuando no hay ninguno.
+    doc["descargas"] = db.descargas_de(ctx.con, pmid)
     return 200, doc
+
+
+# Un PMID es una sarta de digitos y un PMCID es PMC mas digitos. No es una
+# suposicion: se verifico contra los 2263 documentos de la base. De esa
+# estrechez depende que armar un nombre de archivo con ellos sea seguro.
+PMID_VALIDO = re.compile(r"^\d{1,12}$")
+PMCID_VALIDO = re.compile(r"^PMC\d{1,12}$")
+
+
+def _dentro_de(raiz, ruta):
+    """Si 'ruta' queda dentro de 'raiz', ya resueltas las dos.
+
+    Path.is_relative_to existe desde Python 3.9 y el proyecto apunta a 3.8,
+    asi que se compara por partes. Es el cinturon sobre los tirantes: los
+    nombres ya se arman con identificadores validados, pero una comprobacion
+    de contencion cuesta tres lineas y cubre el descuido de manana.
+    """
+    try:
+        raiz = raiz.resolve()
+        ruta = ruta.resolve()
+    except OSError:
+        return False
+    return raiz == ruta or raiz in ruta.parents
+
+
+def _archivo_de_documento(ctx, pmid, tipo):
+    """Localiza en disco el texto o el PDF de un documento.
+
+    La ruta se arma con el PMID y el PMCID de la base, los dos validados
+    contra su patron, mas la convencion de nombres de structure.md. NUNCA
+    se usa 'descargas.ruta': esa columna guarda una ruta relativa al
+    directorio donde corrio el ETL, que no tiene por que ser el del
+    servidor, y meter una cadena de la base en una ruta de disco es como se
+    llega a servir un archivo que nadie queria servir.
+
+    Devuelve None si el documento no tiene ese formato descargado.
+    """
+    if not PMID_VALIDO.match(pmid):
+        return None
+    fila = db.obtener_documento(ctx.con, pmid)
+    if fila is None:
+        return None
+
+    raiz = Path(ctx.salida)
+    if tipo == "pdf":
+        ruta = raiz / "pdf" / (pmid + ".pdf")
+    else:
+        pmcid = fila["pmcid"] or ""
+        if not PMCID_VALIDO.match(pmcid):
+            return None
+        ruta = raiz / "xml" / (pmid + "_" + pmcid + ".txt")
+
+    if not _dentro_de(raiz, ruta) or not ruta.is_file():
+        return None
+    return ruta
+
+
+def _texto_documento(ctx, pmid):
+    """El texto completo extraido, como JSON.
+
+    Va como JSON y no como archivo para que el tablero lo pinte con su
+    helper y sin innerHTML: los articulos traen '<' y '>' de formulas y de
+    nombres de genes. La mediana son 56 KB y el mayor 108 KB, asi que cabe
+    de sobra en una respuesta.
+    """
+    ruta = _archivo_de_documento(ctx, pmid, "texto")
+    if ruta is None:
+        raise ErrorPeticion(404, f"no hay texto completo descargado de {pmid}")
+    try:
+        texto = ruta.read_text(encoding="utf-8")
+    except OSError as e:
+        raise ErrorPeticion(500, f"no se pudo leer el texto de {pmid}: {e}")
+    return 200, {"pmid": pmid, "texto": texto, "caracteres": len(texto)}
+
+
+def _pdf_documento(ctx, pmid):
+    ruta = _archivo_de_documento(ctx, pmid, "pdf")
+    if ruta is None:
+        raise ErrorPeticion(404, f"no hay PDF descargado de {pmid}")
+    return 200, Archivo(ruta, "application/pdf")
 
 
 def _editar_documento(ctx, pmid, cuerpo):
@@ -535,6 +621,12 @@ def _rutear(metodo, ruta, params, cuerpo, ctx):
             return _editar_documento(ctx, resto[0], cuerpo)
         if len(resto) == 1 and metodo == "DELETE":
             return _borrar_documento(ctx, resto[0])
+        # El segundo segmento es un nombre fijo que se compara por igualdad,
+        # no algo que se concatene a una ruta.
+        if len(resto) == 2 and metodo == "GET" and resto[1] == "texto":
+            return _texto_documento(ctx, resto[0])
+        if len(resto) == 2 and metodo == "GET" and resto[1] == "pdf":
+            return _pdf_documento(ctx, resto[0])
 
     if recurso == "descargas":
         if not resto and metodo == "GET":
@@ -691,9 +783,13 @@ class ManejadorHTTP(http.server.BaseHTTPRequestHandler):
         try:
             datos = archivo.ruta.read_bytes()
         except OSError:
-            self._responder_json(500, {
-                "error": f"no se encontró {archivo.ruta.name}; el tablero se "
-                         "sirve desde web/index.html"})
+            # 404 y no 500: que falte el archivo no es una falla del
+            # servidor. Pasa de verdad cuando el ETL corrio desde otro
+            # directorio que el tablero, porque --salida no coincide.
+            self._responder_json(404, {
+                "error": f"no se encontró {archivo.ruta.name} en el disco. "
+                         "Si el ETL corrió desde otra carpeta, arranca el "
+                         "tablero con --salida apuntando a donde escribió."})
             return
         self._encabezados(codigo, archivo.tipo_mime, len(datos))
         self.wfile.write(datos)
@@ -705,6 +801,12 @@ class ManejadorHTTP(http.server.BaseHTTPRequestHandler):
         # Sin esto el navegador se queda con un tablero viejo despues de
         # actualizar el archivo, y con cifras congeladas entre sondeos.
         self.send_header("Cache-Control", "no-store")
+        # El texto y el PDF son contenido de una editorial servido desde el
+        # mismo origen que el tablero. Si un navegador lo olfateara como
+        # HTML, ese HTML correria en 127.0.0.1 con acceso al API, que
+        # incluye borrar documentos. El tipo va explicito; esto lo vuelve
+        # garantia en vez de costumbre.
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
 
 

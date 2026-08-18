@@ -77,6 +77,110 @@ h2 { font-size: 17px; }
 h3 { font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: var(--tenue); }
 p { margin: 0; }
 
+/* ------------------------------------------------------------- lector */
+
+/* Vista propia y no el modal: el modal mide 760 px con 68vh de alto, y el
+   texto mediano de un articulo son 56 mil caracteres. Leer ahi es un
+   castigo. */
+.lector-barra {
+  display: flex; align-items: flex-start; gap: 14px; flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.lector-titulo { flex: 1 1 340px; min-width: 0; }
+.lector-titulo h2 { font-size: 17px; line-height: 1.3; }
+
+.lector-cuerpo {
+  display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 22px;
+  align-items: start;
+}
+.lector-indice {
+  position: sticky; top: 14px;
+  max-height: calc(100vh - 40px); overflow: auto;
+  background: var(--panel); border: 1px solid var(--borde);
+  border-radius: var(--radio); padding: 12px;
+}
+.lector-indice ul { list-style: none; margin: 0; padding: 0; }
+.lector-indice a {
+  display: block; padding: 4px 6px; border-radius: var(--radio-sm);
+  color: var(--tenue); text-decoration: none; font-size: 13px;
+  border-left: 2px solid transparent;
+}
+.lector-indice a:hover { color: var(--texto); background: var(--panel2); }
+.lector-indice .n2 { padding-left: 6px; }
+.lector-indice .n3 { padding-left: 18px; font-size: 12.5px; }
+.lector-indice .n4 { padding-left: 30px; font-size: 12px; }
+/* Los pies de figura concentran las relaciones factor-gen: es lo que
+   alguien viene a revisar, asi que se marca en el indice. */
+.lector-indice a.pies { color: var(--acento); border-left-color: var(--acento); }
+
+.lector-texto {
+  background: var(--panel); border: 1px solid var(--borde);
+  border-radius: var(--radio); padding: 22px 26px;
+  max-width: 78ch;
+}
+.lector-texto h1 { font-size: 21px; margin: 0 0 16px; line-height: 1.3; }
+.lector-texto h2 {
+  font-size: 13px; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--acento); margin: 26px 0 8px;
+}
+.lector-texto h3 { font-size: 14.5px; margin: 18px 0 6px; }
+.lector-texto h4 { font-size: 13.5px; color: var(--tenue); margin: 14px 0 5px; }
+.lector-texto p { margin: 0 0 11px; line-height: 1.62; }
+.lector-texto h2.pies { color: var(--ok); }
+
+.lector-pdf {
+  width: 100%; height: calc(100vh - 190px); min-height: 420px;
+  border: 1px solid var(--borde); border-radius: var(--radio);
+  background: var(--panel2);
+}
+
+@media (max-width: 900px) {
+  .lector-cuerpo { grid-template-columns: 1fr; }
+  .lector-indice { position: static; max-height: 220px; }
+}
+
+/* ------------------------------------------------ cobertura del corpus */
+
+/* La cifra grande a la izquierda y la dona con su leyenda a la derecha.
+   En pantalla angosta se apilan. */
+#cobertura {
+  display: flex; flex-wrap: wrap; gap: 24px;
+  align-items: center; justify-content: space-between;
+  margin-bottom: 18px; padding-bottom: 18px;
+  border-bottom: 1px solid var(--borde2);
+}
+.titular { flex: 1 1 320px; min-width: 0; }
+.titular-n {
+  font-size: 44px; font-weight: 700; line-height: 1.05;
+  color: var(--ok); font-variant-numeric: tabular-nums;
+}
+.titular-et { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+.titular .sub { max-width: 52ch; }
+
+.grafica { display: flex; align-items: center; gap: 18px; flex: 0 0 auto; }
+.grafica svg { display: block; }
+
+/* La leyenda existe para que la grafica no sea la unica forma de leer el
+   dato: quien usa lector de pantalla o no distingue los colores tiene aqui
+   las mismas cifras. */
+.leyenda { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+.leyenda li {
+  display: grid; grid-template-columns: 10px 1fr auto auto;
+  align-items: center; gap: 8px; padding: 3px 0;
+}
+.marca-color { width: 10px; height: 10px; border-radius: 3px; }
+.leyenda-et { color: var(--tenue); }
+.leyenda-n { font-weight: 700; font-variant-numeric: tabular-nums; }
+.leyenda-pc {
+  color: var(--tenue); font-variant-numeric: tabular-nums;
+  min-width: 46px; text-align: right;
+}
+
+@media (max-width: 620px) {
+  .titular-n { font-size: 34px; }
+  .grafica { gap: 12px; }
+}
+
 /* -------------------------------------------------- introduccion y red */
 
 /* La tarjeta de entrada: el texto manda y el lienzo va detras, sangrado a
@@ -456,6 +560,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); ou
       <h2>Estado de la base</h2>
       <button class="boton suave mini" id="b-refrescar-estado">Actualizar</button>
     </div>
+    <div id="cobertura"></div>
     <div class="cifras" id="cifras">
       <div class="cifra"><div class="n cargando">...</div><div class="et">cargando</div></div>
     </div>
@@ -721,6 +826,21 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); ou
 </section>
 
 <!-- =========================================================== BITACORA -->
+<section class="seccion" id="sec-lector">
+  <div class="lector-barra">
+    <button class="boton suave mini" id="b-volver-lector">Volver</button>
+    <div class="lector-titulo">
+      <h2 id="lector-titulo">Documento</h2>
+      <p class="sub" id="lector-sub"></p>
+    </div>
+    <div class="acciones" id="lector-formatos"></div>
+  </div>
+  <div class="lector-cuerpo">
+    <nav class="lector-indice" id="lector-indice" aria-label="Secciones del artículo"></nav>
+    <article class="lector-texto" id="lector-texto"></article>
+  </div>
+</section>
+
 <section class="seccion" id="sec-bitacora">
   <div class="tarjeta">
     <div class="tarjeta-cabeza"><h2>Bitácora de ejecuciones</h2></div>
@@ -1008,6 +1128,10 @@ function mostrarSeccion(nombre) {
   redAlCambiarSeccion();
 }
 
+$("b-volver-lector").addEventListener("click", function () {
+  mostrarSeccion(lectorVolverA);
+});
+
 document.querySelectorAll(".pestana").forEach(function (b) {
   b.addEventListener("click", function () { mostrarSeccion(b.getAttribute("data-seccion")); });
 });
@@ -1028,6 +1152,7 @@ function filaMensaje(tbody, columnas, mensaje, clase) {
 function cargarPanel() {
   var caja = $("cifras");
   api("GET", "/api/estado").then(function (r) {
+    pintarCobertura(r.cobertura);
     vaciar(caja);
     var docs = Number(r.documentos || 0), con = Number(r.con_abstract || 0);
     [["Consultas", r.consultas], ["Documentos únicos", r.documentos],
@@ -1055,6 +1180,7 @@ function cargarPanel() {
       tb.appendChild(tr);
     });
   }).catch(function (e) {
+    vaciar($("cobertura"));
     vaciar(caja).appendChild(el("p", "fallo", "No se pudo leer el estado: " + e.message));
     filaMensaje($("t-estado-descargas"), 3, "Sin datos.", "fallo");
   });
@@ -1487,13 +1613,16 @@ function buscarDocumentos(pagina) {
 
       var tdAcc = el("td", "nw");
       var acc = el("div", "acciones");
+      var bL = el("button", "boton mini", "Leer");
+      bL.addEventListener("click", function () { mostrarLector(f.pmid); });
       var bV = el("button", "boton suave mini", "Ver");
       bV.addEventListener("click", function () { verDocumento(f.pmid); });
       var bE = el("button", "boton suave mini", "Editar");
       bE.addEventListener("click", function () { editarDocumento(f.pmid); });
       var bB = el("button", "boton peligro mini", "Borrar");
       bB.addEventListener("click", function () { borrarDocumento(f.pmid, f.titulo); });
-      acc.appendChild(bV); acc.appendChild(bE); acc.appendChild(bB);
+      acc.appendChild(bL); acc.appendChild(bV);
+      acc.appendChild(bE); acc.appendChild(bB);
       tdAcc.appendChild(acc);
       tr.appendChild(tdAcc);
       tb.appendChild(tr);
@@ -1842,6 +1971,263 @@ function cargarEjecuciones() {
 
 $("b-buscar-ejecuciones").addEventListener("click", cargarEjecuciones);
 $("e-nombre").addEventListener("change", cargarEjecuciones);
+
+/* ================================================== lector de documentos */
+
+/* Vista propia y no una pestana: se llega desde "Leer" y se sale con
+   "Volver", que regresa a donde estabas. Sin pestana propia porque no es
+   un lugar al que se entre, sino al que se va por un documento. */
+
+var lectorVolverA = "documentos";
+
+function mostrarLector(pmid) {
+  lectorVolverA = seccionActual === "lector" ? lectorVolverA : seccionActual;
+  mostrarSeccion("lector");
+  $("lector-titulo").textContent = "Documento " + pmid;
+  $("lector-sub").textContent = "";
+  vaciar($("lector-indice"));
+  vaciar($("lector-texto")).appendChild(el("p", "cargando", "Cargando..."));
+  vaciar($("lector-formatos"));
+
+  api("GET", "/api/documentos/" + encodeURIComponent(pmid)).then(function (d) {
+    $("lector-titulo").textContent = d.titulo || ("Documento " + pmid);
+    $("lector-sub").textContent = [texto(d.revista, ""), texto(d.anio, ""),
+                                   "PMID " + d.pmid].filter(Boolean).join(" · ");
+    armarFormatos(d);
+  }).catch(function (e) {
+    vaciar($("lector-texto")).appendChild(
+      el("p", "fallo", "No se pudo abrir: " + e.message));
+  });
+}
+
+/* Que se puede abrir de este documento lo dice el detalle, que ahora trae
+   sus descargas. Si no hay nada, se explica por que con la nota que dejo
+   la etapa de fulltext en vez de un "no disponible" a secas. */
+function armarFormatos(d) {
+  var caja = vaciar($("lector-formatos"));
+  var descargas = d.descargas || [];
+  var hay = {};
+  descargas.forEach(function (x) { if (x.estatus === "ok") { hay[x.tipo] = x; } });
+
+  var botones = [];
+  if (hay.xml) { botones.push(["Texto", function () { verTexto(d.pmid); }]); }
+  if (hay.pdf) { botones.push(["PDF", function () { verPdf(d.pmid); }]); }
+
+  botones.forEach(function (par, i) {
+    var b = el("button", "boton mini" + (i ? " suave" : ""), par[0]);
+    b.addEventListener("click", function () {
+      Array.prototype.forEach.call(caja.children, function (o) {
+        o.className = "boton suave mini";
+      });
+      b.className = "boton mini";
+      par[1]();
+    });
+    caja.appendChild(b);
+  });
+
+  if (botones.length) { botones[0][1](); return; }
+  sinFormatos(d, descargas);
+}
+
+function sinFormatos(d, descargas) {
+  vaciar($("lector-indice"));
+  var caja = vaciar($("lector-texto"));
+  caja.appendChild(el("h1", null, "No hay texto descargado de este artículo"));
+
+  var nota = null;
+  descargas.forEach(function (x) { if (x.nota) { nota = x.nota; } });
+  caja.appendChild(el("p", null, nota
+    ? "La última vez que se intentó: " + nota
+    : "Todavía no se ha corrido la etapa de full text para este artículo."));
+  caja.appendChild(el("p", "sub",
+    "El abstract sí está en la base y se ve en el detalle del documento. "
+    + "Para el texto completo, corre «Bajar full text» en el Panel, o "
+    + "consíguelo por la biblioteca con la liga de abajo."));
+
+  var ligas = ligasDe(d);
+  if (ligas) { caja.appendChild(ligas); }
+}
+
+/* El texto viene con jerarquia tipo markdown ('#' titulo, '##' seccion...),
+   que es como lo dejo jats_a_texto. Se recorre una vez armando a la par el
+   indice y el cuerpo. Nada de innerHTML: los articulos traen '<' y '>' de
+   formulas y de nombres de genes. */
+function verTexto(pmid) {
+  var indice = vaciar($("lector-indice"));
+  var cuerpo = vaciar($("lector-texto"));
+  cuerpo.appendChild(el("p", "cargando", "Cargando el texto..."));
+
+  api("GET", "/api/documentos/" + encodeURIComponent(pmid) + "/texto")
+    .then(function (r) {
+      vaciar(cuerpo);
+      var lista = el("ul");
+      var n = 0;
+
+      r.texto.split("\n").forEach(function (linea) {
+        linea = linea.trim();
+        if (!linea) { return; }
+
+        var m = /^(#{1,5})\s+(.*)$/.exec(linea);
+        if (!m) { cuerpo.appendChild(el("p", null, linea)); return; }
+
+        var nivel = m[1].length, rotulo = m[2];
+        var pies = /PIES DE FIGURA/.test(rotulo);
+        var etiqueta = "h" + Math.min(nivel, 4);
+        var h = el(etiqueta, pies ? "pies" : null, rotulo);
+        h.id = "sec-" + (n++);
+        cuerpo.appendChild(h);
+
+        if (nivel === 1) { return; }        // el titulo no va en el indice
+        var li = el("li");
+        var a = el("a", "n" + Math.min(nivel, 4) + (pies ? " pies" : ""), rotulo);
+        a.href = "#";
+        a.addEventListener("click", function (ev) {
+          ev.preventDefault();
+          h.scrollIntoView({ block: "start", behavior: "smooth" });
+        });
+        li.appendChild(a);
+        lista.appendChild(li);
+      });
+
+      if (lista.children.length) { indice.appendChild(lista); }
+      else { indice.appendChild(el("p", "sub", "Sin secciones.")); }
+
+      cuerpo.appendChild(el("p", "sub",
+        miles(r.caracteres) + " caracteres extraídos del XML de PMC."));
+    })
+    .catch(function (e) {
+      vaciar(cuerpo).appendChild(el("p", "fallo", "No se pudo leer: " + e.message));
+    });
+}
+
+/* El visor nativo del navegador dentro de un iframe. Sin PDF.js ni ninguna
+   otra biblioteca: el tablero no carga nada de internet. */
+function verPdf(pmid) {
+  vaciar($("lector-indice")).appendChild(
+    el("p", "sub", "El PDF trae su propio índice en el visor."));
+  var cuerpo = vaciar($("lector-texto"));
+  cuerpo.style.padding = "0";
+  var marco = el("iframe", "lector-pdf");
+  marco.src = "/api/documentos/" + encodeURIComponent(pmid) + "/pdf";
+  marco.title = "PDF del documento " + pmid;
+  cuerpo.appendChild(marco);
+}
+
+/* =========================================== cobertura del corpus */
+
+/* Los elementos de SVG no se crean con createElement: hay que darles el
+   espacio de nombres o el navegador los trata como etiquetas desconocidas
+   y no pinta nada. */
+function svgEl(etiqueta, atributos) {
+  var n = document.createElementNS("http://www.w3.org/2000/svg", etiqueta);
+  if (atributos) {
+    Object.keys(atributos).forEach(function (k) {
+      n.setAttribute(k, String(atributos[k]));
+    });
+  }
+  return n;
+}
+
+var COBERTURA = [
+  { llave: "completo", etiqueta: "Texto completo", color: "var(--ok)" },
+  { llave: "solo_abstract", etiqueta: "Solo abstract", color: "var(--acento)" },
+  { llave: "sin_texto", etiqueta: "Sin texto", color: "var(--tenue)" },
+];
+
+/* La dona en SVG y no en canvas: escala sin verse borrosa, se puede
+   etiquetar para lectores de pantalla y no hay que repintarla.
+
+   Se dibuja con un solo circulo por tramo y stroke-dasharray: cada tramo
+   pinta su arco y deja el resto en blanco, y stroke-dashoffset lo corre
+   hasta donde le toca. Sin rutas ni trigonometria. */
+function pintarDona(c) {
+  var R = 52, GROSOR = 16;
+  var vuelta = 2 * Math.PI * R;
+  var svg = svgEl("svg", {
+    viewBox: "0 0 140 140", width: "140", height: "140",
+    role: "img", "aria-label": leyendaDeCobertura(c),
+  });
+  var g = svgEl("g", { transform: "rotate(-90 70 70)" });
+
+  g.appendChild(svgEl("circle", {
+    cx: 70, cy: 70, r: R, fill: "none",
+    stroke: "var(--borde2)", "stroke-width": GROSOR,
+  }));
+
+  var recorrido = 0;
+  COBERTURA.forEach(function (t) {
+    var n = c[t.llave] || 0;
+    if (!n || !c.total) { return; }
+    var largo = vuelta * (n / c.total);
+    g.appendChild(svgEl("circle", {
+      cx: 70, cy: 70, r: R, fill: "none",
+      stroke: t.color, "stroke-width": GROSOR,
+      "stroke-dasharray": largo.toFixed(2) + " " + (vuelta - largo).toFixed(2),
+      "stroke-dashoffset": (-recorrido).toFixed(2),
+    }));
+    recorrido += largo;
+  });
+  svg.appendChild(g);
+  return svg;
+}
+
+function porcentaje(n, total) {
+  return total ? (100 * n / total) : 0;
+}
+
+function leyendaDeCobertura(c) {
+  return COBERTURA.map(function (t) {
+    return t.etiqueta + ": " + miles(c[t.llave] || 0)
+           + " (" + porcentaje(c[t.llave] || 0, c.total).toFixed(1) + "%)";
+  }).join("; ");
+}
+
+function pintarCobertura(c) {
+  var caja = vaciar($("cobertura"));
+  if (!c || !c.total) {
+    caja.appendChild(el("p", "sub", "Todavía no hay documentos."));
+    return;
+  }
+
+  var util = porcentaje(c.completo, c.total);
+
+  /* La cifra que importa, en grande. "Cuantos documentos hay" y "cuanto
+     sirve para el clasificador" son preguntas distintas que se confunden
+     todo el tiempo: un abstract esta en la base pero no alimenta la
+     extraccion de relaciones. */
+  var titular = el("div", "titular");
+  titular.appendChild(el("div", "titular-n", util.toFixed(1) + "%"));
+  titular.appendChild(el("div", "titular-et",
+    "del corpus sirve para el clasificador"));
+  titular.appendChild(el("div", "sub",
+    miles(c.completo) + " de " + miles(c.total)
+    + " documentos tienen texto completo. El resto llega hasta el abstract, "
+    + "que sirve para buscar pero no para extraer relaciones."));
+
+  var grafica = el("div", "grafica");
+  grafica.appendChild(pintarDona(c));
+
+  /* La leyenda no es adorno: la grafica nunca puede ser la unica forma de
+     leer el dato, ni para un lector de pantalla ni para quien no distingue
+     los colores. */
+  var leyenda = el("ul", "leyenda");
+  COBERTURA.forEach(function (t) {
+    var n = c[t.llave] || 0;
+    var li = el("li");
+    var punto = el("span", "marca-color");
+    punto.style.background = t.color;
+    li.appendChild(punto);
+    li.appendChild(el("span", "leyenda-et", t.etiqueta));
+    li.appendChild(el("span", "leyenda-n", miles(n)));
+    li.appendChild(el("span", "leyenda-pc",
+      porcentaje(n, c.total).toFixed(1) + "%"));
+    leyenda.appendChild(li);
+  });
+  grafica.appendChild(leyenda);
+
+  caja.appendChild(titular);
+  caja.appendChild(grafica);
+}
 
 /* ============================================== la red que se mueve */
 

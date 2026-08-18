@@ -149,10 +149,20 @@ que atender. Si hace falta algo asi, se vendora y se sirve desde la lista
 blanca de `servidor.py`, a sabiendas de que el tablero deja de ser un archivo
 autocontenido. Hay una prueba que falla si aparece un `src` o `href` externo.
 
-`servidor.py` sirve **dos** archivos y nada mas: `/` (la pagina) y `/logo.png`
-(el escudo). La comparacion es por igualdad exacta contra rutas fijas que
-salen de `__file__`, no por prefijo: en la raiz viven `.key`, la base y el
-codigo, y apuntar un manejador de archivos estatico ahi los expondria.
+Fuera de `/api/`, `servidor.py` sirve **dos** archivos y nada mas: `/` (la
+pagina) y `/logo.png` (el escudo). La comparacion es por igualdad exacta
+contra rutas fijas que salen de `__file__`, no por prefijo: en la raiz viven
+`.key`, la base y el codigo, y apuntar un manejador de archivos estatico ahi
+los expondria.
+
+Bajo `/api/` hay dos rutas que si entregan archivos del corpus:
+`/api/documentos/<pmid>/texto` y `/api/documentos/<pmid>/pdf`. La ruta de
+disco **se arma con el PMID y el PMCID validados** (`^\d{1,12}$` y
+`^PMC\d{1,12}$`) mas la convencion de nombres, nunca leyendo
+`descargas.ruta`, y se comprueba que quede dentro de la carpeta de salida.
+Ojo con el PMCID: esta en `db.COLUMNAS_EDITABLES`, o sea que se puede
+escribir desde el tablero, asi que venir de la base no lo hace de fiar. Ver
+`docs/decisiones.md`.
 
 El aspecto es el sistema Nocturne, cuya referencia esta en
 `web/UI mockups request/` (no se sirve ni se ejecuta: es un lienzo de diseno y
@@ -172,7 +182,7 @@ columnas. El XML alimenta al clasificador; el PDF es para lectura humana.
 python3 -m unittest discover        # desde la raiz del proyecto
 ```
 
-309 pruebas con `unittest` de la estandar, en `pruebas/`. No tocan la red: se inyecta
+331 pruebas con `unittest` de la estandar, en `pruebas/`. No tocan la red: se inyecta
 `pruebas.falsos.ClienteFalso`, que devuelve XML o JSON fijo y registra cada
 llamada. Ademas `PruebaSinRed` deja `urlopen` inutilizable, asi que una
 prueba que arme un `Cliente` de verdad falla en vez de salir a NCBI.

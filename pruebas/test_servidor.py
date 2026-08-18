@@ -98,9 +98,17 @@ class BasePruebaServidor(PruebaSinRed):
         codigo, objeto = servidor.manejar(
             metodo, ruta, params or {}, cuerpo, ctx or self.ctx)
         if isinstance(objeto, servidor.Archivo):
-            # Solo '/' entrega un archivo. Cualquier otra ruta que lo haga
-            # es una fuga del directorio del proyecto.
-            self.assertEqual(ruta, "/", f"{ruta} devolvio un archivo")
+            # Un archivo que salga de manejar() solo puede vivir en dos
+            # lugares: web/, que es el tablero y su escudo, o la carpeta de
+            # salida del fulltext. Cualquier otro es una fuga del
+            # directorio del proyecto, donde estan .key, la base y el
+            # codigo. Corre en cada peticion de la suite a proposito.
+            permitidas = [servidor.RUTA_PAGINA.parent,
+                          Path(self.ctx.salida).resolve()]
+            real = objeto.ruta.resolve()
+            self.assertTrue(
+                any(r == real or r in real.parents for r in permitidas),
+                f"{ruta} devolvio un archivo de fuera: {real}")
         else:
             # Si esto truena, el endpoint no serializa y en el navegador
             # seria un 500 sin pista.
@@ -831,3 +839,170 @@ class PruebasIntroYRed(BasePruebaServidor):
         pagina daria 2.6:1. La placa es lo que lo hace visible sin tener que
         recolorear un escudo institucional."""
         self.assertIn("placa-logo", self.pagina)
+
+
+class PruebasArchivosDeDocumento(BasePruebaServidor):
+    """Las rutas que sirven el texto y el PDF de un documento.
+
+    Es el punto mas delicado del tablero: en la raiz del proyecto viven
+    .key con la llave de NCBI, la base y el codigo. Lo que hay que
+    defender no es que sirvan el archivo correcto, sino que no exista
+    forma de que sirvan otro.
+    """
+
+    def setUp(self):
+        super().setUp()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.salida = Path(tmp.name)
+        (self.salida / "xml").mkdir()
+        (self.salida / "pdf").mkdir()
+        self.ctx.salida = str(self.salida)
+
+        db.guardar_documentos(self.ctx.con, [
+            {"pmid": "111", "pmcid": "PMC1"},
+            {"pmid": "222"},                       # en PMC no esta
+        ])
+        (self.salida / "xml" / "111_PMC1.txt").write_text(
+            "# Titulo\n\n## ABSTRACT\n\nTexto.", encoding="utf-8")
+        (self.salida / "pdf" / "111.pdf").write_bytes(b"%PDF-1.7\ncuerpo\n")
+
+        # El senuelo: si alguna ruta se sale del directorio de salida, este
+        # es el archivo que se llevaria, y la prueba lo detecta por su
+        # contenido y no por el codigo de respuesta.
+        self.secreto = self.salida.parent / "llave_falsa.key"
+        self.secreto.write_text("SECRETO-NO-DEBE-SALIR", encoding="utf-8")
+        self.addCleanup(self.secreto.unlink)
+
+    def test_el_texto_se_sirve_como_json(self):
+        codigo, cuerpo = servidor.manejar(
+            "GET", "/api/documentos/111/texto", {}, None, self.ctx)
+
+        self.assertEqual(codigo, 200)
+        self.assertIn("# Titulo", cuerpo["texto"])
+        self.assertEqual(cuerpo["caracteres"], len(cuerpo["texto"]))
+
+    def test_el_texto_va_como_json_y_no_como_archivo(self):
+        """Asi el tablero lo pinta con su helper y sin innerHTML: los
+        articulos traen '<' y '>' de formulas y nombres de genes."""
+        _, cuerpo = servidor.manejar(
+            "GET", "/api/documentos/111/texto", {}, None, self.ctx)
+
+        self.assertIsInstance(cuerpo, dict)
+
+    def test_el_pdf_se_sirve_como_archivo_con_su_tipo(self):
+        codigo, cuerpo = servidor.manejar(
+            "GET", "/api/documentos/111/pdf", {}, None, self.ctx)
+
+        self.assertEqual(codigo, 200)
+        self.assertEqual(cuerpo.tipo_mime, "application/pdf")
+        self.assertTrue(cuerpo.ruta.is_file())
+
+    def test_un_documento_sin_texto_da_404_y_lo_explica(self):
+        codigo, cuerpo = servidor.manejar(
+            "GET", "/api/documentos/222/texto", {}, None, self.ctx)
+
+        self.assertEqual(codigo, 404)
+        self.assertIn("222", cuerpo["error"])
+
+    def test_un_documento_que_no_existe_da_404(self):
+        for recurso in ("texto", "pdf"):
+            codigo, _ = servidor.manejar(
+                "GET", "/api/documentos/999999/" + recurso, {}, None, self.ctx)
+            self.assertEqual(codigo, 404, recurso)
+
+    def test_no_hay_pmid_que_saque_un_archivo_del_directorio_de_salida(self):
+        """La prueba que no puede faltar. Se comprueba por el contenido del
+        senuelo, no por el codigo: un 200 con el archivo equivocado seria
+        peor que un 500."""
+        intentos = [
+            "../llave_falsa.key", "..%2fllave_falsa.key",
+            "..", "../..", "%2e%2e%2f%2e%2e%2fllave_falsa.key",
+            "111/../../llave_falsa.key", "./111", "111%00",
+            "C:/Windows/win.ini", "/etc/passwd",
+        ]
+        for malo in intentos:
+            for recurso in ("texto", "pdf"):
+                ruta = "/api/documentos/" + malo + "/" + recurso
+                codigo, cuerpo = servidor.manejar(
+                    "GET", ruta, {}, None, self.ctx)
+                self.assertEqual(codigo, 404, ruta)
+                self.assertNotIn("SECRETO", json.dumps(cuerpo, default=str), ruta)
+
+    def test_un_pmid_que_no_es_de_digitos_ni_llega_a_la_base(self):
+        """Se rechaza por patron antes de consultar nada: el PMID entra en
+        el nombre de un archivo, y de esa estrechez depende que sea seguro."""
+        codigo, _ = servidor.manejar(
+            "GET", "/api/documentos/11a/texto", {}, None, self.ctx)
+
+        self.assertEqual(codigo, 404)
+
+    def test_solo_se_sirven_por_GET(self):
+        for metodo in ("POST", "PUT", "DELETE"):
+            for recurso in ("texto", "pdf"):
+                codigo, _ = servidor.manejar(
+                    metodo, "/api/documentos/111/" + recurso, {}, None, self.ctx)
+                self.assertEqual(codigo, 404, metodo + " " + recurso)
+
+    def test_un_tercer_segmento_inventado_da_404(self):
+        codigo, _ = servidor.manejar(
+            "GET", "/api/documentos/111/xml", {}, None, self.ctx)
+
+        self.assertEqual(codigo, 404)
+
+    def test_el_detalle_dice_que_descargas_tiene_el_documento(self):
+        """La clase base ya le puso a 111 un xml en ok y un pdf en error;
+        el detalle debe traer las dos con su estatus, que es lo que decide
+        si el tablero ofrece leer, ofrecer el PDF, o explicar por que no."""
+        _, doc = servidor.manejar(
+            "GET", "/api/documentos/111", {}, None, self.ctx)
+
+        estados = {d["tipo"]: d["estatus"] for d in doc["descargas"]}
+        self.assertEqual(estados, {"xml": "ok", "pdf": "error"})
+        self.assertNotIn("ruta", doc["descargas"][0])
+
+
+class PruebasPmcidEditable(BasePruebaServidor):
+    """El PMCID entra en el nombre de un archivo Y se puede editar desde el
+    tablero: esta en db.COLUMNAS_EDITABLES.
+
+    O sea que "viene de la base" no lo hace de fiar. Es el unico camino por
+    el que un valor escrito por una persona podria llegar a componer una
+    ruta de disco, y por eso se valida contra su patron antes de usarlo, no
+    al guardarlo.
+    """
+
+    def setUp(self):
+        super().setUp()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.salida = Path(tmp.name)
+        (self.salida / "xml").mkdir()
+        self.ctx.salida = str(self.salida)
+        self.secreto = self.salida.parent / "robado.key"
+        self.secreto.write_text("SECRETO", encoding="utf-8")
+        self.addCleanup(self.secreto.unlink)
+
+    def test_un_pmcid_con_travesia_no_saca_ningun_archivo(self):
+        for veneno in ("../../robado.key", "../robado", "PMC1/../../robado",
+                       "PMC../..", "/etc/passwd", "PMC1;rm"):
+            db.actualizar_documento(self.ctx.con, "111", {"pmcid": veneno})
+
+            codigo, cuerpo = servidor.manejar(
+                "GET", "/api/documentos/111/texto", {}, None, self.ctx)
+
+            self.assertEqual(codigo, 404, veneno)
+            self.assertNotIn("SECRETO", json.dumps(cuerpo, default=str), veneno)
+
+    def test_con_un_pmcid_valido_si_lo_sirve(self):
+        """La contraparte: la validacion no puede ser tan estrecha que
+        rompa el caso normal."""
+        db.actualizar_documento(self.ctx.con, "111", {"pmcid": "PMC777"})
+        (self.salida / "xml" / "111_PMC777.txt").write_text(
+            "# Hola", encoding="utf-8")
+
+        codigo, cuerpo = servidor.manejar(
+            "GET", "/api/documentos/111/texto", {}, None, self.ctx)
+
+        self.assertEqual(codigo, 200)
+        self.assertIn("Hola", cuerpo["texto"])
