@@ -35,6 +35,9 @@ memorización. **No invalida el trabajo: invalida el número.**
 | `test_particionar.py` | 17 pruebas; la central verifica que el guardián puede fallar |
 | `barrido_colab.ipynb` | el cuaderno |
 | `para_colab/` | los seis archivos a subir a Drive (572 KB) |
+| `oro_pseudomonas.tsv` | **190 relaciones canónicas de *P. aeruginosa*** con su oración |
+| `auditar_signo.py` | extrae las oraciones de los seis represores RND |
+| `auditoria_signo.tsv` | 198 oraciones, 93 con signo conocido de antemano |
 
 ```bash
 python etapa2/particionar.py --por pmid --salida datos_etapa2/por_pmid
@@ -183,3 +186,121 @@ remoto en GitHub. Están en el `.gitignore`.
 Para reproducir, cópialos de `/home/user/pseudomonas-trn` según la tabla de
 rutas de la ficha. `datos_etapa2/` tampoco se versiona: lo regenera
 `particionar.py` de forma determinista con la semilla por omisión.
+
+---
+
+# El patrón de oro de *P. aeruginosa*
+
+El problema A —la fuga— es sobre *E. coli*. Esta segunda parte ataca el otro,
+que es el de la tesis: **el modelo infirió 789 aristas de *P. aeruginosa* y no
+existía nada contra qué compararlas.**
+
+## `oro_pseudomonas.tsv` — 190 relaciones canónicas
+
+Seis lenguajes de dominio distintos —quorum sensing, bombas de expulsión,
+factores sigma, biopelícula, hierro, dos componentes— produjeron las relaciones
+que la literatura da por establecidas, y **se buscaron en los 918 textos
+completos y los 2 354 resúmenes** de la etapa 1.
+
+| subsistema | total | atestiguadas |
+|---|---|---|
+| Hierro y sideróforos | 41 | 39 |
+| Factores sigma | 37 | 35 |
+| Dos componentes y T3SS | 36 | 34 |
+| Quorum sensing | 30 | 30 |
+| Bombas RND | 29 | 27 |
+| Biopelícula y c-di-GMP | 17 | 16 |
+| | **190** | **181** |
+
+**Verificación: 180 de las 181 oraciones existen literalmente** en un artículo
+que la propia fila declara — 161 exactas y 19 por fragmento contiguo largo,
+donde el desfase era tipográfico (guiones U+2010, sigmas griegas). **Cero
+inventadas.** La única con problema, `PrrF→bfrB`, era un error de atribución:
+la oración existe pero en el PMID 36036571, ya corregido.
+
+### Lo que esto permite decir, y antes no
+
+**El corpus sí contiene la evidencia.** Solo 9 relaciones canónicas faltan por
+completo, y son casi todas autorregulación (`MexT→mexT`, `NalD→nalD`,
+`AlgR→algR`). O sea: **casi cualquier arista canónica que el modelo no
+recupere es fallo del modelo, no del corpus.**
+
+### El denominador honesto son ~169, no 190
+
+Hay que sacar del cómputo:
+
+- Las **9 no atestiguadas** — el corpus no las contiene.
+- Las **6 con `signo='regulates'`** — el corpus no resuelve el signo.
+- Las **5 en disputa**, donde el corpus se contradice a sí mismo. La peor es
+  `RhlR→rpoS`: dos artículos la afirman, uno dice explícitamente *«rpoS
+  expression is not regulated by RhlR»*, y un cuarto invierte la flecha. Es de
+  Latifi 1996 y la literatura posterior no la confirmó — y es justo el tipo de
+  arista que un modelo entrenado en literatura vieja tiene alta probabilidad
+  de emitir.
+
+### Dos sesgos que hay que declarar
+
+**El corpus tira a virulencia y biopelícula.** `RpoN→glnA`, la arista de
+sigma-54 más canónica que existe, se sostiene en un solo artículo. No conviene
+medir regulones metabólicos con esto.
+
+**La granularidad limita.** El corpus usa `algD` como proxy del operón de doce
+genes y casi nunca nombra `alg8`, `alg44` o `algK`. Aristas hacia esos genes no
+son recuperables aunque sean ciertas.
+
+### El universo de evaluación: texto completo **y** resúmenes
+
+De los 312 artículos citados, 243 tienen texto completo. Pero **24 relaciones
+tienen su oración de evidencia solo en un resumen, y 12 de esas 24 son de
+hierro**: la cascada clásica de pioverdina, cuya evidencia primaria es de
+1996-2003. Los XML de PMC son sesgadamente recientes y dan por sabida esa
+cascada sin repetir el experimento.
+
+Midiendo solo sobre texto completo, el subsistema de hierro saldría
+artificialmente mal y las bombas perderían sus autorregulaciones. Por eso el
+universo son las dos cosas.
+
+## `auditar_signo.py` — donde va a fallar, medido de antemano
+
+```bash
+python etapa2/auditar_signo.py     # -> etapa2/auditoria_signo.tsv
+```
+
+MexR, NalC, NalD, NfxB, MexZ y MexL reprimen su bomba: la literatura no lo
+discute. Pero casi toda la evidencia está escrita desde el fenotipo del
+mutante, y ahí está la trampa:
+
+> *«mutations in nfxB lead to overexpression of MexCD-OprJ»*
+> *«nalC mutants showing elevated PA3720-armR expression»*
+
+Un extractor lee eso y saca **activates** cuando la relación es **represses**.
+
+El script extrae del corpus las oraciones de esos seis pares y las clasifica
+por redacción. Resultado: **198 oraciones, de las cuales 93 son evaluables**
+—afirman la relación— con signo conocido `represses`, y **24 de esas 93 están
+escritas desde el fenotipo del mutante**.
+
+Es un conjunto de prueba con la respuesta puesta de antemano, sobre el
+subconjunto donde el modelo tiene más probabilidad de equivocarse. **Una
+oración evaluable que el clasificador etiquete `activates` es un error
+confirmado**, sin anotar nada.
+
+Las otras 105 no son basura: son co-menciones sin relación afirmada, o sea
+**negativas realistas del mismo dominio**. Es justo el tipo de negativa que le
+falta al entrenamiento, donde el 98 % de los `no_relation` son «marcaste la
+mención equivocada».
+
+### Tres cosas que se aprendieron leyendo lo que salía
+
+**La autorregulación quedó fuera.** Una oración que nombra `nalD` dos veces
+—una como `ΔnalD`— no afirma que NalD se regule a sí mismo. Sin ese corte,
+`NalD→nalD` salía con 40 oraciones para un par que el patrón de oro da por no
+atestiguado, y tenía razón el patrón.
+
+**Solo las que afirman la relación son evaluables.** En una co-mención el
+modelo no se equivoca al no ver represión, porque no hay ninguna escrita. La
+etiqueta correcta ahí es `no_relation`.
+
+**MexL no es solo represor.** Reprime `mexJK` pero **activa** los genes de
+fenazina, y el corpus lo dice con todas sus letras. El signo conocido vale para
+la bomba, no para el regulador entero.
