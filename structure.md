@@ -29,8 +29,21 @@ grn_etl/
 pruebas/
   falsos.py            cliente falso y fabricas de XML/JSON fijos
   test_*.py            349 pruebas con unittest; ninguna toca la red
+etapa2/                la etapa siguiente: el clasificador de relaciones. No
+                       comparte codigo con el ETL ni depende de el; lo unico
+                       que los liga es el corpus. Ver etapa2/README.md
+  particionar.py       reparte el corpus de entrenamiento sin fuga entre
+                       train, dev y test, y se niega a escribir si queda
+  barrido.py           corre las 24 configuraciones del servidor, reanudable
+  test_particionar.py  17 pruebas; la central afirma que el guardian de la
+                       fuga PUEDE fallar, para que no vuelva a quedar en
+                       codigo muerto
+  barrido_colab.ipynb  el cuaderno que lo corre en Colab
 docs/
   decisiones.md        las decisiones de diseno y por que se tomaron asi
+  ficha-modelo-bert.md el modelo BERT del servidor del asesor: que es, en que
+                       se entreno, y que se le encontro al medirlo
+  traspaso-etapa-2.md  que produjo la etapa 1 y en que formato exacto
 pa_regulacion.txt      la consulta booleana, en texto plano
 datos/
   grn.db               la base
