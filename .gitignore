@@ -15,3 +15,13 @@ __pycache__/
 *.py[cod]
 venv/
 .venv/
+
+# Etapa 2: datos y scripts que vienen del servidor del asesor. Son trabajo de
+# otra persona y este repositorio tiene remoto publico; ver etapa2/README.md.
+entity_marked_*.jsonl
+ecoli_curated.tsv
+bio_bert_re_finetune.py
+run_sweep_biobert.sh
+summarize_sweep.py
+etapa2/para_colab/
+datos_etapa2/
