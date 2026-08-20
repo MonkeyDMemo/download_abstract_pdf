@@ -26,6 +26,7 @@ Este documento acompaña al primer seminario. Las diapositivas están en
 | Metodología | «Etapa 1 — construir el corpus» y «Etapa 2 — extraer las relaciones» |
 | Resultados | las mismas dos secciones, más «Resultados del barrido» |
 | Conclusiones | «Conclusiones» y «Lo que todavía no está medido» |
+| Cómo contarlo en diez minutos | «Guión de la exposición», al final |
 
 ---
 
@@ -730,7 +731,19 @@ solo el 0.92 sería repetir el error con mejor ortografía.
    qué comparar: 190 relaciones canónicas y 93 oraciones con signo conocido. No
    sustituyen un conjunto anotado a mano de *P. aeruginosa*, pero permiten
    detectar errores hoy. **medido / pendiente**
-5. **Lo que no se resolvió.** La clase «sin relación» es un artefacto del
+5. **Ya existe el programa que evalua el modelo en esta computadora.** Del
+   corpus salen pares de genes, el clasificador les pone signo, se arma la red y
+   se compara contra el patrón de oro, sin depender del servidor del asesor. Para
+   reconocer los genes se construyó un diccionario de los 5 642 de PAO1 desde
+   RefSeq, KEGG y UniProt, que cubre 43 de los 55 factores del patrón de oro con
+   fuentes públicas. **medido**
+6. **El programa detecta al tramposo torpe y todavía no al cuidadoso, y eso
+   también se midió.** Antes de correrlo en serio se intentó engañarlo a
+   propósito. Un clasificador que contesta siempre lo mismo, sin leer nada,
+   salía certificado; ahora lo rechaza. Pero quedan cinco formas de inflar una
+   cifra que siguen pasando, cada una con el ataque que la demuestra escrito.
+   **medido / declarado**
+7. **Lo que no se resolvió.** La clase «sin relación» es un artefacto del
    marcado, no una categoría semántica, y el entrenamiento no se parece al uso
    real. Rehacer la partición no lo toca. **declarado**
 
@@ -738,18 +751,100 @@ solo el 0.92 sería repetir el error con mejor ortografía.
 
 ## Siguientes pasos
 
-1. **Correr el clasificador contra el patrón de oro y la auditoría de signo.**
-   No requiere entrenar nada, no depende de tener GPU, y da la primera cifra de
-   desempeño sobre *P. aeruginosa* en vez de sobre *E. coli*. Es lo más barato y
-   lo que más aporta.
+1. **Correr el programa completo y publicar la primera cifra sobre
+   *P. aeruginosa*.** Ya no falta escribir nada: falta ejecutarlo y leer lo que
+   salga. No requiere entrenar, no depende de GPU, y es lo que más aporta. La
+   cifra saldrá acompañada del registro de su corrida, por lo que dice la
+   conclusión 6.
 2. **Añadir el brazo de control**, que es lo que permitiría atribuir la
    diferencia contra el 0.8721 a una causa y no a tres. Depende de programarlo
    en `particionar.py`, no de conseguir GPU.
 3. **Repetir con varias semillas** (`--semillas 42,43,44`), para reportar cada
    cifra con su dispersión en vez de como un punto. Es lo que falta para que el
    orden de la tabla signifique algo.
-4. **Anotar un conjunto de PAO1**, muestreando por incertidumbre sobre lo que el
+4. **Cerrar los cinco huecos que los ataques dejaron abiertos**, empezando por
+   el más barato: que la evaluación exija que sus cuatro archivos vengan de la
+   misma corrida. El dato ya está escrito en `red_informe.json` y nadie lo lee.
+5. **Anotar un conjunto de PAO1**, muestreando por incertidumbre sobre lo que el
    modelo ya infirió. Es el trabajo de fondo y no depende de los anteriores.
+
+---
+
+## Guión de la exposición
+
+Diez minutos, seis bloques. Los números que van en negritas son los que conviene
+decir en voz alta; el resto es relleno si sobra tiempo.
+
+**1. De qué se trata (1 min).** La meta es la red de regulación de *Pseudomonas
+aeruginosa*: los nodos son genes y las aristas dicen qué gen enciende o apaga a
+qué otro. Esa información está escrita en artículos, en prosa, y el trabajo es
+sacarla de ahí automáticamente.
+
+**2. El corpus (1 min).** **2 361** artículos, **1 006** con texto completo. Lo
+que importa no es el tamaño sino que el estado queda registrado: **el 56 % de las
+descargas se evitaron** porque ya se tenían. Antes cada quien corría su script y
+bajaba lo mismo otra vez.
+
+**3. El hallazgo principal (3 min).** Es el bloque largo, y hay que contarlo con
+calma porque es el resultado del semestre.
+
+> El modelo que se heredó reportaba 0.87. Al revisar cómo se había medido, resultó
+> que **el 73.9 % de los textos del examen final ya se habían usado para estudiar**.
+> Es como calificar a un alumno con las preguntas que ya practicó: el número sale
+> alto y no dice lo que uno cree.
+
+La frase que conviene decir tal cual, porque es la conclusión y es diplomática:
+**esto no invalida el modelo, invalida el número que lo describía.**
+
+**4. Lo que se hizo con eso (2 min).** Se rehizo la repartición agrupando por
+artículo, y el programa que la escribe **se niega a guardarla si detecta fuga**.
+Con esa partición limpia se corrieron las **24** configuraciones. Resultado: la
+misma configuración que el servidor reportaba como suya pasa de **0.8721 a
+0.9335**. Segunda frase para decir tal cual, y es la que hace que esto sea buena
+noticia para el asesor y no un reclamo: **la elección de hiperparámetros estaba
+bien; lo que estaba mal era la medición.**
+
+**5. Lo que se construyó para poder evaluar en *P. aeruginosa* (2 min).** El
+modelo se entrenó con *E. coli* y se quiere usar en otra bacteria, y no había
+contra qué comparar. Ahora hay tres cosas: un **patrón de oro de 190 relaciones**
+que el corpus sí contiene, una **auditoría de 93 oraciones** con el signo conocido
+de antemano, y un **diccionario de 5 642 genes** de PAO1 armado desde RefSeq, KEGG
+y UniProt. Del diccionario conviene decir la cifra honesta: **cubre 43 de los 55
+factores** con fuentes públicas, y 53 si se cuentan 22 filas escritas a mano —y
+se reporta el 43 porque es el que cualquiera reproduce.
+
+**6. Lo honesto, y el cierre (1 min).** El programa ya corre entero. Antes de
+usarlo se intentó engañarlo: se sustituyó el clasificador por uno que contesta
+siempre lo mismo sin leer nada, y **salía aprobado**. Ya no. Pero quedan cinco
+maneras de inflar una cifra que todavía funcionan, y están escritas con el ataque
+que las demuestra. Frase de cierre:
+
+> El proyecto existe porque una métrica se infló sin que nadie lo notara.
+> Encontrar cinco maneras más de que eso pase, y dejarlas escritas, es el trabajo.
+
+### Lo que probablemente pregunte el asesor
+
+Vale la pena tener la respuesta corta lista; todas están desarrolladas arriba.
+
+| pregunta | respuesta corta |
+|---|---|
+| «Entonces el modelo no sirve» | Sí sirve. Lo que no servía era su calificación. Sin fuga **mejora**: 0.9335 contra 0.8721 |
+| «Por qué sube si le quitaste datos» | Porque también cambió el conjunto de prueba, de 64 artículos a 8. Por eso falta el brazo de control, y está declarado como pendiente en vez de atribuir la mejora a una sola causa |
+| «Ya lo probaste en *P. aeruginosa*» | Todavía no. Está el programa y está contra qué compararlo; falta ejecutarlo. Es el paso 1 de los siguientes |
+| «Y tu partición no tendrá fuga también» | Contaminación de texto **0.0 %**, y no es una promesa: `particionar.py` se niega a escribir el archivo si la detecta |
+| «Por qué solo 43 de 55» | Porque se reporta lo reproducible. Los 12 que faltan no son genes desconocidos: cuatro son locus que ninguna base nombra, tres se escriben capitalizados y la base los tiene en minúsculas, uno tiene otro nombre, dos no son un gen y dos no los resuelve nadie |
+| «Cuánto falta para la red completa» | El cuello de botella no es el código, es un conjunto anotado a mano de PAO1. Eso es trabajo de anotación, no de programación |
+| «Por qué no usaste *pandas* / tal biblioteca» | Restricción del proyecto: solo biblioteca estándar, porque corre en máquinas del laboratorio sin permisos y a veces sin internet |
+| «Qué tan confiable es la cifra que salga» | Hoy, poco: hay cinco formas conocidas de inflarla. Por eso cualquier cifra va a salir acompañada del registro de su corrida, y por eso cerrarlas es el paso 4 |
+
+### Si solo hay tiempo para tres frases
+
+1. El número que describía al modelo medía memorización: **73.9 %** de los textos
+   de prueba ya se habían visto en entrenamiento.
+2. Con la partición corregida el modelo **no empeora, mejora**: de 0.8721 a
+   **0.9335**. Los hiperparámetros estaban bien; la medición no.
+3. Ya hay contra qué evaluarlo en *P. aeruginosa* —190 relaciones, 93 oraciones,
+   5 642 genes— y el programa que lo hace, con sus límites escritos.
 
 ---
 
