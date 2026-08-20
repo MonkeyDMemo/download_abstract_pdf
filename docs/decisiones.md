@@ -540,3 +540,101 @@ propósito, de forma que recargar y guardar no la borre sin querer. Y los
 botones de lanzar quedan deshabilitados mientras no haya correo, con el
 motivo en el `title`: vale más no dejar apretar que dejar apretar y contestar
 un 400 que hay que ir a leer.
+
+## Un código de salida no es un diagnóstico
+
+Las 24 corridas del primer barrido en Colab murieron con **`-11`**, cuatro
+minutos las 24, unos diez segundos cada una. `barrido.py` hizo lo correcto
+—anotó cada fallo y siguió— y dejó 24 archivos `.json.error` con esto dentro:
+
+```json
+{"nombre": "run_1_lr1e-5_ep6_bs16_wu0.06", "codigo": -11, "huella": "3d2cb9d4a0378177"}
+```
+
+Un `-11` no es un código de salida: es una señal, SIGSEGV, y por eso no había
+traceback. El número decía que el proceso murió, no dónde.
+
+**Encontrarlo costó dos noches, y casi todo el costo fue de diagnóstico, no de
+arreglo.** El arreglo cabe en una línea. Vale la pena dejar por escrito cómo se
+llegó, porque el mismo error de método se puede repetir.
+
+### Tres hipótesis falsas, y por qué parecían buenas
+
+La última línea que se veía antes de morir era siempre el `FutureWarning` de
+`evaluation_strategy`, que sale del `__post_init__` de `TrainingArguments`. De
+ahí salieron, en orden:
+
+1. **"Muere inicializando CUDA."** Es lo siguiente que hace ese `__post_init__`.
+   La descartó una sonda que construyó un `TrainingArguments` y llegó a
+   `cuda:0` sin problema.
+2. **"Es la frontera `arrow`→`numpy`."** Al fijar `numpy<2` nadie tocó pyarrow,
+   que en la imagen de Colab viene compilado contra numpy 2; una extensión en C
+   en esa situación no lanza excepción, se cae. Encajaba con todo. Era falsa:
+   pyarrow 25.0.1 convivió con numpy 1.26.4 sin una queja.
+3. **"Es pandas 3, que exige numpy 2."** También falsa, y también verosímil.
+
+Las tres se sostenían sobre la misma suposición: que el último renglón impreso
+está cerca de donde murió. **No lo está.** Los warnings salen por stderr, que no
+se almacena; los `print()` salen por stdout, que al ir por una tubería se
+almacena en bloques de 8 KB, y una señal se lleva el bloque sin escribirlo.
+
+### Lo que sí funcionó
+
+Dos herramientas de la biblioteca estándar, y ninguna sonda hecha a mano:
+
+- **`python -u`**, para que la última línea impresa sea de verdad la última.
+- **`PYTHONFAULTHANDLER=1`**, que ante una señal imprime el traceback de Python
+  de todos los hilos. Es exactamente lo que faltaba.
+
+Con las dos puestas, el causante salió a la primera:
+
+```
+bio_bert_re_finetune.py:166  ->  trainer.train()
+transformers/trainer.py:1099 ->  create_optimizer
+torch/optim/adamw.py:36      ->  AdamW.__init__
+torch/optim/optimizer.py:405 ->  Optimizer.__init__
+torch/_compile.py:47         ->  import torch._dynamo
+torch/_dynamo/utils.py:2874  ->  has_triton_package()
+triton/knobs.py:15           ->  create_module  ->  SIGSEGV
+```
+
+**Era `triton`.** Construir el optimizador entra a `Optimizer.__init__`, que
+pasa por `torch._compile`, que importa `torch._dynamo`, que al cargarse
+pregunta si hay triton; ese import se cae con SIGSEGV en la imagen de Colab, al
+cargar su extensión en C. Es la primera línea de `trainer.train()` que toca esa
+ruta, y de ahí que las 24 murieran en el mismo punto, siempre a los diez
+segundos, sin que la configuración tuviera nada que ver.
+
+El arreglo es `pip uninstall -y triton`. Nada de este barrido lo necesita: solo
+lo usa `torch.compile` y aquí se entrena en modo eager, así que sin el paquete
+torch pregunta, recibe `ImportError` y sigue. La comprobación del cuaderno usa
+`importlib.util.find_spec`, que busca sin importar; preguntarlo con un `import`
+repetiría el mismo fallo que se vino a evitar.
+
+### Las cuatro cosas que quedaron
+
+No es la primera vez que este proyecto paga por un fallo silencioso, así que el
+episodio dejó herramienta y no solo un arreglo:
+
+1. **Todo proceso hijo se lanza con `-u` y `PYTHONFAULTHANDLER=1`**, en
+   `barrido.py` y en las celdas del cuaderno. Una corrida que muera de una
+   señal ya deja dicho en qué línea estaba.
+2. **`etapa2/diagnostico.py`**: anota las versiones de todo —incluidas las que
+   nadie fijó, que es donde estaba el problema— y corre el script de verdad
+   sobre 40 ejemplos y una época. Dos minutos, y escribe su bitácora a un
+   archivo en Drive, que sobrevive a la desconexión de la sesión. El cuaderno
+   trae la misma prueba de humo antes del barrido: lo que la comprobación de
+   versiones no alcanza a ver sale ahí y no en media hora de corridas fallidas.
+3. **Ningún `!python` del cuaderno decide solo que puede seguir.** Un `!python`
+   que muere no detiene la celda: la que baja el mejor modelo dejó correr sus
+   `cp` sobre una carpeta vacía y el `ls` final imprimió `total 0` como si fuera
+   un resultado. Las celdas que particionan y la que baja el modelo van por
+   `subprocess.run` y miran el código de salida.
+4. **La marca de fallo se borra al reintentar con éxito.** El `.error` de un
+   intento viejo sobrevivía al `.json` bueno en la misma carpeta de Drive, así
+   que una corrida rehecha seguía saliendo en `FALLARON` y el barrido no volvía
+   a anunciar ganadora **nunca**. Lo cubre `etapa2/test_barrido.py`, que
+   reproduce el escenario exacto: `run_13.json` bueno más su `.error` viejo.
+
+La cuarta es la más grave de las cuatro y la que menos se ve: las otras tres
+cuestan tiempo, esa cuesta una cifra que no mide lo que su etiqueta dice.

@@ -133,6 +133,26 @@ podía ver:
   ejemplos, una época y ventanas de 128, dos minutos. Ejerce lo que la
   comprobación de versiones no alcanza a ver —una incompatibilidad de `torch`
   con `accelerate`, por ejemplo— y de paso deja BioBERT en la caché.
+- **Ningún `!python` del cuaderno decide solo que puede seguir.** Un `!python`
+  que muere no detiene la celda. Así, un entrenamiento que se cayó dejó correr
+  los `cp` de después, que no encontraron nada, y el `ls` final imprimió
+  `total 0` como si fuera un resultado. Las celdas que particionan y la que baja
+  el mejor modelo van por `subprocess.run` y miran el código de salida.
+- **Un código de salida negativo es una señal, no una excepción**, y por eso no
+  deja traceback. `-11` es SIGSEGV, y en Colab ha salido al inicializar CUDA:
+  una corrida de 24 y, otro día, la del mejor modelo. Se quita reintentando; el
+  barrido reintenta solo lo que falló porque el fallo se anota en un `.error`
+  aparte, no en el `.json` que marca «ya se hizo».
+- **Hay que desinstalar `triton`.** Es la causa de aquel `-11`, y costo dos
+  noches encontrarla. Construir el optimizador entra a `Optimizer.__init__` de
+  torch, que pasa por `torch._compile`, que importa `torch._dynamo`, que al
+  cargarse pregunta si hay triton; ese import se cae con SIGSEGV en la imagen
+  de Colab (`triton/knobs.py:15`, cargando su extensión en C). Es la primera
+  línea de `trainer.train()` que toca esa ruta, así que las 24 corridas morían
+  en el mismo punto a los diez segundos. Nada aquí necesita triton: solo lo usa
+  `torch.compile` y este barrido entrena en modo eager, así que sin el paquete
+  torch pregunta, recibe `ImportError` y sigue. Lo comprueba `find_spec`, que
+  busca sin importar — preguntarlo con un `import` repetiría el mismo fallo.
 - **Los checkpoints van a `/content`, nunca a Drive.** Son ~433 MB por época.
   Se borran al terminar cada configuración, **falle o no**: doce fallos por
   falta de memoria llenaban el disco y tumbaban las que sí habrían cabido.
