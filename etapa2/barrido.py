@@ -203,8 +203,13 @@ def resumen(resultados, esperadas=None):
                 filas.append(json.load(f))
         except ValueError:
             rotos.append(os.path.basename(ruta))
+    # Un .error cuyo .json existe es la marca de un intento anterior que
+    # despues salio bien. Contarlo dejaba el barrido incompleto para siempre:
+    # una corrida que fallo una vez y se rehizo seguia saliendo en FALLARON, y
+    # con eso el barrido no volvia a anunciar ganadora nunca.
     fallidas = [os.path.basename(p)[:-11]
-                for p in glob.glob(os.path.join(resultados, "*.json.error"))]
+                for p in glob.glob(os.path.join(resultados, "*.json.error"))
+                if not os.path.exists(p[:-len(".error")])]
     filas.sort(key=lambda r: r.get("dev_macro_f1") or 0, reverse=True)
 
     print("")
@@ -330,7 +335,10 @@ def main():
 
         salida = os.path.join(args.trabajo, nombre)
         print("\n[%d/%d] %s" % (i, len(configs), nombre), flush=True)
-        cmd = [sys.executable, args.script,
+        # -u: sin buffer. Con la salida del hijo almacenada en bloques, una
+        # corrida que muere de una senal se lleva su ultimo bloque sin
+        # escribirlo, y el diagnostico apunta a donde no fue.
+        cmd = [sys.executable, "-u", args.script,
                "--train_jsonl", os.path.join(args.datos, ARCHIVOS[0]),
                "--dev_jsonl", os.path.join(args.datos, ARCHIVOS[1]),
                "--test_jsonl", os.path.join(args.datos, ARCHIVOS[2]),
@@ -347,9 +355,14 @@ def main():
                "--use_class_weights",
                "--early_stopping", "--early_stopping_patience", "2"]
 
+        # PYTHONFAULTHANDLER: si el hijo muere de una senal (SIGSEGV es -11),
+        # imprime el traceback de Python de donde estaba. Sin esto, un fallo
+        # asi solo deja el numero, y el numero no dice en que linea fue.
+        entorno = dict(os.environ, PYTHONFAULTHANDLER="1")
+
         t0 = time.time()
         try:
-            proc = subprocess.run(cmd)
+            proc = subprocess.run(cmd, env=entorno)
             codigo = proc.returncode
         finally:
             # Se limpia pase lo que pase. Antes el borrado estaba despues del
@@ -375,6 +388,11 @@ def main():
         r.update(c)
         r.update(metricas)
         guardar(destino, r)
+        # La marca de fallo se va con la corrida que la produjo. Sin esto, el
+        # .error de un intento viejo sobrevive al bueno en la misma carpeta de
+        # Drive, que es la que se reusa al reanudar.
+        if os.path.exists(destino + ".error"):
+            os.remove(destino + ".error")
         print("  dev F1 %.4f  test F1 %.4f  (%.1f min)"
               % (r.get("dev_macro_f1") or 0, r.get("test_macro_f1") or 0,
                  dt / 60))

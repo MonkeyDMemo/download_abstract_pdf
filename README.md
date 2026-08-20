@@ -246,7 +246,9 @@ Lo que no es de acceso abierto no se descarga. Se exporta con
 
 ## Resultados de una corrida real
 
-Estado actual de `datos/grn.db`, con la consulta `pa_regulacion`:
+Corte del 17 de agosto de 2026, con la consulta `pa_regulacion` sola. Después se
+registraron más consultas y hoy la base tiene 2361 documentos; la diferencia está
+explicada en `docs/informe-seminario-1.md`.
 
 | medida | valor |
 |---|---|
@@ -300,9 +302,13 @@ salidas/               exportaciones CSV y JSONL (fuera del repositorio)
 
 | archivo | de qué trata |
 |---|---|
+| `docs/informe-seminario-1.md` | **el panorama del proyecto y su estado; empieza aquí** |
 | `CLAUDE.md` | contexto completo del proyecto y reglas que no se rompen |
 | `structure.md` | árbol de archivos, capas y dónde vive la idempotencia |
 | `tech.md` | restricciones técnicas, manejo de errores, convenciones |
 | `docs/decisiones.md` | las decisiones de diseño y por qué se tomaron así |
+| `docs/traspaso-etapa-2.md` | qué formato tienen los datos que esta etapa entrega |
+| `docs/ficha-modelo-bert.md` | el modelo de clasificación heredado, auditado |
+| `etapa2/README.md` | la etapa 2: partición sin contaminación y patrón de oro |
 | `dominio-grn.md` | nomenclatura de genes y qué se busca extraer |
 | `migracion-servicio.md` | qué falta para operarlo como servicio compartido |

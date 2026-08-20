@@ -20,6 +20,17 @@ Lo usan varios miembros del laboratorio, no un solo desarrollador. Se opera
 por CLI y por un tablero HTTP local (`servidor.py`), que son dos frentes
 sobre las mismas capas.
 
+**El proyecto no termina en el ETL.** `etapa2/` prepara los datos del
+clasificador de relaciones y lanza su barrido: no entrena aqui, y el modelo
+—BioBERT afinado en cuatro clases— es del servidor del asesor, no de este
+repositorio. Vale la pena saber tres cosas antes de tocar nada de ahi: se
+entreno con *E. coli* y se aplica a *P. aeruginosa*; su metrica reportada
+estaba contaminada porque el 73.9% del conjunto de prueba ya se habia visto en
+entrenamiento; y `etapa2/particionar.py` se niega a escribir una particion en
+la que detecte esa contaminacion. El panorama esta en
+`docs/informe-seminario-1.md` y el detalle en `etapa2/README.md` y
+`docs/ficha-modelo-bert.md`.
+
 ## Restricciones duras
 
 **Solo libreria estandar de Python 3.8+.** No agregar dependencias. El codigo
