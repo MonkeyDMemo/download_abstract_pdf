@@ -1,0 +1,334 @@
+tf	blanco	experimento	pmids	en_corpus
+AlgR	PA2193	Ad-hoc quantitative phenotype observation|EMSA|S1 nuclease protection	15466037	true
+AlgR	PA2194	Ad-hoc quantitative phenotype observation|EMSA|S1 nuclease protection	15466037	true
+AlgR	PA3476	Beta-gal reporter assay|EMSA|Site directed mutagenesis	17766417	false
+AlgR	PA3479	Beta-gal reporter assay|DNA-array expression analysis|EMSA|Site directed mutagenesis	17766417	false
+AlgR	PA4550	DNAse footprinting|EMSA|qRT-PCR [RNA]	18178737	true
+AlgR	PA4551	DNAse footprinting|EMSA|qRT-PCR [RNA]	18178737	true
+AlgR	PA4552	DNAse footprinting|EMSA|qRT-PCR [RNA]	18178737	true
+AlgR	PA4553	DNAse footprinting|EMSA|qRT-PCR [RNA]	18178737	true
+AlgR	PA4554	DNAse footprinting|EMSA|qRT-PCR [RNA]	18178737	true
+AlgR	PA4555	DNAse footprinting|EMSA|qRT-PCR [RNA]	18178737	true
+AlgR	PA4556	DNAse footprinting|EMSA|qRT-PCR [RNA]	18178737	true
+AmrZ	PA0038	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA0044	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA0102	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA0172	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA0195	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA0247	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA0252	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA0264	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA0329	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA0338	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA0494	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA0594	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA0674	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA0691	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA0783	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA0807	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA0846	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA0938	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA0947	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1073	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1080	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1097	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1101	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1102	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1107	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1214	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1272	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1331	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1473	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1509	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1510	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1528	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1561	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1657	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1664	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1668	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1669	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1679	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1680	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1725	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1736	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1738	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1782	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1784	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1873	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1939	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA1941	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA2072	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA2245	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA2249	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA2282	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA2286	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA2313	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA2400	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA2461	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA2462	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA2466	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA2567	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA2685	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA2867	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA2894	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA2992	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3019	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3032	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3039	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3058	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3059	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3060	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3061	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3062	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3063	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3064	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3126	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3147	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3153	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3177	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3190	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3215	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3235	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3276	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3280	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3311	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3353	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3385	Beta-gal reporter assay|ChIP-Seq|Copper-phenanthroline footprinting|EMSA|Fluorescence anisotropy|RNA-Seq|Site directed mutagenesis|X-ray crystallography	15968052|22511872|24603766	true
+AmrZ	PA3401	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3413	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3540	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3541	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3542	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3544	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3546	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3648	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3670	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3674	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3691	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3722	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3818	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3825	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3841	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3854	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3921	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3934	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA3951	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4033	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4222	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4292	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4297	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4300	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4306	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4307	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4314	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4324	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4331	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4367	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4392	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4418	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4488	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4493	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4520	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4606	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4625	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4639	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4677	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4683	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4748	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4842	ChIP-Seq|EMSA|RNA-Seq	24603766	true
+AmrZ	PA4844	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4915	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4929	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA4981	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA5138	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA5167	ChIP-Seq|RNA-Seq	24603766	true
+AmrZ	PA5447	ChIP-Seq|RNA-Seq	24603766	true
+ArgR	PA0888	Beta-gal reporter assay|EMSA	9791103	false
+ArgR	PA0889	Beta-gal reporter assay|EMSA	9791103	false
+ArgR	PA0890	Beta-gal reporter assay|EMSA	9791103	false
+ArgR	PA0891	Beta-gal reporter assay|EMSA	9791103	false
+ArgR	PA0892	Beta-gal reporter assay|EMSA	9791103	false
+ArgR	PA0893	Beta-gal reporter assay|EMSA	9791103	false
+ArgR	PA0958	DNAse footprinting|EMSA|RNA dot blot	10464217	false
+ArgR	PA1971	Beta-gal reporter assay|DNA-array expression analysis|EMSA	15175299	true
+ArgR	PA2042	Beta-gal reporter assay|DNA-array expression analysis|EMSA	15175299	true
+ArgR	PA3525	Beta-gal reporter assay|DNA-array expression analysis|EMSA	15175299	true
+ArgR	PA3862	Beta-gal reporter assay|EMSA|Site directed mutagenesis	19850617	false
+ArgR	PA3863	Beta-gal reporter assay|EMSA|Site directed mutagenesis	19850617	false
+ArgR	PA3864	Beta-gal reporter assay|EMSA|Site directed mutagenesis	19850617	false
+ArgR	PA3934	DNA-array expression analysis|EMSA	15175299	true
+ArgR	PA4588	Beta-gal reporter assay|DNAse footprinting|EMSA	15175298	false
+ArgR	PA5035	Beta-gal reporter assay|DNAse footprinting|EMSA	15175298	false
+ArgR	PA5036	Beta-gal reporter assay|DNAse footprinting|EMSA	15175298	false
+ArgR	PA5152	Beta-gal reporter assay|DNA-array expression analysis|EMSA	15175299	true
+ArgR	PA5153	Beta-gal reporter assay|DNA-array expression analysis|EMSA	15175299	true
+ArgR	PA5154	Beta-gal reporter assay|DNA-array expression analysis|EMSA	15175299	true
+ArgR	PA5155	Beta-gal reporter assay|DNA-array expression analysis|EMSA	15175299	true
+ArgR	PA5170	DNAse footprinting|EMSA|Site directed mutagenesis	10198009	true
+ArgR	PA5171	DNAse footprinting|EMSA|Site directed mutagenesis	10198009	true
+ArgR	PA5172	DNAse footprinting|EMSA|Site directed mutagenesis	10198009	true
+ArgR	PA5173	DNAse footprinting|EMSA|Site directed mutagenesis	10198009	true
+BrlR	PA4878	Beta-gal reporter assay|ChIP-PCR|EMSA|Site directed mutagenesis	24612375	true
+DNR	PA0523	Beta-gal reporter assay|Site directed mutagenesis|Western blot (quantitative) expression analysis	19477902	true
+DNR	PA0524	Beta-gal reporter assay|Site directed mutagenesis|Western blot (quantitative) expression analysis	19477902	true
+DesT	PA4888	DNAse footprinting|EMSA|qPCR [quantitative real-time]	17877713	true
+DesT	PA4889	DNAse footprinting|EMSA|qPCR [quantitative real-time]	17877713	true
+ExsA	PA1710	Beta-gal reporter assay|DNAse footprinting|EMSA|Site directed mutagenesis	18373522|22408165	true
+FleQ	PA3064	Beta-gal reporter assay|DNAse footprinting|Site directed mutagenesis	22581773	true
+Fur	PA0672	DNAse footprinting|EMSA|Genomic SELEX|RNAse protection	8633080	true
+Fur	PA0929	DNAse footprinting|EMSA|Genomic SELEX|RNAse protection	8633080	true
+Fur	PA0964	DNAse footprinting|EMSA|Genomic SELEX|RNAse protection	8633080	true
+Fur	PA1321	DNAse footprinting|EMSA|Genomic SELEX|RNAse protection	8633080	true
+Fur	PA2426	DNAse footprinting|EMSA|Genomic SELEX|RNAse protection	8633080	true
+Fur	PA2637	DNAse footprinting|EMSA|Genomic SELEX|RNAse protection	8633080	true
+Fur	PA3410	DNAse footprinting|EMSA|Genomic SELEX|RNAse protection	8633080	true
+Fur	PA4156	FURTA|qPCR [quantitative real-time]	21546589	false
+Fur	PA4471	DNAse footprinting|EMSA|Genomic SELEX|Primer Extension assay|RNAse protection	8633080|9045799	true
+Fur	PA4513	DNAse footprinting|EMSA|Genomic SELEX|RNAse protection	8633080	true
+Fur	PA4515	DNAse footprinting|EMSA|Genomic SELEX|RNAse protection	8633080	true
+Fur	PA4634	DNAse footprinting|EMSA|Genomic SELEX|RNAse protection	8633080	true
+Fur	PA4704.1	DNAse footprinting|EMSA|Genomic SELEX|Northern blot|RNAse protection	8633080|15210934	true
+Fur	PA4704.2	DNAse footprinting|EMSA|Genomic SELEX|Northern blot	8633080|15210934	true
+Fur	PA4710	DNAse footprinting|RNAse protection	10658665	true
+IHF	PA3540	CAT reporter gene assays|Copper-phenanthroline footprinting|EMSA|Site directed mutagenesis	8051019	true
+IscR	PA2532	EMSA|Northern blot	22609922	true
+LasR	PA0026	ChIP-PCR|ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA0027	ChIP-PCR|ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA0028	ChIP-PCR|ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA0122	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA0143	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA0144	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA0805	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA0806	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA0855	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA0996	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA0997	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA0998	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA0999	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA1000	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA1003	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA1159	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA1245	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA1246	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA1247	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA1248	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA1431	ChIP-PCR|ChIP-chip|DNA-array expression analysis|DNAse footprinting|EMSA	15505212|18045385|19682264	true
+LasR	PA1432	ChIP-PCR|ChIP-chip|DNA-array expression analysis|DNAse footprinting|EMSA	15505212|18045385|19682264	true
+LasR	PA1656	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA1657	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA1658	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA1659	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA1869	Beta-gal reporter assay|Site directed mutagenesis	11544214	false
+LasR	PA1898	Beta-gal reporter assay|Site directed mutagenesis	11544214	false
+LasR	PA1914	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA2080	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA2081	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA2231	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA2232	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA2233	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA2234	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA2235	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA2236	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA2237	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA2238	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA2239	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA2240	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA2241	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA2242	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA2302	ChIP-PCR|ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA2303	ChIP-PCR|ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA2304	ChIP-PCR|ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA2305	ChIP-PCR|ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA2426	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA2587	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA2588	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA2591	Beta-gal reporter assay|ChIP-chip|DNA-array expression analysis|EMSA|Site directed mutagenesis	17449616|19682264	true
+LasR	PA2592	Beta-gal reporter assay|ChIP-chip|DNA-array expression analysis|EMSA|Site directed mutagenesis	17449616|19682264	true
+LasR	PA2939	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA3104	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA3105	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA3326	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA3384	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA3385	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA3477	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA3478	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA3479	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA3535	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA3724	Beta-gal reporter assay|ChIP-chip|DNA-array expression analysis|EMSA|Site directed mutagenesis	8576049|19682264	true
+LasR	PA3904	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA3905	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA3906	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA3907	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA3908	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA4117	ChIP-PCR|ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA4210	Beta-gal reporter assay|Site directed mutagenesis	11544214	false
+LasR	PA4306	ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA4677	ChIP-chip|DNA-array expression analysis|EMSA	19682264	true
+LasR	PA4778	Beta-gal reporter assay|ChIP-chip|DNA-array expression analysis|EMSA|Site directed mutagenesis	19682264|20233934	true
+LasR	PA5184	ChIP-PCR|ChIP-chip|DNA-array expression analysis	19682264	true
+LasR	PA5232	ChIP-chip|DNA-array expression analysis	19682264	true
+LexA	PA3007	EMSA|qRT-PCR [RNA]	15458417	false
+LexA	PA3008	EMSA|qRT-PCR [RNA]	15458417	false
+MexT	PA2493	Beta-gal reporter assay|EMSA|Site directed mutagenesis	20727012	true
+MexT	PA2494	Beta-gal reporter assay|EMSA|Site directed mutagenesis	20727012	true
+MexT	PA2495	Beta-gal reporter assay|EMSA|Site directed mutagenesis	20727012	true
+MexT	PA4623	Beta-gal reporter assay|DNA-array expression analysis|Site directed mutagenesis	19846594	true
+MexT	PA4881	Beta-gal reporter assay|DNA-array expression analysis|EMSA|Site directed mutagenesis|qRT-PCR [RNA]	19846594	true
+NarL	PA5170	2D PAGE|Beta-gal reporter assay|Northern blot|Site directed mutagenesis	18832311	false
+NarL	PA5171	2D PAGE|Beta-gal reporter assay|Northern blot|Site directed mutagenesis	18832311	false
+NarL	PA5172	2D PAGE|Beta-gal reporter assay|Northern blot|Site directed mutagenesis	18832311	false
+NarL	PA5173	2D PAGE|Beta-gal reporter assay|Northern blot|Site directed mutagenesis	18832311	false
+OhrR	PA2849	Beta-gal reporter assay|DNAse footprinting|EMSA	20139188	true
+OhrR	PA2850	Beta-gal reporter assay|DNAse footprinting|EMSA|Northern blot|Site directed mutagenesis|qRT-PCR [RNA]	20139188	true
+OxyR	PA0139	Beta-gal reporter assay|EMSA	10913087	true
+OxyR	PA0140	Beta-gal reporter assay|EMSA	10913087	true
+OxyR	PA0848	Beta-gal reporter assay|EMSA	10913087	true
+OxyR	PA4613	Beta-gal reporter assay|EMSA	10913087	true
+PA2206	PA2214	Beta-gal reporter assay|DNA-array expression analysis|EMSA|qRT-PCR [RNA]	23382903	true
+PA2206	PA2215	Beta-gal reporter assay|DNA-array expression analysis|EMSA|qRT-PCR [RNA]	23382903	true
+PA2206	PA2426	DNA-array expression analysis|EMSA|qRT-PCR [RNA]	23382903	true
+PA2206	PA4881	DNA-array expression analysis|EMSA|qRT-PCR [RNA]	23382903	true
+PchR	PA4227	Beta-gal reporter assay|EMSA|Site directed mutagenesis	16194235	false
+PchR	PA4228	Beta-gal reporter assay|EMSA|Site directed mutagenesis	16194235	false
+PhoB	PA4236	EMSA|GUS reporter gene assay	16238634	true
+PsrA	PA3013	Beta-gal reporter assay|DNA-array expression analysis|EMSA|qRT-PCR [RNA]	18524913	true
+PsrA	PA3014	Beta-gal reporter assay|DNA-array expression analysis|EMSA|qRT-PCR [RNA]	18524913	true
+PtxR	PA1148	Beta-gal reporter assay|DNAse footprinting|EMSA|Isothermal titration calorimetry	22844393	true
+PtxR	PA2260	Beta-gal reporter assay|DNAse footprinting|EMSA|Isothermal titration calorimetry	22844393	true
+PtxR	PA2261	Beta-gal reporter assay|DNAse footprinting|EMSA|Isothermal titration calorimetry	22844393	true
+PtxR	PA2262	Beta-gal reporter assay|DNAse footprinting|EMSA|Isothermal titration calorimetry	22844393	true
+PtxR	PA2263	Beta-gal reporter assay|DNAse footprinting|EMSA|Isothermal titration calorimetry	22844393	true
+PtxR	PA2264	DNAse footprinting|EMSA|Isothermal titration calorimetry	22844393	true
+PtxR	PA2265	DNAse footprinting|EMSA|Isothermal titration calorimetry	22844393	true
+PtxR	PA2266	DNAse footprinting|EMSA|Isothermal titration calorimetry	22844393	true
+PtxS	PA2259	Beta-gal reporter assay|DNAse footprinting|EMSA	22844393	true
+PtxS	PA2260	Beta-gal reporter assay|DNAse footprinting|EMSA	22844393	true
+PtxS	PA2261	Beta-gal reporter assay|DNAse footprinting|EMSA	22844393	true
+PtxS	PA2262	Beta-gal reporter assay|DNAse footprinting|EMSA	22844393	true
+PtxS	PA2263	Beta-gal reporter assay|DNAse footprinting|EMSA	22844393	true
+PtxS	PA2264	DNAse footprinting|EMSA	22844393	true
+PtxS	PA2265	DNAse footprinting|EMSA	22844393	true
+PtxS	PA2266	DNAse footprinting|EMSA	22844393	true
+PvdS	PA2396	Beta-gal reporter assay|EMSA|In-vitro transcription|Site directed mutagenesis	11222621	true
+PvdS	PA2397	Beta-gal reporter assay|EMSA|In-vitro transcription|Site directed mutagenesis	11222621	true
+PyeR	PA4354	Beta-gal reporter assay|EMSA|qRT-PCR [RNA]	22820840	true
+PyeR	PA4355	Beta-gal reporter assay|EMSA|qRT-PCR [RNA]	22820840	true
+PyeR	PA4356	Beta-gal reporter assay|EMSA|qRT-PCR [RNA]	22820840	true
+QscR	PA1897	Beta-gal reporter assay|DNAse footprinting|EMSA|Site directed mutagenesis	16390453	true
+RhlR	PA3478	Beta-gal reporter assay|EMSA|Site directed mutagenesis	14526008|24935161	true
+RhlR	PA3479	Beta-gal reporter assay|EMSA|Site directed mutagenesis	14526008|24935161	true
+RhlR	PA5161	Beta-gal reporter assay|Site directed mutagenesis	22262098	true
+RhlR	PA5162	Beta-gal reporter assay|Site directed mutagenesis	22262098	true
+RhlR	PA5163	Beta-gal reporter assay|Site directed mutagenesis	22262098	true
+RhlR	PA5164	Beta-gal reporter assay|Site directed mutagenesis	22262098	true
+RpoN	PA3540	DNAse footprinting|EMSA|Site directed mutagenesis	10792721	true
+RpoN	PA5292	Beta-gal reporter assay|Site directed mutagenesis	20869215	false
+RsaL	PA1432	Beta-gal reporter assay|DNAse footprinting|EMSA|Site directed mutagenesis|Western blot (quantitative) expression analysis	17172347|18045385	true
+RsaL	PA2193	DNA-array expression analysis|EMSA	18045385	false
+RsaL	PA4209	DNA-array expression analysis|EMSA	18045385	false
+RsaL	PA4210	DNA-array expression analysis|EMSA	18045385	false
+Vfr	PA0652	Beta-gal reporter assay|DNAse footprinting|EMSA|In-vitro transcription	20494996	false
+Vfr	PA1097	Beta-gal reporter assay|DNAse footprinting|EMSA|Site directed mutagenesis	12218009	true
+Vfr	PA1430	Beta-gal reporter assay|EMSA|Site directed mutagenesis	9190808	true
+Vfr	PA2258	Beta-gal reporter assay|DNAse footprinting|EMSA	18227247	true
+Vfr	PA4704	Beta-gal reporter assay|EMSA|Site directed mutagenesis	19801409	true

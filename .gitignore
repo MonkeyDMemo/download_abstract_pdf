@@ -25,3 +25,7 @@ run_sweep_biobert.sh
 summarize_sweep.py
 etapa2/para_colab/
 datos_etapa2/
+
+# El checkpoint de la configuracion 22, 415 MB. Se reproduce desde Colab con
+# etapa2/barrido.py; lo que sí va al repositorio es barrido_resumen.csv.
+modelo_limpio_run22/

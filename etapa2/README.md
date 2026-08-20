@@ -41,6 +41,26 @@ memorización. **No invalida el trabajo: invalida el número.**
 | `auditar_signo.py` | extrae las oraciones de los seis represores RND |
 | `auditoria_signo.tsv` | 198 oraciones, 93 con signo conocido de antemano |
 
+Y el programa local de inferencia, que se agregó después para poder evaluar el
+modelo sin depender del servidor del asesor:
+
+| archivo | qué hace |
+|---|---|
+| `construir_diccionario.py` | arma el diccionario de PAO1 desde RefSeq, KEGG y UniProt; **se niega si detecta procedencia `oro`** |
+| `genes_pao1.tsv` | 5 642 genes, 572 marcados como factor de transcripción |
+| `manual_pao1.tsv` | las 22 filas escritas a mano, cada una con su justificación |
+| `operones_pao1.tsv`, `collectf_pao1.tsv` | 3 030 operones derivados del genoma; 333 pares con sitio de unión |
+| `lexico.py` | reconoce menciones de genes en una oración; respeta `sensible_mayusculas` |
+| `texto.py`, `secciones.tsv` | parte los documentos en oraciones y reconoce las secciones del JATS |
+| `extraer_pares.py` | saca los pares candidatos del corpus; mide que el diccionario reconozca de verdad |
+| `clasificar.py` | **el único archivo que importa `torch`**; corre el modelo sobre los pares |
+| `red.py` | agrega las predicciones en aristas; revisa que las probabilidades sean una distribución |
+| `evaluar_oro.py`, `evaluar_signo.py` | comparan contra el patrón de oro y contra la auditoría de signo |
+
+La cobertura del patrón de oro que publica el diccionario es **43 de los 55
+factores con las tres fuentes públicas** y 53 añadiendo la capa manual; el
+porqué de reportar la primera está en `../docs/decisiones.md`.
+
 ```bash
 python etapa2/particionar.py --por pmid --salida datos_etapa2/por_pmid
 python -m unittest discover etapa2
@@ -203,7 +223,7 @@ párrafo sin relación anotada. Es trabajo de anotación, no de código.
 
 ## Lo que falta
 
-1. **Correr el barrido.** Es lo inmediato y son un par de horas de T4.
+1. ~~**Correr el barrido.**~~ Hecho: 24 de 24, resumen en `barrido_resumen.csv`.
 2. **Varias semillas.** `--semillas 42,43,44` da la dispersión, que con 1242
    ejemplos es del orden de la señal que el barrido mide. El `.sh` usaba una.
 3. **Un brazo de control**: correr la misma rejilla sobre una partición *a
@@ -211,9 +231,20 @@ párrafo sin relación anotada. Es trabajo de anotación, no de código.
    0.8721 mezcla tres cosas —la fuga, que el test cambió de 64 artículos a 8,
    y que los hiperparámetros se reeligieron—. `particionar.py` todavía no lo
    produce.
-4. **Una línea base barata** (mayoritaria, coocurrencia en la misma oración).
-   Sin ella, un macro-F1 de 0.75 no se sabe si es bueno.
+4. ~~**Una línea base barata**~~ Hecha para el signo: `evaluar_oro.py` contrasta
+   contra el azar **y** contra la clase mayoritaria del mismo subconjunto, con
+   binomial exacta. Un clasificador constante ya no pasa. Falta la de
+   coocurrencia para la extracción de pares.
 5. **El conjunto anotado de PAO1**, que sigue siendo el obstáculo de fondo.
+6. **Cerrar los cinco huecos que los ataques dejaron abiertos.** El programa
+   detecta al tramposo torpe y no al cuidadoso: la contaminación parcial del
+   diccionario es invisible, la evaluación no exige que sus cuatro entradas
+   sean de la misma corrida, `--disputadas` vacía el denominador sin control
+   real, los umbrales no se registran y el manifiesto del caché lo escribe el
+   propio script. Cada uno con el ataque que lo demuestra en
+   `../docs/decisiones.md`, sección «Cuatro guardianes que miden contenido».
+   **Mientras sigan abiertos, una cifra de este pipeline solo vale acompañada
+   del `red_informe.json` de su corrida, del umbral y de las filas excluidas.**
 
 ## Los datos no están en el repositorio
 

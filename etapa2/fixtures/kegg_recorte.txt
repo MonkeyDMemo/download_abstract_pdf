@@ -1,0 +1,14 @@
+pae:PA0425	CDS	472024..473175	mexA; multidrug resistance protein MexA
+pae:PA0426	CDS	473191..476331	mexB; multidrug resistance protein MexB
+pae:PA0427	CDS	476333..477790	oprM; outer membrane protein OprM
+pae:PA0592	CDS	complement(650575..651381)	ksgA; ribosomal RNA small subunit methyltransferase A
+pae:PA0905	CDS	991013..991198	rsmA; carbon storage regulator
+pae:PA1003	CDS	complement(1086097..1087095)	mvfR; transcriptional regulator MvfR
+pae:PA2492	CDS	2807469..2808512	mexT; transcriptional regulator MexT
+pae:PA3676	CDS	complement(4116188..4119265)	resistance-nodulation-cell division (RND) efflux transporter
+pae:PA3677	CDS	complement(4119270..4120373)	resistance-nodulation-cell division (RND) efflux membrane fusion protein
+pae:PA3678	CDS	4120469..4121107	transcriptional regulator
+pae:PA4597	CDS	complement(5149633..5151072)	oprJ; multidrug efflux outer membrane protein OprJ
+pae:PA4598	CDS	complement(5151078..5154209)	mexD; resistance-nodulation-cell division (RND) multidrug efflux transporter MexD
+pae:PA4599	CDS	complement(5154237..5155400)	mexC; resistance-nodulation-cell division (RND) multidrug efflux membrane fusion protein MexC
+pae:PA4764	CDS	complement(5351675..5352079)	fur; ferric uptake regulation protein
