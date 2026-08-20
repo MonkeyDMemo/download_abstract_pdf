@@ -638,3 +638,195 @@ episodio dejó herramienta y no solo un arreglo:
 
 La cuarta es la más grave de las cuatro y la que menos se ve: las otras tres
 cuestan tiempo, esa cuesta una cifra que no mide lo que su etiqueta dice.
+
+## La cobertura del oro se reporta sin la capa manual: 43 de 55
+
+El diccionario de PAO1 sale de tres fuentes públicas —RefSeq, KEGG, UniProt— y
+de una capa manual de 22 filas que alguien escribió y firmó. Sobre los 55
+factores del patrón de oro reconoce **43 solo con las fuentes públicas y 53
+añadiendo la capa manual**.
+
+**Se reporta el 43.** El diccionario existe para evaluar, y una cobertura que
+sube porque una persona escribió la fila que faltaba mide a la persona, no a las
+fuentes. `construir_diccionario.py` ya se niega a aceptar `oro` como procedencia,
+justamente para que la evaluación no acabe midiéndose contra sí misma; la capa
+manual es el hueco que ese guardián no puede tapar, porque quien la escribe
+también leyó el patrón de oro. Declarar las dos cifras por separado es lo que lo
+tapa.
+
+Las 22 filas se eligieron **por frecuencia en el corpus, no por el patrón de
+oro** —`Fur` en 81 artículos, `PqsR` en 155— y cada una lleva su justificación.
+Aun así van declaradas aparte: la intención de quien escribe no es verificable y
+la procedencia sí.
+
+### Cómo se mide: reconstruyendo, no tachando
+
+**La forma correcta es volver a construir el diccionario con la capa manual
+vacía** y medir sobre el resultado. No se toca el TSV publicado. La validación de
+que el método es limpio: la misma reconstrucción **con** la capa manual reproduce
+`etapa2/genes_pao1.tsv` y `etapa2/operones_pao1.tsv` **byte por byte**, así que lo
+único que separa los dos escenarios es la capa manual y nada más.
+
+Tachar filas a mano se equivoca, y se equivoca en las dos direcciones. Las dos
+formas ingenuas se midieron:
+
+- **Borrar toda fila cuya procedencia incluya `manual`** tira 22 filas y da 43.
+  Da el número correcto por accidente: se lleva por delante a `dnr`, `ada`,
+  `fis`, `lrp`, `crc` y `hfq`, que RefSeq, KEGG y UniProt **sí** nombran.
+- **Borrar solo los alias que aportó la capa manual** da 47, y es el error que
+  esta sección corrige. Parte de suponer que la capa manual solo añade alias, y
+  no es cierto: cuando ninguna fuente pública nombra el locus, **la capa manual
+  aporta el símbolo mismo** (`construir_diccionario.py:1015`). Mirando el TSV
+  publicado, `PA3678` aparece con `simbolo = mexL` y procedencia
+  `refseq|kegg|uniprot|manual`, y es fácil concluir que RefSeq trae el nombre. No
+  lo trae: en el GFF, `PA3678` y `PA2523` son registros **sin campo `gene=`**, y
+  su único nombre público es el locus tag.
+
+### Los doce, y sus cinco causas
+
+`Anr`, `CpxR`, `CzcR`, `Fur`, `HasI`, `HptB`, `IHF`, `MexL`, `PirR`, `PqsR`,
+`PrrF`, `Vfr`. Ninguno es un gen desconocido:
+
+1. **Cuatro locus sin nombre público** — `CzcR` (PA2523), `HasI` (PA3410),
+   `HptB` (PA3345), `MexL` (PA3678). El símbolo se lo pone la capa manual.
+2. **Tres con símbolo público en minúsculas y fila sensible a mayúsculas** —
+   `Fur`, `Anr`, `Vfr`. Ver la subsección siguiente.
+3. **Uno con otro nombre en las bases** — `PqsR` es `mvfR` en las tres.
+4. **Dos que no son un gen** — `IHF` (RefSeq trae `ihfA` e `ihfB`, no el
+   complejo), `PrrF` (trae `prrF1` y `prrF2`, no el colectivo).
+5. **Dos que no resuelve ni la capa manual** — `CpxR` (PA3206) y `PirR`
+   (PA0708): filas que existen y llevan `es_tf`, pero cuya única superficie es el
+   locus tag.
+
+Hay una lectura más laxa que da **46**: contar también cuando se reconoce la
+forma de gen aunque no la de proteína, o sea aceptar que `fur` cubre a `Fur`. Se
+reportó la estricta porque **el corpus escribe la forma de proteína**: `Fur`
+aparece 573 veces, `Anr` 500 y `Vfr` 555. Un diccionario que solo conoce `fur` no
+los encuentra en el texto, que es para lo que sirve el diccionario.
+
+Efecto colateral que conviene tener presente: sin capa manual el diccionario baja
+de 5 642 a 5 639 filas y de 572 a 570 marcas de factor, y la tabla de operones de
+3 030 a 3 028 —desaparecen `mexJK` y `hptB-recQ`—. `mexJK` es blanco de una fila
+del patrón de oro, o sea que la capa manual también mueve el lado de los blancos.
+
+### Por qué no se automatiza la forma capitalizada
+
+Parece que bastaría derivar `Fur` de `fur`, que es la convención bacteriana que
+`CLAUDE.md` ya declara. No basta, y `lexico.py` lo dice donde registra las
+superficies: para una fila insensible a mayúsculas añadirla no aporta, y para
+una sensible —que son justo los símbolos de tres letras— sintetizar `Cat`, `His`
+o `Fis` reintroduce el falso positivo que `sensible_mayusculas` existe para
+matar. Un gen sensible que necesite su forma de proteína va como alias, **donde
+alguien lo firma**.
+
+Lo que queda pendiente entonces no es automatizar la capitalización sino
+**cambiar la firma por una cita**: tomar esos nombres de los nombres de proteína
+y sinónimos de gen de UniProt, que es fuente pública, en vez del criterio de
+quien construye. Faltarían `IHF` y `PrrF`, que necesitan que el flujo admita
+complejos y familias de ARN, y `CpxR` y `PirR`, que necesitan una decisión
+escrita: la asignación habitual de `CpxR` contradice a RefSeq, que llama a ese
+gen sensor de dos componentes, y de `PirR` no se halló corroboración pública de
+ningún tipo.
+
+## Cuatro guardianes que miden contenido, y lo que un codigo 0 todavia no garantiza
+
+Los cuatro huecos que se cerraron en esta ronda eran el mismo error repetido:
+**se comprobaba la etiqueta y no el contenido.** Un archivo que dice ser
+predicciones se aceptaba por tener las columnas que promete, no por traer dentro
+algo que pudiera ser una prediccion. La prueba de que era un error de verdad es
+que un clasificador que contesta siempre `activates`, sin leer nada, salia
+certificado con codigo 0.
+
+### Lo que se cerro
+
+1. **El acierto de signo se contrasta contra la clase mayoritaria, no solo
+   contra el azar.** El azar es un rival debil cuando una clase domina: el oro de
+   las 139 filas comparables trae 97 `activates` y 42 `represses`, asi que decir
+   siempre `activates` acierta el 69.8 %. Antes eso bastaba para «se distingue
+   del azar, codigo 0». Ahora hay que despegar de **las dos** lineas base, con
+   una binomial exacta de una cola. Medido: el clasificador constante saca 69.8 %
+   contra 69.8 %, ventaja +0.0 pp, p = 0.542, **codigo 2**. Y el guardian no es
+   de los que saltan siempre: un clasificador de palabras clave de verdad saca
+   84.9 % contra 68.1 %, p = 0.000, codigo 0.
+2. **Las cuatro probabilidades se revisan al leerlas**, dentro de
+   `cargar_predicciones()` y no en `main()`, para que ningun consumidor del
+   modulo pueda saltarselo. Se comprueba que cada una este en `[0,1]` —que es lo
+   que atrapa `nan`, con el que `abs(nan - 1) > 1e-3` es falso—, que sumen 1, y
+   ademas que la columna `prediccion` sea de verdad la clase mas probable. Esa
+   tercera hace falta: sin ella, una distribucion legitima con la etiqueta
+   cambiada pasa, y `p_represses = 0.9` se publica como activacion.
+3. **El diccionario declara su procedencia y ademas se mide contra el corpus.**
+   Una fuente `oro` aborta antes de leer un solo documento. Pero la etiqueta sola
+   no basta, asi que se cuenta cuantas entidades reconoce **por su nombre** en el
+   corpus, sin contar los locus tag: la literatura de PAO1 escribe muchos
+   `PA1234`, y un diccionario de relleno que conserve los 5 642 locus tags sigue
+   reconociendo miles. Por nombre: 1 935 el diccionario real, 865 el falsificado.
+   El minimo esta en 1 500.
+4. **El cache se verifica byte a byte y, ademas, cruzando las tres fuentes.**
+   Cada lectura compara el sha256 y el tamano contra el manifiesto. Y como el
+   manifiesto tambien es texto, se comprueba que RefSeq, KEGG y UniProt coincidan
+   en como se llama cada locus tag: en la descarga honesta, de 1 766 simbolos del
+   GFF hay **uno solo** sin respaldo en ninguna de las otras dos. El tope esta en
+   12.
+
+Cada guardian tiene al menos una prueba que muere si se desactiva, comprobado
+mutandolo y no suponiendolo. La suite de la etapa 2 pasa de 453 a **482 pruebas**.
+
+### Lo que sigue abierto, y esta demostrado
+
+Dos agentes adversarios volvieron a correr los ataques contra el codigo ya
+reparado y contra codigo nuevo. Lo que sigue no son sospechas: cada uno se
+ejecuto y produjo el numero que se cita.
+
+- **La contaminacion parcial es invisible y ademas mejora todos los numeros.**
+  El guardian de circularidad se anuncia como graduado y no lo es. Con el
+  diccionario genuino mas 771 filas copiadas del patron de oro —el 12 % de las
+  filas— la fraccion que deberia subir **baja**, de 25.6 % a 23.8 %, porque los
+  nombres del oro emparejan con todo el genoma y engordan el denominador.
+  Mientras tanto la cobertura publicada sube de 89.8 % a 96.0 % y la
+  exhaustividad de 79.0 % a 86.4 %, todo con codigo 0 y sin un aviso. Solo
+  dispara cuando el diccionario es casi puro oro, que es justo el umbral de todo
+  o nada que dice no ser. **Y la contaminacion parcial es la unica que alguien
+  cometeria por descuido.**
+- **El manifiesto del cache lo escribe el propio script.** Quien pueda alterar
+  el GFF puede alterar el manifiesto. Envenenando las tres fuentes de forma
+  coherente —el mismo trabajo tres veces, unos veinte minutos— el diccionario
+  sale con codigo 0 y con **190 de 190 relaciones del oro cubiertas**, contra
+  170 de 190 del honesto, y recorre el pipeline entero hasta «el acierto de signo
+  despega de las dos lineas base. Codigo 0». La senal que lo delataria ya se
+  calcula y se imprime —los simbolos repetidos saltan de 13 a 111— pero no es
+  invariante, o sea que nadie la mira.
+- **`evaluar_oro.py` recibe cuatro archivos y no comprueba que sean de la misma
+  corrida.** El numerador de la exhaustividad sale de `--red` y el denominador
+  entero de `--pares`, y nada ata los dos. Con la **misma** `red.tsv` y un
+  `pares.jsonl` podado, la exhaustividad pasa de 80.6 % a 100.0 % con codigo 0.
+  Mezclar dos corridas genuinas —el accidente realista, porque las dos escriben
+  en rutas por omision fijas— da 80.1 %, que no es la cifra de ninguna de las
+  dos. Lo que falta ya esta escrito en el disco: `red.py` deja en
+  `red_informe.json` que pares y que predicciones consumio, y `evaluar_oro.py` no
+  abre ese archivo ni una vez, aunque `evaluar_signo.py` si lo abre para otra
+  cosa.
+- **`--disputadas` vacia el denominador y su unico control es que la
+  justificacion no este vacia.** Pasando las 14 filas que el pipeline recupero
+  con el signo al reves, el acierto de signo sube de 85.1 % a **100.0 %**,
+  despega de las dos lineas base y sale con codigo 0. Con 7 filas elegidas a
+  proposito el denominador cae exactamente en el 169 que anuncia la
+  documentacion, lo que hace la corrida *mas* creible. Las dos lineas base se
+  calculan sobre el conjunto ya recortado, asi que el mecanismo que existe para
+  detectar seleccion es ciego justo a esta.
+- **Los umbrales no quedan registrados.** Sobre las mismas predicciones: con
+  umbral 0.50 la exhaustividad sale 93.8 %; por omision, 80.6 %. Trece puntos, y
+  los dos `evaluacion_oro.json` son indistinguibles porque ninguno guarda el
+  umbral. El agravante es que la corrida ajustada a mano es **mas silenciosa**
+  que la honesta: el aviso de «umbrales por omision» solo se imprime cuando son
+  los de omision.
+
+### La consecuencia, dicha sin adornos
+
+**Hoy, un codigo de salida 0 de este pipeline no certifica que la cifra se pueda
+citar.** Para citarla hace falta ademas el `red_informe.json` de esa corrida, la
+lista de filas disputadas y el umbral con que se corrio, y que quien la cite haya
+regenerado el diccionario desde una descarga suya. Eso es peor de lo que la
+palabra «guardian» sugiere, y por eso queda escrito aqui y no solo en el informe
+de un agente: **la mitad del trabajo de la etapa 2 es que estas cinco cosas
+dejen de ser ciertas.**

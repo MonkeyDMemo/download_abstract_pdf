@@ -53,7 +53,7 @@ días posteriores al corte del 18 de agosto:
 | La etapa 2 es un prototipo: diccionario de entidades más reglas léxicas | Existe un modelo BioBERT afinado para clasificar relaciones, heredado del servidor del asesor |
 | «Sin conjunto de referencia no hay métrica»; candidato RegulomePA, por confirmar | Hay un patrón de oro provisional propio de *P. aeruginosa*: 190 relaciones, 181 encontradas en el corpus |
 | Siguiente paso: escalar de la línea base a BERT | Ya se hizo, y al hacerlo apareció un problema en cómo se estaba evaluando ese modelo |
-| — | Se rehizo la partición de los datos y se corrieron 18 de las 24 configuraciones sobre ella, sin contaminación |
+| — | Se rehizo la partición de los datos y se corrieron las 24 configuraciones sobre ella, sin contaminación |
 
 Nada de esto contradice las diapositivas: es lo que pasó después.
 
@@ -98,6 +98,7 @@ Nada de esto contradice las diapositivas: es lo que pasó después.
 | Barrido sin contaminación | la misma configuración que el servidor reportó como suya da 0.9335 en prueba; 12 de las 24 superan el 0.8721 | **medido** — `etapa2/barrido_resumen.csv` |
 | Patrón de oro de *P. aeruginosa* | 190 relaciones, ~169 evaluables | **medido** — `etapa2/oro_pseudomonas.tsv` |
 | Auditoría de signo | 93 oraciones con la respuesta conocida de antemano | **medido** — `etapa2/auditoria_signo.tsv` |
+| Diccionario de genes de PAO1 | 5 642 genes, 572 factores; reconoce 43 de los 55 factores del oro con fuentes públicas, 53 con la capa manual | **medido** — `etapa2/genes_pao1.tsv` |
 | Conjunto anotado a mano de PAO1 | — | **pendiente** |
 
 ---
@@ -243,9 +244,11 @@ En un informe de servicio social esto no es cortesía, es el objeto del document
 | `bio_bert_re_finetune.py` y el script del barrido original | La auditoría del servidor: [`ficha-modelo-bert.md`](ficha-modelo-bert.md) |
 | `ecoli_curated.tsv` y su partición original | La medición de la contaminación |
 | La rejilla de 24 configuraciones | `particionar.py`, su verificador y sus 17 pruebas |
-| El diccionario de genes de PAO1 | `barrido.py` reanudable y el traslado a Google Colab |
+| El diccionario de PAO1 del servidor (`pseudomonas_genes.tsv`, reconocimiento por expresiones regulares) | `barrido.py` reanudable y el traslado a Google Colab |
 | El programa de inferencia y las 789 relaciones que ya propuso | `oro_pseudomonas.tsv`, el patrón de oro de *P. aeruginosa* |
 | | `auditar_signo.py` y su auditoría de 198 oraciones |
+| | `construir_diccionario.py` y el diccionario nuevo, desde RefSeq, KEGG y UniProt |
+| | El programa local de inferencia: `extraer_pares.py`, `red.py`, `evaluar_oro.py` |
 
 El modelo no es mío. Lo que hice fue auditarlo, encontrar que su calificación no
 medía lo que decía medir, y volver a medirla bien.
@@ -459,6 +462,97 @@ Esto ya estaba anticipado en la lista de lo que falta, como advertencia teórica
 sobre repetir con varias semillas. Ahora es una medición, y salió **sin cambiar
 la semilla siquiera**, que es peor de lo que se había supuesto.
 
+### El diccionario de genes, y por qué se reporta 43 de 55
+
+Para encontrar relaciones en el texto hace falta antes reconocer los genes. Eso
+lo hace un diccionario de los **5 642 genes de PAO1**, construido aquí desde tres
+fuentes públicas de anotación de secuencia: el genoma de referencia en RefSeq,
+KEGG y UniProt. Ninguna de las tres es una lista de relaciones regulatorias, y
+eso importa: **si el diccionario se construyera a partir del patrón de oro,
+cualquier evaluación posterior mediría el solapamiento del diccionario consigo
+mismo.** Por eso la columna de procedencia no admite el valor `oro`.
+
+De ahí salen también **572 genes marcados como factores de transcripción** y
+**333 pares con evidencia experimental de unión**, que vienen de los sitios de
+unión anotados en el mismo genoma.
+
+**La cifra que se reporta es la reproducible.** El diccionario tiene además una
+capa manual de 22 filas, escritas a mano y versionadas, y la cobertura de los 55
+factores del patrón de oro cambia mucho según se cuente con ella o sin ella:
+
+| | factores del oro reconocidos |
+|---|---|
+| Solo con las tres fuentes públicas | **43 de 55 (78.2 %)** |
+| Añadiendo la capa manual | 53 de 55 (96.4 %) |
+
+**Se reporta 43 de 55**, que es lo que cualquiera puede reproducir bajando las
+mismas tres fuentes. El 53 depende de que una persona escribiera 22 filas, y una
+cifra que sube porque alguien la ayudó a mano no es la misma clase de cifra.
+
+Los doce que faltan sin la capa manual son `Anr`, `CpxR`, `CzcR`, `Fur`, `HasI`,
+`HptB`, `IHF`, `MexL`, `PirR`, `PqsR`, `PrrF` y `Vfr`, y **ninguno es un gen
+desconocido**. Conviene decir qué le pasa a cada uno, porque el número se lee
+peor de lo que es. Son cinco situaciones distintas:
+
+- **Cuatro locus que ninguna fuente pública nombra** — `CzcR`, `HasI`, `HptB`,
+  `MexL`. El gen existe en RefSeq, pero su registro **no trae campo de nombre**:
+  se llama `PA2523`, `PA3410`, `PA3345` y `PA3678` y nada más. Quien escribe
+  `MexL` en un artículo está usando un nombre que la anotación de secuencia no
+  conoce. Es la capa manual la que le pone el símbolo.
+- **Tres que RefSeq sí nombra, pero en minúsculas** — `Fur`, `Anr`, `Vfr`. Los
+  símbolos `fur`, `anr` y `vfr` están ahí. Pero son de tres letras, y por eso su
+  fila exige coincidencia exacta de mayúsculas: `fur` suelto en un texto en
+  inglés sería un falso positivo constante. La literatura escribe la proteína
+  capitalizada —`Fur` aparece 573 veces en este corpus— y `Fur` no casa con
+  `fur`. El programa **se niega a propósito a inventar la forma capitalizada**:
+  hacerlo para todos reintroduciría el falso positivo que la marca existe para
+  matar, así que un gen sensible que necesite su forma de proteína la lleva
+  declarada a mano, donde alguien la firma.
+- **Uno al que las bases llaman de otra forma** — `PqsR`. RefSeq, KEGG y UniProt
+  coinciden en llamar `mvfR` a `PA1003`. Es un sinónimo de verdad.
+- **Dos que no son un gen** — `IHF` es un heterodímero: RefSeq trae sus dos
+  subunidades (`ihfA`, `ihfB`), no el nombre del conjunto. `PrrF` es un par de
+  ARN pequeños: la base trae `prrF1` y `prrF2`, no el colectivo.
+- **Dos que no resuelve nadie, ni siquiera la capa manual** — `CpxR` y `PirR`.
+  Sus filas existen y están marcadas como factor de transcripción por evidencia
+  pública, pero ninguna fuente les da símbolo y su única superficie es el locus
+  tag. Aquí el constructor se negó deliberadamente a adivinar: la asignación
+  habitual de `CpxR` contradice a RefSeq, que llama a ese gen sensor de dos
+  componentes. **Prefirió 53 de 55 honestos a 55 de 55 copiando locus tags del
+  patrón de oro.**
+
+Cada fila de la capa manual lleva su justificación escrita y se eligió **por
+frecuencia en el corpus, no por el patrón de oro**: `Fur` aparece en 81
+artículos, `PqsR` en 155. Aun así es una elección humana que sube justo la
+métrica que se va a reportar, y por eso se declara aparte en vez de fundirse en
+el total.
+
+**Llegar a 55 de 55 queda pendiente**, y no es un trabajo de escribir más filas
+a mano. Son tres cosas de dificultad muy distinta:
+
+1. **Que la firma sea una cita y no un juicio.** Los ocho que la capa manual
+   repone hoy dependen de que una persona escribiera el nombre. Lo que los
+   volvería reproducibles es tomarlo de una fuente pública que registre nombres
+   de proteína y sinónimos de gen —UniProt los tiene— en vez de dejarlos a
+   criterio de quien construye.
+2. **Que el diccionario admita cosas que no son un gen.** `IHF` y `PrrF`
+   necesitan las clases `complejo` y `familia`, esbozadas en la capa manual pero
+   no cerradas en el resto del flujo.
+3. **Que `CpxR` y `PirR` tengan una decisión escrita.** Para `CpxR` hay que
+   resolver quién gana entre la asignación habitual y RefSeq. Para `PirR` no se
+   encontró corroboración pública de ningún tipo.
+
+Una nota de método, porque la cifra se midió mal una vez antes de quedar así. La
+forma correcta de preguntar «cuánto cubren las fuentes públicas» no es tachar
+filas del archivo publicado, sino **volver a construir el diccionario con la capa
+manual vacía** y medir sobre eso. Tacharlas a mano se equivoca en las dos
+direcciones: borrar la fila entera de un gen que la capa manual solo enriqueció
+quita un gen que las fuentes públicas sí tienen, y borrar solo sus alias deja en
+pie símbolos que **también** puso la capa manual. La reconstrucción no tiene ese
+problema, y además se comprobó que con la capa manual reproduce
+`etapa2/genes_pao1.tsv` **byte por byte**, así que lo único que separa los dos
+escenarios es la capa manual.
+
 ### El patrón de oro: 190 relaciones que el corpus sí contiene
 
 La lámina 8 decía que el obstáculo era la evaluación: el modelo propone
@@ -552,14 +646,64 @@ Arreglarlo pide anotación, no código.
 
 ---
 
+### El programa ya corre entero, y todavía no certifica una cifra
+
+Ya existe el camino completo: del corpus salen pares de genes que aparecen en la
+misma oración, el clasificador les pone signo, se arma la red y se compara contra
+el patrón de oro. Y como el objetivo de todo este trabajo es no volver a publicar
+un número que se mide a sí mismo, antes de correrlo en serio se hizo lo contrario
+de lo habitual: **se intentó engañarlo a propósito.**
+
+El ataque más simple fue el más revelador. Se sustituyó el clasificador por uno
+que no lee nada y contesta siempre lo mismo, `activates`. El programa lo
+certificaba con código 0: «se distingue del azar». Y tenía razón en lo que medía
+—el problema era el rival. Como el patrón de oro trae 97 activaciones y 42
+represiones, **contestar siempre `activates` acierta el 69.8 % sin leer una sola
+palabra**, y ganarle a una moneda al aire no dice nada. Ahora la comparación es
+contra esa clase mayoritaria además de contra el azar, y el clasificador constante
+sale con ventaja de +0.0 puntos, `p = 0.542`, rechazado. Un clasificador de
+palabras clave de verdad, en cambio, sí pasa: 84.9 % contra 68.1 %.
+
+Se cerraron cuatro huecos de esa misma familia —**todos eran comprobar la etiqueta
+de un archivo en vez de su contenido**— y la batería de pruebas de la etapa 2
+pasó de 453 a 482. Pero dos rondas de ataque posteriores encontraron cinco cosas
+que siguen pasando, y conviene decirlas antes de que alguien cite un número:
+
+- Contaminar el diccionario **a medias** —copiarle un 12 % de filas del patrón de
+  oro— no dispara ningún aviso, sube todas las cifras publicadas y de hecho
+  **baja** el indicador que debería detectarlo.
+- La evaluación recibe cuatro archivos y no comprueba que vengan de la misma
+  corrida. Con la misma red y una lista de candidatos recortada, la exhaustividad
+  pasa de 80.6 % a 100.0 % sin una queja.
+- Hay una bandera para excluir relaciones en disputa cuyo único control es que la
+  justificación no esté vacía: excluyendo justo las que el programa erró, el
+  acierto sube a 100.0 %.
+- El umbral con que se arma la red no queda registrado, y mueve la exhaustividad
+  entre 9.7 % y 93.8 % sobre las mismas predicciones.
+
+Ninguna de esas cinco es un accidente que ocurra solo; todas exigen que alguien
+haga algo raro, y dos de ellas se podrían cometer por descuido. **La conclusión
+honesta es que hoy el programa detecta al tramposo torpe y no al cuidadoso**, y
+que una cifra suya solo vale acompañada del registro de su corrida. Están todas
+documentadas con el ataque exacto que las demuestra en `docs/decisiones.md`.
+
+Vale la pena decir por qué esto sale en un informe y no se guarda: **el proyecto
+existe porque una métrica inflándose sin que nadie lo notara costó meses.**
+Encontrar cinco maneras más de que eso pase, y escribirlas, es el trabajo; enseñar
+solo el 0.92 sería repetir el error con mejor ortografía.
+
 ## Lo que todavía no está medido
 
 | falta | qué lo produce | qué cambiaría si sale distinto |
 |---|---|---|
 | Repetir con varias semillas | `barrido.py --semillas 42,43,44` | Ya no es una suposición: reentrenar la misma configuración **con la misma semilla** la movió 0.0125 en prueba. Con varias semillas se podría reportar cada cifra con su dispersión en vez de como un punto |
 | Un brazo de control con partición al azar | `particionar.py`, todavía no lo produce | Sin él, la diferencia contra 0.8721 mezcla tres causas: quitar la contaminación, un conjunto de prueba más difícil, y haber reelegido los ajustes |
-| Una línea base barata (clase mayoritaria, coocurrencia) | pendiente | Sin ella no se sabe si 0.75 es bueno o malo |
+| ~~Una línea base barata (clase mayoritaria)~~ | **hecho** — `evaluar_oro.py` la calcula sobre el mismo subconjunto que evalúa, con binomial exacta | Ya rechaza al clasificador constante (69.8 % contra 69.8 %, p = 0.542) |
 | Correr el clasificador contra el patrón de oro y la auditoría de signo | Los dos archivos ya existen | Sería la primera cifra de desempeño sobre *P. aeruginosa*, no sobre *E. coli* |
+| Reconocer los 55 factores del oro con fuentes públicas | Tomar los sinónimos de proteína de UniProt en vez de firmarlos a mano, admitir complejos y familias de ARN, y resolver `CpxR` y `PirR` con una decisión escrita | Haría reproducibles los diez que hoy dependen de una firma humana. Hoy se reporta 43 de 55, que es el número honesto |
+| Que la evaluación exija que sus cuatro entradas sean de la misma corrida | `red.py` ya deja la procedencia en `red_informe.json`; `evaluar_oro.py` no lo abre | Hoy la misma red publica 80.6 % o 100.0 % de exhaustividad según qué archivo se le ponga al lado, con código 0 |
+| Detectar la contaminación parcial del diccionario | Un indicador que suba, no que baje, al añadir nombres del patrón de oro | Un 12 % de filas copiadas hoy es invisible y mejora todas las cifras |
+| Registrar los umbrales y las filas excluidas en el JSON de la evaluación | Copiarlos de `red_informe.json` y acotar `--disputadas` | Sin eso dos corridas con trece puntos de diferencia entregan un JSON idéntico |
 | Un conjunto anotado a mano de PAO1 | Muestreo por incertidumbre sobre lo que el modelo ya infirió | Es el obstáculo de fondo; sin él no hay entrenamiento en la especie objetivo |
 | Correr el modelo sobre los 1 006 textos completos (hoy son 130) | El programa de inferencia del servidor | Cierra la pregunta de cuánto aporta el texto completo frente al resumen |
 
@@ -661,7 +805,7 @@ propios y no se versionan aquí.
 La aritmética que no es obvia: las 93 evaluables son `directa` más
 `fenotipo_mutante`; las 105 restantes son `otra` más `contraria_aparente`.
 
-### `resumen.csv` del barrido
+### `etapa2/barrido_resumen.csv` del barrido
 
 `nombre, i, lr, epochs, batch, warmup, semilla, max_length, dev_macro_f1,
 dev_accuracy, test_macro_f1, test_accuracy, segundos, datos, huella`
