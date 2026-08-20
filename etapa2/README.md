@@ -5,7 +5,9 @@ relaciones que vive en el servidor del asesor. No entrena aquí: prepara los
 datos, verifica que la partición sirva, y lanza el barrido en Google Colab.
 
 El contexto completo del modelo está en
-[`../docs/ficha-modelo-bert.md`](../docs/ficha-modelo-bert.md).
+[`../docs/ficha-modelo-bert.md`](../docs/ficha-modelo-bert.md). Si buscas el
+panorama y no el procedimiento, empieza por
+[`../docs/informe-seminario-1.md`](../docs/informe-seminario-1.md).
 
 ## El problema
 
