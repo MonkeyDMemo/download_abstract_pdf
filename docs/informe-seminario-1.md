@@ -9,7 +9,7 @@
 | Adscripción | IIMAS · UNAM — Laboratorio de Datos Biológicos y Redes Complejas (BioMiNet) |
 | Línea | Redes de Regulación Génica (GRN) |
 | Corte del corpus | 19 de agosto de 2026 (`datos/grn.db`) |
-| Corte del barrido | 20 de agosto de 2026 — **cerrado en 18 de 24 corridas**, por cuota de GPU |
+| Corte del barrido | 20 de agosto de 2026 — **24 de 24 corridas, completo** |
 
 Objetivos formativos del servicio social: integrar múltiples fuentes
 biológicas, aplicar aprendizaje supervisado y minería de textos, y validar
@@ -95,7 +95,7 @@ Nada de esto contradice las diapositivas: es lo que pasó después.
 | Modelo de clasificación | BioBERT afinado, cuatro clases | **heredado** — `ficha-modelo-bert.md` |
 | Contaminación de la evaluación heredada | 73.9 % del montón de prueba ya se había visto en el de entrenamiento | **medido** — `etapa2/particionar.py` |
 | Partición nueva | 1242 / 163 / 157, contaminación de texto 0.0 % | **medido** — `etapa2/particionar.py` |
-| Barrido sin contaminación | mejor macro-F1 en prueba: 0.9234; seis corridas por encima del 0.8721 heredado | **parcial (18 de 24, cerrado)** — `barrido_por_pmid/` |
+| Barrido sin contaminación | la misma configuración que el servidor reportó como suya da 0.9335 en prueba; 12 de las 24 superan el 0.8721 | **medido** — `etapa2/barrido_resumen.csv` |
 | Patrón de oro de *P. aeruginosa* | 190 relaciones, ~169 evaluables | **medido** — `etapa2/oro_pseudomonas.tsv` |
 | Auditoría de signo | 93 oraciones con la respuesta conocida de antemano | **medido** — `etapa2/auditoria_signo.tsv` |
 | Conjunto anotado a mano de PAO1 | — | **pendiente** |
@@ -273,6 +273,16 @@ Lo que salió al medirlo:
 La métrica que se reportaba con esa partición era macro-F1 de 0.9024 en
 validación y 0.8721 en prueba. Ese número mide sobre todo memorización.
 
+**Qué cuenta exactamente como «el mismo texto».** La comprobación compara la
+ventana sin sus marcadores de entidad, así que ese 73.9 % significa «la misma
+ventana de texto, quizá con otro par marcado», no «la misma entrada carácter por
+carácter». Es la medida pertinente —lo que preocupa es que el modelo ya hubiera
+visto el pasaje— pero conviene decirlo, porque hay dos cifras vecinas que no
+dependen de ninguna canonización y que por eso son más duras de discutir: **61 de
+los 64 artículos** de prueba están también en entrenamiento, contado por PMID sin
+tocar el texto, y el **86.6 % de los pares** de prueba ya aparecen en
+entrenamiento.
+
 **No invalida el trabajo: invalida el número.** El modelo puede ser bueno; lo que
 no se podía era saberlo.
 
@@ -318,39 +328,36 @@ como en el barrido original del servidor, para que la comparación sea justa:
 `weight_decay` 0.01, ventana de 512 tokens, semilla 42, pesos por clase inversos
 a su frecuencia y paro temprano con paciencia de 2 épocas.
 
-**Estado: cerrado en 18 de 24 corridas por agotamiento de la cuota de GPU, el
-20 de agosto de 2026. Cero fallos en las 18.** Las seis que faltan aparecen
-abajo marcadas como pendientes; no se omiten, porque no son al azar: son casi
-todo el bloque de tasa de aprendizaje alta, que es justo donde estaba la mejor
-configuración del barrido heredado. El porqué y qué costaría completarlo están
-más abajo.
+**Estado: 24 de 24 corridas, cero fallos, tres horas de GPU.** Las 24 llevan la
+misma huella de datos (`3d2cb9d4a0378177`), o sea que todas se midieron sobre la
+misma partición; `barrido.py` se habría negado a mezclar dos.
 
-| corrida | tasa | épocas | lote | calent. | macro-F1 validación | macro-F1 prueba | estado |
-|---|---|---|---|---|---|---|---|
-| 13 | 2e-5 | 8 | 16 | 0.06 | **0.8908** | 0.9028 | medido |
-| 17 | 3e-5 | 6 | 16 | 0.06 | 0.8754 | **0.9234** | medido |
-| 16 | 2e-5 | 8 | 32 | 0.1 | 0.8720 | 0.8945 | medido |
-| 10 | 2e-5 | 6 | 16 | 0.1 | 0.8696 | 0.8939 | medido |
-| 14 | 2e-5 | 8 | 16 | 0.1 | 0.8694 | 0.9150 | medido |
-| 9 | 2e-5 | 6 | 16 | 0.06 | 0.8534 | 0.8890 | medido |
-| 15 | 2e-5 | 8 | 32 | 0.06 | 0.8503 | 0.8709 | medido |
-| 11 | 2e-5 | 6 | 32 | 0.06 | 0.8407 | 0.8386 | medido |
-| 18 | 3e-5 | 6 | 16 | 0.1 | 0.8396 | 0.8550 | medido |
-| 5 | 1e-5 | 8 | 16 | 0.06 | 0.8369 | 0.8346 | medido |
-| 12 | 2e-5 | 6 | 32 | 0.1 | 0.8265 | 0.8408 | medido |
-| 7 | 1e-5 | 8 | 32 | 0.06 | 0.8069 | 0.8201 | medido |
-| 2 | 1e-5 | 6 | 16 | 0.1 | 0.8042 | 0.8108 | medido |
-| 1 | 1e-5 | 6 | 16 | 0.06 | 0.8037 | 0.8321 | medido |
-| 6 | 1e-5 | 8 | 16 | 0.1 | 0.8030 | 0.8197 | medido |
-| 8 | 1e-5 | 8 | 32 | 0.1 | 0.7860 | 0.8294 | medido |
-| 3 | 1e-5 | 6 | 32 | 0.06 | 0.7377 | 0.7336 | medido |
-| 4 | 1e-5 | 6 | 32 | 0.1 | 0.7024 | 0.7436 | medido |
-| 19 | 3e-5 | 6 | 32 | 0.06 | — | — | **pendiente** |
-| 20 | 3e-5 | 6 | 32 | 0.1 | — | — | **pendiente** |
-| 21 | 3e-5 | 8 | 16 | 0.06 | — | — | **pendiente** |
-| **22** | **3e-5** | **8** | **16** | **0.1** | — | — | **pendiente** |
-| 23 | 3e-5 | 8 | 32 | 0.06 | — | — | **pendiente** |
-| 24 | 3e-5 | 8 | 32 | 0.1 | — | — | **pendiente** |
+| corrida | tasa | épocas | lote | calent. | macro-F1 validación | macro-F1 prueba |
+|---|---|---|---|---|---|---|
+| **22** | 3e-5 | 8 | 16 | 0.1 | **0.9086** | **0.9335** |
+| 21 | 3e-5 | 8 | 16 | 0.06 | 0.8911 | 0.9333 |
+| 13 | 2e-5 | 8 | 16 | 0.06 | 0.8908 | 0.9028 |
+| 23 | 3e-5 | 8 | 32 | 0.06 | 0.8773 | 0.8806 |
+| 17 | 3e-5 | 6 | 16 | 0.06 | 0.8754 | 0.9234 |
+| 24 | 3e-5 | 8 | 32 | 0.1 | 0.8734 | 0.8782 |
+| 16 | 2e-5 | 8 | 32 | 0.1 | 0.8720 | 0.8945 |
+| 10 | 2e-5 | 6 | 16 | 0.1 | 0.8696 | 0.8939 |
+| 14 | 2e-5 | 8 | 16 | 0.1 | 0.8694 | 0.9150 |
+| 20 | 3e-5 | 6 | 32 | 0.1 | 0.8663 | 0.8915 |
+| 19 | 3e-5 | 6 | 32 | 0.06 | 0.8632 | 0.8785 |
+| 9 | 2e-5 | 6 | 16 | 0.06 | 0.8534 | 0.8890 |
+| 15 | 2e-5 | 8 | 32 | 0.06 | 0.8503 | 0.8709 |
+| 11 | 2e-5 | 6 | 32 | 0.06 | 0.8407 | 0.8386 |
+| 18 | 3e-5 | 6 | 16 | 0.1 | 0.8396 | 0.8550 |
+| 5 | 1e-5 | 8 | 16 | 0.06 | 0.8369 | 0.8346 |
+| 12 | 2e-5 | 6 | 32 | 0.1 | 0.8265 | 0.8408 |
+| 7 | 1e-5 | 8 | 32 | 0.06 | 0.8069 | 0.8201 |
+| 2 | 1e-5 | 6 | 16 | 0.1 | 0.8042 | 0.8108 |
+| 1 | 1e-5 | 6 | 16 | 0.06 | 0.8037 | 0.8321 |
+| 6 | 1e-5 | 8 | 16 | 0.1 | 0.8030 | 0.8197 |
+| 8 | 1e-5 | 8 | 32 | 0.1 | 0.7860 | 0.8294 |
+| 3 | 1e-5 | 6 | 32 | 0.06 | 0.7377 | 0.7336 |
+| 4 | 1e-5 | 6 | 32 | 0.1 | 0.7024 | 0.7436 |
 
 **Cómo leer las dos columnas de métrica.** La de validación se calcula sobre el
 modelo que esa misma métrica eligió como mejor, así que es optimista por
@@ -365,48 +372,92 @@ entre 0.70 y 0.84, y sus dos peores corridas son las de lote grande con pocas
 —se detuvo en la época 5 de 6—, señal de que con tasa 3e-5 ya se empieza a
 llegar antes al techo.
 
-**El resultado, con sus salvedades.** La mejor de las 18 corridas da **macro-F1
-de 0.9234 en prueba**, contra el **0.8721 que se reportaba con la partición
-contaminada**. Y no es un caso aislado: **seis de las dieciocho lo superan**
-—0.9234, 0.9150, 0.9028, 0.8945, 0.8939 y 0.8890—, todas ellas del bloque de
-tasa 2e-5 en adelante. O sea que al quitar la contaminación el número no baja:
-sube.
+**El resultado, y la comparación que faltaba.** La regla de selección es la
+validación. Gana la **corrida 22** con 0.9086, y esa da **0.9335 en prueba**. Y
+la corrida 22 no es una cualquiera: es **exactamente la configuración que el
+servidor reportó como su mejor** (tasa 3e-5, 8 épocas, lote 16, calentamiento
+0.1). O sea que la comparación de una configuración contra sí misma, que era lo
+que faltaba, ya se puede hacer:
 
-Lo que se puede afirmar con esto es **que ese nivel de desempeño se alcanza sin
-contaminación alguna**. Lo que no se puede afirmar es cuánto de la diferencia se
-debe a haber quitado la contaminación, y por tres razones:
+| corrida 22 | validación | prueba |
+|---|---|---|
+| en el servidor, **con** contaminación | 0.9024 | 0.8721 |
+| aquí, **sin** contaminación | **0.9086** | **0.9335** |
+
+Sube en las dos. Y **12 de las 24 corridas superan el 0.8721**, o sea que no
+depende de qué corrida se elija.
+
+Hay algo más que decir, y favorece al trabajo heredado: **la elección de
+hiperparámetros del servidor era correcta.** Las dos primeras de la tabla limpia
+son 22 y 21, las dos de tasa 3e-5 con 8 épocas y lote 16, que es la familia que
+el servidor había identificado. Lo que estaba mal era la medición, no la
+búsqueda.
+
+Lo que se puede afirmar: **ese nivel de desempeño se alcanza sin contaminación
+alguna, y la misma configuración medida bien da más, no menos.** Lo que sigue sin
+poderse afirmar es cuánto de la diferencia se debe a haber quitado la
+contaminación, por dos razones que la corrida 22 no elimina:
 
 1. **No es el mismo conjunto de prueba.** Son 157 ejemplos en los dos casos,
    pero no los mismos 157, y los de ahora vienen de 8 artículos contra 64.
-   Comparar 0.9234 con 0.8721 no es medir dos métodos con la misma vara.
 2. **157 ejemplos son pocos para cuatro clases.** Acertar dos ejemplos más de la
-   clase rara mueve el macro-F1 varias centésimas. Diferencias de este tamaño
-   están dentro del ruido.
-3. **Los hiperparámetros se reeligieron.** La mejor configuración de aquí no es
-   la que el servidor reportó como suya.
+   clase rara mueve el macro-F1 varias centésimas.
 
-De las tres, solo la última se arreglaría corriendo más configuraciones. Las
-otras dos piden el **brazo de control** —la misma partición repartida a nivel de
-ejemplo—, que no depende de tener GPU sino de que `particionar.py` lo produzca, y
-todavía no lo hace.
+Las dos piden el **brazo de control** —la misma partición repartida a nivel de
+ejemplo—, que no depende de tener GPU sino de que `particionar.py` lo produzca.
 
-### Por qué el barrido se cerró en 18 y no en 24
+### Un error del mismo tipo, en este trabajo
 
-Se agotó la cuota de GPU. Las seis que faltan son casi todo el bloque de tasa
-3e-5, e incluyen la **corrida 22**, que es exactamente la configuración que el
-servidor reportó como su mejor y por tanto la única comparación de una
-configuración contra sí misma.
+Conviene decirlo aquí y no esperar a que alguien lo encuentre. **La primera
+versión de este informe encabezaba el resultado con 0.9234**, que es el máximo de
+la columna de prueba sobre 18 corridas. Eso es dejar que la prueba participe en
+la selección del modelo: la misma clase de defecto que este trabajo vino a
+corregir, en versión más pequeña. Y el propio informe decía dos párrafos antes que
+la prueba se mira una sola vez.
 
-**No se estima su valor y no se debe suponer.** Las corridas vecinas no lo
-acotan: la 17 dio 0.9234 y la 18, que solo cambia el calentamiento de 0.06 a
-0.1, cayó a 0.8550. La 22 lleva ese mismo calentamiento de 0.1 pero con ocho
-épocas, así que podría quedar en cualquier parte del rango. La regla que se
-siguió aquí es la misma de todo el proyecto: sobre lo que no se midió no se
-afirma nada.
+Está corregido arriba: la selección se fija en validación. Al completar las 24
+el problema se disolvió solo —la corrida 22 gana en validación **y** en prueba, y
+además es la del servidor—, pero eso fue suerte, no método: con las 18 primeras
+la regla y el máximo no coincidían. De aquí en adelante la regla queda escrita
+antes de mirar la tabla, y cada configuración debería repetirse con varias
+semillas para reportar dispersión en vez de puntos.
 
-Completarlo son seis corridas y unos cuarenta minutos de GPU, con
-`barrido.py --solo 19` … `--solo 24`. El barrido es reanudable y los 18
-resultados están guardados, así que retomarlo no repite nada de lo hecho.
+Aplicarse el mismo criterio con el que se juzga un trabajo ajeno es lo que
+convierte una auditoría en un método y no en un reproche.
+
+### La misma configuración entrenada dos veces no da el mismo número
+
+Esto salió sin buscarlo, al guardar los pesos de la mejor corrida para poder
+usar el modelo. Se volvió a entrenar la configuración 13 con **los mismos
+hiperparámetros, los mismos datos y la misma semilla**, y dio otra cosa:
+
+| | en el barrido | al reentrenarla | diferencia |
+|---|---|---|---|
+| macro-F1 validación | 0.8908 | 0.9003 | +0.0095 |
+| macro-F1 prueba | 0.9028 | 0.8903 | −0.0125 |
+
+No es variación de semilla: la semilla fue 42 en las dos. Fijar la semilla fija
+los generadores de números aleatorios, pero **no hace determinista el
+entrenamiento en GPU**: la selección de núcleos de cálculo y las sumas atómicas
+del paso hacia atrás no garantizan el mismo orden de operaciones entre corridas,
+y en punto flotante el orden cambia el resultado. Forzar el determinismo se
+puede, y cuesta velocidad.
+
+**La consecuencia para la tabla de arriba hay que decirla.** Si reentrenar la
+misma configuración la mueve 0.0125 en prueba, entonces las diferencias entre
+configuraciones vecinas —la 13 y la 14 se llevan 0.012; la 16 y la 10, menos de
+una milésima— están **dentro del ruido de volver a entrenar**. Ordenar las 18 por
+décimas de punto es ordenar en parte por azar, y las de arriba de la tabla están
+empatadas aunque la lista dé un ganador.
+
+Lo que **no** queda tocado es el patrón de bloques: el salto del bloque de tasa
+1e-5 (0.73 a 0.83) al de 2e-5 en adelante (0.89 a 0.92) es varias veces mayor que
+este ruido. Y tampoco la comparación contra el número heredado: 0.8903, que es la
+peor de las dos mediciones de esa configuración, sigue por encima de 0.8721.
+
+Esto ya estaba anticipado en la lista de lo que falta, como advertencia teórica
+sobre repetir con varias semillas. Ahora es una medición, y salió **sin cambiar
+la semilla siquiera**, que es peor de lo que se había supuesto.
 
 ### El patrón de oro: 190 relaciones que el corpus sí contiene
 
@@ -505,8 +556,7 @@ Arreglarlo pide anotación, no código.
 
 | falta | qué lo produce | qué cambiaría si sale distinto |
 |---|---|---|
-| Las 6 corridas restantes, entre ellas la 22 | `barrido.py --solo 19` … `--solo 24`, unos 40 minutos de GPU | Daría la comparación de una configuración contra sí misma. No cambiaría la conclusión de que el nivel se alcanza sin contaminación, que ya se apoya en seis corridas |
-| Repetir con varias semillas | `barrido.py --semillas 42,43,44` | Con 1 242 ejemplos, la variación entre semillas puede ser del mismo tamaño que las diferencias que el barrido mide |
+| Repetir con varias semillas | `barrido.py --semillas 42,43,44` | Ya no es una suposición: reentrenar la misma configuración **con la misma semilla** la movió 0.0125 en prueba. Con varias semillas se podría reportar cada cifra con su dispersión en vez de como un punto |
 | Un brazo de control con partición al azar | `particionar.py`, todavía no lo produce | Sin él, la diferencia contra 0.8721 mezcla tres causas: quitar la contaminación, un conjunto de prueba más difícil, y haber reelegido los ajustes |
 | Una línea base barata (clase mayoritaria, coocurrencia) | pendiente | Sin ella no se sabe si 0.75 es bueno o malo |
 | Correr el clasificador contra el patrón de oro y la auditoría de signo | Los dos archivos ya existen | Sería la primera cifra de desempeño sobre *P. aeruginosa*, no sobre *E. coli* |
@@ -525,11 +575,13 @@ Arreglarlo pide anotación, no código.
    no lo permite.** El 73.9 % de contaminación en el conjunto de prueba pasó a
    0.0 %. Esto no invalida el modelo; invalida el número que lo describía.
    **medido**
-3. **Sin contaminación el modelo no empeora: mejora.** Seis de las 18 corridas
-   superan el 0.8721 heredado, y la mejor llega a 0.9234 en prueba. Lo que queda
-   abierto no es si el nivel se alcanza —eso está medido—, sino cuánto de la
-   diferencia atribuir a haber quitado la contaminación, porque el conjunto de
-   prueba también cambió. **parcial (18 de 24, cerrado por cuota)**
+3. **Sin contaminación el modelo no empeora: mejora.** La misma configuración
+   que el servidor reportó como suya pasa de 0.8721 a **0.9335** en prueba, y 12
+   de las 24 corridas superan el número heredado. Y la elección de
+   hiperparámetros del servidor resultó correcta: lo que estaba mal era la
+   medición. Lo que queda abierto es cuánto de la diferencia atribuir a haber
+   quitado la contaminación, porque el conjunto de prueba también cambió.
+   **medido (24 de 24)**
 4. **El obstáculo que señalaba el seminario dejó de ser total.** Ya hay contra
    qué comparar: 190 relaciones canónicas y 93 oraciones con signo conocido. No
    sustituyen un conjunto anotado a mano de *P. aeruginosa*, pero permiten
@@ -549,9 +601,9 @@ Arreglarlo pide anotación, no código.
 2. **Añadir el brazo de control**, que es lo que permitiría atribuir la
    diferencia contra el 0.8721 a una causa y no a tres. Depende de programarlo
    en `particionar.py`, no de conseguir GPU.
-3. **Completar las seis corridas que faltan** cuando haya cuota, para tener la
-   comparación de la configuración 22 contra sí misma. Cuarenta minutos, y el
-   barrido retoma sin repetir nada.
+3. **Repetir con varias semillas** (`--semillas 42,43,44`), para reportar cada
+   cifra con su dispersión en vez de como un punto. Es lo que falta para que el
+   orden de la tabla signifique algo.
 4. **Anotar un conjunto de PAO1**, muestreando por incertidumbre sobre lo que el
    modelo ya infirió. Es el trabajo de fondo y no depende de los anteriores.
 
