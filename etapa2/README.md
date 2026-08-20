@@ -116,6 +116,23 @@ podía ver:
   `compute_loss`. El cuaderno lo comprueba de verdad tras el `pip install`:
   sin eso, las 24 corridas fallan una por una y media hora después hay 24
   archivos `.error` y ni un resultado.
+- **Fijar también `numpy<2` y `pandas==2.2.3`.** `datasets 2.20` usa
+  `np.float_`, que numpy 2 eliminó, y el pandas 3 de la imagen de Colab exige
+  numpy 2: fijar solo numpy deja dos paquetes que se contradicen e `import
+  datasets` truena a media corrida. El muro de conflictos que escupe `pip` al
+  bajar numpy (jax, cupy, opencv, rasterio) es ruido: son paquetes que el
+  cuaderno nunca importa, y pip revisa el entorno entero, no lo que se instaló.
+- **Las comprobaciones del cuaderno corren en un subproceso.** Leen lo que quedó
+  en disco y no lo que quedó en memoria, así que no hay que reiniciar el entorno
+  después del `pip`. Y ninguna construye un `TrainingArguments`: instanciarlo
+  dispara la búsqueda de integraciones (wandb, mlflow, comet, neptune) y el
+  arranque de CUDA, que en un entorno recién reinstalado se va varios minutos
+  haciendo `stat()` sobre `sys.path` y parece colgado. `inspect.signature`
+  responde la misma pregunta al instante.
+- **Una prueba de humo antes del barrido**: el script de verdad sobre 40
+  ejemplos, una época y ventanas de 128, dos minutos. Ejerce lo que la
+  comprobación de versiones no alcanza a ver —una incompatibilidad de `torch`
+  con `accelerate`, por ejemplo— y de paso deja BioBERT en la caché.
 - **Los checkpoints van a `/content`, nunca a Drive.** Son ~433 MB por época.
   Se borran al terminar cada configuración, **falle o no**: doce fallos por
   falta de memoria llenaban el disco y tumbaban las que sí habrían cabido.
