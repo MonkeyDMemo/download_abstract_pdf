@@ -23,7 +23,7 @@ Este documento acompaña al primer seminario. Las diapositivas están en
 | se pidió | está en |
 |---|---|
 | Protocolo | «Las reglas que se siguieron» |
-| Metodología | «Etapa 1 — construir el corpus» y «Etapa 2 — extraer las relaciones» |
+| Metodología | «Metodología», y el desarrollo en «Etapa 1» y «Etapa 2» |
 | Resultados | las mismas dos secciones, más «Resultados del barrido» |
 | Conclusiones | «Conclusiones» y «Lo que todavía no está medido» |
 | Cómo contarlo en diez minutos | «Guión de la exposición», al final |
@@ -44,10 +44,11 @@ Cuatro etiquetas marcan qué tan firme es cada dato:
 - **heredado** — viene del servidor del asesor. No se volvió a medir aquí.
 - **pendiente** — no está medido, y se dice qué lo produciría.
 
-### Qué cambió desde las diapositivas
+### Qué cambió después del corte del 18 de agosto
 
-Las láminas 1 a 6 siguen vigentes. Las tres últimas se quedaron atrás en los
-días posteriores al corte del 18 de agosto:
+En los días siguientes al corte, las tres últimas láminas dejaron de ser ciertas.
+**Ya están actualizadas** en `salidas/Seminario_GRN_IIMAS_expo.pptx`; esta tabla
+queda como registro de qué cambió:
 
 | lo que decían las láminas 7 a 9 | lo que es cierto hoy |
 |---|---|
@@ -121,17 +122,111 @@ detiene cuando alguna se rompe.
   material con el de entrenamiento. De aplicar esta regla salió el hallazgo
   principal de este informe.
 - **El programa se detiene en vez de entregar un resultado que no puede
-  sostener.** `particionar.py` no escribe la
-  partición si detecta contaminación, y la verifica con un criterio
-  deliberadamente distinto del que usó para repartir, para que la verificación
-  no pueda salir bien por construcción. `barrido.py` no anuncia configuración
-  ganadora mientras falte una corrida.
+  sostener.** `particionar.py` verifica la partición con un criterio
+  deliberadamente distinto del que usó para repartir —si usara el mismo, daría
+  cero por construcción— y, si detecta fuga, imprime `PARTICION RECHAZADA` y
+  sale con código 1. Los archivos quedan en disco, marcados como inservibles.
+  `barrido.py` no anuncia configuración ganadora mientras falte una corrida.
 - **Lo que no se pudo conseguir se entrega como lista, no se esconde.** Los
   1 345 artículos sin acceso abierto salen en un archivo con su liga, para
   pedirlos por biblioteca.
-- **831 pruebas automáticas: 349 en la etapa 1 y 482 en la etapa 2.** Ninguna toca la
+- **831 pruebas automáticas: 349 en la etapa 1 y 482 en la etapa 2.** Son dos
+  comandos distintos (`python -m unittest discover` desde la raíz no recoge las de
+  `etapa2`, que piden `python -m unittest discover etapa2`). Ninguna toca la
   red: se les inyecta un cliente falso, y una prueba que intente salir a
   internet de verdad falla.
+
+---
+
+## Metodología
+
+### El método que se sigue
+
+El trabajo aplica **extracción de relaciones a partir de texto**, en la
+formulación que la literatura del área llama *clasificación de relaciones con
+marcadores de entidad*: no se le pide al modelo que descubra quién aparece en la
+oración, sino que se le entrega un par ya propuesto, con sus dos menciones
+señaladas en el texto, y contesta con una de cuatro etiquetas.
+
+El flujo completo, con el archivo que ejecuta cada paso:
+
+| paso | qué hace | archivo | estado |
+|---|---|---|---|
+| 1. Recuperación | consultas booleanas a PubMed, descarga incremental de resumen y texto completo | `grn_etl/etl.py` | **corrió** sobre 2 361 artículos |
+| 2. Segmentación | parte los documentos en oraciones y reconoce las secciones del JATS | `etapa2/texto.py` | **corrió** |
+| 3. Reconocimiento de entidades | localiza menciones de genes con un diccionario de 5 642 entradas | `etapa2/lexico.py` | **corrió** |
+| 4. Normalización | `algU`, `AlgU`, `algT` y `PA0762` son la misma entidad | `etapa2/lexico.py` | **corrió** |
+| 5. Generación de candidatos | un par por cada combinación factor-gen dentro de la misma oración | `etapa2/extraer_pares.py` | **corrió** |
+| 6. Clasificación supervisada | pasa cada par marcado por el BioBERT afinado | `etapa2/clasificar.py` | **escrito y probado**, no ejecutado con el modelo real |
+| 7. Agregación | junta las evidencias de un mismo par en una arista con su signo | `etapa2/red.py` | **escrito y probado** |
+| 8. Evaluación | compara contra el patrón de oro y contra la auditoría de signo | `etapa2/evaluar_oro.py`, `evaluar_signo.py` | **escrito y probado** |
+
+**Un desajuste que hay que declarar.** El modelo heredado se afinó sobre
+**ventanas de ±300 caracteres** alrededor del par, recortadas del párrafo; el
+extractor de aquí emite **oraciones completas**. El formato del marcado sí
+coincide —se midió: el contenido entre las marcas lleva exactamente un espacio a
+cada lado en las 1 562 ocurrencias— pero la unidad de texto no. Es una diferencia
+entre entrenamiento y uso que todavía no se ha medido.
+
+### En qué se basó, y en qué no
+
+De los siete artículos del marco de referencia, **cuatro son contexto y no
+cambiaron ninguna decisión de diseño**. Decirlo así es más útil que inventarles
+una influencia:
+
+| artículo | qué aporta |
+|---|---|
+| Ali & Alrashid (2025) | panorama de métodos de aprendizaje automático para reconstruir redes regulatorias. Contexto |
+| Mercatelli et al. (2020) | inventario de fuentes de datos que conviene integrar. Contexto, y respalda la idea de cruzar varias bases en el diccionario |
+| Ruan et al. (2025) | panorama de modelos de lenguaje en bioinformática. Contexto |
+| Park et al. (2026), GeneReL | extracción con modelos generativos y curación comunitaria en *Arabidopsis*. Contexto; **no se usó ningún modelo generativo aquí** |
+| Rehana et al. (2024) | compara GPT contra BERT para extraer interacciones de texto biomédico. Respalda la elección de un modelo tipo BERT afinado sobre uno generativo |
+| He et al. (2026) | extracción con semántica de entidades; es la familia de métodos que justifica marcar las entidades en la entrada |
+| **Varela-Vega et al. (2024)** | **la referencia directa**, abajo |
+
+**Varela-Vega, con precisión.** Es el mismo problema —red regulatoria bacteriana
+extraída de texto con un modelo tipo BERT, comparada contra una base curada— y es
+de la UNAM, **aunque de otro centro**: ellos son del CCG en Cuernavaca, este
+trabajo es del IIMAS. Ellos usan LUKE, un modelo con representación explícita de
+entidades, y evalúan contra RegulonDB en *E. coli*; aquí el modelo es un
+BioBERT-base afinado, heredado del servidor del asesor. Lo que se toma de ellos
+es **la forma del problema y el orden de magnitud del resultado**, no el método
+implementado.
+
+**Sobre la base de referencia.** El paso de evaluación no se pudo instanciar tal
+cual porque *P. aeruginosa* no tiene un equivalente de RegulonDB con el mismo
+nivel de curación. **Sí existe RegulomePA**, que quedó anotado en el seminario
+anterior como candidato por confirmar y que no se llegó a evaluar. En su lugar se
+construyó una referencia propia y provisional por subsistemas, listada a mano a
+partir de lo que la literatura da por establecido. Lo que está verificado archivo
+por archivo es que cada oración citada existe donde la fila dice; el nivel de
+certeza de cada relación es un juicio de dominio, no una medición.
+
+### Lo que no viene de ninguno de los siete artículos
+
+Dos cosas, y son el trabajo del semestre:
+
+1. **La auditoría de fuga y la repartición agrupada.** Medir cuánto material de
+   evaluación había aparecido en el entrenamiento, y rehacer el reparto moviendo
+   grupos enteros en vez de ejemplos sueltos.
+2. **La auditoría adversaria del propio programa de evaluación.** Antes de correr
+   el flujo en serio se intentó engañarlo: un clasificador que contesta siempre lo
+   mismo, sin leer nada, salía certificado con código 0. Eso llevó a añadir una
+   segunda línea base —la clase mayoritaria, además del azar— y a documentar cinco
+   formas de inflar una cifra que todavía funcionan.
+
+### Herramientas
+
+| herramienta | para qué |
+|---|---|
+| **Python 3.8+, solo biblioteca estándar** | todo el ETL y casi toda la etapa 2. La excepción es `clasificar.py`, que necesita `torch` y `transformers` para pasar los pares por el modelo; está aislado en un archivo a propósito. La rama de entrenamiento (`barrido.py`, el cuaderno de Colab y el script heredado) también los usa, pero corre fuera de las máquinas del laboratorio |
+| **SQLite** | el estado del corpus, para que una corrida interrumpida se retome |
+| **Google Colab (GPU T4)** | todo lo que necesita GPU. Las máquinas del laboratorio no tienen. Ahí corrió el diagnóstico del entorno, una prueba de humo, un primer barrido que murió 24 veces por un fallo de segmentación de `triton`, el barrido bueno de 24 corridas —**3.03 horas de GPU medidas**, sumando la columna de segundos de `barrido_resumen.csv`— y la corrida que produjo el modelo guardado |
+| **Claude Code (Anthropic)** | asistencia de programación y redacción: escribir y refactorizar el código de `etapa2/`, redactar la documentación de `docs/`, y correr las revisiones adversarias contra el propio programa. Las decisiones de diseño, la verificación de cada cifra contra su archivo y este informe son responsabilidad del autor |
+
+La declaración de la última fila no es opcional: **22 de los 26 commits del
+repositorio llevan el rastro de esa asistencia**, y `CLAUDE.md` está versionado en
+la raíz. Es visible con un `git log`, así que va dicho por delante.
 
 ---
 
@@ -193,7 +288,8 @@ la base, no del tamaño del corpus. Ahí no hay nada que corregir.
 - **349 pruebas automáticas** en esta etapa. Con ellas se detectaron varios
   defectos que no producían ningún error visible.
 - **1 345 artículos sin acceso abierto**, exportados con su liga para
-  solicitarlos por biblioteca. Lo que falta responde a disponibilidad legal, no
+  solicitarlos por biblioteca. Esa lista se exportó el 17 de agosto; con el corte
+  del 18 serían 1 355, así que volver a correr el export hoy da un número distinto. Lo que falta responde a disponibilidad legal, no
   a una limitación de la herramienta.
 
 ---
@@ -213,7 +309,7 @@ Esa cifra da una referencia, pero **no se compara renglón con renglón** con la
 este informe: es otro organismo, otro corpus y otra partición. Sirve para saber
 en qué orden de magnitud se mueve el problema, no para decir quién gana.
 
-Los otros seis artículos del marco de referencia están en la lámina 3.
+Las siete fichas están en «Referencias», al final.
 
 ### El modelo se entrenó con *E. coli* y se va a usar en *P. aeruginosa*
 
@@ -250,7 +346,7 @@ En un informe de servicio social conviene que esto quede explícito.
 | El programa de inferencia y las 789 relaciones que ya propuso | `oro_pseudomonas.tsv`, el patrón de oro de *P. aeruginosa* |
 | | `auditar_signo.py` y su auditoría de 198 oraciones |
 | | `construir_diccionario.py` y el diccionario nuevo, desde RefSeq, KEGG y UniProt |
-| | El programa local de inferencia: `extraer_pares.py`, `red.py`, `evaluar_oro.py` |
+| | El programa local de inferencia: `lexico.py`, `texto.py`, `extraer_pares.py`, `clasificar.py`, `red.py`, `evaluar_oro.py` y `evaluar_signo.py` |
 
 El modelo no es mío. Lo que hice fue auditarlo, encontrar que su calificación no
 medía lo que decía medir, y volver a medirla bien.
@@ -291,7 +387,7 @@ entrenamiento.
 **No invalida el trabajo: invalida el número.** El modelo puede ser bueno; lo que
 no se podía era saberlo.
 
-### La partición nueva, y por qué el programa se niega a escribirla si hay contaminación
+### La partición nueva, y por qué el programa la marca como rechazada si hay contaminación
 
 La solución es no repartir ejemplos sueltos, sino grupos: todo lo que comparta
 artículo o fragmento de texto viaja junto. Se probaron cuatro criterios de
@@ -448,13 +544,13 @@ puede, y cuesta velocidad.
 **La consecuencia para la tabla de arriba hay que decirla.** Si reentrenar la
 misma configuración la mueve 0.0125 en prueba, entonces las diferencias entre
 configuraciones vecinas —la 13 y la 14 se llevan 0.012; la 16 y la 10, menos de
-una milésima— están **dentro del ruido de volver a entrenar**. Ordenar las 18 por
+una milésima— están **dentro del ruido de volver a entrenar**. Ordenar las 24 por
 décimas de punto es ordenar en parte por azar, y las de arriba de la tabla están
 empatadas aunque la lista dé un ganador.
 
-Lo que **no** queda tocado es el patrón de bloques: el salto del bloque de tasa
-1e-5 (0.73 a 0.83) al de 2e-5 en adelante (0.89 a 0.92) es varias veces mayor que
-este ruido. Y tampoco la comparación contra el número heredado: 0.8903, que es la
+Lo que **no** queda tocado es el patrón de bloques: en la columna de prueba, el
+bloque de tasa 1e-5 va de 0.73 a 0.83 y el de 2e-5 en adelante va de 0.84 a
+0.93. Ese salto es varias veces mayor que este ruido. Y tampoco la comparación contra el número heredado: 0.8903, que es la
 peor de las dos mediciones de esa configuración, sigue por encima de 0.8721.
 
 Esto ya estaba anticipado en la lista de lo que falta, como advertencia teórica
@@ -473,7 +569,8 @@ mismo.** Por eso la columna de procedencia no admite el valor `oro`.
 
 De ahí salen también **572 genes marcados como factores de transcripción** y
 **333 pares con evidencia experimental de unión**, que vienen de los sitios de
-unión anotados en el mismo genoma.
+unión que CollecTF depositó en el genoma de referencia
+(`etapa2/collectf_pao1.tsv`).
 
 **La cifra que se reporta es la reproducible.** El diccionario tiene además una
 capa manual de 22 filas, escritas a mano y versionadas, y la cobertura de los 55
@@ -554,9 +651,9 @@ escenarios es la capa manual.
 
 ### El patrón de oro: 190 relaciones que el corpus sí contiene
 
-La lámina 8 decía que el obstáculo era la evaluación: el modelo propone
-relaciones para *P. aeruginosa* y no había contra qué compararlas. Esta sección
-responde a eso.
+El obstáculo que se reportó en el seminario anterior era la evaluación: el modelo
+propone relaciones para *P. aeruginosa* y no había contra qué compararlas. Esta
+sección responde a eso.
 
 **Cómo se construyó**, que es lo que no estaba escrito en ninguna parte:
 
@@ -588,9 +685,10 @@ De ahí sale la consecuencia principal:
 > conocida, el fallo es del modelo y no del corpus.** Antes de esto no se podía
 > distinguir una cosa de la otra.
 
-**El denominador honesto son ~169, no 190.** Hay que restar las 9 que el corpus
-no contiene, 6 cuyo signo la propia literatura deja sin resolver, y 5 en disputa
-entre artículos. Un ejemplo de estas últimas: para `RhlR → rpoS`, dos artículos
+**El denominador honesto son unas 170, no 190.** Hay que restar las 9 que el
+corpus no contiene, 6 cuyo signo la propia literatura deja sin resolver, y 5 en
+disputa entre artículos. Las cinco en disputa todavía no están nombradas en un
+archivo, y hasta que lo estén la resta es aproximada. Un ejemplo de estas últimas: para `RhlR → rpoS`, dos artículos
 la afirman, uno dice explícitamente lo contrario y un cuarto invierte la
 dirección de la flecha.
 
@@ -645,18 +743,30 @@ Arreglarlo pide anotación, no código.
 
 ---
 
-### El programa ya corre entero, y todavía no certifica una cifra
+### El programa está escrito y probado, y todavía no ha corrido con el modelo real
 
-Ya existe el camino completo: del corpus salen pares de genes que aparecen en la
+Existe el camino completo: del corpus salen pares de genes que aparecen en la
 misma oración, el clasificador les pone signo, se arma la red y se compara contra
-el patrón de oro. Y como este trabajo empezó por un número que se medía a sí
-mismo, antes de correrlo en serio **se intentó engañarlo a propósito.**
+el patrón de oro. Cada pieza tiene sus pruebas y los dos primeros pasos ya
+corrieron sobre el corpus completo.
+
+**Lo que falta decir es que los pasos de clasificación, agregación y evaluación
+nunca se han ejecutado con el modelo de verdad sobre *P. aeruginosa*.** No hay
+un `pares.jsonl`, ni un `red.tsv`, ni un `evaluacion_oro.json` en el disco. La
+única corrida de extremo a extremo se hizo con **clasificadores sustitutos**
+—uno que contesta siempre lo mismo y otro de palabras clave—, y hay una razón
+para eso: como este trabajo empezó por un número que se medía a sí mismo, antes
+de correrlo en serio **se intentó engañarlo a propósito.**
+
+Hay además un requisito práctico que conviene tener presente: `clasificar.py` es
+la única pieza del programa local que necesita `torch` y `transformers`, y en
+esta computadora no están instalados. Basta con CPU, pero hay que instalarlos.
 
 El ataque más simple fue el más revelador. Se sustituyó el clasificador por uno
 que no lee nada y contesta siempre lo mismo, `activates`. El programa lo
 certificaba con código 0: «se distingue del azar». Y tenía razón en lo que medía
-—el problema era el rival. Como el patrón de oro trae 97 activaciones y 42
-represiones, **contestar siempre `activates` acierta el 69.8 % sin leer una sola
+—el problema era el rival. Como las 139 filas comparables del patrón de oro
+traen 97 activaciones y 42 represiones, **contestar siempre `activates` acierta el 69.8 % sin leer una sola
 palabra**, y ganarle a una moneda al aire no dice nada. Ahora la comparación es
 contra esa clase mayoritaria además de contra el azar, y el clasificador constante
 sale con ventaja de +0.0 puntos, `p = 0.542`, rechazado. Un clasificador de
@@ -677,7 +787,12 @@ que siguen pasando, y quedan escritas antes de que alguien cite un número:
   justificación no esté vacía: excluyendo justo las que el programa erró, el
   acierto sube a 100.0 %.
 - El umbral con que se arma la red no queda registrado, y mueve la exhaustividad
-  entre 9.7 % y 93.8 % sobre las mismas predicciones.
+  entre 80.6 % y 93.8 % —trece puntos— sobre las mismas predicciones.
+- El manifiesto del caché lo escribe el mismo programa que descarga las fuentes,
+  así que quien pueda alterar el archivo descargado puede alterar también su
+  firma. Envenenando las tres fuentes de forma coherente, el diccionario sale
+  con código 0 y con 190 de 190 relaciones del oro cubiertas, contra 170 de 190
+  del honesto.
 
 Ninguna de esas cinco es un accidente que ocurra solo; todas exigen que alguien
 haga algo raro, y dos de ellas se podrían cometer por descuido. **La conclusión
@@ -703,6 +818,22 @@ escritas otras cinco maneras de que eso ocurra es parte del resultado.
 | Registrar los umbrales y las filas excluidas en el JSON de la evaluación | Copiarlos de `red_informe.json` y acotar `--disputadas` | Sin eso dos corridas con trece puntos de diferencia entregan un JSON idéntico |
 | Un conjunto anotado a mano de PAO1 | Muestreo por incertidumbre sobre lo que el modelo ya infirió | Es el obstáculo de fondo; sin él no hay entrenamiento en la especie objetivo |
 | Correr el modelo sobre los 1 006 textos completos (hoy son 130) | El programa de inferencia del servidor | Cierra la pregunta de cuánto aporta el texto completo frente al resumen |
+
+---
+
+## Los objetivos formativos, uno por uno
+
+Los tres que declara la portada, con la evidencia que los cubre y lo que sigue
+abierto en cada uno.
+
+| objetivo | con qué se cubrió | qué falta |
+|---|---|---|
+| **Integrar múltiples fuentes biológicas** | PubMed y PubMed Central para la literatura, con Europe PMC y Unpaywall en cascada para el texto completo; RefSeq, KEGG y UniProt para el diccionario de genes; CollecTF para los sitios de unión | Ninguna de las fuentes de red regulatoria ya curadas (RegulomePA) se ha evaluado como contraste |
+| **Aplicar aprendizaje supervisado y minería de textos** | La partición sin fuga, el barrido de 24 configuraciones, y el flujo de extracción: segmentación, reconocimiento de entidades, normalización, generación de candidatos y clasificación | El clasificador todavía no ha corrido con el modelo real sobre *P. aeruginosa* |
+| **Validar críticamente las interacciones obtenidas** | La auditoría de contaminación de la evaluación heredada, el patrón de oro provisional, la auditoría de signo y los ataques contra el propio programa de evaluación | No hay aún interacciones propias que validar, porque el paso anterior no ha corrido |
+
+El tercero es el que más trabajo consumió, y es el único de los tres que produjo
+un resultado que no se esperaba al empezar.
 
 ---
 
@@ -793,7 +924,8 @@ La frase que conviene decir tal cual, porque es la conclusión y es diplomática
 **esto no invalida el modelo, invalida el número que lo describía.**
 
 **4. Lo que se hizo con eso (2 min).** Se rehizo la repartición agrupando por
-artículo, y el programa que la escribe **se niega a guardarla si detecta fuga**.
+artículo, y el programa que la escribe **la marca como RECHAZADA y sale con
+error si detecta fuga**.
 Con esa partición limpia se corrieron las **24** configuraciones. Resultado: la
 misma configuración que el servidor reportaba como suya pasa de **0.8721 a
 0.9335**. Segunda frase para decir tal cual, y es la que hace que esto sea buena
@@ -809,7 +941,8 @@ y UniProt. Del diccionario conviene decir la cifra honesta: **cubre 43 de los 55
 factores** con fuentes públicas, y 53 si se cuentan 22 filas escritas a mano —y
 se reporta el 43 porque es el que cualquiera reproduce.
 
-**6. Lo honesto, y el cierre (1 min).** El programa ya corre entero. Antes de
+**6. Lo honesto, y el cierre (1 min).** El programa está escrito y probado pieza
+por pieza. Antes de
 usarlo se intentó engañarlo: se sustituyó el clasificador por uno que contesta
 siempre lo mismo sin leer nada, y **salía aprobado**. Ya no. Pero quedan cinco
 maneras de inflar una cifra que todavía funcionan, y están escritas con el ataque
@@ -827,7 +960,7 @@ Vale la pena tener la respuesta corta lista; todas están desarrolladas arriba.
 | «Entonces el modelo no sirve» | Sí sirve. Lo que no servía era su calificación. Sin fuga **mejora**: 0.9335 contra 0.8721 |
 | «Por qué sube si le quitaste datos» | Porque también cambió el conjunto de prueba, de 64 artículos a 8. Por eso falta el brazo de control, y está declarado como pendiente en vez de atribuir la mejora a una sola causa |
 | «Ya lo probaste en *P. aeruginosa*» | Todavía no. Está el programa y está contra qué compararlo; falta ejecutarlo. Es el paso 1 de los siguientes |
-| «Y tu partición no tendrá fuga también» | Contaminación de texto **0.0 %**, y no es una promesa: `particionar.py` se niega a escribir el archivo si la detecta |
+| «Y tu partición no tendrá fuga también» | Contaminación de ventana **0.0 %**, con cero artículos compartidos. Y no es una promesa: `particionar.py` verifica con una clave distinta de la que usó para agrupar, imprime la fuga línea por línea, escribe `PARTICION RECHAZADA` y sale con código 1 |
 | «Por qué solo 43 de 55» | Porque se reporta lo reproducible. Los 12 que faltan no son genes desconocidos: cuatro son locus que ninguna base nombra, tres se escriben capitalizados y la base los tiene en minúsculas, uno tiene otro nombre, dos no son un gen y dos no los resuelve nadie |
 | «Cuánto falta para la red completa» | El cuello de botella no es el código, es un conjunto anotado a mano de PAO1. Eso es trabajo de anotación, no de programación |
 | «Por qué no usaste *pandas* / tal biblioteca» | Restricción del proyecto: solo biblioteca estándar, porque corre en máquinas del laboratorio sin permisos y a veces sin internet |
@@ -841,6 +974,73 @@ Vale la pena tener la respuesta corta lista; todas están desarrolladas arriba.
    **0.9335**. Los hiperparámetros estaban bien; la medición no.
 3. Ya hay contra qué evaluarlo en *P. aeruginosa* —190 relaciones, 93 oraciones,
    5 642 genes— y el programa que lo hace, con sus límites escritos.
+
+---
+
+## Dónde está cada cosa en el repositorio
+
+Por si hay que abrir un archivo en vivo. Todos los rangos de líneas están
+verificados.
+
+### El código, por etapa
+
+| archivo | líneas | qué hace |
+|---|---|---|
+| `grn_etl/etl.py` | 275 | el ETL: pregunta, resta lo conocido, descarga la diferencia |
+| `grn_etl/db.py` | 885 | el único archivo que escribe SQL |
+| `grn_etl/pubmed.py` | 539 | cliente de las APIs, con límite de tasa y cascada de PDF |
+| `servidor.py` | 1 020 | el tablero HTTP local |
+| `etapa2/particionar.py` | 540 | reparte agrupando y verifica que no quede fuga |
+| `etapa2/barrido.py` | 405 | las 24 configuraciones, reanudable |
+| `etapa2/construir_diccionario.py` | 1 751 | arma el diccionario desde RefSeq, KEGG y UniProt |
+| `etapa2/lexico.py` | 321 | reconoce menciones de genes en una oración |
+| `etapa2/evaluar_oro.py` | 2 043 | compara contra el patrón de oro, con sus dos líneas base |
+
+### Los ocho fragmentos que valen la pena proyectar
+
+1. **`etapa2/particionar.py:54-78`** — las dos funciones juntas: `ventana()`, con
+   la que se **agrupa**, y `canonico()`, con la que se **verifica**. Qué decir:
+   *el verificador mide con una clave distinta de la que usé para repartir, a
+   propósito; si usara la misma daría cero por construcción.*
+2. **`etapa2/particionar.py:515-536`** — el rechazo. Qué decir: *mide la fuga, la
+   reporta línea por línea, escribe `PARTICION RECHAZADA` y sale con código 1.*
+3. **`pruebas/test_idempotencia.py:41-54`** — catorce líneas. Corre la misma
+   ingesta dos veces y afirma que la segunda no genera ni una descarga. Qué
+   decir: *es la prueba que sostiene el 56 % de descargas evitadas.*
+4. **`etapa2/test_contaminacion.py:1-30`** — el docstring, que se lee en voz alta
+   tal cual. Busca el nombre del patrón de oro en el texto de los `.py` de la
+   etapa 2 y falla si aparece fuera de los dos evaluadores.
+5. **`etapa2/evaluar_oro.py:1269-1305`** — la línea base de clase mayoritaria,
+   con el ataque contado en su propio docstring. Qué decir: *aquí está el
+   clasificador que no lee nada; sacaba 69.8 % contra una tasa base de 69.8 %, y
+   antes de esta función salía certificado.*
+6. **`etapa2/construir_diccionario.py:1256-1285`** — `verificar_procedencia()`.
+   Qué decir: *prohibir la etiqueta «oro» no basta, así que cada fila se comprueba
+   contra la respuesta cruda de la fuente que dice haber usado.*
+7. **`etapa2/lexico.py:1-19`** — el docstring, con la medición que justifica el
+   diseño: 5 700 expresiones regulares sobre el corpus no terminan; tokenizar y
+   consultar un diccionario baja de 331 segundos proyectados a 2.6.
+8. **`docs/decisiones.md:775-832`** — no es código, pero es lo que conviene tener
+   abierto si preguntan qué tan confiable será la cifra: las cinco formas de
+   inflar un número que siguen abiertas, cada una con el ataque que la demuestra.
+
+### Comandos que se pueden correr en vivo
+
+Medidos. Ninguno escribe en la base ni sale a internet.
+
+| comando | tarda | qué sale |
+|---|---|---|
+| `python -m unittest discover` | 1.2 s | 349 pruebas de la etapa 1, todas OK |
+| `python -m unittest discover etapa2` | 7.5 s | 482 de la etapa 2, OK con 3 saltadas (las que piden `torch`) |
+| `python cli.py estado` | 0.2 s | 6 consultas, 2 361 documentos, 5 331 vínculos |
+| `python cli.py log` | 0.3 s | la bitácora de las 10 ejecuciones: la idempotencia en producción |
+| `python etapa2/particionar.py --por pmid --salida <temporal>` | 3.3 s | **el mejor de todos**: imprime 1 562 ejemplos de 119 artículos con solo 694 ventanas distintas, reparte, verifica y declara la partición limpia |
+| `python etapa2/extraer_pares.py --salida <temporal>` | 19 s | el flujo corriendo sobre el corpus de verdad, con avance en pantalla |
+| `python servidor.py --abrir` | 2 s | el tablero en el navegador |
+
+El de `particionar.py` tiene un remate: el archivo que produce en vivo es
+idéntico byte por byte al que está versionado, y se comprueba comparando su
+sha256.
 
 ---
 
@@ -860,6 +1060,32 @@ Lo que **no** está en el repositorio y viene del servidor del asesor:
 `ecoli_curated.tsv`, los tres `entity_marked_*.jsonl` y
 `bio_bert_re_finetune.py`. Están en `.gitignore` a propósito: no son datos
 propios y no se versionan aquí.
+
+---
+
+## Referencias
+
+Los siete artículos del marco. La sección «En qué se basó, y en qué no» dice cuál
+influyó en qué.
+
+1. Ali, M. y Alrashid, S. (2025). Revisión de métodos de aprendizaje automático
+   para la reconstrucción de redes de regulación génica.
+2. Mercatelli, D., Scalambra, L., Triboli, L., Ray, F. y Giorgi, F. M. (2020).
+   Recursos y métodos para la inferencia de redes de regulación génica.
+3. Ruan, J. et al. (2025). Modelos de lenguaje de gran tamaño en bioinformática:
+   panorama de los BioLM.
+4. Rehana, H. et al. (2024). GPT frente a BERT para la extracción de
+   interacciones proteína-proteína en texto biomédico.
+5. He, Y. et al. (2026). Extracción de interacciones proteína-proteína con
+   semántica de entidades.
+6. **Varela-Vega, A. et al. (2024). Reconstrucción de redes de regulación
+   transcripcional bacterianas a partir de literatura con modelos de lenguaje.
+   Centro de Ciencias Genómicas, UNAM.** — la referencia directa.
+7. Park, J. et al. (2026). GeneReL: extracción de relaciones génicas con modelos
+   de lenguaje y curación comunitaria en *Arabidopsis*.
+
+Las fichas completas —revista, volumen y DOI— están en la lámina 3 de
+`salidas/Seminario_GRN_IIMAS_expo.pptx`.
 
 ---
 
