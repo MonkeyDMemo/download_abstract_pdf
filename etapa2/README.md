@@ -32,7 +32,7 @@ memorización. **No invalida el trabajo: invalida el número.**
 
 | archivo | qué hace |
 |---|---|
-| `particionar.py` | reparte sin fuga y **se niega a escribir** si queda alguna |
+| `particionar.py` | reparte sin fuga y, si queda alguna, **la marca como RECHAZADA y sale con codigo 1** |
 | `barrido.py` | las 24 configuraciones del servidor, reanudable |
 | `test_particionar.py` | 17 pruebas; la central verifica que el guardián puede fallar |
 | `barrido_colab.ipynb` | el cuaderno |
