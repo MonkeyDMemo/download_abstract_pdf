@@ -8,7 +8,7 @@
 | Asesor | Dr. Edgardo Galán Vásquez |
 | Adscripción | IIMAS · UNAM — Laboratorio de Datos Biológicos y Redes Complejas (BioMiNet) |
 | Línea | Redes de Regulación Génica (GRN) |
-| Corte del corpus | 19 de agosto de 2026 (`datos/grn.db`) |
+| Corte del corpus | 18 de agosto de 2026 (`datos/grn.db`) |
 | Corte del barrido | 20 de agosto de 2026 — **24 de 24 corridas, completo** |
 
 Objetivos formativos del servicio social: integrar múltiples fuentes
@@ -128,7 +128,7 @@ código, y el código se niega a continuar cuando alguna se rompe.
 - **Lo que no se pudo conseguir se entrega como lista, no se esconde.** Los
   1 345 artículos sin acceso abierto salen en un archivo con su liga, para
   pedirlos por biblioteca.
-- **349 pruebas automáticas en la etapa 1 y 21 en la etapa 2.** Ninguna toca la
+- **831 pruebas automáticas: 349 en la etapa 1 y 482 en la etapa 2.** Ninguna toca la
   red: se les inyecta un cliente falso, y una prueba que intente salir a
   internet de verdad falla.
 
