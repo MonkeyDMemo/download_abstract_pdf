@@ -76,7 +76,7 @@ Nada de esto contradice las diapositivas: es lo que pasó después.
   entrenamiento (el modelo aprende), validación (se elige la mejor
   configuración) y prueba (se mide una sola vez, al final).
 - **Macro-F1**: promedio simple del desempeño en cada una de las cuatro clases,
-  sin darle más peso a las clases que tienen más ejemplos. Es la métrica dura:
+  sin darle más peso a las clases que tienen más ejemplos. Es la métrica exigente:
   una clase rara mal clasificada sí se nota.
 - **Época, lote, tasa de aprendizaje, calentamiento**: los cuatro ajustes que se
   barrieron. Cuántas veces el modelo recorre todos los datos, cuántos ejemplos
@@ -106,8 +106,8 @@ Nada de esto contradice las diapositivas: es lo que pasó después.
 
 ## Las reglas que se siguieron
 
-Esto es el protocolo. No son buenas intenciones: casi todas están puestas en el
-código, y el código se niega a continuar cuando alguna se rompe.
+Esto es el protocolo. Casi todas están puestas en el código, y el programa se
+detiene cuando alguna se rompe.
 
 - **Solo se descarga lo que los servicios exponen legalmente.** PubMed Central,
   Europe PMC y Unpaywall. No se raspa el sitio web de PMC ni se disfraza el
@@ -118,9 +118,10 @@ código, y el código se niega a continuar cuando alguna se rompe.
   consultas se guarda una vez y se liga cinco veces. Hay una prueba automática
   que corre la misma consulta dos veces y falla si la segunda genera tráfico.
 - **Ninguna métrica se reporta sin decir sobre qué se midió** y qué comparte ese
-  material con el de entrenamiento. Esta regla es la que originó la mitad de
-  este informe.
-- **El programa se niega antes que mentir.** `particionar.py` no escribe la
+  material con el de entrenamiento. De aplicar esta regla salió el hallazgo
+  principal de este informe.
+- **El programa se detiene en vez de entregar un resultado que no puede
+  sostener.** `particionar.py` no escribe la
   partición si detecta contaminación, y la verifica con un criterio
   deliberadamente distinto del que usó para repartir, para que la verificación
   no pueda salir bien por construcción. `barrido.py` no anuncia configuración
@@ -189,8 +190,8 @@ la base, no del tamaño del corpus. Ahí no hay nada que corregir.
 - **Cuatro fuentes de PDF medidas, tres descartadas.** De veinte descargas de
   prueba, quince se lograron por Europe PMC. Las otras fuentes se midieron y se
   documentó por qué no se construyeron.
-- **349 pruebas automáticas**, y siete defectos silenciosos corregidos gracias a
-  ellas.
+- **349 pruebas automáticas** en esta etapa. Con ellas se detectaron varios
+  defectos que no producían ningún error visible.
 - **1 345 artículos sin acceso abierto**, exportados con su liga para
   solicitarlos por biblioteca. Lo que falta responde a disponibilidad legal, no
   a una limitación de la herramienta.
@@ -208,7 +209,7 @@ reconstruyen una red regulatoria bacteriana extrayendo relaciones de texto con u
 modelo de lenguaje tipo BERT, y la comparan contra RegulonDB. Reportan F1 de
 0.87.
 
-Esa cifra fija la vara, pero **no se compara renglón con renglón** con las de
+Esa cifra da una referencia, pero **no se compara renglón con renglón** con las de
 este informe: es otro organismo, otro corpus y otra partición. Sirve para saber
 en qué orden de magnitud se mueve el problema, no para decir quién gana.
 
@@ -237,7 +238,7 @@ etiquetas, umbrales de decisión, la red de 789 aristas que ya infirió) está e
 
 ### Qué heredé y qué hice yo
 
-En un informe de servicio social esto no es cortesía, es el objeto del documento.
+En un informe de servicio social conviene que esto quede explícito.
 
 | heredado del servidor del asesor | trabajo propio |
 |---|---|
@@ -281,7 +282,7 @@ validación y 0.8721 en prueba. Ese número mide sobre todo memorización.
 ventana sin sus marcadores de entidad, así que ese 73.9 % significa «la misma
 ventana de texto, quizá con otro par marcado», no «la misma entrada carácter por
 carácter». Es la medida pertinente —lo que preocupa es que el modelo ya hubiera
-visto el pasaje— pero conviene decirlo, porque hay dos cifras vecinas que no
+visto el pasaje— pero hay que precisarlo, porque hay dos cifras vecinas que no
 dependen de ninguna canonización y que por eso son más duras de discutir: **61 de
 los 64 artículos** de prueba están también en entrenamiento, contado por PMID sin
 tocar el texto, y el **86.6 % de los pares** de prueba ya aparecen en
@@ -310,7 +311,7 @@ desvía de las proporciones globales. El resultado, contra la partición origina
 Mismo tamaño, mismas proporciones de clase. Lo único que cambia es la
 contaminación, que pasa de 73.9 % a **0.0 %**, con cero artículos compartidos.
 
-Dos cosas que el verificador reportó y conviene leer:
+Dos avisos que el verificador reportó:
 
 - **7.6 % de los ejemplos de prueba tienen su fragmento casi contenido en uno de
   entrenamiento**, y uno al 100 %. Es un título de artículo que aparece citado
@@ -412,7 +413,7 @@ ejemplo—, que no depende de tener GPU sino de que `particionar.py` lo produzca
 
 ### Un error del mismo tipo, en este trabajo
 
-Conviene decirlo aquí y no esperar a que alguien lo encuentre. **La primera
+Se declara aquí en vez de esperar a que alguien lo encuentre. **La primera
 versión de este informe encabezaba el resultado con 0.9234**, que es el máximo de
 la columna de prueba sobre 18 corridas. Eso es dejar que la prueba participe en
 la selección del modelo: la misma clase de defecto que este trabajo vino a
@@ -425,9 +426,6 @@ además es la del servidor—, pero eso fue suerte, no método: con las 18 prime
 la regla y el máximo no coincidían. De aquí en adelante la regla queda escrita
 antes de mirar la tabla, y cada configuración debería repetirse con varias
 semillas para reportar dispersión en vez de puntos.
-
-Aplicarse el mismo criterio con el que se juzga un trabajo ajeno es lo que
-convierte una auditoría en un método y no en un reproche.
 
 ### La misma configuración entrenada dos veces no da el mismo número
 
@@ -492,7 +490,7 @@ cifra que sube porque alguien la ayudó a mano no es la misma clase de cifra.
 
 Los doce que faltan sin la capa manual son `Anr`, `CpxR`, `CzcR`, `Fur`, `HasI`,
 `HptB`, `IHF`, `MexL`, `PirR`, `PqsR`, `PrrF` y `Vfr`, y **ninguno es un gen
-desconocido**. Conviene decir qué le pasa a cada uno, porque el número se lee
+desconocido**. Vale explicar qué le pasa a cada uno, porque el número se lee
 peor de lo que es. Son cinco situaciones distintas:
 
 - **Cuatro locus que ninguna fuente pública nombra** — `CzcR`, `HasI`, `HptB`,
@@ -519,8 +517,8 @@ peor de lo que es. Son cinco situaciones distintas:
   pública, pero ninguna fuente les da símbolo y su única superficie es el locus
   tag. Aquí el constructor se negó deliberadamente a adivinar: la asignación
   habitual de `CpxR` contradice a RefSeq, que llama a ese gen sensor de dos
-  componentes. **Prefirió 53 de 55 honestos a 55 de 55 copiando locus tags del
-  patrón de oro.**
+  componentes. **Se prefirieron 53 de 55 verificables a 55 de 55 copiando locus
+  tags del patrón de oro.**
 
 Cada fila de la capa manual lleva su justificación escrita y se eligió **por
 frecuencia en el corpus, no por el patrón de oro**: `Fur` aparece en 81
@@ -557,8 +555,8 @@ escenarios es la capa manual.
 ### El patrón de oro: 190 relaciones que el corpus sí contiene
 
 La lámina 8 decía que el obstáculo era la evaluación: el modelo propone
-relaciones para *P. aeruginosa* y no había contra qué compararlas. Esto lo
-ataca.
+relaciones para *P. aeruginosa* y no había contra qué compararlas. Esta sección
+responde a eso.
 
 **Cómo se construyó**, que es lo que no estaba escrito en ninguna parte:
 
@@ -583,7 +581,7 @@ signo. Por certeza: 139 establecidas y 51 probables.
 tienen su oración literalmente en el texto: 161 exactas y 19 por fragmento
 contiguo. **Ninguna oración inventada.**
 
-De ahí sale el resultado que de verdad importa:
+De ahí sale la consecuencia principal:
 
 > Solo 9 relaciones canónicas faltan por completo del corpus, y casi todas son de
 > autorregulación. Eso significa que **si el modelo no recupera una relación
@@ -628,7 +626,7 @@ Estado: **pendiente** de correrse contra el modelo.
 ### Un problema que la repartición no arregla
 
 Rehacer la partición corrige la medición, no el diseño del conjunto de datos. Y
-hay un problema de diseño que conviene decir en voz alta.
+hay un problema de diseño que no se resuelve con eso.
 
 **La clase «sin relación» no es una clase semántica.** De sus 493 ejemplos,
 **485 (98.4 %) comparten fragmento de texto y par (factor, gen) con otra fila
@@ -651,9 +649,8 @@ Arreglarlo pide anotación, no código.
 
 Ya existe el camino completo: del corpus salen pares de genes que aparecen en la
 misma oración, el clasificador les pone signo, se arma la red y se compara contra
-el patrón de oro. Y como el objetivo de todo este trabajo es no volver a publicar
-un número que se mide a sí mismo, antes de correrlo en serio se hizo lo contrario
-de lo habitual: **se intentó engañarlo a propósito.**
+el patrón de oro. Y como este trabajo empezó por un número que se medía a sí
+mismo, antes de correrlo en serio **se intentó engañarlo a propósito.**
 
 El ataque más simple fue el más revelador. Se sustituyó el clasificador por uno
 que no lee nada y contesta siempre lo mismo, `activates`. El programa lo
@@ -668,7 +665,7 @@ palabras clave de verdad, en cambio, sí pasa: 84.9 % contra 68.1 %.
 Se cerraron cuatro huecos de esa misma familia —**todos eran comprobar la etiqueta
 de un archivo en vez de su contenido**— y la batería de pruebas de la etapa 2
 pasó de 453 a 482. Pero dos rondas de ataque posteriores encontraron cinco cosas
-que siguen pasando, y conviene decirlas antes de que alguien cite un número:
+que siguen pasando, y quedan escritas antes de que alguien cite un número:
 
 - Contaminar el diccionario **a medias** —copiarle un 12 % de filas del patrón de
   oro— no dispara ningún aviso, sube todas las cifras publicadas y de hecho
@@ -688,10 +685,9 @@ honesta es que hoy el programa detecta al tramposo torpe y no al cuidadoso**, y
 que una cifra suya solo vale acompañada del registro de su corrida. Están todas
 documentadas con el ataque exacto que las demuestra en `docs/decisiones.md`.
 
-Vale la pena decir por qué esto sale en un informe y no se guarda: **el proyecto
-existe porque una métrica inflándose sin que nadie lo notara costó meses.**
-Encontrar cinco maneras más de que eso pase, y escribirlas, es el trabajo; enseñar
-solo el 0.92 sería repetir el error con mejor ortografía.
+Esto se reporta en vez de guardarse porque el trabajo de este semestre empezó
+justamente por una métrica que se había inflado sin que nadie lo notara. Dejar
+escritas otras cinco maneras de que eso ocurra es parte del resultado.
 
 ## Lo que todavía no está medido
 
@@ -731,7 +727,7 @@ solo el 0.92 sería repetir el error con mejor ortografía.
    qué comparar: 190 relaciones canónicas y 93 oraciones con signo conocido. No
    sustituyen un conjunto anotado a mano de *P. aeruginosa*, pero permiten
    detectar errores hoy. **medido / pendiente**
-5. **Ya existe el programa que evalua el modelo en esta computadora.** Del
+5. **Ya existe el programa que evalúa el modelo en esta computadora.** Del
    corpus salen pares de genes, el clasificador les pone signo, se arma la red y
    se compara contra el patrón de oro, sin depender del servidor del asesor. Para
    reconocer los genes se construyó un diccionario de los 5 642 de PAO1 desde
