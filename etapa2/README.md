@@ -60,6 +60,7 @@ modelo sin depender del servidor del asesor:
 | `texto.py`, `secciones.tsv` | parte los documentos en oraciones y reconoce las secciones del JATS |
 | `extraer_pares.py` | saca los pares candidatos del corpus; mide que el diccionario reconozca de verdad |
 | `clasificar.py` | **el único archivo que importa `torch`**; corre el modelo sobre los pares |
+| `procedencia.py` | sella la huella de cada archivo; **las evaluaciones se niegan si les mezclan corridas** |
 | `red.py` | agrega las predicciones en aristas; revisa que las probabilidades sean una distribución |
 | `evaluar_oro.py`, `evaluar_signo.py` | comparan contra el patrón de oro y contra la auditoría de signo |
 

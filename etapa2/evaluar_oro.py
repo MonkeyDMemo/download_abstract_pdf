@@ -137,6 +137,10 @@ import random
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import procedencia                      # noqa: E402
+
 
 # ---------------------------------------------------------------------------
 # Constantes del contrato
@@ -220,6 +224,25 @@ MINIMO_ENTIDADES_UTILES = 1000
 # aparecer solo cuando ya es total.
 UMBRAL_CIRCULARIDAD = 0.60
 UMBRAL_AVISO_CIRCULARIDAD = 0.40
+
+# Cobertura del vocabulario del oro por el diccionario. Es el indicador que
+# `fraccion_explicada_por_el_oro` no puede ser, y la diferencia esta en el
+# denominador.
+#
+# Aquella es un cociente cuyo denominador son los pares que el pipeline saco
+# del corpus, y ese denominador CRECE al contaminar: los nombres copiados
+# reconocen menciones nuevas y generan pares nuevos, muchos con un solo extremo
+# en el oro. Por eso la contaminacion a medias --el 12% de filas del informe--
+# no disparaba nada y ademas BAJABA el indicador que debia detectarla.
+#
+# Esta mide contra el vocabulario del oro, que es un conjunto FIJO de 625
+# nombres. Copiar filas solo puede subir el numerador: no hay forma de diluirla.
+#
+# Medido: el diccionario honesto de las tres fuentes publicas cubre 387 de 625
+# (0.619). Metiendole los 238 nombres que le faltan, sube a 1.000.
+COBERTURA_ORO_MEDIDA = 0.62
+UMBRAL_AVISO_COBERTURA_ORO = 0.80
+UMBRAL_ABANDONO_COBERTURA_ORO = 0.95
 
 # §4: las cuatro clases del checkpoint y la tolerancia con la que el contrato
 # exige que sumen 1.
@@ -647,6 +670,66 @@ def medir_sustancia(pares, entidades, vocab):
         ("medido", "diccionario real 0.256; diccionario copiado del oro "
                    "0.661; corpus completo en los dos casos"),
     ])
+
+
+def medir_cobertura_del_oro(diccionario, vocab):
+    """Que fraccion del vocabulario del oro esta en el diccionario.
+
+    Sube de forma monotona con la contaminacion, que es justo lo que
+    `fraccion_explicada_por_el_oro` no hace. El denominador es el vocabulario
+    del oro y no cambia nunca: copiarle filas al diccionario solo puede meter
+    nombres en la interseccion, jamas sacarlos.
+
+    Que suba no prueba trampa. Un diccionario de verdad mejor tambien sube, y
+    por eso el aviso pide justificacion en vez de acusar. Lo que si es
+    implausible es acercarse a 1.0: hay 12 de los 55 factores del oro que las
+    tres fuentes publicas no traen, asi que cubrirlos todos significa que
+    salieron de otro lado.
+    """
+    dentro = sorted(n for n in vocab if n in diccionario)
+    fraccion = (float(len(dentro)) / len(vocab)) if vocab else None
+    return collections.OrderedDict([
+        ("que_es", "fraccion del vocabulario del oro presente en el "
+                   "diccionario; sube de forma monotona al copiar filas del "
+                   "oro, porque el denominador es fijo"),
+        ("nombres_del_oro", len(vocab)),
+        ("nombres_del_oro_en_el_diccionario", len(dentro)),
+        ("cobertura_del_oro", redondear(fraccion)),
+        ("medido_honesto", COBERTURA_ORO_MEDIDA),
+        ("umbral_de_aviso", UMBRAL_AVISO_COBERTURA_ORO),
+        ("umbral_de_abandono", UMBRAL_ABANDONO_COBERTURA_ORO),
+    ])
+
+
+def revisar_cobertura_del_oro(cobertura, ruta_genes, salida=print):
+    """Sale con 1 si el diccionario cubre el oro demasiado bien.
+
+    Devuelve True si hay que avisar sin abandonar, para que quien llama lo
+    sume a los avisos que ya publica.
+    """
+    f = cobertura["cobertura_del_oro"]
+    if f is None:
+        return False
+    if f >= UMBRAL_ABANDONO_COBERTURA_ORO:
+        sys.exit(
+            "El diccionario %s cubre el %.1f %% del vocabulario que escribe el "
+            "patrón de oro (%d de %d nombres). El honesto, armado solo con "
+            "RefSeq, KEGG y UniProt, mide %.0f %%: hay 12 de los 55 factores "
+            "del oro que esas tres fuentes no traen, así que cubrirlos todos "
+            "significa que salieron del propio patrón. La exhaustividad "
+            "mediría el solapamiento del diccionario consigo mismo. No escribo."
+            % (ruta_genes, 100 * f,
+               cobertura["nombres_del_oro_en_el_diccionario"],
+               cobertura["nombres_del_oro"], 100 * COBERTURA_ORO_MEDIDA))
+    if f >= UMBRAL_AVISO_COBERTURA_ORO:
+        salida(
+            "AVISO: el diccionario cubre el %.1f %% del vocabulario del oro y "
+            "el honesto mide %.0f %%. Puede ser un diccionario mejor, y puede "
+            "ser que le hayan copiado filas al patrón: hay que justificar de "
+            "dónde salieron los nombres nuevos antes de citar la exhaustividad."
+            % (100 * f, 100 * COBERTURA_ORO_MEDIDA))
+        return True
+    return False
 
 
 def revisar_sustancia(sustancia, ruta_genes, ruta_pares):
@@ -1589,6 +1672,10 @@ def construir_parser():
                    help="segunda referencia, opcional")
     p.add_argument("--salida", default="datos_etapa2/evaluacion_oro.tsv")
     p.add_argument("--resumen", default="datos_etapa2/evaluacion_oro.json")
+    p.add_argument("--red-informe", default="datos_etapa2/red_informe.json",
+                   help="El informe que dejó red.py. De ahí salen las huellas "
+                        "de los archivos con los que se construyó la red; si "
+                        "no coinciden con los que se van a leer, no se evalúa.")
     p.add_argument("--incluir-no-atestiguadas", action="store_true",
                    help="mete en el universo las 9 filas que el corpus no "
                         "contiene (por omisión quedan fuera)")
@@ -1645,6 +1732,19 @@ def main(argv=None):
 
     args = construir_parser().parse_args(argv)
 
+    # Guardián de cadena, y va el primero de todos porque es el más barato y
+    # el que invalida más cosas. Los cuatro archivos que se leen aquí tienen
+    # nombres fijos, así que rehacer un paso y no los otros —o copiar uno de
+    # una carpeta vieja— pasa desapercibido: cada archivo por separado está
+    # bien formado. Medido antes de poner esto: la misma red publicaba 80.6% o
+    # 100.0% de exhaustividad según qué archivo se le pusiera al lado, con
+    # código 0. Trece puntos sin un aviso.
+    if not procedencia.exigir(args.red_informe, {
+            "pares": args.pares,
+            "predicciones": args.predicciones,
+            "red": args.red}):
+        return 1
+
     oro = cargar_oro(args.oro)
     filas_red, red = cargar_red(args.red)
     diccionario, info_genes = cargar_diccionario(args.genes)
@@ -1658,9 +1758,14 @@ def main(argv=None):
     # calcular una sola métrica: si el vocabulario del pipeline es el del oro,
     # la exhaustividad mide el solapamiento del diccionario consigo mismo y no
     # hay nada que escribir.
-    sustancia = medir_sustancia(pares_distintos, entidades_corpus,
-                                vocabulario_del_oro(oro))
+    vocab_oro = vocabulario_del_oro(oro)
+    sustancia = medir_sustancia(pares_distintos, entidades_corpus, vocab_oro)
     revisar_sustancia(sustancia, args.genes, args.pares)
+    # El hermano del anterior, y existe porque aquel no basta: la contaminación
+    # a medias engorda su denominador y lo hace BAJAR justo cuando debería
+    # subir. Este mide contra el vocabulario del oro, que es fijo, así que
+    # copiar filas solo puede subirlo.
+    cobertura_oro = medir_cobertura_del_oro(diccionario, vocab_oro)
     # La invariante de §4, que hasta ahora solo existía en clasificar.py.
     probabilidades = revisar_probabilidades(args.predicciones)
     disputadas, origen_disputadas = cargar_disputadas(args.disputadas, oro)
@@ -1683,6 +1788,14 @@ def main(argv=None):
                  "el oro: la exhaustividad no mediría nada. Ver sección 7 del "
                  "contrato."
                  % (info_genes["entidades_utiles"], info_genes["filas"]))
+
+    # Va DESPUES del de §6 a proposito. Aquel es una conjuncion --cobertura
+    # total Y diccionario diminuto-- y cuando aplica da mejor diagnostico,
+    # porque nombra las entidades utiles y las lineas. Este recoge justo lo que
+    # esa conjuncion deja pasar: un diccionario grande y legitimo al que le
+    # copiaron nombres del oro. Si fuera antes le quitaria el mensaje al otro
+    # sin ganar nada.
+    aviso_cobertura = revisar_cobertura_del_oro(cobertura_oro, args.genes)
 
     if args.incluir_no_atestiguadas:
         # La bandera revierte solo la exclusión por corpus; las de signo sin
@@ -1708,6 +1821,13 @@ def main(argv=None):
     atestiguadas = sum(1 for f in todas if f["atestiguado"] == "true")
 
     avisos = []
+    if aviso_cobertura:
+        avisos.append(
+            "El diccionario cubre el %.1f %% del vocabulario del patrón de oro "
+            "y el honesto mide %.0f %%. Hay que justificar de dónde salieron "
+            "los nombres nuevos antes de citar la exhaustividad."
+            % (100 * cobertura_oro["cobertura_del_oro"],
+               100 * COBERTURA_ORO_MEDIDA))
     if len(disputadas) != DISPUTADAS_DOCUMENTADAS:
         avisos.append(
             "etapa2/README.md habla de %d relaciones en disputa; en la tabla "
@@ -1820,6 +1940,7 @@ def main(argv=None):
     ])
     resumen["avisos"] = avisos
     resumen["sustancia_del_diccionario"] = sustancia
+    resumen["cobertura_del_oro"] = cobertura_oro
     resumen["crudo"] = cruda
     resumen["honesto"] = metricas(honestas)
     resumen["linea_base_aleatoria"] = linea_base_aleatoria(

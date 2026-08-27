@@ -784,12 +784,18 @@ de un archivo en vez de su contenido**— y la batería de pruebas de la etapa 2
 pasó de 453 a 482. Pero dos rondas de ataque posteriores encontraron cinco cosas
 que siguen pasando, y quedan escritas antes de que alguien cite un número:
 
-- Contaminar el diccionario **a medias** —copiarle un 12 % de filas del patrón de
-  oro— no dispara ningún aviso, sube todas las cifras publicadas y de hecho
-  **baja** el indicador que debería detectarlo.
-- La evaluación recibe cuatro archivos y no comprueba que vengan de la misma
+- ~~Contaminar el diccionario **a medias** —copiarle un 12 % de filas del patrón
+  de oro— no dispara ningún aviso, sube todas las cifras publicadas y de hecho
+  **baja** el indicador que debería detectarlo.~~ **Cerrado.** El indicador iba
+  al revés porque era un cociente cuyo denominador crecía al contaminar. El
+  nuevo, `cobertura_del_oro`, mide contra el vocabulario del patrón, que es un
+  conjunto fijo de 625 nombres: copiar filas solo puede subirlo. Honesto 0.619;
+  contaminado 1.000.
+- ~~La evaluación recibe cuatro archivos y no comprueba que vengan de la misma
   corrida. Con la misma red y una lista de candidatos recortada, la exhaustividad
-  pasa de 80.6 % a 100.0 % sin una queja.
+  pasa de 80.6 % a 100.0 % sin una queja.~~ **Cerrado.** `red.py` sella el
+  sha256 de sus entradas y de su salida en `red_informe.json`, y las dos
+  evaluaciones se niegan a correr si lo que van a leer no coincide.
 - Hay una bandera para excluir relaciones en disputa cuyo único control es que la
   justificación no esté vacía: excluyendo justo las que el programa erró, el
   acierto sube a 100.0 %.
@@ -801,8 +807,9 @@ que siguen pasando, y quedan escritas antes de que alguien cite un número:
   con código 0 y con 190 de 190 relaciones del oro cubiertas, contra 170 de 190
   del honesto.
 
-Ninguna de esas cinco es un accidente que ocurra solo; todas exigen que alguien
-haga algo raro, y dos de ellas se podrían cometer por descuido. **La conclusión
+De esas cinco, **las dos que se podían cometer por descuido ya están
+cerradas**, y con la prueba que las mantiene vivas. Quedan tres, y todas exigen
+que alguien haga algo raro a propósito. **La conclusión
 honesta es que hoy el programa detecta al tramposo torpe y no al cuidadoso**, y
 que una cifra suya solo vale acompañada del registro de su corrida. Están todas
 documentadas con el ataque exacto que las demuestra en `docs/decisiones.md`.
@@ -820,8 +827,8 @@ escritas otras cinco maneras de que eso ocurra es parte del resultado.
 | ~~Una línea base barata (clase mayoritaria)~~ | **hecho** — `evaluar_oro.py` la calcula sobre el mismo subconjunto que evalúa, con binomial exacta | Ya rechaza al clasificador constante (69.8 % contra 69.8 %, p = 0.542) |
 | Correr el clasificador contra el patrón de oro y la auditoría de signo | Los dos archivos ya existen | Sería la primera cifra de desempeño sobre *P. aeruginosa*, no sobre *E. coli* |
 | Reconocer los 55 factores del oro con fuentes públicas | Tomar los sinónimos de proteína de UniProt en vez de firmarlos a mano, admitir complejos y familias de ARN, y resolver `CpxR` y `PirR` con una decisión escrita | Haría reproducibles los diez que hoy dependen de una firma humana. Hoy se reporta 43 de 55, que es el número honesto |
-| Que la evaluación exija que sus cuatro entradas sean de la misma corrida | `red.py` ya deja la procedencia en `red_informe.json`; `evaluar_oro.py` no lo abre | Hoy la misma red publica 80.6 % o 100.0 % de exhaustividad según qué archivo se le ponga al lado, con código 0 |
-| Detectar la contaminación parcial del diccionario | Un indicador que suba, no que baje, al añadir nombres del patrón de oro | Un 12 % de filas copiadas hoy es invisible y mejora todas las cifras |
+| ~~Que la evaluación exija que sus cuatro entradas sean de la misma corrida~~ **hecho** — `etapa2/procedencia.py` | `red.py` ya deja la procedencia en `red_informe.json`; `evaluar_oro.py` no lo abre | Hoy la misma red publica 80.6 % o 100.0 % de exhaustividad según qué archivo se le ponga al lado, con código 0 |
+| ~~Detectar la contaminación parcial del diccionario~~ **hecho** — `cobertura_del_oro`, monótona por construcción | Un indicador que suba, no que baje, al añadir nombres del patrón de oro | Un 12 % de filas copiadas hoy es invisible y mejora todas las cifras |
 | Registrar los umbrales y las filas excluidas en el JSON de la evaluación | Copiarlos de `red_informe.json` y acotar `--disputadas` | Sin eso dos corridas con trece puntos de diferencia entregan un JSON idéntico |
 | Un conjunto anotado a mano de PAO1 | Muestreo por incertidumbre sobre lo que el modelo ya infirió | Es el obstáculo de fondo; sin él no hay entrenamiento en la especie objetivo |
 | Correr el modelo sobre los 1 006 textos completos (hoy son 130) | El programa de inferencia del servidor | Cierra la pregunta de cuánto aporta el texto completo frente al resumen |

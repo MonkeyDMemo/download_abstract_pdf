@@ -45,6 +45,8 @@ etapa2/                la etapa siguiente: el clasificador de relaciones. No
   texto.py             parte los documentos en oraciones
   extraer_pares.py     saca los pares candidatos (TF, blanco) del corpus
   clasificar.py        LA UNICA PIEZA QUE NECESITA torch. Corre el modelo
+  procedencia.py       la huella de cada archivo, para que la evaluacion
+                       se niegue si le mezclan pasos de dos corridas
   red.py               agrega las predicciones en aristas unicas
   evaluar_oro.py       contra las 190 relaciones canonicas
   evaluar_signo.py     contra las 93 oraciones de signo conocido

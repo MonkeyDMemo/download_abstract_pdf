@@ -123,6 +123,12 @@ CLAVES_PAR = ("id_par", "oracion_cruda", "n_oracion")
 # empieza a fallar en silencio y la exactitud de signo pasa a medir otra cosa.
 from texto import normalizar_espacios
 
+# Para dejar escrito con QUE archivos se construyo esta red, por contenido y no
+# por ruta. La ruta es siempre la misma y el contenido cambia; sin la huella,
+# la evaluacion no puede saber que le pusieron al lado un archivo de otra
+# corrida. Ver el docstring de procedencia.py.
+import procedencia
+
 
 def como_bool(v):
     """Los booleanos llegan como booleanos JSON, pero un .jsonl reescrito a
@@ -806,6 +812,17 @@ def main(argv=None, log=print):
             os.makedirs(d, exist_ok=True)
     escribir_tsv(args.salida, COLUMNAS_RED, [fila_red(a) for a in aristas])
     escribir_tsv(args.evidencias, COLUMNAS_EVIDENCIAS, filas_evidencias(aristas))
+
+    # Las huellas se sellan DESPUES de escribir el TSV y ANTES del informe, que
+    # es el unico momento en que existen los tres archivos y ninguno ha
+    # cambiado. Van las dos entradas y la propia salida: asi la evaluacion
+    # puede comprobar la cadena entera y no solo la mitad.
+    informe["huellas"] = procedencia.sellar({
+        "pares": args.pares,
+        "predicciones": args.predicciones,
+        "red": args.salida,
+    })
+
     escribir_json(args.informe, informe)
     publicar([args.salida, args.evidencias, args.informe])
 

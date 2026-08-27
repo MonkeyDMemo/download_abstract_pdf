@@ -125,6 +125,8 @@ from evaluar_oro import (cargar_operones, miembros_operon,
                          binomial_cola_superior,
                          revisar_probabilidades_de_fila)
 
+import procedencia                      # noqa: E402
+
 
 COLUMNAS_AUDITORIA = ["pmid", "fuente", "tf", "blanco", "signo_correcto",
                       "evaluable", "redaccion", "mencion_tf", "mencion_blanco",
@@ -715,6 +717,15 @@ def main(argv=None):
     umbrales = {"activates": args.umbral_activates,
                 "represses": args.umbral_represses,
                 "regulates": args.umbral_regulates}
+
+    # El mismo guardián de cadena que evaluar_oro.py, y por el mismo motivo.
+    # Aquí el informe de la red ya se leía, pero solo para AVISAR si los
+    # umbrales no coincidían. Un aviso no detiene nada, y las predicciones de
+    # otra corrida cambian la exactitud de signo tanto como los umbrales.
+    if not procedencia.exigir(args.red_informe, {
+            "pares": args.pares,
+            "predicciones": args.predicciones}):
+        return 1
 
     auditoria = cargar_auditoria(args.auditoria)
     evaluables = [f for f in auditoria

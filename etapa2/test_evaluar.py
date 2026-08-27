@@ -1011,13 +1011,17 @@ class PruebasGuardianSigno(unittest.TestCase):
                              "fenotipo_mutante": "represses"})
         esc = EscenarioSigno(self.auditoria, respuestas)
         try:
-            with self.assertRaises(SystemExit) as cm:
-                S.main(["--auditoria", esc.auditoria, "--predicciones",
-                        esc.predicciones, "--pares",
-                        os.path.join(esc.dir, "no_existe.jsonl"),
-                        "--salida", esc.salida, "--resumen", esc.resumen,
-                        "--operones", esc.operones,
-                        "--red-informe", os.path.join(esc.dir, "no.json")])
+            # El informe de la red no existe a propósito, y desde que hay
+            # guardián de procedencia eso imprime un aviso: se captura para que
+            # no ensucie la salida de la batería.
+            with contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as cm:
+                    S.main(["--auditoria", esc.auditoria, "--predicciones",
+                            esc.predicciones, "--pares",
+                            os.path.join(esc.dir, "no_existe.jsonl"),
+                            "--salida", esc.salida, "--resumen", esc.resumen,
+                            "--operones", esc.operones,
+                            "--red-informe", os.path.join(esc.dir, "no.json")])
             self.assertIn("--pares", str(cm.exception))
         finally:
             esc.limpiar()
@@ -1272,6 +1276,31 @@ class PruebasCircularidad(unittest.TestCase):
         self.assertIn("hecho desde el oro", mensaje)
         self.assertIn("entidades útiles", mensaje)
         self.assertIn("5700", mensaje)
+
+    def test_la_contaminacion_A_MEDIAS_tambien_aborta(self):
+        """El hueco que §6 dejaba abierto, y por el que se escribió el guardián
+        de cobertura.
+
+        §6 es una conjunción: cobertura del 100 % **y** menos de 1000 entidades
+        útiles. Un diccionario grande y legítimo al que le copian los nombres
+        del oro cumple la primera y no la segunda, así que pasaba. Medido en el
+        informe: un 12 % de filas copiadas no disparaba ningún aviso, subía
+        todas las cifras, y de hecho BAJABA `fraccion_explicada_por_el_oro`,
+        porque los nombres copiados engordan su denominador.
+
+        La cobertura del oro no se puede diluir: su denominador es el
+        vocabulario del oro, que es fijo.
+        """
+        # 1500 entidades útiles: muy por encima del mínimo de §6, así que ese
+        # guardián no se dispara y el que responde tiene que ser el otro.
+        filas = [fila_gen("PA%04d" % i, "gen%04d" % i) for i in range(1500)]
+        # Y encima, los nombres que el oro escribe.
+        filas.append(fila_gen("PA2492", "mexT"))
+        escribir_genes_crudos(self.esc.genes, filas)
+        mensaje = self.correr()
+        self.assertIn("vocabulario que escribe el patrón de oro", mensaje)
+        self.assertNotIn("entidades útiles", mensaje,
+                         "ese es el mensaje de §6; aquí no debería aplicar")
 
     def test_un_diccionario_de_verdad_pasa(self):
         """El guardián no puede dispararse con el diccionario que se espera."""

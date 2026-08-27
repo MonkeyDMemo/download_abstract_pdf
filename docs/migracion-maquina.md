@@ -18,8 +18,14 @@ El motivo es concreto y no es de diseño: `etapa2/clasificar.py` es **la única
 pieza del proyecto que necesita `torch` y `transformers`**, y en la laptop no
 están instalados. Todo lo demás corre con biblioteca estándar.
 
-Basta CPU: son ~13 000 pares y un BERT base. No hace falta GPU para esto —la
-GPU se necesitó para el barrido, que ya cerró en Colab.
+**Medido el 21 de agosto en la laptop** (Ryzen 9 6900HX, 8 núcleos): son
+**65 223 pares** y el clasificador va a 16-17 pares por segundo en CPU, o sea
+**unos 70 minutos** para el corpus entero. No hace falta GPU: la GPU se
+necesitó para el barrido, que ya cerró en Colab.
+
+Y como la laptop lo hace en poco más de una hora, **la mudanza dejó de ser
+necesaria para esto**. El documento se conserva porque sigue valiendo para
+llevarlo a otra máquina cuando convenga.
 
 ---
 
@@ -71,13 +77,26 @@ mkdir -p datos datos_etapa2
 # ... copiar datos/fulltext, datos/grn.db, modelo_limpio_run22/
 
 python3 -m venv .venv && source .venv/bin/activate
-pip install torch transformers        # CPU basta; ~2.5 GB de descarga
+
+# La rueda de CPU son 122 MB. Sin --index-url, pip baja la de CUDA: 2.5 GB
+# de los que aquí no se usa nada.
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install transformers
 
 python3 -m unittest discover           # 349, el ETL
-python3 -m unittest discover etapa2    # 494, la etapa 2
+python3 -m unittest discover etapa2    # 518, la etapa 2
 ```
 
-**Las 843 pruebas tienen que pasar antes de tocar nada.** Ninguna necesita
+**El entorno virtual no es preferencia, es necesidad en Windows.** El Python de
+la Microsoft Store instala en
+`AppData/Local/Packages/PythonSoftwareFoundation.../LocalCache/local-packages/`,
+que son 138 caracteres antes de empezar; torch trae rutas de licencias anidadas
+(`flash-attention/third_party/aiter/3rdparty/composable_kernel/docs`) y la
+instalación muere con `WinError 206: el nombre del archivo o la extensión es
+demasiado largo`. Un venv dentro del proyecto deja la ruta en 79 caracteres y
+entra sin problema, **sin permisos de administrador**.
+
+**Las 867 pruebas tienen que pasar antes de tocar nada.** Ninguna necesita
 `torch` ni red: si alguna falla, el problema es de la copia, no del código.
 
 ### Versiones
@@ -86,9 +105,10 @@ Para el **barrido** hay que fijar `transformers==4.44.2`, `numpy<2` y
 `pandas==2.2.3`; el porqué está en `../etapa2/README.md`. Eso vale para
 reentrenar, que se hace en Colab.
 
-Para **solo inferir** no hace falta fijar nada: `clasificar.py` únicamente carga
-el checkpoint y llama al modelo, sin `TrainingArguments` ni `Trainer`, que es
-donde estaban las incompatibilidades.
+Para **solo inferir** no hace falta fijar nada, y está comprobado: el
+checkpoint carga sin problema con **torch 2.13.0+cpu y transformers 5.16.1**.
+`clasificar.py` únicamente carga los pesos y llama al modelo, sin
+`TrainingArguments` ni `Trainer`, que es donde estaban las incompatibilidades.
 
 ---
 
@@ -107,23 +127,26 @@ Es el mismo error que este trabajo vino a corregir: un número que se mide a sí
 mismo. **El guardián tiene que existir antes que el número que protege**, porque
 después ya se citó.
 
-Los dos que bloquean:
+**Los dos que bloqueaban ya están puestos** (21 de agosto), antes de la primera
+corrida y no después:
 
-1. **Que `evaluar_oro.py` exija que sus cuatro entradas vengan de la misma
-   corrida.** `red.py` ya deja la procedencia en `red_informe.json` y
-   `evaluar_oro.py` no lo abre.
-2. **Un indicador de contaminación del diccionario que suba al añadirle nombres
-   del patrón de oro.** Hoy un 12 % de filas copiadas es invisible y mejora
-   todas las cifras.
+1. **La cadena.** `red.py` sella el sha256 de sus entradas y de su salida en
+   `red_informe.json`, y `evaluar_oro.py` y `evaluar_signo.py` se niegan a
+   correr si lo que van a leer no coincide. Vive en `etapa2/procedencia.py`.
+2. **La cobertura del oro.** El indicador anterior era un cociente cuyo
+   denominador crecía al contaminar, así que **bajaba** con un 12 % de filas
+   copiadas. El nuevo mide contra el vocabulario del patrón, que es fijo:
+   honesto 0.619, contaminado 1.000.
 
 Los otros tres huecos —registrar umbrales y filas excluidas en el JSON, acotar
 `--disputadas`— pueden esperar a después de la primera corrida.
 
 ### Y borrar un archivo
 
-`datos_etapa2/predicciones_meta.json` existe pero es de una **prueba de humo con
-un modelo falso**: dice `"transformers": "0.0-falso"` y 101 ejemplos. No es un
-resultado. Bórralo antes de correr, para que nadie lo confunda con uno.
+Ya está hecho, pero conviene saber por qué: `datos_etapa2/predicciones_meta.json`
+era de una **prueba de humo con un modelo falso** —decía
+`"transformers": "0.0-falso"` y 101 ejemplos— y se podía confundir con un
+resultado. Si al copiar aparece otra vez, bórralo.
 
 ---
 
@@ -143,7 +166,8 @@ python3 etapa2/clasificar.py --modelo modelo_limpio_run22 --dispositivo cpu
 #    -> datos_etapa2/predicciones.jsonl, predicciones_meta.json
 #    Es reanudable: --reanudar retoma si se corta.
 #    Conviene probar primero con --limite 200 y ver que el reparto de clases
-#    no sea degenerado antes de soltar los ~13 000.
+#    no sea degenerado antes de soltar los 65 223. En CPU son ~70 minutos.
+#    Con --avance 2000 imprime el ritmo y lo que falta.
 
 # 3. Agregar las predicciones en aristas unicas.
 python3 etapa2/red.py
@@ -158,8 +182,10 @@ python3 etapa2/evaluar_signo.py   # oracion por oracion, las 93 evaluables
 ### Qué mirar en cada paso
 
 **Después del 1**, `pares_informe.json`: cuántos pares salieron y qué fracción
-del diccionario se usó de verdad. Si el número de pares es muchísimo mayor o
-menor de ~13 000 para 918 textos, algo va mal en el reconocimiento.
+del diccionario se usó de verdad. La corrida del 21 de agosto dio **65 223
+pares** sobre 2 361 documentos, con 3 059 de las 8 743 entidades del
+diccionario vistas en el corpus. Una desviación grande de ahí indica que el
+reconocimiento cambió.
 
 **Después del 2**, el reparto de clases del `predicciones_meta.json`. Un
 clasificador que contesta casi siempre lo mismo es la señal de que el
