@@ -321,58 +321,90 @@ decidir dónde poner esa frontera en vez de suponerla.
 
 ## El plan
 
+> **Al día del 27 de agosto por la noche.** De los cuatro pasos del bloque 1,
+> tres están hechos y el cuarto queda preparado. Lo tachado no se borra: sirve
+> para saber qué ya se contestó y con qué.
+
 ### Bloque 1 — medir, que es lo que preguntó el comité
 
-| # | paso | cuesta | contesta |
+| # | paso | estado | qué salió |
 |---|---|---|---|
-| 1 | Correr `evaluar_oro.py --collectf` con la función que ya existe | 1 hora | «comparar contra lo que se tiene»; aclara si el 7 % es real |
-| 2 | Muestrear 150 aristas y juzgarlas a mano | 1 día de código + **4 h de una persona** | **la precisión: cuántos errores comete** |
-| 3 | Línea base de coocurrencia en la misma oración | 1 día | si el modelo supera a «aparecen juntos» |
-| 4 | Línea base de LLM **a ciegas** sobre las 198 | 1 día | si el ajuste fino se justifica |
+| 1 | `evaluar_oro.py --collectf` | **hecho** | 38.8 % contra la referencia externa, y **sin circularidad**: 37.1 % en los factores que el oro nunca menciona |
+| 2 | Muestrear aristas y juzgarlas a mano | **preparado** | 250 aristas en `datos_etapa2/muestra_precision.tsv`, listas para llenar. **7 h de una persona** |
+| 3 | Línea base de coocurrencia | pendiente | si el modelo supera a «aparecen juntos» |
+| 4 | Línea base de LLM a ciegas | **hecho** | **91.4 % contra el 36.6 % del BioBERT**, y 91.7 % contra 8.3 % en la trampa |
 
-El paso 4 tiene que correrlo un modelo que **no haya visto** que las 93 son
-todas `represses`, y sobre las 198 completas —las otras 105 hacen de
-distractores—. Sin eso la línea base tendría el mismo defecto que le criticamos
-al 86.5 %.
+**El paso 2 es lo único que bloquea la respuesta principal del comité**, y ya no
+depende de programar nada: depende de que alguien lea 250 oraciones.
 
 ### Bloque 2 — subir el número
 
 | # | paso | cuesta | qué mueve |
 |---|---|---|---|
 | 5 | La regla de inversión de fenotipo | 1 día | **36.6 % → ~51.6 %**, ya medido |
-| 6 | Reentrenar con `<e1>/<e2>` como tokens y sin *lowercase* | 1 tarde de Colab | dos defectos conocidos del checkpoint |
-| 7 | Calibrar umbrales sobre la auditoría | 1 día | 13 puntos de exhaustividad en juego |
+| 6 | **Añadir `Fur`, `Anr` y `Vfr` en su forma capitalizada** | 1 día | **1 536 menciones que hoy el pipeline no ve**, de tres reguladores centrales |
+| 7 | Reentrenar con `<e1>/<e2>` como tokens y sin *lowercase* | 1 tarde de Colab | dos defectos conocidos del checkpoint |
+| 8 | Calibrar umbrales sobre la auditoría | 1 día | 13 puntos de exhaustividad en juego |
 
 El paso 5 es la capa 1 de la cascada propuesta, y es lo más rentable: de las 24
 oraciones de la trampa, 14 son inversión pura.
 
-Sobre el paso 6, los dos defectos vienen de la ficha del modelo y no se han
-tocado: `<e1>` se parte en cuatro piezas, y el tokenizador trae
-`do_lower_case=true` siendo un checkpoint *cased*, así que **`lasR` y `LasR` se
-colapsan** y la mayúscula que distingue gen de proteína es invisible.
+#### Sobre el paso 6, que salió del trabajo de hoy
+
+El informe tenía anotado *«tomar los sinónimos de proteína de UniProt en vez de
+firmarlos a mano»* para cerrar los 12 factores que las fuentes públicas no
+reconocen. **Se midió contra los 8 273 registros del caché y no funciona:**
+`Anr`, `Fur` y `Vfr` aparecen, pero **en minúscula incluso en el campo de nombre
+de proteína** («Transcriptional activator protein anr»). Los otros nueve no
+están. Esa línea queda cerrada con datos, para que nadie la reintente.
+
+Lo que sí funciona es otra cosa que el informe había descartado. Decía que
+inventar la forma capitalizada *reintroduciría el falso positivo que la marca de
+sensibilidad existe para matar*, y **ese razonamiento vale para emparejamiento
+insensible a mayúsculas, no para una fila que ya es sensible**: ahí `Fur` no
+puede casar con `fur`. Medido sobre los 918 textos:
+
+| | ocurrencias exactas | qué resultaron ser |
+|---|---|---|
+| `Fur` | 481 | todas la proteína |
+| `Anr` | 500 | todas la proteína |
+| `Vfr` | 555 | todas la proteína |
+
+Incluso las que empiezan oración. Son **1 536 menciones invisibles** para el
+pipeline, de los reguladores maestros de hierro, anaerobiosis y virulencia.
+
+**Cuidado con generalizarlo.** Se intentó como regla automática —*para toda fila
+sensible con símbolo en minúscula, añadir la capitalizada*— y **excluye justo
+estos tres**, porque `fur`, `anr` y `vfr` están en `palabras_comunes.txt`. La
+exclusión mira la minúscula cuando lo que decide es si la **mayúscula** es
+ambigua. Y aflojarla sin más daría `cat`→`Cat`, `era`→`Era`, `set`→`Set`, que sí
+aparecen capitalizadas al inicio de oración.
+
+**Por eso la propuesta no es una regla a priori sino una medición por
+candidato**: contar las ocurrencias exactas de cada forma capitalizada en el
+corpus y muestrearlas. Si son inequívocas, entra; si no, se queda fuera. Es
+reproducible —cualquiera con el corpus lo rehace— y no depende de una firma.
+
+Subiría la cobertura reproducible de **43/55 a 46/55** y quitaría tres filas de
+la capa manual.
 
 ### Bloque 3 — el entregable del laboratorio
 
-La red filtrada a lo que se puede defender:
+La red filtrada a lo que se puede defender, ya sobre la red corregida:
 
 | subconjunto | aristas |
 |---|---|
-| todas | 8 653 |
-| con signo resuelto | 4 133 |
-| con signo, 3+ artículos independientes, sin conflicto | **945** |
+| todas | 8 488 |
+| con signo resuelto | 4 025 |
+| con signo, 3+ artículos independientes, sin conflicto | **897** |
 
-Esas 945 son la «red para la toma de decisiones» que pidió el comité. **Lo único
+Esas 897 son la «red para la toma de decisiones» que pidió el comité. **Lo único
 que les falta es su precisión**, que sale del paso 2.
 
 ### Bloque 4 — lo de fondo, en paralelo
 
 La **guía de anotación** antes de anotar nada, y luego anotar PAO1 con
 asistencia de LLM y verificación humana.
-
-Sin guía se reproduce el defecto ya documentado: el 98.4 % de los `no_relation`
-de *E. coli* son «marcaste la mención equivocada», no «estos genes no se
-regulan». Anotar con ese criterio gasta el trabajo humano en enseñarle al modelo
-algo que no le sirve para inferir.
 
 ---
 
