@@ -407,7 +407,7 @@ PA0406	tonB3	PA0406	protein_coding	transporter TonB	false		refseq|kegg|uniprot	f
 PA0407	gshB	PA0407	protein_coding	glutathione synthetase	false		refseq|kegg|uniprot|uniprot_especie	false
 PA0408	pilG	PA0408	protein_coding	pilus biosynthesis/twitching motility protein PilG	true	kw_two_component	refseq|kegg|uniprot|uniprot_especie	false
 PA0409	pilH	PA0409	protein_coding	twitching motility protein PilH	true	kw_two_component	refseq|kegg|uniprot|uniprot_especie	false
-PA0410	pilI	PA0410	protein_coding	twitching motility protein PilI	false		refseq|kegg|uniprot|uniprot_especie	false
+PA0410	pilI	PA0410	protein_coding	twitching motility protein PilI	false		refseq|kegg|uniprot|uniprot_especie	true
 PA0411	pilJ	PA0411	protein_coding	twitching motility protein PilJ	false		refseq|kegg|uniprot|uniprot_especie	false
 PA0412	pilK	PA0412	protein_coding	methyltransferase PilK	false		refseq|kegg|uniprot	false
 PA0413	chpA	PA0413	protein_coding	chemotactic signal transduction system protein	true	kw_two_component	refseq|kegg|uniprot	false
@@ -1807,7 +1807,7 @@ PA1792	lpxH	PA1792	protein_coding	UDP-2,3-diacylglucosamine hydrolase	false		ref
 PA1793	ppiB	PA1793	protein_coding	peptidyl-prolyl cis-trans isomerase B	false		refseq|kegg|uniprot	false
 PA1794	glnS	PA1794	protein_coding	glutamine--tRNA ligase	false		refseq|kegg|uniprot|uniprot_especie	false
 PA1795	cysS	PA1795	protein_coding	cysteine--tRNA ligase	false		refseq|kegg|uniprot|uniprot_especie	false
-PA1796	folD	PA1796	protein_coding	bifunctional 5,10-methylene-tetrahydrofolate dehydrogenase/ 5,10-methylene-tetrahydrofolate cyclohydrolase	false		refseq|kegg|uniprot|uniprot_especie	false
+PA1796	folD	PA1796	protein_coding	bifunctional 5,10-methylene-tetrahydrofolate dehydrogenase/ 5,10-methylene-tetrahydrofolate cyclohydrolase	false		refseq|kegg|uniprot|uniprot_especie	true
 PA1796.1		PA1796.1	tRNA	tRNA-Arg	false		refseq|kegg	false
 PA1796.2		PA1796.2	tRNA	tRNA-His	false		refseq|kegg	false
 PA1796.3		PA1796.3	tRNA	tRNA-Leu	false		refseq|kegg	false
@@ -3265,7 +3265,7 @@ PA3240		PA3240	protein_coding	quercetin 2,3-dioxygenase	false		refseq|kegg|unipr
 PA3241		PA3241	protein_coding	hypothetical protein	false		refseq|kegg|uniprot	false
 PA3242	lpxL	PA3242	protein_coding	lipid A biosynthesis lauroyl acyltransferase	false		refseq|kegg|uniprot	false
 PA3243	minC	PA3243	protein_coding	septum formation inhibitor	false		refseq|kegg|uniprot|uniprot_especie	false
-PA3244	minD	PA3244	protein_coding	cell division inhibitor MinD	false		refseq|kegg|uniprot	false
+PA3244	minD	PA3244	protein_coding	cell division inhibitor MinD	false		refseq|kegg|uniprot	true
 PA3245	minE	PA3245	protein_coding	cell division topological specificity factor MinE	false		refseq|kegg|uniprot|uniprot_especie	false
 PA3246	rluA	PA3246	protein_coding	pseudouridine synthase	false		refseq|kegg|uniprot	false
 PA3247	apeB	PA3247	protein_coding	aminopeptidase	false		refseq|kegg|uniprot|uniprot_especie	false
@@ -5093,7 +5093,7 @@ PA5030		PA5030	protein_coding	major facilitator superfamily transporter	false		r
 PA5031		PA5031	protein_coding	short-chain dehydrogenase	false		refseq|kegg|uniprot	false
 PA5032		PA5032	protein_coding	transcriptional regulator	true	go_0003700|kw_transcription_regulation|producto_refseq	refseq|kegg|uniprot	false
 PA5033		PA5033	protein_coding	hypothetical protein	false		refseq|kegg|uniprot	false
-PA5034	hemE	PA5034	protein_coding	uroporphyrinogen decarboxylase	false		refseq|kegg|uniprot|uniprot_especie	false
+PA5034	hemE	PA5034	protein_coding	uroporphyrinogen decarboxylase	false		refseq|kegg|uniprot|uniprot_especie	true
 PA5035	gltD	PA5035	protein_coding	glutamate synthase subunit beta	false		refseq|kegg|uniprot	false
 PA5036	gltB	PA5036	protein_coding	glutamate synthase subunit alpha	false		refseq|kegg|uniprot	false
 PA5037		PA5037	protein_coding	hypothetical protein	false		refseq|kegg|uniprot	false
