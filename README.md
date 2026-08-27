@@ -307,6 +307,7 @@ salidas/               exportaciones CSV y JSONL (fuera del repositorio)
 | `structure.md` | árbol de archivos, capas y dónde vive la idempotencia |
 | `tech.md` | restricciones técnicas, manejo de errores, convenciones |
 | `docs/decisiones.md` | las decisiones de diseño y por qué se tomaron así |
+| `docs/traspaso-maquina-nueva.md` | **cómo levantar el proyecto en otra computadora**: qué copiar, qué instalar y cómo comprobarlo |
 | `docs/traspaso-etapa-2.md` | qué formato tienen los datos que esta etapa entrega |
 | `docs/ficha-modelo-bert.md` | el modelo de clasificación heredado, auditado |
 | `etapa2/README.md` | la etapa 2: partición sin contaminación y patrón de oro |

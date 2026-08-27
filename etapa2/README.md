@@ -282,8 +282,8 @@ completos y los 2 354 resúmenes** de la etapa 1.
 | Biopelícula y c-di-GMP | 17 | 16 |
 | | **190** | **181** |
 
-**Verificación: 180 de las 181 oraciones existen literalmente** en un artículo
-que la propia fila declara — 161 exactas y 19 por fragmento contiguo largo,
+**Verificación: 179 de las 181 oraciones existen literalmente** en un artículo
+que la propia fila declara — 177 exactas y 2 por fragmento contiguo largo,
 donde el desfase era tipográfico (guiones U+2010, sigmas griegas). **Cero
 inventadas.** La única con problema, `PrrF→bfrB`, era un error de atribución:
 la oración existe pero en el PMID 36036571, ya corregido.

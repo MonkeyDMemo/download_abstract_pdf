@@ -674,9 +674,16 @@ en hierro 41, sigma 37, dos componentes y secreción 36, quorum sensing 30, bomb
 RND 29 y biopelícula 17. Por signo: 117 activan, 67 reprimen, 6 regulan sin
 signo. Por certeza: 139 establecidas y 51 probables.
 
-**181 de las 190 se encontraron en el corpus.** De esas 181, se comprobó que 180
-tienen su oración literalmente en el texto: 161 exactas y 19 por fragmento
-contiguo. **Ninguna oración inventada.**
+**181 de las 190 se encontraron en el corpus.** De esas 181, **179 tienen su
+oración literalmente en el texto**: 177 exactas y 2 por fragmento contiguo.
+**Ninguna oración inventada.**
+
+Esa cuenta se puede rehacer con `etapa2/verificar_oro.py`, que compara cada
+oración contra los artículos que la propia fila declara. La comparación normaliza
+tres diferencias de codificación que si no dan falsos negativos —la sigma griega,
+el guión U+2010 y las barras de error—; sin esa normalización salen 172 en vez de
+179. Las dos que no cierran son ediciones menores: a `AmpR→mexR` le quitaron el
+error de la media y `PrrF→katA` está recortada.
 
 De ahí sale la consecuencia principal:
 
@@ -1054,7 +1061,8 @@ sha256.
 | Todo sobre el modelo heredado, incluidas sus piezas rotas | [`ficha-modelo-bert.md`](ficha-modelo-bert.md) |
 | El detalle de la contaminación, la partición, Colab y el patrón de oro | [`../etapa2/README.md`](../etapa2/README.md) |
 | Por qué cada decisión de diseño se tomó así y no de la forma obvia | [`decisiones.md`](decisiones.md) |
-| Las diapositivas del seminario (láminas 7 a 9 desfasadas) | `../salidas/Seminario_GRN_IIMAS_final.pptx` |
+| **Cómo levantar todo esto en otra computadora** | [`traspaso-maquina-nueva.md`](traspaso-maquina-nueva.md) |
+| Las diapositivas del seminario | `../salidas/Seminario_GRN_IIMAS_expo.pptx` |
 
 Lo que **no** está en el repositorio y viene del servidor del asesor:
 `ecoli_curated.tsv`, los tres `entity_marked_*.jsonl` y

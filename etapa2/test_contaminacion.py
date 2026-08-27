@@ -45,7 +45,12 @@ PROTEGIDOS = ("oro_pseudomonas", "auditoria_signo")
 # prohibicion por el mismo motivo por el que existen: comprobar que la
 # evaluacion se hace bien exige abrir lo que la evaluacion abre.
 LISTA_BLANCA = {
-    "oro_pseudomonas": {"evaluar_oro.py"},
+    # `verificar_oro.py` comprueba que las oraciones del oro existan donde la
+    # fila dice. Entra a la lista blanca porque NO es parte del pipeline: nadie
+    # lo importa, no produce nada que el pipeline consuma, y su unica salida es
+    # un conteo por pantalla. Verificar el oro exige abrirlo, igual que
+    # evaluarlo. Si algun dia otro modulo lo importa, esto hay que revisarlo.
+    "oro_pseudomonas": {"evaluar_oro.py", "verificar_oro.py"},
     # `auditar_signo.py` PRODUCE auditoria_signo.tsv, no lo consume. Se agrega
     # a la lista blanca con esa condicion y no en general: la prueba
     # `test_auditar_signo_solo_escribe` de mas abajo comprueba que el nombre
