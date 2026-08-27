@@ -33,17 +33,35 @@ etapa2/                la etapa siguiente: el clasificador de relaciones. No
                        comparte codigo con el ETL ni depende de el; lo unico
                        que los liga es el corpus. Ver etapa2/README.md
   particionar.py       reparte el corpus de entrenamiento sin fuga entre
-                       train, dev y test, y se niega a escribir si queda
+                       train, dev y test, y marca la particion como RECHAZADA
+                       si queda alguna
   barrido.py           corre las 24 configuraciones del servidor, reanudable
-  test_particionar.py  17 pruebas; la central afirma que el guardian de la
-                       fuga PUEDE fallar, para que no vuelva a quedar en
-                       codigo muerto
   barrido_colab.ipynb  el cuaderno que lo corre en Colab
+  barrido_resumen.csv  las 24 corridas ya cerradas; la 22 da el cara a cara
+  el programa local de inferencia, en orden de ejecucion:
+  construir_diccionario.py  arma el diccionario de PAO1 desde RefSeq, KEGG y
+                       UniProt; se niega si detecta procedencia `oro`
+  lexico.py            reconoce menciones de genes; respeta mayusculas
+  texto.py             parte los documentos en oraciones
+  extraer_pares.py     saca los pares candidatos (TF, blanco) del corpus
+  clasificar.py        LA UNICA PIEZA QUE NECESITA torch. Corre el modelo
+  red.py               agrega las predicciones en aristas unicas
+  evaluar_oro.py       contra las 190 relaciones canonicas
+  evaluar_signo.py     contra las 93 oraciones de signo conocido
+  genes_pao1.tsv       5 642 genes, 572 marcados como factor de transcripcion
+  operones_pao1.tsv    3 030 operones derivados del genoma
+  oro_pseudomonas.tsv  190 relaciones canonicas con su oracion del corpus
+  auditoria_signo.tsv  198 oraciones de los represores de bombas RND
+  test_*.py            494 pruebas; ninguna necesita torch ni red
 docs/
   decisiones.md        las decisiones de diseno y por que se tomaron asi
   ficha-modelo-bert.md el modelo BERT del servidor del asesor: que es, en que
                        se entreno, y que se le encontro al medirlo
   traspaso-etapa-2.md  que produjo la etapa 1 y en que formato exacto
+  informe-seminario-1.md  el panorama: que se hizo, que se midio y que falta
+  migracion-maquina.md que copiar y que correr para levantar esto en otra
+                       maquina. Lo que destraba es clasificar.py, la unica
+                       pieza que necesita torch
 pa_regulacion.txt      la consulta booleana, en texto plano
 datos/
   grn.db               la base

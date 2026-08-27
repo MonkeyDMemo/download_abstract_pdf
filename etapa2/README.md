@@ -9,6 +9,12 @@ El contexto completo del modelo está en
 panorama y no el procedimiento, empieza por
 [`../docs/informe-seminario-1.md`](../docs/informe-seminario-1.md).
 
+> **Para correr esto en otra máquina** —que es lo que destraba el paso que
+> falta— está [`../docs/migracion-maquina.md`](../docs/migracion-maquina.md):
+> qué copiar, qué instalar y en qué orden ejecutar. `clasificar.py` es la única
+> pieza que necesita `torch`, y por eso el programa de inferencia todavía no ha
+> corrido con el modelo real.
+
 ## El problema
 
 Los tres `entity_marked_*.jsonl` del servidor se partieron **a nivel de
