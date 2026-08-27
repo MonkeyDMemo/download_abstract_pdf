@@ -72,6 +72,25 @@ def sellar(rutas):
     return sello
 
 
+def sellar_como(ruta_declarada, ruta_real):
+    """Mide un archivo pero lo anota bajo otro nombre.
+
+    Existe por la escritura atomica. `red.py` escribe a `red.tsv.tmp` y solo
+    al final `publicar()` lo renombra a `red.tsv`, junto con el informe donde
+    va este sello. En el momento de sellar, el nombre final todavia no existe:
+    medirlo directamente daba huella None, y la evaluacion siguiente rechazaba
+    la cadena por una discrepancia que no era real.
+
+    Se mide el temporal, que ya tiene el contenido definitivo, y se anota la
+    ruta final, que es la que la evaluacion va a leer.
+    """
+    return {
+        "ruta": ruta_declarada,
+        "huella": huella(ruta_real),
+        "bytes": os.path.getsize(ruta_real) if os.path.exists(ruta_real) else None,
+    }
+
+
 def leer_sello(ruta_informe, llave="huellas"):
     """El sello que dejo un paso anterior. {} si no hay informe o no lo trae.
 

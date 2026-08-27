@@ -813,15 +813,21 @@ def main(argv=None, log=print):
     escribir_tsv(args.salida, COLUMNAS_RED, [fila_red(a) for a in aristas])
     escribir_tsv(args.evidencias, COLUMNAS_EVIDENCIAS, filas_evidencias(aristas))
 
-    # Las huellas se sellan DESPUES de escribir el TSV y ANTES del informe, que
-    # es el unico momento en que existen los tres archivos y ninguno ha
-    # cambiado. Van las dos entradas y la propia salida: asi la evaluacion
-    # puede comprobar la cadena entera y no solo la mitad.
+    # Las huellas se sellan DESPUES de escribir el TSV y ANTES del informe: es
+    # el unico momento en que el contenido definitivo ya existe y nada lo ha
+    # tocado. Van las dos entradas y la propia salida, asi la evaluacion puede
+    # comprobar la cadena entera y no solo la mitad.
     informe["huellas"] = procedencia.sellar({
         "pares": args.pares,
         "predicciones": args.predicciones,
-        "red": args.salida,
     })
+    # La red se mide en su temporal. escribir_tsv() dejo el contenido en
+    # .tmp y publicar() lo renombra al final, junto con este mismo informe, asi
+    # que aqui el nombre final todavia no existe. Medirlo directamente daba
+    # huella None y la evaluacion rechazaba la cadena por una discrepancia que
+    # no era real: el guardian atrapo este error en su primera corrida.
+    informe["huellas"]["red"] = procedencia.sellar_como(
+        args.salida, args.salida + ".tmp")
 
     escribir_json(args.informe, informe)
     publicar([args.salida, args.evidencias, args.informe])

@@ -1672,10 +1672,12 @@ def construir_parser():
                    help="segunda referencia, opcional")
     p.add_argument("--salida", default="datos_etapa2/evaluacion_oro.tsv")
     p.add_argument("--resumen", default="datos_etapa2/evaluacion_oro.json")
-    p.add_argument("--red-informe", default="datos_etapa2/red_informe.json",
+    p.add_argument("--red-informe",
                    help="El informe que dejó red.py. De ahí salen las huellas "
                         "de los archivos con los que se construyó la red; si "
-                        "no coinciden con los que se van a leer, no se evalúa.")
+                        "no coinciden con los que se van a leer, no se evalúa. "
+                        "Por omisión, el `red_informe.json` que esté junto a "
+                        "--red: el informe es hermano de la red que describe.")
     p.add_argument("--incluir-no-atestiguadas", action="store_true",
                    help="mete en el universo las 9 filas que el corpus no "
                         "contiene (por omisión quedan fuera)")
@@ -1739,7 +1741,12 @@ def main(argv=None):
     # bien formado. Medido antes de poner esto: la misma red publicaba 80.6% o
     # 100.0% de exhaustividad según qué archivo se le pusiera al lado, con
     # código 0. Trece puntos sin un aviso.
-    if not procedencia.exigir(args.red_informe, {
+    # El informe vive junto a la red que describe. Fijar aquí una ruta del
+    # proyecto haría que evaluar una red de otra carpeta se comparara contra el
+    # informe de la de aquí, que es una discrepancia inventada.
+    ruta_informe = args.red_informe or os.path.join(
+        os.path.dirname(os.path.abspath(args.red)), "red_informe.json")
+    if not procedencia.exigir(ruta_informe, {
             "pares": args.pares,
             "predicciones": args.predicciones,
             "red": args.red}):

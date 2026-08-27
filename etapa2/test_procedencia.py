@@ -288,3 +288,47 @@ class PruebasCoberturaDelOro(unittest.TestCase):
         c = self.O.medir_cobertura_del_oro(dicc, vocab)
         self.assertLess(c["cobertura_del_oro"], self.O.UMBRAL_AVISO_COBERTURA_ORO)
         self.assertFalse(self.O.revisar_cobertura_del_oro(c, ruta, lambda *a: None))
+
+
+class PruebasSellarComo(unittest.TestCase):
+    """El sello de un archivo que todavia no esta en su sitio.
+
+    Salio de un fallo real: red.py escribe a red.tsv.tmp y publicar() renombra
+    al final, asi que al sellar el nombre final no existia. La huella salia
+    None y la evaluacion rechazaba la cadena por una discrepancia inventada.
+    El guardian atrapo el error en su primera corrida de verdad.
+    """
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp(prefix="proc_")
+        self.addCleanup(shutil.rmtree, self.d, True)
+
+    def test_mide_el_temporal_y_anota_el_nombre_final(self):
+        final = os.path.join(self.d, "red.tsv")
+        tmp = escribir(final + ".tmp", "tf\tblanco\nLasR\trhlR\n")
+        s = P.sellar_como(final, tmp)
+        self.assertEqual(s["ruta"], final)
+        self.assertEqual(s["huella"], P.huella(tmp))
+        self.assertIsNotNone(s["huella"])
+
+    def test_la_huella_sobrevive_al_renombrado(self):
+        """Lo que hace que esto sirva: medir el .tmp y leer el final da igual,
+        porque os.replace mueve los mismos bytes."""
+        final = os.path.join(self.d, "red.tsv")
+        tmp = escribir(final + ".tmp", "contenido definitivo\n")
+        sello = {"red": P.sellar_como(final, tmp)}
+        os.replace(tmp, final)                      # lo que hace publicar()
+        problemas, sin = P.verificar(sello, {"red": final})
+        self.assertEqual(problemas, [])
+        self.assertEqual(sin, [])
+
+    def test_sellar_directo_el_nombre_final_habria_fallado(self):
+        """La prueba de que el arreglo hacia falta: sin sellar_como, la huella
+        del archivo que aun no existe es None y la cadena se rompe sola."""
+        final = os.path.join(self.d, "red.tsv")
+        tmp = escribir(final + ".tmp", "contenido definitivo\n")
+        sello_malo = P.sellar({"red": final})       # el final NO existe todavia
+        self.assertIsNone(sello_malo["red"]["huella"])
+        os.replace(tmp, final)
+        problemas, _ = P.verificar(sello_malo, {"red": final})
+        self.assertEqual(len(problemas), 1)

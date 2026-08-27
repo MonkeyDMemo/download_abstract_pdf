@@ -704,8 +704,11 @@ def construir_parser():
                         "y la oracion nombra un gen suelto")
     p.add_argument("--salida", default="datos_etapa2/evaluacion_signo.tsv")
     p.add_argument("--resumen", default="datos_etapa2/evaluacion_signo.json")
-    p.add_argument("--red-informe", default="datos_etapa2/red_informe.json",
-                   help="solo para avisar si los umbrales no son los de la red")
+    p.add_argument("--red-informe",
+                   help="el informe de red.py, para comprobar que las "
+                        "predicciones son las mismas y avisar si los umbrales "
+                        "no son los de la red. Por omisión, el que esté junto "
+                        "a --predicciones")
     p.add_argument("--umbral-activates", type=float, default=0.65)
     p.add_argument("--umbral-represses", type=float, default=0.70)
     p.add_argument("--umbral-regulates", type=float, default=0.60)
@@ -722,7 +725,9 @@ def main(argv=None):
     # Aquí el informe de la red ya se leía, pero solo para AVISAR si los
     # umbrales no coincidían. Un aviso no detiene nada, y las predicciones de
     # otra corrida cambian la exactitud de signo tanto como los umbrales.
-    if not procedencia.exigir(args.red_informe, {
+    ruta_informe = args.red_informe or os.path.join(
+        os.path.dirname(os.path.abspath(args.predicciones)), "red_informe.json")
+    if not procedencia.exigir(ruta_informe, {
             "pares": args.pares,
             "predicciones": args.predicciones}):
         return 1
@@ -793,7 +798,7 @@ def main(argv=None):
                "el blanco escrito como operón (mexAB-oprM, mexCD-oprJ, mexXY, "
                "mexJK) y sin ella solo se unen por el nombre exacto."))
 
-    aviso_umbrales = comparar_umbrales(args.red_informe, umbrales)
+    aviso_umbrales = comparar_umbrales(ruta_informe, umbrales)
     if aviso_umbrales:
         avisos.append(aviso_umbrales)
 
