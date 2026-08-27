@@ -10,9 +10,14 @@ Escrito el 21 de agosto de 2026, con el proyecto en el estado que describe
 
 ## Por qué la mudanza
 
-**El programa local de inferencia está escrito y probado, y nunca ha corrido
-con el modelo real.** No existen `pares.jsonl`, `red.tsv` ni
-`evaluacion_oro.json` en disco.
+> **Actualización del 27 de agosto: ya corrió, y en esta laptop.** 65 223 pares
+> en 69.7 minutos de CPU. La mudanza dejó de ser necesaria para esto; el
+> documento se conserva porque sigue sirviendo para llevar el proyecto a otra
+> máquina cuando convenga.
+
+**El programa local de inferencia estuvo escrito y probado mucho tiempo sin
+haber corrido nunca con el modelo real.** No existían `pares.jsonl`, `red.tsv`
+ni `evaluacion_oro.json` en disco.
 
 El motivo es concreto y no es de diseño: `etapa2/clasificar.py` es **la única
 pieza del proyecto que necesita `torch` y `transformers`**, y en la laptop no

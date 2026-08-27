@@ -73,6 +73,35 @@ python etapa2/particionar.py --por pmid --salida datos_etapa2/por_pmid
 python -m unittest discover etapa2
 ```
 
+## La corrida del 27 de agosto
+
+El programa corrió de punta a punta con el modelo real por primera vez. En esta
+laptop, sin GPU: **65 223 pares en 69.7 minutos de CPU**.
+
+```
+2 361 documentos -> 65 223 pares -> 43 751 sobre umbral -> 8 653 aristas
+                    376 factores, 1 744 blancos, 1 379 artículos
+```
+
+| medida | valor | su línea base |
+|---|---|---|
+| Exhaustividad (176 relaciones) | 95.1 % | azar **99.4 %** — la cifra no mide el modelo |
+| Acierto de signo agregado | 86.5 % | clase mayoritaria 76.9 % (**+9.6 pp**) |
+| **Acierto de signo por oración** | **36.6 %** | sin información 17.1 % |
+| ...solo las de fenotipo del mutante | **8.3 % (2 de 24)** | 14 de los errores son inversión de signo |
+
+**Los dos números de signo no se contradicen.** El modelo se inclina hacia
+`activates`; el patrón de oro es 80 activaciones de 104, así que ahí el sesgo se
+parece a acertar. La auditoría es toda represiones y no se lo permite. Fue
+diseñada para eso.
+
+Y el reparto de clases cambió de forma al cambiar de especie: `regulates` pasó
+del 13.3 % en entrenamiento al **43.1 %** en inferencia —el modelo se refugia en
+la clase sin signo— y `no_relation` del 31.6 % al 14.7 %.
+
+El detalle está en
+[`../docs/informe-seminario-1.md`](../docs/informe-seminario-1.md).
+
 ## La decisión central: no se pueden pedir las dos cosas
 
 Lo natural sería exigir que ni un artículo ni una relación se compartan entre
