@@ -60,6 +60,8 @@ docs/
   ficha-modelo-bert.md el modelo BERT del servidor del asesor: que es, en que
                        se entreno, y que se le encontro al medirlo
   traspaso-etapa-2.md  que produjo la etapa 1 y en que formato exacto
+  bitacora-y-plan.md   que se hizo antes, que se hizo hoy y que sigue.
+                       Empieza por aqui
   informe-seminario-1.md  el panorama: que se hizo, que se midio y que falta
   migracion-maquina.md que copiar y que correr para levantar esto en otra
                        maquina. Lo que destraba es clasificar.py, la unica
