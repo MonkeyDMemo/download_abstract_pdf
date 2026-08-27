@@ -319,6 +319,80 @@ como se dibujó: no es «el LLM como último recurso caro», sino «lo barato re
 el volumen y el LLM entra donde lo barato no es de fiar». Ahora hay con qué
 decidir dónde poner esa frontera en vez de suponerla.
 
+---
+
+## La primera pasada de juicio, y lo que insinúa
+
+Las 250 aristas de la muestra se juzgaron primero de forma automática, para que
+la persona empiece por donde hay dudas en vez de por la fila 001. **No es la
+medición** —esa la da la columna que llene la persona— pero lo que insinúa es lo
+bastante fuerte para dejarlo escrito.
+
+| estrato | juzgadas | «correctas» según la primera pasada |
+|---|---|---|
+| **A — el entregable** | 120 | **31 %** |
+| B | 65 | 12 % |
+| C | 65 | 18 % |
+
+**160 de los 250 veredictos son `no`**: la evidencia mostrada no afirma ninguna
+relación regulatoria.
+
+### El modo de fallo es uno solo, y es mecánico
+
+Las notas lo repiten con distintas palabras: *«co-blancos de un tercero»*,
+*«vecindad genómica no es regulación»*, *«co-expresión, no regulación
+afirmada»*, *«se listan como reguladores del mismo operón»*.
+
+Es exactamente lo que cabe esperar de cómo funciona la extracción —dos genes en
+la misma oración— en una literatura donde los genes de una misma vía se nombran
+juntos constantemente. `RpoS → algU`, con 30 evidencias, se sostiene en frases
+como *«The role of two sigma factors, AlgT and RpoS, in mediating...»*: los dos
+nombrados como factores sigma, sin relación entre ellos.
+
+### Se descartó la explicación cómoda
+
+La sospecha inmediata era que la culpa fuera de la herramienta: las tres
+oraciones que se muestran son las primeras del archivo, no las que mejor
+respaldan la relación, así que un juez podría estar viendo evidencia floja de
+aristas que la tienen fuerte.
+
+Se midió: **de las 60 aristas del estrato A juzgadas `no`, solo en 3 (5 %) la
+evidencia de mayor probabilidad no se había mostrado.** La selección no explica
+el resultado.
+
+### Lo que implicaría si la persona lo confirma
+
+**El filtro del entregable no filtra lo que se creía.** El estrato A exige tres
+o más artículos independientes y sin conflicto, y aun así sale en 31 %. Que
+varios artículos mencionen dos genes juntos no es raro: es lo normal cuando
+están en la misma vía. **Contar artículos no distingue una relación afirmada de
+una coocurrencia frecuente.**
+
+Eso apunta a filtrar por **calidad de la evidencia** —el tipo de redacción, la
+probabilidad del modelo— y no por número de artículos.
+
+Y sería el hallazgo más importante del proyecto, por encima del acierto de
+signo: diría que la red tal como está es en su mayoría ruido, y que las tres
+cifras que ya teníamos —exhaustividad, signo agregado, signo por oración— son
+todas condicionales a que la arista exista, cosa que en dos de cada tres casos
+no se cumple.
+
+### Cómo queda la revisión
+
+| | filas |
+|---|---|
+| dudosas (confianza baja o media) | 82 |
+| control al azar de las que la pasada dio por seguras | 30 |
+| **total a revisar** | **112 de 250** (~2.8 h) |
+
+El control de 30 no es opcional: sin él, «el juez automático estaba seguro»
+queda como supuesto sin comprobar. Con él se mide si esa confianza está
+calibrada y el error se propaga al intervalo final.
+
+`datos_etapa2/muestra_precision.tsv` trae `veredicto_auto`, `confianza_auto` y
+`nota_auto` en columnas propias. **La columna `veredicto` está vacía en las 250
+y es la única que cuenta** para lo que se publique.
+
 ## El plan
 
 > **Al día del 27 de agosto por la noche.** De los cuatro pasos del bloque 1,
