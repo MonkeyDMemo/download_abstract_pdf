@@ -947,6 +947,99 @@ Esto se reporta en vez de guardarse porque el trabajo de este semestre empezó
 justamente por una métrica que se había inflado sin que nadie lo notara. Dejar
 escritas otras cinco maneras de que eso ocurra es parte del resultado.
 
+---
+
+## La referencia externa: CollecTF, y por qué la exhaustividad depende del tipo de experimento
+
+Es la respuesta a lo que el comité pidió con «comparar contra lo que se tiene».
+
+`etapa2/collectf_pao1.tsv` son **333 pares con sitio de unión medido
+experimentalmente**, curados por CollecTF a partir de artículos de unión
+proteína-DNA. **No los construimos nosotros y no pasaron por nuestro corpus**,
+que es justo lo que les da valor: el patrón de oro propio se armó quedándose con
+las relaciones que el corpus atestigua, así que por diseño contiene lo que el
+pipeline puede encontrar.
+
+### El primer número, y por qué no es el que hay que citar
+
+| referencia | exhaustividad |
+|---|---|
+| Patrón de oro propio (190 relaciones) | 95.1 % |
+| **CollecTF (333 pares, externo)** | **37.8 %** (126 de 333) |
+
+La caída era esperable por el sesgo de construcción. Lo que **no** era esperable
+es lo siguiente.
+
+### El pipeline no está repitiendo lo que se le enseñó
+
+CollecTF se evalúa partido en dos: los factores que nuestro patrón de oro
+menciona, y los que no.
+
+| grupo | pares | exhaustividad |
+|---|---|---|
+| TFs que el patrón de oro cubre | 271 | 37.6 % |
+| **TFs que el patrón de oro nunca menciona** | 62 | **37.1 %** |
+
+**Son indistinguibles.** Si el pipeline solo encontrara aquello a lo que se le
+apuntó, el segundo número se desplomaría. No lo hace: recupera relaciones de 12
+factores que nadie le enseñó, al mismo ritmo que las de los 18 conocidos.
+
+Ese corte estaba puesto en `evaluar_collectf()` desde antes, precisamente para
+detectar circularidad. Detectó lo contrario, que es la buena noticia.
+
+### Dónde se pierden las que no recupera
+
+| qué pasó | pares | |
+|---|---|---|
+| Recuperada en la red | 126 | 38 % |
+| Fue candidato pero no llegó a arista | 19 | 6 % |
+| **El artículo está, pero el par nunca fue candidato** | **182** | **55 %** |
+| El artículo no está en el corpus | 6 | 2 % |
+
+**El 55 % de las pérdidas no son del modelo: son de la extracción de
+candidatos.** El par nunca llegó a proponerse, así que el clasificador jamás lo
+vio. Y afinando un nivel más sobre esos 182:
+
+| | pares | |
+|---|---|---|
+| **El gen blanco no se nombra en el artículo** | **162** | 89 % |
+| Los dos se nombran, pero nunca en la misma oración | 19 | 10 % |
+| Ninguno aparece | 1 | 1 % |
+
+### La explicación, y es limpia
+
+El tipo de experimento lo dice todo:
+
+| grupo | técnicas dominantes |
+|---|---|
+| Recuperadas | EMSA 21 %, reportero β-gal 14 %, mutagénesis dirigida 11 %, huella de DNAsa 8 % |
+| Nunca candidatas | **ChIP-Seq 26 % + RNA-Seq 26 %** |
+
+Las relaciones que el pipeline recupera vienen de **experimentos dirigidos a un
+gen**: un artículo, uno o pocos blancos, discutidos en prosa. Las que pierde
+vienen de **experimentos de genoma completo**, cuyos cientos de blancos se
+publican en tablas suplementarias que nuestro corpus no contiene.
+
+**Eso no es un fallo del modelo: es una propiedad de la minería de texto.**
+Ningún clasificador recupera un gen que el artículo no nombra.
+
+### El número que sí hay que citar
+
+Descontando lo que no está en el texto —162 blancos no nombrados y 6 artículos
+ausentes—, quedan **164 pares recuperables de prosa**, de los que el pipeline
+recupera **126: el 76.8 %**.
+
+| medida | valor | qué dice |
+|---|---|---|
+| Exhaustividad bruta contra CollecTF | 37.8 % | mezcla dos cosas distintas |
+| **Sobre lo que el texto sí afirma** | **76.8 %** | lo que el sistema puede hacer |
+| Sobre TFs nunca vistos en el oro | 37.1 % | no hay circularidad |
+
+Las dos cifras hay que darlas juntas. La primera sola subestima al sistema; la
+segunda sola esconde que **la mitad de la regulación conocida de PAO1 no está en
+prosa y no se puede minar de texto**, que es un límite del enfoque y conviene
+decirlo antes de que lo pregunten.
+
 ## Lo que todavía no está medido
 
 | falta | qué lo produce | qué cambiaría si sale distinto |
