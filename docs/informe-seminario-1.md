@@ -1040,6 +1040,79 @@ segunda sola esconde que **la mitad de la regulación conocida de PAO1 no está 
 prosa y no se puede minar de texto**, que es un límite del enfoque y conviene
 decirlo antes de que lo pregunten.
 
+---
+
+## La corrección del diccionario no movió ninguna métrica, y eso es el hallazgo
+
+Al quitar `folD`, `hemE`, `pilI` y `minD` —los cuatro genes que emparejaban con
+palabras inglesas— la cadena se volvió a correr entera.
+
+| | antes | después |
+|---|---|---|
+| pares candidatos | 65 223 | 63 791 |
+| aristas | 8 653 | **8 488** |
+| entregable (estrato A) | 945 | **897** |
+| exhaustividad contra el oro | 95.1 % | 95.1 % |
+| acierto de signo agregado | 86.5 % | 86.5 % |
+| acierto de signo por oración | 36.6 % | 36.6 % |
+
+**189 aristas desaparecieron y el 100 % de ellas llevaba una de las cuatro
+palabras.** Cero daño colateral: ninguna arista legítima se perdió.
+
+**Y ninguna métrica se movió ni una décima.** No es una decepción: es la
+demostración de por qué hacía falta medir precisión por muestreo.
+
+El patrón de oro cubre 190 relaciones de 6 subsistemas. La auditoría de signo,
+93 oraciones de 6 represores. **Ninguna de las dos contiene una sola arista de
+`folD`, `hemE` o `pilI`**, así que 189 falsos positivos podían entrar y salir de
+la red sin que ninguna cifra lo notara.
+
+Esa es la respuesta concreta a la pregunta del comité sobre cuántos errores
+comete el sistema: **las referencias miden lo que cubren, y no ven los errores
+que caen fuera.** Solo el muestreo de la salida los ve, porque no parte de una
+lista de lo que debería haber sino de lo que hay.
+
+## Línea base: un LLM sin ajuste fino contra el BioBERT ajustado
+
+Sobre las mismas 93 oraciones de la auditoría, con las 105 no evaluables
+mezcladas como distractores y sin acceso a las respuestas:
+
+| | BioBERT ajustado | LLM sin ajuste |
+|---|---|---|
+| las 93 evaluables | 36.6 % | **91.4 %** |
+| redacción directa | 46.4 % | 91.3 % |
+| **fenotipo del mutante** | **8.3 %** (2/24) | **91.7 %** (22/24) |
+
+Contra la línea base sin información, p = 1.5 × 10⁻⁵⁵.
+
+**El control que impide leerlo mal:** en las 105 co-menciones sin relación
+afirmada el LLM reparte `regulates` 45, `no_relation` 42, `represses` 18. No
+está contestando una sola clase.
+
+**Y una objeción propia, medida y descartada.** El primer prompt le decía
+explícitamente que el fenotipo del mutante invierte el signo —o sea, le
+enseñaba el truco que BioBERT falla—. Se repitió con un prompt neutro, sin esa
+regla ni la de la voz pasiva: **da exactamente lo mismo, y los dos difieren en 0
+de las 93.** La ventaja no venía de la pista.
+
+### Lo que esto cambia, y lo que no
+
+No dice que el ajuste fino sea inútil: dice que **para resolver el signo en una
+especie distinta de aquella en que se entrenó, un modelo general sin ajustar lo
+hace mejor**. Encaja con todo lo demás medido: el `no_relation` aprendido es un
+artefacto de marcado, y el reparto de clases se deforma al cambiar de especie.
+
+Tres límites que van con el número. Son 93 oraciones de **un solo subsistema** y
+todas de la misma clase: es un conjunto difícil a propósito, no representativo.
+El costo a escala es otro orden de magnitud —63 791 pares que BioBERT hace en 72
+minutos de CPU local—. Y el LLM evaluado es de la misma familia que el sistema
+que preparó el conjunto, aunque los agentes clasificaron a ciegas.
+
+**Esto convierte la cascada de decisión de idea en respuesta**, pero al revés de
+como se dibujó: no es «el LLM como último recurso caro», sino «lo barato resuelve
+el volumen y el LLM entra donde lo barato no es de fiar». Ahora hay con qué
+decidir dónde poner esa frontera en vez de suponerla.
+
 ## Lo que todavía no está medido
 
 | falta | qué lo produce | qué cambiaría si sale distinto |
