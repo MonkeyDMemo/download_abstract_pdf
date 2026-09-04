@@ -146,6 +146,44 @@ class PruebasOffsets(unittest.TestCase):
         self.assertEqual(texto, cuerpo)
 
 
+class PruebasBloques(unittest.TestCase):
+    """El segundo mapa: del cuerpo limpio al markdown original."""
+
+    def test_bloques_es_un_envoltorio_de_bloques_con_offset(self):
+        md = "# Titulo\n\n## RESULTS\nMexT activates mexEF-oprN.\n"
+
+        self.assertEqual(
+            T.bloques(md),
+            [(e, c) for e, c, _ in T.bloques_con_offset(md)])
+
+    def test_el_span_recorta_la_oracion_en_el_documento_entero(self):
+        """El punto de todo esto: subrayar sobre el documento, no sobre un
+        bloque suelto que ya nadie tiene."""
+        md = ("# Titulo\n\n## RESULTS\nMexT activates mexEF-oprN. "
+              "The operon follows.\n")
+
+        for _etiqueta, cuerpo, tramos in T.bloques_con_offset(md):
+            for ini, fin, oracion in T.oraciones_con_offset(cuerpo):
+                a, b, contiguo = T.traducir_span(tramos, ini, fin)
+                self.assertTrue(contiguo)
+                self.assertEqual(T.normalizar_espacios(md[a:b]), oracion)
+
+    def test_la_oracion_que_cruza_un_encabezado_se_marca(self):
+        """`_limpiar_cuerpo()` borra los encabezados internos, asi que una
+        oracion partida por uno no tiene span contiguo: el del documento
+        incluiria el titulo. Son pocas, y silenciosas si no se marcan."""
+        md = ("## RESULTS\nThe operon was induced\n"
+              "### DETAIL OF THE ASSAY\nby MexT.\n")
+
+        (_etiqueta, cuerpo, tramos), = T.bloques_con_offset(md)
+        (ini, fin, oracion), = T.oraciones_con_offset(cuerpo)
+        a, b, contiguo = T.traducir_span(tramos, ini, fin)
+
+        self.assertEqual(oracion, "The operon was induced by MexT.")
+        self.assertFalse(contiguo)
+        self.assertIn("DETAIL OF THE ASSAY", md[a:b])
+
+
 @unittest.skipUnless(HAY_CORPUS, "sin datos/fulltext/xml (no esta en git)")
 class PruebasCorpus(unittest.TestCase):
     """Sobre el corpus entero, no sobre una muestra."""
@@ -168,6 +206,31 @@ class PruebasCorpus(unittest.TestCase):
 
         self.assertEqual(malos, [], "hay spans que no reconstruyen")
         self.assertGreater(total, 0)
+
+    def test_los_spans_del_documento_recortan_su_oracion(self):
+        """La version fuerte: no sobre el cuerpo del bloque, sino sobre el
+        markdown completo, que es donde se pinta el subrayado."""
+        malos, contiguas, cruzan = [], 0, 0
+        for ruta in self.textos:
+            with io.open(ruta, encoding="utf-8") as f:
+                md = f.read()
+            for _etiqueta, cuerpo, tramos in T.bloques_con_offset(md):
+                for ini, fin, oracion in T.oraciones_con_offset(cuerpo):
+                    a, b, contiguo = T.traducir_span(tramos, ini, fin)
+                    self.assertIsNotNone(a)
+                    if not contiguo:
+                        cruzan += 1
+                        continue
+                    contiguas += 1
+                    if T.normalizar_espacios(md[a:b]) != oracion:
+                        if len(malos) < 5:
+                            malos.append((os.path.basename(ruta), oracion[:60]))
+
+        self.assertEqual(malos, [], "spans que no recortan su oracion")
+        # No se afirma un numero exacto de no contiguas --depende del corpus--
+        # pero si que sigan siendo una minoria clara. Si esto se dispara, algo
+        # cambio en como se limpian los encabezados.
+        self.assertLess(cruzan, contiguas * 0.02)
 
     def test_el_numero_de_oraciones_no_se_movio(self):
         """Solo si el corpus es el mismo que congelo v0-agosto. `n_oracion`

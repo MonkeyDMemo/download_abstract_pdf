@@ -21,6 +21,7 @@ Cuatro piezas:
 Solo biblioteca estandar.
 """
 
+import bisect
 import os
 import re
 
@@ -166,17 +167,37 @@ def bloques(texto_markdown):
 
     El texto anterior al primer `##` sale con etiqueta vacia.
     """
+    return [(etiqueta, cuerpo)
+            for etiqueta, cuerpo, _tramos in bloques_con_offset(texto_markdown)]
+
+
+def bloques_con_offset(texto_markdown):
+    """[(etiqueta, cuerpo, tramos)], con los tramos de `traducir_span()`.
+
+    Igual que `bloques()` -- de hecho esa funcion es un envoltorio de esta --
+    pero conservando como volver de una posicion del cuerpo limpio a una del
+    markdown original. Es lo que permite subrayar la evidencia sobre el
+    documento entero y no sobre un bloque suelto.
+
+    El offset de arranque de cada cuerpo sale gratis: es `m.end()` del h2 que
+    lo abre. Lo que hay que arrastrar es lo otro, que `_limpiar_cuerpo()`
+    borra los encabezados internos y no conserva los largos.
+    """
     marcas = [(m.start(), m.end(), normalizar_etiqueta(m.group(1)))
               for m in _H2.finditer(texto_markdown)]
     salida = []
     if not marcas:
-        salida.append(("", _limpiar_cuerpo(texto_markdown)))
-        return salida
+        cuerpo, tramos = _limpiar_cuerpo_con_mapa(texto_markdown, 0)
+        return [("", cuerpo, tramos)]
     if marcas[0][0] > 0:
-        salida.append(("", _limpiar_cuerpo(texto_markdown[:marcas[0][0]])))
+        cuerpo, tramos = _limpiar_cuerpo_con_mapa(
+            texto_markdown[:marcas[0][0]], 0)
+        salida.append(("", cuerpo, tramos))
     for i, (ini, fin, etiqueta) in enumerate(marcas):
         corte = marcas[i + 1][0] if i + 1 < len(marcas) else len(texto_markdown)
-        salida.append((etiqueta, _limpiar_cuerpo(texto_markdown[fin:corte])))
+        cuerpo, tramos = _limpiar_cuerpo_con_mapa(
+            texto_markdown[fin:corte], fin)
+        salida.append((etiqueta, cuerpo, tramos))
     return salida
 
 
@@ -188,6 +209,68 @@ def _limpiar_cuerpo(cuerpo):
     oracion que nadie escribio.
     """
     return _ENCABEZADO.sub("\n", cuerpo)
+
+
+def _limpiar_cuerpo_con_mapa(cuerpo, base):
+    """Lo mismo que `_limpiar_cuerpo()`, mas como deshacerlo.
+
+    Devuelve `(cuerpo_limpio, tramos)`. Cada tramo es
+    `(ini_limpio, fin_limpio, ini_documento)` de un trozo que sobrevivio
+    intacto. Entre dos tramos hay un encabezado que se fue: ahi el mapa no es
+    invertible, y por eso es una lista de tramos y no una funcion.
+
+    `base` es donde empieza `cuerpo` dentro del markdown completo.
+
+    El mapa es lineal a trozos en vez de por caracter porque un encabezado
+    borrado desplaza TODO lo que va detras la misma cantidad. Guardar una
+    entrada por caracter costaria ~260 000 entradas por corpus para decir lo
+    mismo que dicen unas pocas decenas.
+    """
+    partes, tramos = [], []
+    largo, cursor = 0, 0
+    for m in _ENCABEZADO.finditer(cuerpo):
+        if m.start() > cursor:
+            trozo = cuerpo[cursor:m.start()]
+            partes.append(trozo)
+            tramos.append((largo, largo + len(trozo), base + cursor))
+            largo += len(trozo)
+        partes.append("\n")          # el mismo salto que mete la sustitucion
+        largo += 1
+        cursor = m.end()
+    if cursor < len(cuerpo):
+        trozo = cuerpo[cursor:]
+        partes.append(trozo)
+        tramos.append((largo, largo + len(trozo), base + cursor))
+    return "".join(partes), tramos
+
+
+def _tramo_de(tramos, posicion):
+    """Indice del tramo que contiene `posicion`, o None si cayo en un hueco."""
+    i = bisect.bisect_right([t[0] for t in tramos], posicion) - 1
+    if i < 0:
+        return None
+    ini, fin, _ = tramos[i]
+    return i if ini <= posicion < fin else None
+
+
+def traducir_span(tramos, ini, fin):
+    """Span del cuerpo limpio -> `(ini_doc, fin_doc, contiguo)`.
+
+    `contiguo` es False cuando el span cruza un encabezado borrado: ahi ningun
+    par de posiciones del documento recorta exactamente la oracion, porque en
+    medio esta el titulo que se quito. Son pocas --del orden del 0.2 % de las
+    oraciones-- pero **silenciosas si no se marcan**: el subrayado saldria con
+    un titulo de subseccion metido dentro y nadie lo notaria salvo mirandolo.
+
+    Devuelve `(None, None, False)` si alguna punta cae dentro del hueco.
+    """
+    i = _tramo_de(tramos, ini)
+    j = _tramo_de(tramos, fin - 1)
+    if i is None or j is None:
+        return None, None, False
+    a = tramos[i][2] + (ini - tramos[i][0])
+    b = tramos[j][2] + (fin - 1 - tramos[j][0]) + 1
+    return a, b, i == j
 
 
 def secciones(texto_markdown, clases=None):
