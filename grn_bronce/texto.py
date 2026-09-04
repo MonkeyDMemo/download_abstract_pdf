@@ -206,6 +206,74 @@ def secciones(texto_markdown, clases=None):
             for etiqueta, cuerpo in bloques(texto_markdown)]
 
 
+# El corte de oracion, como constante y no en linea, para que
+# `oraciones_con_offset()` pueda recorrerlo con finditer en vez de partir con
+# split. Son la misma expresion: los trozos de un split son los huecos entre
+# las coincidencias de un finditer, y `\s+` no puede casar vacio, asi que no
+# hay caso degenerado que los separe.
+_SEP = re.compile(r"(?<=[.!?])\s+")
+
+
+def oraciones_con_offset(cuerpo):
+    """[(ini, fin, oracion)] con los offsets sobre `cuerpo` sin transformar.
+
+    Misma logica de corte que `oraciones()` -- de hecho esa funcion es un
+    envoltorio de esta, para que no existan dos -- mas la posicion de cada
+    oracion en el texto que se recibio. Con eso se puede subrayar la evidencia
+    sobre el documento original en vez de mostrarla suelta.
+
+    Que esto se pueda hacer sin tocar los cortes depende de un detalle del
+    orden: se normaliza DESPUES de partir, asi que las posiciones que decide
+    `_SEP` son posiciones reales de `cuerpo`. Lo unico que hay que deshacer son
+    los tres sitios que mueven caracteres sin moverse el corte: el separador de
+    largo variable que `split` tiraba, el `+ " " +` que re-pega los trozos de
+    una abreviatura, y el recorte de extremos.
+
+    OJO CON EL ORIGEN. Los `.txt` del corpus se escribieron con `write_text`,
+    que en Windows tradujo los saltos a CRLF. Estos offsets son en caracteres
+    del texto YA leido --o sea con los saltos traducidos de vuelta a `\\n`--, no
+    en bytes del archivo en disco. Quien pinte el subrayado sobre los bytes
+    crudos lo vera corrido una posicion por cada linea anterior.
+    """
+    # Los trozos son los huecos entre separadores; se guardan como spans en
+    # vez de como texto, que es toda la diferencia con re.split.
+    trozos, cursor = [], 0
+    for m in _SEP.finditer(cuerpo):
+        trozos.append((cursor, m.start()))
+        cursor = m.end()
+    trozos.append((cursor, len(cuerpo)))
+
+    crudas, ini_acc, fin_acc, acumulado = [], None, None, ""
+    for a, b in trozos:
+        t = cuerpo[a:b]
+        if acumulado:
+            acumulado = (acumulado + " " + t).strip()
+            fin_acc = b
+        else:
+            acumulado = t
+            ini_acc, fin_acc = a, b
+        if ABREV.search(acumulado) or _INICIAL.search(acumulado):
+            continue
+        crudas.append((ini_acc, fin_acc, normalizar_espacios(acumulado)))
+        acumulado = ""
+    if acumulado:
+        crudas.append((ini_acc, fin_acc, normalizar_espacios(acumulado)))
+
+    # El `.strip()` de arriba y el de `normalizar_espacios` recortaron blancos
+    # que el span todavia incluye. Sin esto el subrayado empieza un espacio
+    # antes de la primera letra.
+    salida = []
+    for a, b, o in crudas:
+        if not o:
+            continue
+        while a < b and cuerpo[a].isspace():
+            a += 1
+        while b > a and cuerpo[b - 1].isspace():
+            b -= 1
+        salida.append((a, b, o))
+    return salida
+
+
 def oraciones(cuerpo):
     """Lista de oraciones crudas, con espacios normalizados.
 
@@ -214,18 +282,13 @@ def oraciones(cuerpo):
     la auditoria de signo salieron de ella: cambiarla haria que la etapa 6 no
     pudiera unir sus filas con las predicciones, y la exactitud de signo se
     calcularia sobre un punado de filas sin que nada fallara.
+
+    Es un envoltorio de `oraciones_con_offset()` a proposito: mientras haya una
+    sola implementacion del corte, anadir offsets no puede mover una oracion.
+    Dos implementaciones que "hacen lo mismo" divergen, y esta es justo la que
+    no puede.
     """
-    trozos = re.split(r"(?<=[.!?])\s+", cuerpo)
-    salida, acumulado = [], ""
-    for t in trozos:
-        acumulado = (acumulado + " " + t).strip() if acumulado else t
-        if ABREV.search(acumulado) or _INICIAL.search(acumulado):
-            continue
-        salida.append(normalizar_espacios(acumulado))
-        acumulado = ""
-    if acumulado:
-        salida.append(normalizar_espacios(acumulado))
-    return [o for o in salida if o]
+    return [o for _, _, o in oraciones_con_offset(cuerpo)]
 
 
 def pretokenizar(oracion, protegidos):
