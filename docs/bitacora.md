@@ -162,6 +162,56 @@ en cualquier archivo con huella por contenido.
    decidir si la ventana vale lo que cuesta, porque ya está medido que ampliar la
    coocurrencia sin aserción es el mecanismo que produce el 16.8 % de precisión.
 
+### El signo no se puede medir todavía, y por qué
+
+La muestra de 50 para juicio humano se generó y se partió en dos vistas sin
+anclaje: `juicio_relacion.csv` (sin ninguna columna de signo) y
+`juicio_signo.csv` (sin disparador ni `signo_sugerido`). `etapa2/unir_juicios.py`
+las une con la muestra y reporta la precisión de relación.
+
+**El signo no se reporta.** De las 50 filas, solo **6** traen un signo único
+resuelto. Y no es cosa de la muestra: sobre los **1 188 pares dirigidos** de la
+corrida completa el reparto es el mismo problema a escala.
+
+| `signo_sugerido` del par | pares | |
+|---|---|---|
+| solo `?` | 513 | 43.2 % |
+| mezcla con `?` (`+;?`, `-;?`) | 366 | 30.8 % |
+| **contradictorio** (`+` y `-` a la vez) | 195 | 16.4 % |
+| único resuelto | **114** | **9.6 %** |
+
+**Nueve de cada diez pares no tienen un signo utilizable.** La causa es la regla
+de agregación: el bronce junta **todos** los disparadores de la oración en una
+sola columna, y basta un genérico —`regulatory`, `binding`, `regulator`— para
+que el par arrastre un `?` que se lo come todo. Peor: 195 pares salen
+contradictorios porque una oración menciona una activación y una represión que
+no van dirigidas al mismo par.
+
+Publicar acierto de signo sobre un denominador de 6 daría un intervalo de Wilson
+que no distingue nada. Queda registrado en la salida del script como
+«denominador insuficiente», no como un cero ni como un hueco.
+
+### Para mañana, anotado sin implementar
+
+**Disparador dominante en `identificar.py`.** Una relación adopta el signo del
+disparador **más específico de su oración**, no la unión de todos. «Más
+específico» está por definir y es la decisión de fondo: probablemente el más
+cercano al par regulador-blanco, con desempate por especificidad léxica
+(`represses` gana a `regulatory`; un sintagma de dos palabras gana a una suelta).
+
+Qué desbloquea, con las cifras ya medidas:
+
+- **La cifra de acierto de signo**, hoy imposible: pasaría de 114 pares
+  utilizables a algo cercano a los 879 que tienen al menos un disparador con
+  signo (`solo ?` fuera).
+- **Limpia `signo_sugerido` de los 1 188 pares dirigidos**, en particular los
+  195 contradictorios, que hoy son ruido puro en la columna.
+
+Lo que **no** desbloquea, y conviene no confundirlo: la inversión de signo de la
+redacción desde el fenotipo del mutante sigue siendo del paso 2. Elegir bien el
+disparador no arregla que «expression was increased in the mexT mutant» significa
+represión.
+
 ### Pendientes anotados, no corregidos
 
 Los seis primeros tocan archivos congelados; los demás son deuda del paso 1.
