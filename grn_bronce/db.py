@@ -316,6 +316,34 @@ def menciones_de_unidad(con, unidad_id):
     return con.execute(SQL_MENCIONES_DE_UNIDAD, (unidad_id,)).fetchall()
 
 
+SQL_PARES = """
+SELECT c.regulador_candidato tf, c.blanco_candidato blanco,
+       COUNT(*)                 n_oraciones,
+       COUNT(DISTINCT u.pmid)   n_documentos,
+       MAX(c.score)             score_max,
+       GROUP_CONCAT(DISTINCT c.signo_sugerido) signos_sugeridos
+  FROM oraciones_candidatas c
+  JOIN texto_unidades u ON u.id = c.unidad_id
+ WHERE c.corrida_id = ? AND c.regulador_candidato <> ''
+   AND c.blanco_candidato <> ''
+ GROUP BY c.regulador_candidato, c.blanco_candidato
+ ORDER BY n_documentos DESC, n_oraciones DESC
+"""
+
+
+def pares_candidatos(con, corrida_id):
+    """Pares dirigidos TF -> blanco con su respaldo, agregados por par.
+
+    Es lo que el paso 2 recibiria si se le pasara el bronce tal cual. No es
+    una red: ninguna de estas filas afirma que la relacion exista. El numero
+    de documentos distintos es la columna que importa, porque una relacion
+    sostenida por un solo articulo y otra por seis no valen lo mismo, y el
+    conteo de oraciones no lo distingue: seis oraciones del mismo articulo
+    siguen siendo un articulo.
+    """
+    return con.execute(SQL_PARES, (corrida_id,)).fetchall()
+
+
 def conteos_de(con, corrida_id):
     """Los numeros de la hoja resumen, contados en la base y no en memoria."""
     def uno(sql, params=()):

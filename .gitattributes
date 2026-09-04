@@ -1,0 +1,15 @@
+# Finales de linea, fijados en el repositorio y no en cada maquina.
+#
+# Sin esto, git en Windows convierte al hacer checkout y dos copias identicas
+# de un archivo pueden diferir en un byte por linea. Ya paso: la prueba que
+# vigila que el diccionario no diverja entre etapa2/ y grn_bronce/recursos/
+# fallo avisando de una divergencia que no existia --5643 bytes sobre 5643
+# lineas, contenido identico-- y hubo que enseñarle a normalizar antes de
+# comparar. Fijarlo aqui ataca la causa en vez del sintoma.
+#
+# Los TSV y CSV se nombran aparte porque son datos: el diccionario de 5642
+# genes, los vocabularios y las exportaciones. Ahi un cambio de saltos no es
+# cosmetico, es un archivo distinto para cualquier huella por contenido.
+* text=auto eol=lf
+*.tsv text eol=lf
+*.csv text eol=lf

@@ -100,6 +100,110 @@ def leer_bronce(con, corrida_id):
     return por_unidad, vistas
 
 
+def contexto_de_perdidas(con, corrida_id):
+    """Lo que hace falta para decir POR QUE se perdio una relacion.
+
+    Tres mapas, y cada uno descarta una explicacion distinta:
+
+    - `todas`: las claves de gen de TODA unidad, sea candidata o no. Si los dos
+      extremos estan juntos en una unidad que no llego a candidata, el fallo no
+      es del reconocimiento sino de un filtro, y el filtro se puede revisar.
+    - `seccion`: en que seccion cayo cada unidad, para saber si el filtro fue
+      la exclusion de METHODS.
+    - `del_diccionario`: las superficies que el diccionario conoce. Un extremo
+      que no aparece nunca puede ser que el corpus no lo mencione o que el
+      diccionario no sepa nombrarlo, y son fallos de distinto dueno.
+    """
+    todas = collections.defaultdict(set)
+    seccion = {}
+    for f in con.execute(
+            """SELECT m.unidad_id, m.texto, m.id_normalizado, u.seccion,
+                      LENGTH(u.texto) largo
+                 FROM menciones m JOIN texto_unidades u ON u.id = m.unidad_id
+                WHERE m.corrida_id = ? AND m.tipo IN ('gen','proteina')""",
+            (corrida_id,)):
+        todas[f["unidad_id"]].add(E.clave(f["texto"]))
+        if f["id_normalizado"]:
+            todas[f["unidad_id"]].add(E.clave(f["id_normalizado"]))
+        seccion[f["unidad_id"]] = (f["seccion"], f["largo"])
+    return todas, seccion
+
+
+def superficies_del_diccionario(ruta):
+    """Todo lo que el diccionario sabe nombrar, en minusculas."""
+    conocidas = set()
+    with io.open(ruta, encoding="utf-8") as f:
+        cols = f.readline().rstrip("\n").split("\t")
+        for linea in f:
+            if not linea.strip():
+                continue
+            d = dict(zip(cols, linea.rstrip("\n").split("\t")))
+            for campo in ("locus_tag", "simbolo"):
+                if d.get(campo):
+                    conocidas.add(E.clave(d[campo]))
+            for a in (d.get("alias") or "").split("|"):
+                if a:
+                    conocidas.add(E.clave(a))
+    return conocidas
+
+
+def imprimible(texto):
+    """El texto, sin lo que la consola de Windows no sabe pintar.
+
+    El corpus biomedico lleva sigmas griegas, simbolos matematicos y guiones
+    tipograficos. La consola de Windows es cp1252: lo que cae fuera de Latin-1
+    la hace reventar con UnicodeEncodeError, y una traza en medio de un informe
+    es peor que un caracter sustituido. Los ARCHIVOS se siguen escribiendo en
+    utf-8 explicito; esto es solo para la pantalla.
+    """
+    codificacion = getattr(sys.stdout, "encoding", None) or "utf-8"
+    return texto.encode(codificacion, "replace").decode(codificacion)
+
+
+def pmids_de(fila):
+    return [p.strip() for p in (fila.get("pmids") or "").replace(",", ";")
+            .split(";") if p.strip()]
+
+
+def clasificar_perdida(fila, ktf, kbl, vistas, conocidas, todas, seccion,
+                       con_xml, con_pdf, autorregulacion):
+    """(causa, unidad de ejemplo o None). Las causas se prueban en orden.
+
+    El orden importa: cada una descarta a la siguiente, y la ultima es la
+    unica que no explica nada.
+    """
+    if autorregulacion:
+        return "autorregulacion", None
+
+    # ¿Estan los dos juntos en alguna unidad que no llego a candidata?
+    for uid, claves in todas.items():
+        if (ktf & claves) and (kbl & claves):
+            sec, largo = seccion.get(uid, ("", 0))
+            if sec == "excluir":
+                return "oracion en seccion excluida", uid
+            if largo < 40 or largo > 700:
+                return "oracion fuera del rango de largo", uid
+            return "otra", uid
+
+    faltan = [(k, n) for k, n in ((ktf, "tf"), (kbl, "blanco"))
+              if not (k & vistas)]
+    if faltan:
+        # Un extremo que no se vio: ¿el diccionario sabe nombrarlo siquiera?
+        ciegos = [n for k, n in faltan if not (k & conocidas)]
+        if ciegos:
+            return ("alias o simbolo ausente del diccionario (%s)"
+                    % "+".join(ciegos)), None
+        pm = pmids_de(fila)
+        if pm and not any(p in con_xml for p in pm) and any(p in con_pdf
+                                                            for p in pm):
+            return "evidencia solo en PDF no parseado", None
+        if pm and not any(p in con_xml for p in pm):
+            return "el corpus no tiene texto completo de esos articulos", None
+        return "extremo nunca mencionado pese a estar en el diccionario", None
+
+    return "extremos en oraciones distintas", None
+
+
 def evaluar(oro, disputadas, operones, por_unidad, vistas):
     """Una fila de resultado por fila del oro."""
     salida = []
@@ -220,6 +324,87 @@ def informar(res, corrida_id, fuente_disputadas, log):
             "fuente_disputadas": fuente_disputadas}
 
 
+def informar_detalle(con, corrida_id, oro, res, operones, conocidas, vistas,
+                     log):
+    """La tabla de causas de las perdidas del denominador honesto.
+
+    No vuelca el oro: de cada causa sale UN ejemplo, y el ejemplo es una
+    oracion del corpus con su PMID, no una fila de la referencia.
+    """
+    todas, seccion = contexto_de_perdidas(con, corrida_id)
+    con_xml = set(f["pmid"] for f in con.execute(
+        "SELECT pmid FROM descargas WHERE tipo='xml' AND estatus='ok'"))
+    con_pdf = set(f["pmid"] for f in con.execute(
+        "SELECT pmid FROM descargas WHERE tipo='pdf' AND estatus='ok'"))
+
+    por_causa = collections.OrderedDict()
+    for fila, r in zip(oro, res):
+        if r["cubierta"] or not es_del_denominador_honesto(r):
+            continue
+        ktf, kbl = claves_de(fila, operones)
+        causa, uid = clasificar_perdida(
+            fila, ktf, kbl, vistas, conocidas, todas, seccion,
+            con_xml, con_pdf, r["motivo"] == "autorregulacion")
+        por_causa.setdefault(causa, []).append((fila, uid))
+
+    total = sum(len(v) for v in por_causa.values())
+    log("=" * 72)
+    log("LAS %d PERDIDAS DEL DENOMINADOR HONESTO, POR CAUSA" % total)
+    log("=" * 72)
+    log("")
+    log("  %-52s %s" % ("causa", "n"))
+    log("  %s" % ("-" * 58))
+    for causa, casos in sorted(por_causa.items(), key=lambda kv: -len(kv[1])):
+        log("  %-52s %3d" % (causa, len(casos)))
+    log("")
+
+    ceros = [c for c in ("oracion en seccion excluida",
+                         "oracion fuera del rango de largo",
+                         "evidencia solo en PDF no parseado", "otra")
+             if c not in por_causa]
+    if ceros:
+        log("  Causas que salieron en CERO, y eso informa:")
+        for c in ceros:
+            log("    %s" % c)
+        log("")
+
+    for causa, casos in sorted(por_causa.items(), key=lambda kv: -len(kv[1])):
+        fila, uid = casos[0]
+        log("  --- %s (%d) ---" % (causa, len(casos)))
+        if uid is not None:
+            f = con.execute(
+                "SELECT pmid, seccion, texto FROM texto_unidades WHERE id=?",
+                (uid,)).fetchone()
+            log("    pmid %s, seccion %s" % (f["pmid"], f["seccion"]))
+            t = f["texto"]
+            log("    %s" % imprimible(
+                t[:200] + (" [...]" if len(t) > 200 else "")))
+        else:
+            ktf, kbl = claves_de(fila, operones)
+            log("    ninguna oracion junta los dos extremos.")
+            visto = [(k, e) for k, e in ((ktf, "regulador"), (kbl, "blanco"))
+                     if k & vistas]
+            if visto:
+                clave_vista = sorted(visto[0][0] & vistas)[0]
+                f = con.execute(
+                    """SELECT u.pmid, u.seccion, u.texto
+                         FROM menciones m JOIN texto_unidades u ON u.id=m.unidad_id
+                        WHERE m.corrida_id=? AND lower(m.texto)=? LIMIT 1""",
+                    (corrida_id, clave_vista)).fetchone()
+                if f is not None:
+                    log("    el %s SI aparece; ejemplo pmid %s, seccion %s:"
+                        % (visto[0][1], f["pmid"], f["seccion"]))
+                    t = f["texto"]
+                    log("      %s" % imprimible(
+                        t[:190] + (" [...]" if len(t) > 190 else "")))
+            else:
+                pm = pmids_de(fila)
+                log("    ningun extremo aparece en el corpus. Articulo citado")
+                log("    por la referencia: pmid %s" % (pm[0] if pm else "-"))
+        log("")
+    return dict((c, len(v)) for c, v in por_causa.items())
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--db", default=None,
@@ -232,6 +417,11 @@ def main(argv=None):
     ap.add_argument("--corrida", type=int, default=None,
                     help="Por omision, la ultima corrida 'ok' del bronce.")
     ap.add_argument("--salida", default=None, help="JSON con el resultado.")
+    ap.add_argument("--detalle", action="store_true",
+                    help="Clasificar las perdidas por causa, con un ejemplo.")
+    ap.add_argument("--genes",
+                    default=os.path.join(_RAIZ, "grn_bronce", "recursos",
+                                         "genes_pao1.tsv"))
     args = ap.parse_args(argv)
 
     ruta_db = args.db or os.path.join(rutas.raiz_datos(), "grn.db")
@@ -266,10 +456,14 @@ def main(argv=None):
             sys.exit("La corrida %d no tiene oraciones candidatas con genes."
                      % corrida_id)
         res = evaluar(oro, disputadas, operones, por_unidad, vistas)
+        log = lambda m: print(m, flush=True)                 # noqa: E731
+        resumen = informar(res, corrida_id, fuente, log)
+        if args.detalle:
+            conocidas = superficies_del_diccionario(args.genes)
+            resumen["perdidas_por_causa"] = informar_detalle(
+                con, corrida_id, oro, res, operones, conocidas, vistas, log)
     finally:
         con.close()
-
-    resumen = informar(res, corrida_id, fuente, lambda m: print(m, flush=True))
     if args.salida:
         tmp = args.salida + ".tmp"
         with io.open(tmp, "w", encoding="utf-8") as f:

@@ -93,6 +93,75 @@ líneas — exactamente un byte por línea. El contenido era idéntico. Ahora no
 los saltos antes de calcular la huella, y se comprobó que sigue atrapando
 divergencia real añadiendo una fila falsa a una de las copias.
 
+### Las 27 pérdidas, clasificadas por causa
+
+`evaluar_cobertura_bronce.py --detalle`. De cada causa sale un ejemplo del
+corpus, con su PMID; no se vuelca la referencia.
+
+| causa | n |
+|---|---|
+| alias o símbolo del **blanco** ausente del diccionario | 11 |
+| **autorregulación** | 8 |
+| extremos en oraciones distintas | 7 |
+| alias o símbolo del **TF** ausente del diccionario | 1 |
+
+**Cuatro causas salieron en cero, y eso informa tanto como las que no:** oración
+en sección excluida, oración fuera del rango de largo, evidencia solo en PDF no
+parseado, y «otra». Es decir: **ni el filtro de METHODS ni el de longitud pierden
+una sola relación canónica**, y ninguna pérdida se explica por el PDF sin
+parsear. Los dos filtros que más sospecha levantaban resultaron inocentes.
+
+Lo que queda es un reparto limpio: **12 de 27 son del diccionario** (no sabe
+nombrar un extremo), 8 son la regla de autorregulación que no existe, y solo 7
+son fallo genuino de la coocurrencia — los dos extremos están en el corpus pero
+nunca en la misma oración. Ese último grupo es el único que arreglaría una
+ventana de contexto.
+
+### `pares_candidatos`: lo que el paso 2 recibiría
+
+`grn-bronce pares`, nuevo subcomando, sobre la corrida 1:
+
+| | |
+|---|---|
+| pares dirigidos distintos (TF → blanco, orientados) | **1 188** |
+| con **2 o más documentos** | **307** (25.8 %) |
+| oraciones que los sostienen | 5 833 |
+
+Sin orientar —todo par de genes distintos que coocurre en una candidata— son
+**17 191 pares**, de los cuales 3 948 (23.0 %) tienen dos o más documentos. La
+diferencia entre 1 188 y 17 191 es lo que cuesta exigir disparador y un solo TF.
+
+Ninguna de esas filas afirma que la relación exista. El conteo de documentos
+distintos es la columna que importa: seis oraciones del mismo artículo siguen
+siendo un artículo.
+
+### `.gitattributes`, contra la causa y no el síntoma
+
+`* text=auto eol=lf`, más `*.tsv` y `*.csv` explícitos. Ayer la prueba de
+divergencia del diccionario falló por la conversión CRLF de git sobre contenido
+idéntico; se arregló la prueba, pero la causa seguía ahí y habría vuelto a morder
+en cualquier archivo con huella por contenido.
+
+### Para la próxima semana, sin implementar
+
+1. **Regla de autorregulación en `identificar.py`, con bandera propia.**
+   `MexT → mexT` no puede salir hoy porque se exigen dos genes distintos por
+   oración. Emitirlo marcado, como hacía `extraer_pares.py` con
+   `autorregulacion: true`, **recupera 8 relaciones del denominador honesto** —
+   de 149 a 157 sobre 176, o sea de 84.7 % a 89.2 %. Es la mejora más barata que
+   hay sobre la mesa y su tamaño está medido.
+2. **Columna `disputa` en `oro_pseudomonas.tsv`, alimentada por
+   `verificar_oro.py`.** Hoy la documentación habla de 5 relaciones en disputa y
+   solo 1 se puede detectar, por una marca en la columna `alias`; las otras 4 no
+   están nombradas en ninguna parte, así que el denominador honesto sale 176 en
+   vez de los ~169 que dice el README. Con la columna, el número dejaría de
+   depender de una convención escrita a mano.
+3. **Lista `requiere_contexto`, si hoy no alcanza.** Serían las 7 pérdidas cuyos
+   dos extremos están en el corpus pero nunca en la misma oración: el único grupo
+   que una ventana de ±1 podría recuperar. Conviene mirarlas una por una antes de
+   decidir si la ventana vale lo que cuesta, porque ya está medido que ampliar la
+   coocurrencia sin aserción es el mecanismo que produce el 16.8 % de precisión.
+
 ### Pendientes anotados, no corregidos
 
 Los seis primeros tocan archivos congelados; los demás son deuda del paso 1.

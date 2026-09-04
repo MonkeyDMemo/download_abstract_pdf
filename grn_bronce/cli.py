@@ -295,6 +295,43 @@ def _mostrar(resumen, candidatas, cuenta, conteos, hubo_xlsx, faltan):
     log("")
 
 
+def cmd_pares(args):
+    """Los pares dirigidos de una corrida, agregados y a CSV."""
+    ruta_datos = rutas.raiz_datos(args.datos)
+    con = db.conectar(os.path.join(ruta_datos, "grn.db"))
+    try:
+        if args.corrida:
+            corrida_id = args.corrida
+        else:
+            fila = con.execute(
+                """SELECT id FROM corridas WHERE paso='1' AND estatus='ok'
+                    ORDER BY id DESC LIMIT 1""").fetchone()
+            if fila is None:
+                sys.exit("No hay ninguna corrida del bronce terminada.")
+            corrida_id = fila["id"]
+        filas = [dict(f) for f in db.pares_candidatos(con, corrida_id)]
+    finally:
+        con.close()
+
+    dos = [f for f in filas if f["n_documentos"] >= 2]
+    dia = datetime.date.today().strftime("%Y%m%d")
+    ruta = os.path.join("salidas", "pares_candidatos_%s.csv" % dia)
+    exportar.escribir_csv(
+        ruta, ["tf", "blanco", "n_documentos", "n_oraciones", "score_max",
+               "signos_sugeridos"], filas, log)
+    log("")
+    log("  corrida                    : %d" % corrida_id)
+    log("  pares distintos            : %d" % len(filas))
+    log("  con 2 o mas documentos     : %d  (%.1f %%)"
+        % (len(dos), 100.0 * len(dos) / len(filas) if filas else 0.0))
+    log("  oraciones que los sostienen: %d"
+        % sum(f["n_oraciones"] for f in filas))
+    log("")
+    log("  Ninguna de estas filas afirma que la relacion exista: son pares")
+    log("  con respaldo, y decidir es del paso 2.")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(
         prog="grn-bronce",
@@ -309,8 +346,13 @@ def main():
                     help="Rehacer aunque ya exista una corrida igual.")
     ex.set_defaults(func=cmd_exportar)
 
+    pa = sub.add_parser("pares", help="Pares dirigidos de una corrida, a CSV.")
+    pa.add_argument("--datos", help="Raiz de datos; gana sobre GRN_DATOS.")
+    pa.add_argument("--corrida", type=int, default=None)
+    pa.set_defaults(func=cmd_pares)
+
     args = ap.parse_args()
-    if args.corpus == "":
+    if getattr(args, "corpus", None) == "":
         args.corpus = None
     return args.func(args)
 
