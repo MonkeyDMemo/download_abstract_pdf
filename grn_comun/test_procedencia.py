@@ -17,9 +17,14 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _RAIZ)
+# Las pruebas de extremo a extremo invocan evaluar_oro y
+# muestrear_precision, que siguen viviendo en etapa2/ y se importan
+# como modulos top-level. Sin esta segunda ruta no se cargan.
+sys.path.insert(0, os.path.join(_RAIZ, 'etapa2'))
 
-import procedencia as P
+from grn_comun import procedencia as P
 
 
 def escribir(ruta, texto):

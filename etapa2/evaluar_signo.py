@@ -103,6 +103,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     # El módulo compartido manda: si `texto.py` cambia la normalización, esto la
@@ -125,7 +126,7 @@ from evaluar_oro import (cargar_operones, miembros_operon,
                          binomial_cola_superior,
                          revisar_probabilidades_de_fila)
 
-import procedencia                      # noqa: E402
+from grn_comun import procedencia      # noqa: E402
 
 
 COLUMNAS_AUDITORIA = ["pmid", "fuente", "tf", "blanco", "signo_correcto",

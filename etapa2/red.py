@@ -127,7 +127,8 @@ from texto import normalizar_espacios
 # por ruta. La ruta es siempre la misma y el contenido cambia; sin la huella,
 # la evaluacion no puede saber que le pusieron al lado un archivo de otra
 # corrida. Ver el docstring de procedencia.py.
-import procedencia
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from grn_comun import procedencia
 
 
 def como_bool(v):

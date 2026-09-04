@@ -58,8 +58,9 @@ import random
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import procedencia                      # noqa: E402
+from grn_comun import procedencia      # noqa: E402
 
 
 # Criterio de cada estrato. El orden importa: se evalua de arriba abajo y la

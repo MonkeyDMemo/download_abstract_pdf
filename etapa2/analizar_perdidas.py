@@ -49,8 +49,9 @@ import sqlite3
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import procedencia                      # noqa: E402
+from grn_comun import procedencia      # noqa: E402
 import evaluar_oro as O                 # noqa: E402
 
 
