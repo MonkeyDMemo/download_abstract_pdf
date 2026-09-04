@@ -121,7 +121,7 @@ CLAVES_PAR = ("id_par", "oracion_cruda", "n_oracion")
 # la union de la etapa 6 con las oraciones auditadas tienen que normalizar el
 # espaciado igual. Si cada etapa escribe su propio normalizador, esa union
 # empieza a fallar en silencio y la exactitud de signo pasa a medir otra cosa.
-from texto import normalizar_espacios
+from grn_bronce.texto import normalizar_espacios
 
 # Para dejar escrito con QUE archivos se construyo esta red, por contenido y no
 # por ruta. La ruta es siempre la misma y el contenido cambia; sin la huella,

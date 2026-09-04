@@ -111,7 +111,7 @@ try:
     # para poder correr esta etapa antes de que aterrice `texto.py`; si los dos
     # divergieran, la unión con la auditoría dejaría de encontrar oraciones y el
     # guardián de 80/93 lo delataría en la misma corrida.
-    from texto import normalizar_espacios
+    from grn_bronce.texto import normalizar_espacios
 except ImportError:                                        # pragma: no cover
     def normalizar_espacios(s):
         return " ".join(s.split())

@@ -111,9 +111,10 @@ import sqlite3
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import lexico as _lexico
-import texto as _texto
+from grn_bronce import texto as _texto
 
 # Clases de seccion que entran. `excluir` y `otra` quedan fuera; `otra` se
 # puede revertir con --incluir-otras.
@@ -866,7 +867,7 @@ def main():
     ap.add_argument("--fulltext", default="datos/fulltext/xml")
     ap.add_argument("--genes", default="etapa2/genes_pao1.tsv")
     ap.add_argument("--operones", default="etapa2/operones_pao1.tsv")
-    ap.add_argument("--secciones", default="etapa2/secciones.tsv")
+    ap.add_argument("--secciones", default="grn_bronce/secciones.tsv")
     ap.add_argument("--salida", default="datos_etapa2/pares.jsonl")
     ap.add_argument("--informe", default="datos_etapa2/pares_informe.json")
     ap.add_argument("--max-menciones", type=int, default=8,
