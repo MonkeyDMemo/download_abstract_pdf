@@ -29,3 +29,10 @@ datos_etapa2/
 # El checkpoint de la configuracion 22, 415 MB. Se reproduce desde Colab con
 # etapa2/barrido.py; lo que sí va al repositorio es barrido_resumen.csv.
 modelo_limpio_run22/
+
+# Claude Code: la configuracion compartida (.claude/settings.json) sí va al
+# repositorio, porque es la que fija las reglas de permisos del equipo. Lo que
+# no va es la personal de cada quien ni el estado de ejecucion.
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/plans/
