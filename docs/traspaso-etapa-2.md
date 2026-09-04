@@ -114,7 +114,7 @@ explícito. Aparece en 916 de los 918 archivos derivados de PMC.
 ### La base directamente
 
 Si conviene consultar en vez de exportar, el esquema está documentado en
-`structure.md`. Cinco tablas; las relevantes son `documentos` (una fila por
+`CLAUDE.md`. Cinco tablas; las relevantes son `documentos` (una fila por
 PMID) y `descargas` (qué texto se obtuvo de cada uno y por qué no, cuando no).
 
 ---

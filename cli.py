@@ -8,6 +8,7 @@ Comandos:
     run           correr una consulta y guardar los abstracts que falten
     fulltext      bajar XML de PMC o PDF abierto (despues del run)
     estado        resumen de la base
+    corpus        congelar el conjunto de documentos de una medida
     log           historial de ejecuciones
     export        volcar a CSV o JSONL
 
@@ -126,6 +127,78 @@ def cmd_estado(con, args):
             log(f"  {d['tipo']:<5} {d['estatus']:<16} {d['n']:>6}")
     else:
         log("\nSin descargas de full text todavía.")
+
+
+# ----------------------------------------------------------------- corpus
+
+def cmd_corpus_crear(con, args):
+    pmids = None
+    consulta_id = None
+    if args.consulta:
+        fila = db.obtener_consulta(con, args.consulta)
+        if fila is None:
+            sys.exit("No existe la consulta '%s'." % args.consulta)
+        consulta_id = fila["id"]
+    elif args.todos:
+        pmids = db.todos_los_pmids(con)
+    else:
+        sys.exit("Hace falta --consulta <nombre> o --todos.")
+    try:
+        cid, estado = db.crear_corpus(
+            con, args.nombre, consulta_id=consulta_id, pmids=pmids,
+            descripcion=args.descripcion)
+    except ValueError as e:
+        sys.exit(str(e))
+    fila = db.obtener_corpus(con, args.nombre)
+    log("Corpus '%s' %s (id %d)" % (args.nombre, estado, cid))
+    log("  documentos : %d" % fila["n_documentos"])
+    log("  huella     : %s" % fila["hash_pmids"])
+    log("  fecha corte: %s" % fila["fecha_corte"])
+
+
+def cmd_corpus_list(con, args):
+    filas = db.listar_corpus(con)
+    if not filas:
+        log("Sin corpus congelados todavía.")
+        return
+    log("%-16s %8s  %-16s %-12s %s"
+        % ("nombre", "docs", "huella", "consulta", "creado"))
+    for f in filas:
+        log("%-16s %8d  %-16s %-12s %s"
+            % (f["nombre"], f["n_documentos"], f["hash_pmids"],
+               f["consulta"] or "-", f["creado_en"][:10]))
+
+
+def cmd_corpus_cobertura(con, args):
+    fila = db.obtener_corpus(con, args.nombre)
+    if fila is None:
+        sys.exit("No existe el corpus '%s'." % args.nombre)
+    c = db.cobertura_corpus(con, fila["id"])
+    total = c["documentos"] or 1
+    log("Corpus '%s' — %d documentos" % (args.nombre, c["documentos"]))
+    log("  con abstract        : %6d  (%.1f %%)"
+        % (c["con_abstract"], 100.0 * c["con_abstract"] / total))
+    log("  con XML de PMC      : %6d  (%.1f %%)"
+        % (c["xml_ok"], 100.0 * c["xml_ok"] / total))
+    log("  con PDF abierto     : %6d  (%.1f %%)"
+        % (c["pdf_ok"], 100.0 * c["pdf_ok"] / total))
+    log("  sin texto completo  : %6d  (%.1f %%)"
+        % (c["sin_texto_completo"],
+           100.0 * c["sin_texto_completo"] / total))
+
+
+def cmd_corpus_verificar(con, args):
+    fila = db.obtener_corpus(con, args.nombre)
+    if fila is None:
+        sys.exit("No existe el corpus '%s'." % args.nombre)
+    if db.verificar_corpus(con, fila["id"]):
+        log("Corpus '%s': íntegro (%d documentos, huella %s)."
+            % (args.nombre, fila["n_documentos"], fila["hash_pmids"]))
+        return
+    ahora = len(db.pmids_del_corpus(con, fila["id"]))
+    sys.exit("Corpus '%s': NO coincide. Se congelo con %d documentos y ahora "
+             "hay %d. Cualquier cifra que se reporte contra este corpus ya no "
+             "es reproducible." % (args.nombre, fila["n_documentos"], ahora))
 
 
 def cmd_log(con, args):
@@ -264,6 +337,30 @@ def main():
 
     e = sub.add_parser("estado", help="Resumen de la base.")
     e.set_defaults(func=cmd_estado)
+
+    cp = sub.add_parser(
+        "corpus", help="Congelar y consultar corpus versionados."
+    ).add_subparsers(dest="sub2", required=True)
+
+    cpc = cp.add_parser("crear", help="Congelar un corpus con nombre.")
+    cpc.add_argument("--nombre", required=True)
+    cpc.add_argument("--consulta", help="Nombre de la consulta de origen.")
+    cpc.add_argument("--todos", action="store_true",
+                     help="Congelar todos los documentos de la base.")
+    cpc.add_argument("--descripcion")
+    cpc.set_defaults(func=cmd_corpus_crear)
+
+    cpl = cp.add_parser("list", help="Listar los corpus congelados.")
+    cpl.set_defaults(func=cmd_corpus_list)
+
+    cpb = cp.add_parser("cobertura", help="Cuanto texto hay para un corpus.")
+    cpb.add_argument("--nombre", required=True)
+    cpb.set_defaults(func=cmd_corpus_cobertura)
+
+    cpv = cp.add_parser("verificar", help="Comprobar que no cambio. Sale 1 "
+                                          "si dejo de coincidir.")
+    cpv.add_argument("--nombre", required=True)
+    cpv.set_defaults(func=cmd_corpus_verificar)
 
     lg = sub.add_parser("log", help="Historial de ejecuciones.")
     lg.add_argument("--nombre")

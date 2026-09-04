@@ -35,6 +35,13 @@ import re
 import unittest
 
 DIRECTORIO = os.path.dirname(os.path.abspath(__file__))
+RAIZ = os.path.dirname(DIRECTORIO)
+
+# Los paquetes que esta prueba vigila. Al sacar modulos de `etapa2/` hacia
+# `grn_bronce/` la prueba dejaria de verlos, y el guardian se debilitaria sin
+# que nada avisara: exactamente el modo de fallo que vino a impedir. Cualquier
+# paquete nuevo que produzca filas del pipeline se agrega aqui.
+VIGILADOS = ("etapa2", "grn_bronce", "grn_comun")
 
 # Los dos archivos que no se pueden abrir desde fuera, por su nombre sin
 # extension: asi tambien se atrapa `oro_pseudomonas.csv` o una variable que se
@@ -45,7 +52,12 @@ PROTEGIDOS = ("oro_pseudomonas", "auditoria_signo")
 # prohibicion por el mismo motivo por el que existen: comprobar que la
 # evaluacion se hace bien exige abrir lo que la evaluacion abre.
 LISTA_BLANCA = {
-    "oro_pseudomonas": {"evaluar_oro.py"},
+    # `verificar_oro.py` comprueba que las oraciones del oro existan donde la
+    # fila dice. Entra a la lista blanca porque NO es parte del pipeline: nadie
+    # lo importa, no produce nada que el pipeline consuma, y su unica salida es
+    # un conteo por pantalla. Verificar el oro exige abrirlo, igual que
+    # evaluarlo. Si algun dia otro modulo lo importa, esto hay que revisarlo.
+    "oro_pseudomonas": {"evaluar_oro.py", "verificar_oro.py"},
     # `auditar_signo.py` PRODUCE auditoria_signo.tsv, no lo consume. Se agrega
     # a la lista blanca con esa condicion y no en general: la prueba
     # `test_auditar_signo_solo_escribe` de mas abajo comprueba que el nombre
@@ -66,12 +78,30 @@ DEL_PIPELINE = ("construir_diccionario.py", "extraer_pares.py",
                 "particionar.py", "barrido.py", "diagnostico.py")
 
 
+def _ruta_de(nombre):
+    """Donde vive un script del pipeline, sin que importe que paquete lo tiene.
+
+    Los modulos se estan mudando de `etapa2/` a `grn_bronce/`; esta prueba no
+    tiene por que enterarse de cada paso de esa mudanza, solo de que el archivo
+    siga existiendo en alguno de los paquetes vigilados.
+    """
+    for paquete in VIGILADOS:
+        ruta = os.path.join(RAIZ, paquete, nombre)
+        if os.path.exists(ruta):
+            return ruta
+    return os.path.join(DIRECTORIO, nombre)
+
+
 def _fuentes():
-    for nombre in sorted(os.listdir(DIRECTORIO)):
-        if nombre.endswith(".py"):
-            ruta = os.path.join(DIRECTORIO, nombre)
-            with open(ruta, encoding="utf-8") as f:
-                yield nombre, f.read()
+    for paquete in VIGILADOS:
+        carpeta = os.path.join(RAIZ, paquete)
+        if not os.path.isdir(carpeta):
+            continue
+        for nombre in sorted(os.listdir(carpeta)):
+            if nombre.endswith(".py"):
+                ruta = os.path.join(carpeta, nombre)
+                with open(ruta, encoding="utf-8") as f:
+                    yield nombre, f.read()
 
 
 def _es_prueba(nombre):
@@ -101,7 +131,7 @@ class PruebasFrontera(unittest.TestCase):
         for protegido, archivos in LISTA_BLANCA.items():
             for archivo in archivos:
                 self.assertTrue(
-                    os.path.exists(os.path.join(DIRECTORIO, archivo)),
+                    os.path.exists(_ruta_de(archivo)),
                     "La lista blanca de %s nombra %s, que no existe."
                     % (protegido, archivo))
 
@@ -109,7 +139,7 @@ class PruebasFrontera(unittest.TestCase):
         """Si un script del pipeline se renombra, esta prueba tiene que
         enterarse: si no, dejaria de vigilarlo en silencio."""
         for nombre in DEL_PIPELINE:
-            ruta = os.path.join(DIRECTORIO, nombre)
+            ruta = _ruta_de(nombre)
             self.assertTrue(os.path.exists(ruta),
                             "%s no existe; actualiza DEL_PIPELINE." % nombre)
             with open(ruta, encoding="utf-8") as f:
@@ -128,7 +158,7 @@ class PruebasFrontera(unittest.TestCase):
         cuanto alguien lo use para leer, esta prueba falla y hay que volver a
         decidir el permiso a la vista del caso concreto.
         """
-        ruta = os.path.join(DIRECTORIO, "auditar_signo.py")
+        ruta = _ruta_de("auditar_signo.py")
         with open(ruta, encoding="utf-8") as f:
             texto = f.read()
         arbol = ast.parse(texto)
@@ -173,7 +203,7 @@ class PruebasFrontera(unittest.TestCase):
         protege la corrida, esta protege el repositorio de que alguien edite
         el TSV a mano.
         """
-        ruta = os.path.join(DIRECTORIO, "genes_pao1.tsv")
+        ruta = _ruta_de("genes_pao1.tsv")
         if not os.path.exists(ruta):
             self.skipTest("genes_pao1.tsv no esta construido")
         with open(ruta, encoding="utf-8") as f:

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "deny": [
+      "Read(./datos/validacion/**)",
+      "Read(./**/*.db)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Bash(cat ./datos/validacion/*)",
+      "Bash(sudo *)"
+    ],
+    "allow": [
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(pytest *)",
+      "Bash(python -m pytest *)",
+      "Bash(nvidia-smi)"
+    ]
+  }
+}

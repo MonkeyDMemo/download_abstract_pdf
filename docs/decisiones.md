@@ -420,7 +420,7 @@ lectura de archivo, y la base se puede editar desde el propio tablero.
 
 En vez de eso la ruta se arma con el PMID y el PMCID, validados contra
 `^\d{1,12}$` y `^PMC\d{1,12}$`, más la convención de nombres de
-`structure.md`. No es una suposición: se verificó contra los 2263 documentos
+`CLAUDE.md`. No es una suposición: se verificó contra los 2263 documentos
 que **todos** los PMID son dígitos y **todos** los PMCID casan su patrón, y que
 el 100% de los archivos se localizan así —300 de 300 de texto, 43 de 43 de PDF.
 
@@ -830,3 +830,93 @@ regenerado el diccionario desde una descarga suya. Eso es peor de lo que la
 palabra «guardian» sugiere, y por eso queda escrito aqui y no solo en el informe
 de un agente: **la mitad del trabajo de la etapa 2 es que estas cinco cosas
 dejen de ser ciertas.**
+
+## Dos de las cinco cerradas: la cadena y la cobertura del oro
+
+De las cinco maneras de inflar una cifra que quedaron documentadas arriba, dos
+ya no funcionan. Se cerraron **antes** de la primera corrida del clasificador
+con el modelo real, y ese orden no es casual: un guardián puesto después de la
+cifra que protege llega tarde, porque la cifra ya se citó.
+
+### La cadena: `etapa2/procedencia.py`
+
+El ataque era mezclar pasos de corridas distintas. Los nombres de archivo son
+siempre los mismos —`pares.jsonl`, `predicciones.jsonl`, `red.tsv`—, así que
+basta rehacer un paso y no los otros, o copiar uno de una carpeta vieja. Cada
+archivo por separado está bien formado, así que nada protestaba: **la misma red
+publicaba 80.6 % o 100.0 % de exhaustividad según qué archivo se le pusiera al
+lado, con código 0.**
+
+Comparar rutas no sirve, porque la ruta es la misma y lo que cambia es el
+contenido. Se comparan los bytes: `red.py` sella el sha256 de sus dos entradas
+y de su propia salida en `red_informe.json`, y las dos evaluaciones exigen que
+lo que van a leer coincida. Si no, salen con 1 y no escriben nada.
+
+Se recorta el digest a 16 hexadecimales —64 bits— a propósito. Es de sobra para
+descartar una confusión accidental, que es de lo que esto protege. **No protege
+de un adversario y no pretende hacerlo**: quien pueda reescribir los archivos
+puede reescribir el informe.
+
+Un informe viejo, de antes de que esto existiera, **no bloquea**: avisa y deja
+seguir. Bloquear ahí castigaría a quien no hizo nada malo; callarse dejaría
+creer que se comprobó algo que no se comprobó.
+
+### La cobertura del oro, y por qué el indicador anterior iba al revés
+
+El otro ataque era contaminar el diccionario **a medias**: copiarle un 12 % de
+filas del patrón de oro. No disparaba ningún aviso, subía todas las cifras, y
+—lo peor— **bajaba el indicador que debía detectarlo.**
+
+La razón está en el denominador. `fraccion_explicada_por_el_oro` es
+*pares con los dos extremos en el oro* entre *pares que el pipeline sacó del
+corpus*, y ese denominador **crece al contaminar**: los nombres copiados
+reconocen menciones nuevas y generan pares nuevos, muchos con un solo extremo
+en el oro. La contaminación se diluía a sí misma.
+
+`cobertura_del_oro` mide contra el vocabulario del patrón, que es un conjunto
+**fijo** de 625 nombres. Copiar filas solo puede meter nombres en la
+intersección, nunca sacarlos: es monótona por construcción y no se puede
+diluir. Medido: el diccionario honesto de las tres fuentes públicas cubre 387
+de 625 (**0.619**); metiéndole los 238 que le faltan, sube a **1.000**.
+
+Que suba no prueba trampa —un diccionario de verdad mejor también sube—, y por
+eso el aviso a partir de 0.80 pide justificación en vez de acusar. Lo que sí es
+implausible es acercarse a 1.0: hay 12 de los 55 factores del oro que RefSeq,
+KEGG y UniProt no traen, así que cubrirlos todos significa que salieron de otro
+lado. A partir de 0.95 aborta.
+
+### El guardián nuevo va después del viejo, no antes
+
+`revisar_cobertura_del_oro` se llama **después** del guardián de §6, aunque sea
+más barato y lo natural fuera ponerlo antes. §6 es una conjunción —cobertura
+total **y** diccionario diminuto— y cuando aplica da mejor diagnóstico, porque
+nombra las entidades útiles y las líneas del archivo. El de cobertura recoge
+justo lo que esa conjunción deja pasar: un diccionario grande y legítimo al que
+le copiaron nombres.
+
+Ponerlo antes le robaba el mensaje al otro sin ganar nada, y de hecho rompió
+dos pruebas existentes al hacerlo. Se detectó por eso.
+
+### Las pruebas que los mantienen vivos
+
+`etapa2/test_procedencia.py`, 23 pruebas. La que importa es la de extremo a
+extremo: le da a `evaluar_oro.main()` archivos de dos corridas distintas y
+afirma que **devuelve 1 y no escribe resumen**. Las de unidad prueban el
+módulo; esa prueba que está *conectado*, que es donde murió el guardián de
+`particionar.py`: la función sabía fallar y nadie la llamaba con datos que la
+hicieran fallar.
+
+Para la cobertura hay dos que fijan la propiedad que la hace útil: meter
+nombres del oro **siempre** la sube, y meter 500 genes ajenos al oro **no la
+mueve**. Esa segunda es la que la anterior no habría pasado.
+
+Y en `test_evaluar.py` queda la contaminación a medias con un diccionario de
+1500 entidades útiles: §6 no se dispara —el diccionario no es diminuto— y el de
+cobertura sí. Es el hueco exacto del informe, cerrado y con su prueba.
+
+### Lo que sigue sin estar cerrado
+
+Tres de las cinco: la bandera de disputadas cuyo único control es que la
+justificación no esté vacía, los umbrales que no quedan registrados, y el
+manifiesto del caché que escribe el mismo programa que descarga. Las tres
+siguen documentadas arriba con el ataque que las demuestra.

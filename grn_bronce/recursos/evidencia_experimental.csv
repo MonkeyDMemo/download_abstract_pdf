@@ -1,0 +1,151 @@
+termino,tecnica
+emsa,emsa
+mobility shift,emsa
+electrophoretic mobility shift,emsa
+emsas,emsa
+footprinting,emsa
+in vitro transcription,emsa
+dnase i footprinting,emsa
+gel shift,emsa
+labeled probe,emsa
+dnasei footprinting,emsa
+dna binding assays,emsa
+band shift,emsa
+electromobility shift,emsa
+dna pull-down,emsa
+gel-shift,emsa
+footprint assay,emsa
+dna affinity,emsa
+dna binding assay,emsa
+supershift,emsa
+biotinylated probe,emsa
+dnase i protection,emsa
+gel retardation,emsa
+chip-seq,chip
+chromatin immunoprecipitation,chip
+dap-seq,chip
+chip-chip,chip
+chip-qpcr,chip
+chipseq,chip
+macs2,chip
+chip-pcr,chip
+peak calling,chip
+chip assay,chip
+chip assays,chip
+qpcr,rt_qpcr
+qrt-pcr,rt_qpcr
+rt-qpcr,rt_qpcr
+rt-pcr,rt_qpcr
+real-time pcr,rt_qpcr
+sybr green,rt_qpcr
+quantitative real-time pcr,rt_qpcr
+quantitative pcr,rt_qpcr
+ΔΔct,rt_qpcr
+quantitative rt-pcr,rt_qpcr
+primer extension,rt_qpcr
+northern blot,rt_qpcr
+real time pcr,rt_qpcr
+quantitative reverse transcription,rt_qpcr
+real-time rt-pcr,rt_qpcr
+reverse transcription-pcr,rt_qpcr
+reverse transcription pcr,rt_qpcr
+reverse transcriptase pcr,rt_qpcr
+semi-quantitative rt-pcr,rt_qpcr
+northern blotting,rt_qpcr
+taqman,rt_qpcr
+quantitative real time pcr,rt_qpcr
+real time rt-pcr,rt_qpcr
+rt pcr,rt_qpcr
+rtqpcr,rt_qpcr
+microarray,microarray
+affymetrix,microarray
+microarrays,microarray
+genechip,microarray
+genespring,microarray
+rna-seq,rna_seq
+rnaseq,rna_seq
+rna sequencing,rna_seq
+rpkm,rna_seq
+transcriptome sequencing,rna_seq
+rna-sequencing,rna_seq
+edger,rna_seq
+fpkm,rna_seq
+tpm,rna_seq
+deseq,rna_seq
+rna seq,rna_seq
+mutant,mutante
+mutants,mutante
+overexpression,mutante
+complemented,mutante
+complementation,mutante
+mutant strain,mutante
+empty vector,mutante
+deletion mutant,mutante
+double mutant,mutante
+knockout,mutante
+overexpressing,mutante
+deletion mutants,mutante
+overexpressed,mutante
+site-directed mutagenesis,mutante
+null mutant,mutante
+allelic exchange,mutante
+transposon insertion,mutante
+transposon mutant,mutante
+in-frame deletion,mutante
+arabinose-inducible,mutante
+deletion strain,mutante
+gene deletion,mutante
+suicide vector,mutante
+sacb,mutante
+inducible promoter,mutante
+over-expression,mutante
+mini-tn7,mutante
+point mutation,mutante
+pflp2,mutante
+transposon mutagenesis,mutante
+ectopic expression,mutante
+single mutant,mutante
+iptg-inducible,mutante
+isogenic mutant,mutante
+genetic screen,mutante
+conditional mutant,mutante
+insertion mutant,mutante
+mariner,mutante
+tn-seq,mutante
+tn5,mutante
+crispri,mutante
+over-expressed,mutante
+pex18,mutante
+knock-out,mutante
+chromosomal deletion,mutante
+over-expressing,mutante
+insertional inactivation,mutante
+gene disruption,mutante
+β-galactosidase,reportero
+luciferase,reportero
+lacz reporter,reportero
+lacz fusion,reportero
+transcriptional fusion,reportero
+gfp reporter,reportero
+reporter gene,reportero
+transcriptional reporter,reportero
+miller units,reportero
+reporter strain,reportero
+reporter plasmid,reportero
+luxcdabe,reportero
+bioluminescence,reportero
+reporter assay,reportero
+translational fusion,reportero
+β-gal,reportero
+mini-ctx,reportero
+reporter fusion,reportero
+reporter construct,reportero
+promoter fusion,reportero
+lacz activity,reportero
+gfp fusion,reportero
+promoter-lacz,reportero
+beta-galactosidase,reportero
+lux fusion,reportero
+promoter-gfp,reportero
+promoter-reporter,reportero
+luxab,reportero

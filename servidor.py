@@ -478,7 +478,7 @@ def _archivo_de_documento(ctx, pmid, tipo):
     """Localiza en disco el texto o el PDF de un documento.
 
     La ruta se arma con el PMID y el PMCID de la base, los dos validados
-    contra su patron, mas la convencion de nombres de structure.md. NUNCA
+    contra su patron, mas la convencion de nombres de CLAUDE.md. NUNCA
     se usa 'descargas.ruta': esa columna guarda una ruta relativa al
     directorio donde corrio el ETL, que no tiene por que ser el del
     servidor, y meter una cadena de la base en una ruta de disco es como se

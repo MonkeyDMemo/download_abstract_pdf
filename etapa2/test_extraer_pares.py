@@ -45,10 +45,11 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import extraer_pares as E
 import lexico as L
-import texto as T
+from grn_bronce import texto as T
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 ENTRENAMIENTO = os.path.join(AQUI, "para_colab", "entity_marked_train.jsonl")

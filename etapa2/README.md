@@ -9,6 +9,12 @@ El contexto completo del modelo está en
 panorama y no el procedimiento, empieza por
 [`../docs/informe-seminario-1.md`](../docs/informe-seminario-1.md).
 
+> **Para correr esto en otra máquina** —que es lo que destraba el paso que
+> falta— está [`../docs/migracion-maquina.md`](../docs/migracion-maquina.md):
+> qué copiar, qué instalar y en qué orden ejecutar. `clasificar.py` es la única
+> pieza que necesita `torch`, y por eso el programa de inferencia todavía no ha
+> corrido con el modelo real.
+
 ## El problema
 
 Los tres `entity_marked_*.jsonl` del servidor se partieron **a nivel de
@@ -54,6 +60,7 @@ modelo sin depender del servidor del asesor:
 | `texto.py`, `secciones.tsv` | parte los documentos en oraciones y reconoce las secciones del JATS |
 | `extraer_pares.py` | saca los pares candidatos del corpus; mide que el diccionario reconozca de verdad |
 | `clasificar.py` | **el único archivo que importa `torch`**; corre el modelo sobre los pares |
+| `procedencia.py` | sella la huella de cada archivo; **las evaluaciones se niegan si les mezclan corridas** |
 | `red.py` | agrega las predicciones en aristas; revisa que las probabilidades sean una distribución |
 | `evaluar_oro.py`, `evaluar_signo.py` | comparan contra el patrón de oro y contra la auditoría de signo |
 
@@ -65,6 +72,35 @@ porqué de reportar la primera está en `../docs/decisiones.md`.
 python etapa2/particionar.py --por pmid --salida datos_etapa2/por_pmid
 python -m unittest discover etapa2
 ```
+
+## La corrida del 27 de agosto
+
+El programa corrió de punta a punta con el modelo real por primera vez. En esta
+laptop, sin GPU: **65 223 pares en 69.7 minutos de CPU**.
+
+```
+2 361 documentos -> 65 223 pares -> 43 751 sobre umbral -> 8 653 aristas
+                    376 factores, 1 744 blancos, 1 379 artículos
+```
+
+| medida | valor | su línea base |
+|---|---|---|
+| Exhaustividad (176 relaciones) | 95.1 % | azar **99.4 %** — la cifra no mide el modelo |
+| Acierto de signo agregado | 86.5 % | clase mayoritaria 76.9 % (**+9.6 pp**) |
+| **Acierto de signo por oración** | **36.6 %** | sin información 17.1 % |
+| ...solo las de fenotipo del mutante | **8.3 % (2 de 24)** | 14 de los errores son inversión de signo |
+
+**Los dos números de signo no se contradicen.** El modelo se inclina hacia
+`activates`; el patrón de oro es 80 activaciones de 104, así que ahí el sesgo se
+parece a acertar. La auditoría es toda represiones y no se lo permite. Fue
+diseñada para eso.
+
+Y el reparto de clases cambió de forma al cambiar de especie: `regulates` pasó
+del 13.3 % en entrenamiento al **43.1 %** en inferencia —el modelo se refugia en
+la clase sin signo— y `no_relation` del 31.6 % al 14.7 %.
+
+El detalle está en
+[`../docs/informe-seminario-1.md`](../docs/informe-seminario-1.md).
 
 ## La decisión central: no se pueden pedir las dos cosas
 
@@ -282,8 +318,8 @@ completos y los 2 354 resúmenes** de la etapa 1.
 | Biopelícula y c-di-GMP | 17 | 16 |
 | | **190** | **181** |
 
-**Verificación: 180 de las 181 oraciones existen literalmente** en un artículo
-que la propia fila declara — 161 exactas y 19 por fragmento contiguo largo,
+**Verificación: 179 de las 181 oraciones existen literalmente** en un artículo
+que la propia fila declara — 177 exactas y 2 por fragmento contiguo largo,
 donde el desfase era tipográfico (guiones U+2010, sigmas griegas). **Cero
 inventadas.** La única con problema, `PrrF→bfrB`, era un error de atribución:
 la oración existe pero en el PMID 36036571, ya corregido.

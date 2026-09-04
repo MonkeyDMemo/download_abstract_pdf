@@ -121,7 +121,14 @@ CLAVES_PAR = ("id_par", "oracion_cruda", "n_oracion")
 # la union de la etapa 6 con las oraciones auditadas tienen que normalizar el
 # espaciado igual. Si cada etapa escribe su propio normalizador, esa union
 # empieza a fallar en silencio y la exactitud de signo pasa a medir otra cosa.
-from texto import normalizar_espacios
+from grn_bronce.texto import normalizar_espacios
+
+# Para dejar escrito con QUE archivos se construyo esta red, por contenido y no
+# por ruta. La ruta es siempre la misma y el contenido cambia; sin la huella,
+# la evaluacion no puede saber que le pusieron al lado un archivo de otra
+# corrida. Ver el docstring de procedencia.py.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from grn_comun import procedencia
 
 
 def como_bool(v):
@@ -806,6 +813,23 @@ def main(argv=None, log=print):
             os.makedirs(d, exist_ok=True)
     escribir_tsv(args.salida, COLUMNAS_RED, [fila_red(a) for a in aristas])
     escribir_tsv(args.evidencias, COLUMNAS_EVIDENCIAS, filas_evidencias(aristas))
+
+    # Las huellas se sellan DESPUES de escribir el TSV y ANTES del informe: es
+    # el unico momento en que el contenido definitivo ya existe y nada lo ha
+    # tocado. Van las dos entradas y la propia salida, asi la evaluacion puede
+    # comprobar la cadena entera y no solo la mitad.
+    informe["huellas"] = procedencia.sellar({
+        "pares": args.pares,
+        "predicciones": args.predicciones,
+    })
+    # La red se mide en su temporal. escribir_tsv() dejo el contenido en
+    # .tmp y publicar() lo renombra al final, junto con este mismo informe, asi
+    # que aqui el nombre final todavia no existe. Medirlo directamente daba
+    # huella None y la evaluacion rechazaba la cadena por una discrepancia que
+    # no era real: el guardian atrapo este error en su primera corrida.
+    informe["huellas"]["red"] = procedencia.sellar_como(
+        args.salida, args.salida + ".tmp")
+
     escribir_json(args.informe, informe)
     publicar([args.salida, args.evidencias, args.informe])
 

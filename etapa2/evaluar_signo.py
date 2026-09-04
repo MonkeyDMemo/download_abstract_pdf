@@ -103,6 +103,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     # El módulo compartido manda: si `texto.py` cambia la normalización, esto la
@@ -110,7 +111,7 @@ try:
     # para poder correr esta etapa antes de que aterrice `texto.py`; si los dos
     # divergieran, la unión con la auditoría dejaría de encontrar oraciones y el
     # guardián de 80/93 lo delataría en la misma corrida.
-    from texto import normalizar_espacios
+    from grn_bronce.texto import normalizar_espacios
 except ImportError:                                        # pragma: no cover
     def normalizar_espacios(s):
         return " ".join(s.split())
@@ -124,6 +125,8 @@ except ImportError:                                        # pragma: no cover
 from evaluar_oro import (cargar_operones, miembros_operon,
                          binomial_cola_superior,
                          revisar_probabilidades_de_fila)
+
+from grn_comun import procedencia      # noqa: E402
 
 
 COLUMNAS_AUDITORIA = ["pmid", "fuente", "tf", "blanco", "signo_correcto",
@@ -702,8 +705,11 @@ def construir_parser():
                         "y la oracion nombra un gen suelto")
     p.add_argument("--salida", default="datos_etapa2/evaluacion_signo.tsv")
     p.add_argument("--resumen", default="datos_etapa2/evaluacion_signo.json")
-    p.add_argument("--red-informe", default="datos_etapa2/red_informe.json",
-                   help="solo para avisar si los umbrales no son los de la red")
+    p.add_argument("--red-informe",
+                   help="el informe de red.py, para comprobar que las "
+                        "predicciones son las mismas y avisar si los umbrales "
+                        "no son los de la red. Por omisión, el que esté junto "
+                        "a --predicciones")
     p.add_argument("--umbral-activates", type=float, default=0.65)
     p.add_argument("--umbral-represses", type=float, default=0.70)
     p.add_argument("--umbral-regulates", type=float, default=0.60)
@@ -715,6 +721,17 @@ def main(argv=None):
     umbrales = {"activates": args.umbral_activates,
                 "represses": args.umbral_represses,
                 "regulates": args.umbral_regulates}
+
+    # El mismo guardián de cadena que evaluar_oro.py, y por el mismo motivo.
+    # Aquí el informe de la red ya se leía, pero solo para AVISAR si los
+    # umbrales no coincidían. Un aviso no detiene nada, y las predicciones de
+    # otra corrida cambian la exactitud de signo tanto como los umbrales.
+    ruta_informe = args.red_informe or os.path.join(
+        os.path.dirname(os.path.abspath(args.predicciones)), "red_informe.json")
+    if not procedencia.exigir(ruta_informe, {
+            "pares": args.pares,
+            "predicciones": args.predicciones}):
+        return 1
 
     auditoria = cargar_auditoria(args.auditoria)
     evaluables = [f for f in auditoria
@@ -782,7 +799,7 @@ def main(argv=None):
                "el blanco escrito como operón (mexAB-oprM, mexCD-oprJ, mexXY, "
                "mexJK) y sin ella solo se unen por el nombre exacto."))
 
-    aviso_umbrales = comparar_umbrales(args.red_informe, umbrales)
+    aviso_umbrales = comparar_umbrales(ruta_informe, umbrales)
     if aviso_umbrales:
         avisos.append(aviso_umbrales)
 

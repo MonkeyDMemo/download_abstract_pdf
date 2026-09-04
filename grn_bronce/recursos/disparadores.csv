@@ -1,0 +1,260 @@
+# Disparadores léxicos de regulación para la capa bronce.
+# Medido sobre los 918 textos completos de datos/fulltext/xml (6,282,450 tokens):
+# todo término de esta tabla aparece ahí al menos una vez.
+#
+# ADVERTENCIA: `signo_sugerido` es el signo LÉXICO del término, no el signo de la
+# relación. Esta literatura describe la regulación desde el fenotipo del mutante,
+# y esa redacción invierte el signo: "expression of mexEF-oprN was increased in
+# the mexT mutant" significa que MexT REPRIME, no que activa. Por eso los verbos
+# de cambio (increased, decreased, elevated, reduced, abolished, restored) llevan
+# `?`: marcan que ahí puede haber una relación, no de qué signo es. Resolver la
+# inversión es trabajo del paso 2, junto con el marco de pérdida de función
+# (mutant, deletion, Delta) que esta tabla deliberadamente no incluye.
+#
+# Un `+` o un `-` tampoco son definitivos: la negación ("does not activate") y la
+# voz pasiva ("is repressed by", que invierte quién regula a quién) los alteran
+# igual, y también son del paso 2.
+#
+# El emparejamiento es por token, una fila por forma flexiva. El guión interno
+# cuenta como parte del token: `up-regulated` y `upregulated` son filas distintas
+# porque las dos aparecen en el corpus.
+palabra,signo_sugerido
+activate,+
+activates,+
+activated,+
+activating,+
+activation,+
+activator,+
+activators,+
+transactivation,+
+transactivator,+
+coactivator,+
+induce,+
+induces,+
+induced,+
+inducing,+
+induction,+
+upregulate,+
+upregulates,+
+upregulated,+
+upregulating,+
+upregulation,+
+up-regulate,+
+up-regulates,+
+up-regulated,+
+up-regulating,+
+up-regulation,+
+stimulate,+
+stimulates,+
+stimulated,+
+stimulating,+
+stimulation,+
+stimulatory,+
+enhance,+
+enhances,+
+enhanced,+
+enhancing,+
+enhancement,+
+promote,+
+promotes,+
+promoted,+
+promoting,+
+positively,+
+augment,+
+augments,+
+augmented,+
+potentiate,+
+potentiated,+
+positively regulate,+
+positively regulates,+
+positively regulated,+
+positive regulator,+
+positive regulators,+
+positive regulation,+
+transcriptional activator,+
+transcriptional activators,+
+transcriptional activation,+
+promotes expression,+
+enhanced expression,+
+repress,-
+represses,-
+repressed,-
+repressing,-
+repression,-
+repressor,-
+repressors,-
+corepressor,-
+co-repressor,-
+inhibit,-
+inhibits,-
+inhibited,-
+inhibiting,-
+inhibition,-
+inhibitory,-
+downregulate,-
+downregulates,-
+downregulated,-
+downregulating,-
+downregulation,-
+down-regulate,-
+down-regulates,-
+down-regulated,-
+down-regulating,-
+down-regulation,-
+negatively,-
+silence,-
+silences,-
+silenced,-
+silencing,-
+suppress,-
+suppresses,-
+suppressed,-
+suppressing,-
+suppression,-
+antagonize,-
+antagonizes,-
+antagonized,-
+sequester,-
+sequesters,-
+sequestered,-
+sequestration,-
+antiactivator,-
+anti-activator,-
+anti-sigma,-
+antisigma,-
+antiterminator,-
+antitermination,-
+negatively regulate,-
+negatively regulates,-
+negatively regulated,-
+negative regulator,-
+negative regulators,-
+negative regulation,-
+transcriptional repressor,-
+transcriptional repressors,-
+transcriptional repression,-
+regulate,?
+regulates,?
+regulated,?
+regulating,?
+regulation,?
+regulator,?
+regulators,?
+regulatory,?
+regulon,?
+regulons,?
+coregulated,?
+co-regulated,?
+autoregulation,?
+autoregulates,?
+autoregulated,?
+autoregulatory,?
+controls,?
+controlled,?
+controlling,?
+modulate,?
+modulates,?
+modulated,?
+modulating,?
+modulation,?
+modulator,?
+affect,?
+affects,?
+affected,?
+affecting,?
+mediate,?
+mediates,?
+mediated,?
+mediating,?
+govern,?
+governs,?
+governed,?
+require,?
+requires,?
+required,?
+dependent,?
+depends,?
+bind,?
+binds,?
+binding,?
+bound,?
+phosphorylate,?
+phosphorylates,?
+phosphorylated,?
+phosphorylation,?
+autophosphorylation,?
+post-transcriptional,?
+posttranscriptional,?
+post-transcriptionally,?
+antisense,?
+suppressor,?
+abrogate,?
+abrogates,?
+abrogated,?
+abrogation,?
+diminish,?
+diminishes,?
+diminished,?
+inducer,?
+inducers,?
+inducible,?
+increase,?
+increases,?
+increased,?
+increasing,?
+decrease,?
+decreases,?
+decreased,?
+decreasing,?
+elevate,?
+elevates,?
+elevated,?
+elevation,?
+reduce,?
+reduces,?
+reduced,?
+reducing,?
+reduction,?
+abolish,?
+abolishes,?
+abolished,?
+abolishing,?
+restore,?
+restores,?
+restored,?
+restoring,?
+restoration,?
+overexpress,?
+overexpresses,?
+overexpressed,?
+overexpressing,?
+overexpression,?
+over-expressed,?
+over-expression,?
+overproduce,?
+overproduced,?
+overproducing,?
+overproduction,?
+hyperexpression,?
+hyperproduction,?
+derepress,?
+derepressed,?
+derepression,?
+de-repression,?
+constitutive,?
+constitutively,?
+rescue,?
+rescues,?
+rescued,?
+complement,?
+complements,?
+complemented,?
+complementation,?
+transcriptional regulator,?
+transcriptional regulators,?
+under the control,?
+controls expression,?
+affects expression,?
+required for expression,?
+higher levels,?
+lower levels,?

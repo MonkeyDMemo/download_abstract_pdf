@@ -853,23 +853,48 @@ class PruebasLoQueElInformeTieneQueDecir(unittest.TestCase):
     """Los tres conteos que existen para que nadie tenga que deducir a mano si
     una defensa esta haciendo algo."""
 
-    def test_palabras_comunes_hoy_no_cambia_ni_una_fila(self):
-        """`palabras_comunes.txt` es inerte y el script lo publica. Un revisor
-        que lee 41 entradas comentadas una por una concluye que ahi hay una
-        defensa activa; medido, las filas sensibles SOLO por la lista son 0,
-        porque las 41 tienen tres caracteres o menos y la clausula de longitud
-        ya las cubre. Y no faltan palabras largas: ninguna de las 1931
-        superficies alfabeticas de cuatro caracteres o mas del diccionario es
-        una palabra inglesa."""
+    def test_palabras_comunes_si_cambia_filas_y_cuales(self):
+        """`palabras_comunes.txt` NO es inerte, y esta prueba decia lo contrario.
+
+        Afirmaba que las filas sensibles solo por la lista eran 0, y que
+        ninguna de las 1931 superficies de cuatro caracteres o mas era una
+        palabra inglesa. Las dos cosas eran falsas por el mismo error: se
+        comprobo si la superficie TAL COMO SE ESCRIBE --`folD`-- es una palabra
+        inglesa, y no lo es. Pero el emparejamiento es insensible a mayusculas,
+        asi que lo que decide es su forma en MINUSCULAS.
+
+        Son cuatro: folD/fold, hemE/heme, pilI/pili y minD/mind. `folD` llego a
+        ser el segundo blanco mas citado de la tabla de evidencias, con el 88%
+        de sus oraciones trayendo "N-fold" o "fold change", y entre las cuatro
+        sostenian 191 aristas de 8653.
+
+        Ahora la prueba fija lo contrario: que la lista hace trabajo, y cual.
+        Si alguien quita esas palabras, esto falla."""
         filas = D.leer_tsv(GENES, D.COLUMNAS_GENES)
         palabras = D.leer_palabras_comunes(D.RUTA_PALABRAS)
         por_longitud, solo_lista = D.sensibles_por_motivo(filas, palabras)
         sensibles = sum(1 for f in filas if f["sensible_mayusculas"] == "true")
-        self.assertEqual(0, solo_lista)
-        self.assertEqual(sensibles, por_longitud)
-        largas = {x for f in filas for x in D.superficies_de(f)
-                  if len(x) >= 4 and x.isalpha()}
-        self.assertEqual(set(), {x.lower() for x in largas} & palabras)
+        self.assertGreater(solo_lista, 0,
+                           "la lista dejo de hacer trabajo; se quitaron palabras")
+        self.assertEqual(sensibles, por_longitud + solo_lista)
+
+        # Las cuatro colisiones medidas tienen que estar cubiertas.
+        por_simbolo = dict((f["simbolo"], f) for f in filas if f["simbolo"])
+        for simbolo in ("folD", "hemE", "pilI", "minD"):
+            fila = por_simbolo.get(simbolo)
+            if fila is None:
+                continue
+            self.assertEqual("true", fila["sensible_mayusculas"],
+                             "%s choca con una palabra inglesa comun y tiene "
+                             "que exigir mayusculas exactas" % simbolo)
+
+        # Y toda superficie larga que sea una palabra de la lista queda cubierta:
+        # es el invariante que la version anterior daba por vacio.
+        for f in filas:
+            largas = {x.lower() for x in D.superficies_de(f)
+                      if len(x) >= 4 and x.isalpha()}
+            if largas & palabras:
+                self.assertEqual("true", f["sensible_mayusculas"])
 
     def test_pero_el_mecanismo_de_la_lista_sigue_vivo(self):
         """Contrapeso del anterior: si un dia entra una superficie larga que

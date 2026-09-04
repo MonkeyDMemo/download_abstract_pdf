@@ -674,9 +674,16 @@ en hierro 41, sigma 37, dos componentes y secreción 36, quorum sensing 30, bomb
 RND 29 y biopelícula 17. Por signo: 117 activan, 67 reprimen, 6 regulan sin
 signo. Por certeza: 139 establecidas y 51 probables.
 
-**181 de las 190 se encontraron en el corpus.** De esas 181, se comprobó que 180
-tienen su oración literalmente en el texto: 161 exactas y 19 por fragmento
-contiguo. **Ninguna oración inventada.**
+**181 de las 190 se encontraron en el corpus.** De esas 181, **179 tienen su
+oración literalmente en el texto**: 177 exactas y 2 por fragmento contiguo.
+**Ninguna oración inventada.**
+
+Esa cuenta se puede rehacer con `etapa2/verificar_oro.py`, que compara cada
+oración contra los artículos que la propia fila declara. La comparación normaliza
+tres diferencias de codificación que si no dan falsos negativos —la sigma griega,
+el guión U+2010 y las barras de error—; sin esa normalización salen 172 en vez de
+179. Las dos que no cierran son ediciones menores: a `AmpR→mexR` le quitaron el
+error de la media y `PrrF→katA` está recortada.
 
 De ahí sale la consecuencia principal:
 
@@ -743,24 +750,153 @@ Arreglarlo pide anotación, no código.
 
 ---
 
-### El programa está escrito y probado, y todavía no ha corrido con el modelo real
+### El programa corrió con el modelo real: la primera cifra sobre *P. aeruginosa*
 
-Existe el camino completo: del corpus salen pares de genes que aparecen en la
-misma oración, el clasificador les pone signo, se arma la red y se compara contra
-el patrón de oro. Cada pieza tiene sus pruebas y los dos primeros pasos ya
-corrieron sobre el corpus completo.
+**Corrió el 27 de agosto, de punta a punta, y por primera vez con el modelo de
+verdad.** Lo que faltaba no era código: era `torch`, que no estaba instalado en
+esta computadora. Se resolvió con un entorno virtual, y aquí conviene dejar el
+detalle porque cuesta media tarde encontrarlo: el Python de la Microsoft Store
+instala en una ruta de 138 caracteres, torch trae rutas de licencias anidadas, y
+la instalación muere con `WinError 206: el nombre del archivo es demasiado
+largo`. Un venv dentro del proyecto deja la ruta en 79 y entra sin permisos de
+administrador. La rueda de CPU son 122 MB; sin `--index-url` pip baja la de
+CUDA, que son 2.5 GB de los que aquí no se usa nada.
 
-**Lo que falta decir es que los pasos de clasificación, agregación y evaluación
-nunca se han ejecutado con el modelo de verdad sobre *P. aeruginosa*.** No hay
-un `pares.jsonl`, ni un `red.tsv`, ni un `evaluacion_oro.json` en el disco. La
-única corrida de extremo a extremo se hizo con **clasificadores sustitutos**
-—uno que contesta siempre lo mismo y otro de palabras clave—, y hay una razón
-para eso: como este trabajo empezó por un número que se medía a sí mismo, antes
-de correrlo en serio **se intentó engañarlo a propósito.**
+**No hizo falta máquina más grande.** 65 223 pares a 15.6 por segundo en los 8
+núcleos de esta laptop: **69.7 minutos**.
 
-Hay además un requisito práctico que conviene tener presente: `clasificar.py` es
-la única pieza del programa local que necesita `torch` y `transformers`, y en
-esta computadora no están instalados. Basta con CPU, pero hay que instalarlos.
+#### La cadena, en números
+
+```
+2 361 documentos
+  -> 65 223 pares candidatos          (extraer_pares.py, 18 s)
+  -> 65 223 predicciones              (clasificar.py, 69.7 min en CPU)
+  -> 43 751 pasan los umbrales
+  ->  8 653 aristas                   (red.py)
+     376 factores, 1 744 blancos, evidencia en 1 379 artículos
+     2 570 activates · 1 563 represses · 4 520 regulates · 522 conflictos
+```
+
+Para comparar: el servidor infirió **789 aristas** sobre 130 PDFs. Aquí son
+**8 653** sobre 2 361 documentos.
+
+#### Lo primero que hay que decir: el reparto de clases cambió de forma
+
+| clase | entrenamiento (*E. coli*) | inferencia (*P. aeruginosa*) |
+|---|---|---|
+| `activates` | 38.0 % | 25.2 % |
+| `no_relation` | 31.6 % | **14.7 %** |
+| `regulates` | 13.3 % | **43.1 %** |
+| `represses` | 17.2 % | 17.1 % |
+
+**`regulates` se triplica.** Es la clase de «hay relación pero no resuelvo el
+signo»: que el modelo se refugie ahí tres veces más al cambiar de especie es la
+dificultad de la transferencia, medible **sin una sola etiqueta**. Y
+`no_relation` cae a menos de la mitad, que es exactamente el desajuste entre
+entrenamiento y despliegue descrito arriba: en entrenamiento el 98.4 % de esa
+clase era «marcaste la mención equivocada», no «estos genes no se regulan».
+
+Las dos proporciones se habían visto ya en una muestra de 200 pares antes de
+soltar la corrida completa, y aguantaron: `regulates` daba 43.0 % ahí y 43.1 %
+sobre los 65 223.
+
+#### Contra el patrón de oro: 176 relaciones
+
+| medida | valor | contra el azar | contra la clase mayoritaria |
+|---|---|---|---|
+| Exhaustividad | 95.1 % (137/144) | **−4.3 pp, p = 1.000** | — |
+| Acierto de signo | 86.5 % (90/104) | +36.2 pp, p = 0.005 | **+9.6 pp, p = 0.010** |
+
+**La exhaustividad no significa nada, y el propio programa lo dice.** Un sorteo
+al azar sobre los mismos 8 531 candidatos saca 99.4 %, o sea más que el
+pipeline. La razón es que la red emite arista para casi todo lo que el
+extractor propone, así que recuperar el 95 % de las relaciones canónicas no
+cuesta trabajo. **Lo que esa cifra mide es el diccionario y el extractor de
+pares, no el clasificador.** Publicarla sin la línea base al lado sería
+justamente el error que este trabajo vino a corregir.
+
+El acierto de signo sí despega de las dos líneas base. Pero **la ventaja sobre
+la clase mayoritaria son 9.6 puntos**, y ese es el número que hay que leer: las
+104 filas comparables del oro traen 80 activaciones y 24 represiones, así que
+contestar siempre `activates` sin leer nada acierta el 76.9 %.
+
+Por subsistema, sobre el denominador honesto:
+
+| subsistema | exhaustividad | acierto de signo |
+|---|---|---|
+| Dos componentes T3SS | 100.0 % (29/29) | 94.4 % (17/18) |
+| Quorum sensing | 100.0 % (23/23) | 83.3 % (15/18) |
+| Biopelícula c-di-GMP | 100.0 % (8/8) | 77.8 % (7/9) |
+| Hierro sideróforos | 96.3 % (26/27) | 90.0 % (18/20) |
+| Factores sigma | 93.5 % (29/31) | 84.6 % (22/26) |
+| Bombas RND | 84.6 % (22/26) | 84.6 % (11/13) |
+
+#### La auditoría de signo dice otra cosa, y es la que hay que creer
+
+Las 93 oraciones donde la respuesta se conocía de antemano —todas
+`represses`— dan un número muy distinto:
+
+```
+EXACTITUD          36.6 %  (34 de 93)
+
+  directa           46.4 %  (32 de 69)
+  fenotipo_mutante   8.3 %  ( 2 de 24)   <- la trampa
+```
+
+**Dos de veinticuatro.** Y el desglose del error en esas 24 es el que se había
+predicho al construir el conjunto: **14 son inversión de signo** —el modelo lee
+*«mutations in nfxB lead to overexpression of MexCD-OprJ»* y contesta
+`activates`— y 7 se pierden a `no_relation`.
+
+En las 69 directas el reparto es otro: 32 aciertos, 10 inversiones, 12 perdidas
+a `regulates` y 7 a `no_relation`. **Son dos fallos distintos y piden arreglos
+opuestos**: el de las 24 necesita una regla de inversión; el de las 69, un
+modelo mejor.
+
+#### Por qué 86.5 % y 36.6 % no se contradicen
+
+Es la lectura más importante de toda la corrida.
+
+El modelo tiene **sesgo hacia `activates`**. El patrón de oro es en su mayoría
+activaciones (80 de 104), así que ahí el sesgo se parece a acertar: 86.5 %,
+apenas 9.6 puntos por encima de no leer nada. La auditoría es **toda
+represiones**, así que el mismo sesgo se derrumba a 36.6 %.
+
+**Los dos números son correctos y miden lo mismo sobre poblaciones distintas.**
+El agregado se apoya en que las clases coinciden con la inclinación del modelo;
+la auditoría se diseñó para que no pudieran coincidir.
+
+Sin la auditoría, el 86.5 % se habría citado como «el modelo resuelve el signo».
+Ese conjunto se construyó justamente para que ese número no se pudiera citar
+solo, y funcionó.
+
+#### El guardián de procedencia se estrenó atrapando un error propio
+
+`evaluar_oro.py` se negó a correr en el primer intento. No era un ataque:
+`red.py` escribe a `red.tsv.tmp` y lo renombra al final, así que al sellar la
+huella el nombre definitivo todavía no existía. La huella salía vacía y la
+evaluación rechazaba la cadena por una discrepancia inventada.
+
+Se deja escrito porque es la prueba de que el guardián está vivo: es la clase
+de fallo que buscaba —dos archivos que no se corresponden— y **no distinguió de
+quién era la culpa**, que es exactamente lo que se le pedía.
+
+Al arreglarlo aparecieron 58 pruebas rotas, y por una razón que también vale la
+pena anotar: el valor por omisión de `--red-informe` apuntaba a un archivo del
+proyecto que hasta ese momento no existía. En cuanto existió, las pruebas —que
+usan directorios temporales— empezaron a compararse contra él. Ahora el informe
+se busca junto a la red que describe, que además es lo correcto: el informe
+describe una red concreta y viaja con ella. Se arregló sin tocar ninguna de las
+58.
+
+---
+
+### Antes de correrlo se intentó engañarlo a propósito
+
+Como este trabajo empezó por un número que se medía a sí mismo, antes de la
+corrida de verdad el camino completo se recorrió con **clasificadores
+sustitutos** —uno que contesta siempre lo mismo y otro de palabras clave— para
+ver si el programa los certificaba.
 
 El ataque más simple fue el más revelador. Se sustituyó el clasificador por uno
 que no lee nada y contesta siempre lo mismo, `activates`. El programa lo
@@ -777,12 +913,18 @@ de un archivo en vez de su contenido**— y la batería de pruebas de la etapa 2
 pasó de 453 a 482. Pero dos rondas de ataque posteriores encontraron cinco cosas
 que siguen pasando, y quedan escritas antes de que alguien cite un número:
 
-- Contaminar el diccionario **a medias** —copiarle un 12 % de filas del patrón de
-  oro— no dispara ningún aviso, sube todas las cifras publicadas y de hecho
-  **baja** el indicador que debería detectarlo.
-- La evaluación recibe cuatro archivos y no comprueba que vengan de la misma
+- ~~Contaminar el diccionario **a medias** —copiarle un 12 % de filas del patrón
+  de oro— no dispara ningún aviso, sube todas las cifras publicadas y de hecho
+  **baja** el indicador que debería detectarlo.~~ **Cerrado.** El indicador iba
+  al revés porque era un cociente cuyo denominador crecía al contaminar. El
+  nuevo, `cobertura_del_oro`, mide contra el vocabulario del patrón, que es un
+  conjunto fijo de 625 nombres: copiar filas solo puede subirlo. Honesto 0.619;
+  contaminado 1.000.
+- ~~La evaluación recibe cuatro archivos y no comprueba que vengan de la misma
   corrida. Con la misma red y una lista de candidatos recortada, la exhaustividad
-  pasa de 80.6 % a 100.0 % sin una queja.
+  pasa de 80.6 % a 100.0 % sin una queja.~~ **Cerrado.** `red.py` sella el
+  sha256 de sus entradas y de su salida en `red_informe.json`, y las dos
+  evaluaciones se niegan a correr si lo que van a leer no coincide.
 - Hay una bandera para excluir relaciones en disputa cuyo único control es que la
   justificación no esté vacía: excluyendo justo las que el programa erró, el
   acierto sube a 100.0 %.
@@ -794,8 +936,9 @@ que siguen pasando, y quedan escritas antes de que alguien cite un número:
   con código 0 y con 190 de 190 relaciones del oro cubiertas, contra 170 de 190
   del honesto.
 
-Ninguna de esas cinco es un accidente que ocurra solo; todas exigen que alguien
-haga algo raro, y dos de ellas se podrían cometer por descuido. **La conclusión
+De esas cinco, **las dos que se podían cometer por descuido ya están
+cerradas**, y con la prueba que las mantiene vivas. Quedan tres, y todas exigen
+que alguien haga algo raro a propósito. **La conclusión
 honesta es que hoy el programa detecta al tramposo torpe y no al cuidadoso**, y
 que una cifra suya solo vale acompañada del registro de su corrida. Están todas
 documentadas con el ataque exacto que las demuestra en `docs/decisiones.md`.
@@ -804,6 +947,172 @@ Esto se reporta en vez de guardarse porque el trabajo de este semestre empezó
 justamente por una métrica que se había inflado sin que nadie lo notara. Dejar
 escritas otras cinco maneras de que eso ocurra es parte del resultado.
 
+---
+
+## La referencia externa: CollecTF, y por qué la exhaustividad depende del tipo de experimento
+
+Es la respuesta a lo que el comité pidió con «comparar contra lo que se tiene».
+
+`etapa2/collectf_pao1.tsv` son **333 pares con sitio de unión medido
+experimentalmente**, curados por CollecTF a partir de artículos de unión
+proteína-DNA. **No los construimos nosotros y no pasaron por nuestro corpus**,
+que es justo lo que les da valor: el patrón de oro propio se armó quedándose con
+las relaciones que el corpus atestigua, así que por diseño contiene lo que el
+pipeline puede encontrar.
+
+### El primer número, y por qué no es el que hay que citar
+
+| referencia | exhaustividad |
+|---|---|
+| Patrón de oro propio (190 relaciones) | 95.1 % |
+| **CollecTF (333 pares, externo)** | **37.8 %** (126 de 333) |
+
+La caída era esperable por el sesgo de construcción. Lo que **no** era esperable
+es lo siguiente.
+
+### El pipeline no está repitiendo lo que se le enseñó
+
+CollecTF se evalúa partido en dos: los factores que nuestro patrón de oro
+menciona, y los que no.
+
+| grupo | pares | exhaustividad |
+|---|---|---|
+| TFs que el patrón de oro cubre | 271 | 37.6 % |
+| **TFs que el patrón de oro nunca menciona** | 62 | **37.1 %** |
+
+**Son indistinguibles.** Si el pipeline solo encontrara aquello a lo que se le
+apuntó, el segundo número se desplomaría. No lo hace: recupera relaciones de 12
+factores que nadie le enseñó, al mismo ritmo que las de los 18 conocidos.
+
+Ese corte estaba puesto en `evaluar_collectf()` desde antes, precisamente para
+detectar circularidad. Detectó lo contrario, que es la buena noticia.
+
+### Dónde se pierden las que no recupera
+
+| qué pasó | pares | |
+|---|---|---|
+| Recuperada en la red | 126 | 38 % |
+| Fue candidato pero no llegó a arista | 19 | 6 % |
+| **El artículo está, pero el par nunca fue candidato** | **182** | **55 %** |
+| El artículo no está en el corpus | 6 | 2 % |
+
+**El 55 % de las pérdidas no son del modelo: son de la extracción de
+candidatos.** El par nunca llegó a proponerse, así que el clasificador jamás lo
+vio. Y afinando un nivel más sobre esos 182:
+
+| | pares | |
+|---|---|---|
+| **El gen blanco no se nombra en el artículo** | **162** | 89 % |
+| Los dos se nombran, pero nunca en la misma oración | 19 | 10 % |
+| Ninguno aparece | 1 | 1 % |
+
+### La explicación, y es limpia
+
+El tipo de experimento lo dice todo:
+
+| grupo | técnicas dominantes |
+|---|---|
+| Recuperadas | EMSA 21 %, reportero β-gal 14 %, mutagénesis dirigida 11 %, huella de DNAsa 8 % |
+| Nunca candidatas | **ChIP-Seq 26 % + RNA-Seq 26 %** |
+
+Las relaciones que el pipeline recupera vienen de **experimentos dirigidos a un
+gen**: un artículo, uno o pocos blancos, discutidos en prosa. Las que pierde
+vienen de **experimentos de genoma completo**, cuyos cientos de blancos se
+publican en tablas suplementarias que nuestro corpus no contiene.
+
+**Eso no es un fallo del modelo: es una propiedad de la minería de texto.**
+Ningún clasificador recupera un gen que el artículo no nombra.
+
+### El número que sí hay que citar
+
+Descontando lo que no está en el texto —162 blancos no nombrados y 6 artículos
+ausentes—, quedan **164 pares recuperables de prosa**, de los que el pipeline
+recupera **126: el 76.8 %**.
+
+| medida | valor | qué dice |
+|---|---|---|
+| Exhaustividad bruta contra CollecTF | 37.8 % | mezcla dos cosas distintas |
+| **Sobre lo que el texto sí afirma** | **76.8 %** | lo que el sistema puede hacer |
+| Sobre TFs nunca vistos en el oro | 37.1 % | no hay circularidad |
+
+Las dos cifras hay que darlas juntas. La primera sola subestima al sistema; la
+segunda sola esconde que **la mitad de la regulación conocida de PAO1 no está en
+prosa y no se puede minar de texto**, que es un límite del enfoque y conviene
+decirlo antes de que lo pregunten.
+
+---
+
+## La corrección del diccionario no movió ninguna métrica, y eso es el hallazgo
+
+Al quitar `folD`, `hemE`, `pilI` y `minD` —los cuatro genes que emparejaban con
+palabras inglesas— la cadena se volvió a correr entera.
+
+| | antes | después |
+|---|---|---|
+| pares candidatos | 65 223 | 63 791 |
+| aristas | 8 653 | **8 488** |
+| entregable (estrato A) | 945 | **897** |
+| exhaustividad contra el oro | 95.1 % | 95.1 % |
+| acierto de signo agregado | 86.5 % | 86.5 % |
+| acierto de signo por oración | 36.6 % | 36.6 % |
+
+**189 aristas desaparecieron y el 100 % de ellas llevaba una de las cuatro
+palabras.** Cero daño colateral: ninguna arista legítima se perdió.
+
+**Y ninguna métrica se movió ni una décima.** No es una decepción: es la
+demostración de por qué hacía falta medir precisión por muestreo.
+
+El patrón de oro cubre 190 relaciones de 6 subsistemas. La auditoría de signo,
+93 oraciones de 6 represores. **Ninguna de las dos contiene una sola arista de
+`folD`, `hemE` o `pilI`**, así que 189 falsos positivos podían entrar y salir de
+la red sin que ninguna cifra lo notara.
+
+Esa es la respuesta concreta a la pregunta del comité sobre cuántos errores
+comete el sistema: **las referencias miden lo que cubren, y no ven los errores
+que caen fuera.** Solo el muestreo de la salida los ve, porque no parte de una
+lista de lo que debería haber sino de lo que hay.
+
+## Línea base: un LLM sin ajuste fino contra el BioBERT ajustado
+
+Sobre las mismas 93 oraciones de la auditoría, con las 105 no evaluables
+mezcladas como distractores y sin acceso a las respuestas:
+
+| | BioBERT ajustado | LLM sin ajuste |
+|---|---|---|
+| las 93 evaluables | 36.6 % | **91.4 %** |
+| redacción directa | 46.4 % | 91.3 % |
+| **fenotipo del mutante** | **8.3 %** (2/24) | **91.7 %** (22/24) |
+
+Contra la línea base sin información, p = 1.5 × 10⁻⁵⁵.
+
+**El control que impide leerlo mal:** en las 105 co-menciones sin relación
+afirmada el LLM reparte `regulates` 45, `no_relation` 42, `represses` 18. No
+está contestando una sola clase.
+
+**Y una objeción propia, medida y descartada.** El primer prompt le decía
+explícitamente que el fenotipo del mutante invierte el signo —o sea, le
+enseñaba el truco que BioBERT falla—. Se repitió con un prompt neutro, sin esa
+regla ni la de la voz pasiva: **da exactamente lo mismo, y los dos difieren en 0
+de las 93.** La ventaja no venía de la pista.
+
+### Lo que esto cambia, y lo que no
+
+No dice que el ajuste fino sea inútil: dice que **para resolver el signo en una
+especie distinta de aquella en que se entrenó, un modelo general sin ajustar lo
+hace mejor**. Encaja con todo lo demás medido: el `no_relation` aprendido es un
+artefacto de marcado, y el reparto de clases se deforma al cambiar de especie.
+
+Tres límites que van con el número. Son 93 oraciones de **un solo subsistema** y
+todas de la misma clase: es un conjunto difícil a propósito, no representativo.
+El costo a escala es otro orden de magnitud —63 791 pares que BioBERT hace en 72
+minutos de CPU local—. Y el LLM evaluado es de la misma familia que el sistema
+que preparó el conjunto, aunque los agentes clasificaron a ciegas.
+
+**Esto convierte la cascada de decisión de idea en respuesta**, pero al revés de
+como se dibujó: no es «el LLM como último recurso caro», sino «lo barato resuelve
+el volumen y el LLM entra donde lo barato no es de fiar». Ahora hay con qué
+decidir dónde poner esa frontera en vez de suponerla.
+
 ## Lo que todavía no está medido
 
 | falta | qué lo produce | qué cambiaría si sale distinto |
@@ -811,10 +1120,10 @@ escritas otras cinco maneras de que eso ocurra es parte del resultado.
 | Repetir con varias semillas | `barrido.py --semillas 42,43,44` | Ya no es una suposición: reentrenar la misma configuración **con la misma semilla** la movió 0.0125 en prueba. Con varias semillas se podría reportar cada cifra con su dispersión en vez de como un punto |
 | Un brazo de control con partición al azar | `particionar.py`, todavía no lo produce | Sin él, la diferencia contra 0.8721 mezcla tres causas: quitar la contaminación, un conjunto de prueba más difícil, y haber reelegido los ajustes |
 | ~~Una línea base barata (clase mayoritaria)~~ | **hecho** — `evaluar_oro.py` la calcula sobre el mismo subconjunto que evalúa, con binomial exacta | Ya rechaza al clasificador constante (69.8 % contra 69.8 %, p = 0.542) |
-| Correr el clasificador contra el patrón de oro y la auditoría de signo | Los dos archivos ya existen | Sería la primera cifra de desempeño sobre *P. aeruginosa*, no sobre *E. coli* |
+| ~~Correr el clasificador contra el patrón de oro y la auditoría de signo~~ **hecho el 27 de agosto** | 69.7 min de CPU | Ya hay cifra sobre *P. aeruginosa*: signo 86.5 % agregado (+9.6 pp sobre la clase mayoritaria) y **36.6 % oración por oración**. La exhaustividad de 95.1 % **pierde contra el azar** y mide el extractor, no el modelo |
 | Reconocer los 55 factores del oro con fuentes públicas | Tomar los sinónimos de proteína de UniProt en vez de firmarlos a mano, admitir complejos y familias de ARN, y resolver `CpxR` y `PirR` con una decisión escrita | Haría reproducibles los diez que hoy dependen de una firma humana. Hoy se reporta 43 de 55, que es el número honesto |
-| Que la evaluación exija que sus cuatro entradas sean de la misma corrida | `red.py` ya deja la procedencia en `red_informe.json`; `evaluar_oro.py` no lo abre | Hoy la misma red publica 80.6 % o 100.0 % de exhaustividad según qué archivo se le ponga al lado, con código 0 |
-| Detectar la contaminación parcial del diccionario | Un indicador que suba, no que baje, al añadir nombres del patrón de oro | Un 12 % de filas copiadas hoy es invisible y mejora todas las cifras |
+| ~~Que la evaluación exija que sus cuatro entradas sean de la misma corrida~~ **hecho** — `etapa2/procedencia.py` | `red.py` ya deja la procedencia en `red_informe.json`; `evaluar_oro.py` no lo abre | Hoy la misma red publica 80.6 % o 100.0 % de exhaustividad según qué archivo se le ponga al lado, con código 0 |
+| ~~Detectar la contaminación parcial del diccionario~~ **hecho** — `cobertura_del_oro`, monótona por construcción | Un indicador que suba, no que baje, al añadir nombres del patrón de oro | Un 12 % de filas copiadas hoy es invisible y mejora todas las cifras |
 | Registrar los umbrales y las filas excluidas en el JSON de la evaluación | Copiarlos de `red_informe.json` y acotar `--disputadas` | Sin eso dos corridas con trece puntos de diferencia entregan un JSON idéntico |
 | Un conjunto anotado a mano de PAO1 | Muestreo por incertidumbre sobre lo que el modelo ya infirió | Es el obstáculo de fondo; sin él no hay entrenamiento en la especie objetivo |
 | Correr el modelo sobre los 1 006 textos completos (hoy son 130) | El programa de inferencia del servidor | Cierra la pregunta de cuánto aporta el texto completo frente al resumen |
@@ -858,41 +1167,57 @@ un resultado que no se esperaba al empezar.
    qué comparar: 190 relaciones canónicas y 93 oraciones con signo conocido. No
    sustituyen un conjunto anotado a mano de *P. aeruginosa*, pero permiten
    detectar errores hoy. **medido / pendiente**
-5. **Ya existe el programa que evalúa el modelo en esta computadora.** Del
-   corpus salen pares de genes, el clasificador les pone signo, se arma la red y
-   se compara contra el patrón de oro, sin depender del servidor del asesor. Para
-   reconocer los genes se construyó un diccionario de los 5 642 de PAO1 desde
-   RefSeq, KEGG y UniProt, que cubre 43 de los 55 factores del patrón de oro con
-   fuentes públicas. **medido**
-6. **El programa detecta al tramposo torpe y todavía no al cuidadoso, y eso
+5. **El programa corrió, y hay cifra sobre *P. aeruginosa*.** 65 223 pares y
+   8 653 aristas en 69.7 minutos de CPU, sin servidor y sin GPU. Para reconocer
+   los genes se construyó un diccionario de los 5 642 de PAO1 desde RefSeq, KEGG
+   y UniProt, que cubre 43 de los 55 factores del patrón con fuentes públicas.
+   **medido**
+6. **El acierto de signo es 86.5 % agregado y 36.6 % oración por oración, y la
+   segunda es la que hay que creer.** El modelo se inclina hacia `activates`; el
+   patrón de oro es en su mayoría activaciones, así que ahí el sesgo se parece a
+   acertar —solo 9.6 puntos por encima de contestar siempre lo mismo—. La
+   auditoría es toda represiones y lo derrumba: **2 aciertos de 24** en las
+   oraciones escritas desde el fenotipo del mutante, con 14 inversiones de signo
+   literales. **medido**
+7. **La exhaustividad de 95.1 % no mide el modelo.** Un sorteo al azar sobre los
+   mismos candidatos saca 99.4 %. Lo que esa cifra describe es el diccionario y
+   el extractor de pares. Se publica con su línea base al lado, que es la única
+   forma en que se puede publicar. **medido**
+8. **El programa detecta al tramposo torpe y todavía no al cuidadoso, y eso
    también se midió.** Antes de correrlo en serio se intentó engañarlo a
    propósito. Un clasificador que contesta siempre lo mismo, sin leer nada,
    salía certificado; ahora lo rechaza. Pero quedan cinco formas de inflar una
    cifra que siguen pasando, cada una con el ataque que la demuestra escrito.
    **medido / declarado**
-7. **Lo que no se resolvió.** La clase «sin relación» es un artefacto del
+9. **Lo que no se resolvió.** La clase «sin relación» es un artefacto del
    marcado, no una categoría semántica, y el entrenamiento no se parece al uso
-   real. Rehacer la partición no lo toca. **declarado**
+   real. Rehacer la partición no lo toca, y la corrida del 27 de agosto lo
+   confirmó: esa clase pasó del 31.6 % en entrenamiento al 14.7 % en inferencia.
+   **medido**
 
 ---
 
 ## Siguientes pasos
 
-1. **Correr el programa completo y publicar la primera cifra sobre
-   *P. aeruginosa*.** Ya no falta escribir nada: falta ejecutarlo y leer lo que
-   salga. No requiere entrenar, no depende de GPU, y es lo que más aporta. La
-   cifra saldrá acompañada del registro de su corrida, por lo que dice la
-   conclusión 6.
-2. **Añadir el brazo de control**, que es lo que permitiría atribuir la
+1. **Explicar por qué el número del barrido subió al quitar la contaminación.**
+   Es la pregunta más probable de la defensa y la respuesta ya está medida: de
+   los 116 ejemplos del conjunto de prueba viejo cuya ventana estaba en
+   entrenamiento, 86 tenían etiqueta compatible pero **30 la tenían distinta**.
+   O sea que el 19 % del test castigaba al modelo por memorizar: no era solo más
+   fácil, estaba en parte envenenado. Falta escribirlo con su script.
+2. **Atacar las 24 de la trampa.** Es el hallazgo más accionable de la corrida:
+   14 de ellas son inversión de signo pura. `red.py` ya tiene el sitio previsto
+   (`--invertir-fenotipo`), y el conjunto para comprobar si funciona ya existe.
+3. **Añadir el brazo de control**, que es lo que permitiría atribuir la
    diferencia contra el 0.8721 a una causa y no a tres. Depende de programarlo
    en `particionar.py`, no de conseguir GPU.
-3. **Repetir con varias semillas** (`--semillas 42,43,44`), para reportar cada
+4. **Repetir con varias semillas** (`--semillas 42,43,44`), para reportar cada
    cifra con su dispersión en vez de como un punto. Es lo que falta para que el
    orden de la tabla signifique algo.
-4. **Cerrar los cinco huecos que los ataques dejaron abiertos**, empezando por
-   el más barato: que la evaluación exija que sus cuatro archivos vengan de la
-   misma corrida. El dato ya está escrito en `red_informe.json` y nadie lo lee.
-5. **Anotar un conjunto de PAO1**, muestreando por incertidumbre sobre lo que el
+5. **Cerrar los tres huecos que quedan** de los cinco: la bandera de
+   disputadas, los umbrales sin registrar y el manifiesto del caché. Los dos que
+   se podían cometer por descuido ya están cerrados.
+6. **Anotar un conjunto de PAO1**, muestreando por incertidumbre sobre lo que el
    modelo ya infirió. Es el trabajo de fondo y no depende de los anteriores.
 
 ---
@@ -959,12 +1284,15 @@ Vale la pena tener la respuesta corta lista; todas están desarrolladas arriba.
 |---|---|
 | «Entonces el modelo no sirve» | Sí sirve. Lo que no servía era su calificación. Sin fuga **mejora**: 0.9335 contra 0.8721 |
 | «Por qué sube si le quitaste datos» | Porque también cambió el conjunto de prueba, de 64 artículos a 8. Por eso falta el brazo de control, y está declarado como pendiente en vez de atribuir la mejora a una sola causa |
-| «Ya lo probaste en *P. aeruginosa*» | Todavía no. Está el programa y está contra qué compararlo; falta ejecutarlo. Es el paso 1 de los siguientes |
+| «Ya lo probaste en *P. aeruginosa*» | Sí, el 27 de agosto: 65 223 pares, 8 653 aristas, 69.7 min de CPU. Acierto de signo 86.5 % agregado y **36.6 % oración por oración**; la segunda es la que hay que creer |
+| «Y por qué son tan distintos esos dos números» | Porque el modelo se inclina hacia `activates` y el patrón de oro es 80 de 104 activaciones: ahí el sesgo se parece a acertar. La auditoría es toda represiones y no se lo permite. Los dos son correctos sobre poblaciones distintas |
+| «Y la exhaustividad de 95 %» | No mide el modelo. Un sorteo al azar sobre los mismos candidatos saca 99.4 %, o sea más. Lo que describe es el diccionario y el extractor de pares, y por eso se publica con su línea base al lado |
 | «Y tu partición no tendrá fuga también» | Contaminación de ventana **0.0 %**, con cero artículos compartidos. Y no es una promesa: `particionar.py` verifica con una clave distinta de la que usó para agrupar, imprime la fuga línea por línea, escribe `PARTICION RECHAZADA` y sale con código 1 |
 | «Por qué solo 43 de 55» | Porque se reporta lo reproducible. Los 12 que faltan no son genes desconocidos: cuatro son locus que ninguna base nombra, tres se escriben capitalizados y la base los tiene en minúsculas, uno tiene otro nombre, dos no son un gen y dos no los resuelve nadie |
 | «Cuánto falta para la red completa» | El cuello de botella no es el código, es un conjunto anotado a mano de PAO1. Eso es trabajo de anotación, no de programación |
 | «Por qué no usaste *pandas* / tal biblioteca» | Restricción del proyecto: solo biblioteca estándar, porque corre en máquinas del laboratorio sin permisos y a veces sin internet |
-| «Qué tan confiable es la cifra que salga» | Hoy, poco: hay cinco formas conocidas de inflarla. Por eso cualquier cifra va a salir acompañada del registro de su corrida, y por eso cerrarlas es el paso 4 |
+| «Qué tan confiable es la cifra» | Más que antes: de las cinco formas conocidas de inflarla, las dos que se podían cometer por descuido están cerradas y con su prueba. Quedan tres, todas a propósito. Cada cifra sale con el registro de su corrida |
+| «Y esos guardianes funcionan» | Uno se estrenó atrapando un error mío: `red.py` sellaba la huella de un archivo que aún no estaba en su sitio, y la evaluación se negó a correr. Es la clase de fallo que buscaba y no distinguió de quién era la culpa |
 
 ### Si solo hay tiempo para tres frases
 
@@ -972,8 +1300,11 @@ Vale la pena tener la respuesta corta lista; todas están desarrolladas arriba.
    de prueba ya se habían visto en entrenamiento.
 2. Con la partición corregida el modelo **no empeora, mejora**: de 0.8721 a
    **0.9335**. Los hiperparámetros estaban bien; la medición no.
-3. Ya hay contra qué evaluarlo en *P. aeruginosa* —190 relaciones, 93 oraciones,
-   5 642 genes— y el programa que lo hace, con sus límites escritos.
+3. Ya se evaluó en *P. aeruginosa*, y el resultado es incómodo: **86.5 % de
+   acierto de signo sobre el patrón de oro, pero 36.6 % oración por oración**, y
+   **2 de 24** en las oraciones escritas desde el fenotipo del mutante. El
+   modelo se inclina hacia `activates`; el patrón de oro es en su mayoría
+   activaciones, y por eso el número agregado se ve mejor de lo que es.
 
 ---
 
@@ -1054,7 +1385,8 @@ sha256.
 | Todo sobre el modelo heredado, incluidas sus piezas rotas | [`ficha-modelo-bert.md`](ficha-modelo-bert.md) |
 | El detalle de la contaminación, la partición, Colab y el patrón de oro | [`../etapa2/README.md`](../etapa2/README.md) |
 | Por qué cada decisión de diseño se tomó así y no de la forma obvia | [`decisiones.md`](decisiones.md) |
-| Las diapositivas del seminario (láminas 7 a 9 desfasadas) | `../salidas/Seminario_GRN_IIMAS_final.pptx` |
+| **Cómo levantar todo esto en otra computadora** | [`traspaso-maquina-nueva.md`](traspaso-maquina-nueva.md) |
+| Las diapositivas del seminario | `../salidas/Seminario_GRN_IIMAS_expo.pptx` |
 
 Lo que **no** está en el repositorio y viene del servidor del asesor:
 `ecoli_curated.tsv`, los tres `entity_marked_*.jsonl` y

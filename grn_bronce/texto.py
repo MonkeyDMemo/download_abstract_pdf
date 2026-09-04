@@ -21,6 +21,7 @@ Cuatro piezas:
 Solo biblioteca estandar.
 """
 
+import bisect
 import os
 import re
 
@@ -114,6 +115,51 @@ def normalizar_espacios(s):
     return " ".join(s.split())
 
 
+def normalizar_espacios_con_mapa(s):
+    """Lo mismo que `normalizar_espacios()`, mas como deshacerlo.
+
+    Devuelve `(texto, inverso)`, donde `inverso[i]` es la posicion en `s` del
+    caracter i-esimo de `texto`. Hace falta porque el reconocimiento de
+    menciones trabaja sobre la oracion YA normalizada, asi que sus offsets
+    estan en unas coordenadas que no existen en el documento.
+
+    Es el bucle de `pretokenizar()` con la direccion al reves. Alli el mapa va
+    de bruto a limpio, porque lo que se traduce son tramos que el llamador ya
+    tenia; aqui va de limpio a bruto, porque lo que se traduce son menciones
+    que aparecieron despues. Se colapsa a mano en vez de con `str.split()` por
+    el mismo motivo de siempre: un mapa de posiciones no puede desalinearse, y
+    recalcular las menciones sobre el texto transformado si.
+    """
+    salida, inverso = [], []
+    i, n = 0, len(s)
+    while i < n:
+        if s[i].isspace():
+            j = i
+            while j < n and s[j].isspace():
+                j += 1
+            # Ni espacio inicial ni final, igual que `" ".join(s.split())`.
+            if salida and j < n:
+                salida.append(" ")
+                inverso.append(i)
+            i = j
+        else:
+            inverso.append(i)
+            salida.append(s[i])
+            i += 1
+    return "".join(salida), inverso
+
+
+def desnormalizar_span(inverso, ini, fin):
+    """Span sobre el texto normalizado -> span sobre el texto original.
+
+    Se traduce el ULTIMO caracter incluido y se le suma uno, nunca `fin`
+    directo: `fin` es exclusivo y puede caer sobre un blanco que se colapso o
+    fuera del texto, y en los dos casos el mapa no lo conoce. Es el mismo
+    cuidado que ya toma `pretokenizar()` en su linea de spans.
+    """
+    return inverso[ini], inverso[fin - 1] + 1
+
+
 def normalizar_etiqueta(bruta):
     """Etiqueta h2 -> forma canonica en minusculas.
 
@@ -166,17 +212,37 @@ def bloques(texto_markdown):
 
     El texto anterior al primer `##` sale con etiqueta vacia.
     """
+    return [(etiqueta, cuerpo)
+            for etiqueta, cuerpo, _tramos in bloques_con_offset(texto_markdown)]
+
+
+def bloques_con_offset(texto_markdown):
+    """[(etiqueta, cuerpo, tramos)], con los tramos de `traducir_span()`.
+
+    Igual que `bloques()` -- de hecho esa funcion es un envoltorio de esta --
+    pero conservando como volver de una posicion del cuerpo limpio a una del
+    markdown original. Es lo que permite subrayar la evidencia sobre el
+    documento entero y no sobre un bloque suelto.
+
+    El offset de arranque de cada cuerpo sale gratis: es `m.end()` del h2 que
+    lo abre. Lo que hay que arrastrar es lo otro, que `_limpiar_cuerpo()`
+    borra los encabezados internos y no conserva los largos.
+    """
     marcas = [(m.start(), m.end(), normalizar_etiqueta(m.group(1)))
               for m in _H2.finditer(texto_markdown)]
     salida = []
     if not marcas:
-        salida.append(("", _limpiar_cuerpo(texto_markdown)))
-        return salida
+        cuerpo, tramos = _limpiar_cuerpo_con_mapa(texto_markdown, 0)
+        return [("", cuerpo, tramos)]
     if marcas[0][0] > 0:
-        salida.append(("", _limpiar_cuerpo(texto_markdown[:marcas[0][0]])))
+        cuerpo, tramos = _limpiar_cuerpo_con_mapa(
+            texto_markdown[:marcas[0][0]], 0)
+        salida.append(("", cuerpo, tramos))
     for i, (ini, fin, etiqueta) in enumerate(marcas):
         corte = marcas[i + 1][0] if i + 1 < len(marcas) else len(texto_markdown)
-        salida.append((etiqueta, _limpiar_cuerpo(texto_markdown[fin:corte])))
+        cuerpo, tramos = _limpiar_cuerpo_con_mapa(
+            texto_markdown[fin:corte], fin)
+        salida.append((etiqueta, cuerpo, tramos))
     return salida
 
 
@@ -188,6 +254,68 @@ def _limpiar_cuerpo(cuerpo):
     oracion que nadie escribio.
     """
     return _ENCABEZADO.sub("\n", cuerpo)
+
+
+def _limpiar_cuerpo_con_mapa(cuerpo, base):
+    """Lo mismo que `_limpiar_cuerpo()`, mas como deshacerlo.
+
+    Devuelve `(cuerpo_limpio, tramos)`. Cada tramo es
+    `(ini_limpio, fin_limpio, ini_documento)` de un trozo que sobrevivio
+    intacto. Entre dos tramos hay un encabezado que se fue: ahi el mapa no es
+    invertible, y por eso es una lista de tramos y no una funcion.
+
+    `base` es donde empieza `cuerpo` dentro del markdown completo.
+
+    El mapa es lineal a trozos en vez de por caracter porque un encabezado
+    borrado desplaza TODO lo que va detras la misma cantidad. Guardar una
+    entrada por caracter costaria ~260 000 entradas por corpus para decir lo
+    mismo que dicen unas pocas decenas.
+    """
+    partes, tramos = [], []
+    largo, cursor = 0, 0
+    for m in _ENCABEZADO.finditer(cuerpo):
+        if m.start() > cursor:
+            trozo = cuerpo[cursor:m.start()]
+            partes.append(trozo)
+            tramos.append((largo, largo + len(trozo), base + cursor))
+            largo += len(trozo)
+        partes.append("\n")          # el mismo salto que mete la sustitucion
+        largo += 1
+        cursor = m.end()
+    if cursor < len(cuerpo):
+        trozo = cuerpo[cursor:]
+        partes.append(trozo)
+        tramos.append((largo, largo + len(trozo), base + cursor))
+    return "".join(partes), tramos
+
+
+def _tramo_de(tramos, posicion):
+    """Indice del tramo que contiene `posicion`, o None si cayo en un hueco."""
+    i = bisect.bisect_right([t[0] for t in tramos], posicion) - 1
+    if i < 0:
+        return None
+    ini, fin, _ = tramos[i]
+    return i if ini <= posicion < fin else None
+
+
+def traducir_span(tramos, ini, fin):
+    """Span del cuerpo limpio -> `(ini_doc, fin_doc, contiguo)`.
+
+    `contiguo` es False cuando el span cruza un encabezado borrado: ahi ningun
+    par de posiciones del documento recorta exactamente la oracion, porque en
+    medio esta el titulo que se quito. Son pocas --del orden del 0.2 % de las
+    oraciones-- pero **silenciosas si no se marcan**: el subrayado saldria con
+    un titulo de subseccion metido dentro y nadie lo notaria salvo mirandolo.
+
+    Devuelve `(None, None, False)` si alguna punta cae dentro del hueco.
+    """
+    i = _tramo_de(tramos, ini)
+    j = _tramo_de(tramos, fin - 1)
+    if i is None or j is None:
+        return None, None, False
+    a = tramos[i][2] + (ini - tramos[i][0])
+    b = tramos[j][2] + (fin - 1 - tramos[j][0]) + 1
+    return a, b, i == j
 
 
 def secciones(texto_markdown, clases=None):
@@ -206,6 +334,74 @@ def secciones(texto_markdown, clases=None):
             for etiqueta, cuerpo in bloques(texto_markdown)]
 
 
+# El corte de oracion, como constante y no en linea, para que
+# `oraciones_con_offset()` pueda recorrerlo con finditer en vez de partir con
+# split. Son la misma expresion: los trozos de un split son los huecos entre
+# las coincidencias de un finditer, y `\s+` no puede casar vacio, asi que no
+# hay caso degenerado que los separe.
+_SEP = re.compile(r"(?<=[.!?])\s+")
+
+
+def oraciones_con_offset(cuerpo):
+    """[(ini, fin, oracion)] con los offsets sobre `cuerpo` sin transformar.
+
+    Misma logica de corte que `oraciones()` -- de hecho esa funcion es un
+    envoltorio de esta, para que no existan dos -- mas la posicion de cada
+    oracion en el texto que se recibio. Con eso se puede subrayar la evidencia
+    sobre el documento original en vez de mostrarla suelta.
+
+    Que esto se pueda hacer sin tocar los cortes depende de un detalle del
+    orden: se normaliza DESPUES de partir, asi que las posiciones que decide
+    `_SEP` son posiciones reales de `cuerpo`. Lo unico que hay que deshacer son
+    los tres sitios que mueven caracteres sin moverse el corte: el separador de
+    largo variable que `split` tiraba, el `+ " " +` que re-pega los trozos de
+    una abreviatura, y el recorte de extremos.
+
+    OJO CON EL ORIGEN. Los `.txt` del corpus se escribieron con `write_text`,
+    que en Windows tradujo los saltos a CRLF. Estos offsets son en caracteres
+    del texto YA leido --o sea con los saltos traducidos de vuelta a `\\n`--, no
+    en bytes del archivo en disco. Quien pinte el subrayado sobre los bytes
+    crudos lo vera corrido una posicion por cada linea anterior.
+    """
+    # Los trozos son los huecos entre separadores; se guardan como spans en
+    # vez de como texto, que es toda la diferencia con re.split.
+    trozos, cursor = [], 0
+    for m in _SEP.finditer(cuerpo):
+        trozos.append((cursor, m.start()))
+        cursor = m.end()
+    trozos.append((cursor, len(cuerpo)))
+
+    crudas, ini_acc, fin_acc, acumulado = [], None, None, ""
+    for a, b in trozos:
+        t = cuerpo[a:b]
+        if acumulado:
+            acumulado = (acumulado + " " + t).strip()
+            fin_acc = b
+        else:
+            acumulado = t
+            ini_acc, fin_acc = a, b
+        if ABREV.search(acumulado) or _INICIAL.search(acumulado):
+            continue
+        crudas.append((ini_acc, fin_acc, normalizar_espacios(acumulado)))
+        acumulado = ""
+    if acumulado:
+        crudas.append((ini_acc, fin_acc, normalizar_espacios(acumulado)))
+
+    # El `.strip()` de arriba y el de `normalizar_espacios` recortaron blancos
+    # que el span todavia incluye. Sin esto el subrayado empieza un espacio
+    # antes de la primera letra.
+    salida = []
+    for a, b, o in crudas:
+        if not o:
+            continue
+        while a < b and cuerpo[a].isspace():
+            a += 1
+        while b > a and cuerpo[b - 1].isspace():
+            b -= 1
+        salida.append((a, b, o))
+    return salida
+
+
 def oraciones(cuerpo):
     """Lista de oraciones crudas, con espacios normalizados.
 
@@ -214,18 +410,13 @@ def oraciones(cuerpo):
     la auditoria de signo salieron de ella: cambiarla haria que la etapa 6 no
     pudiera unir sus filas con las predicciones, y la exactitud de signo se
     calcularia sobre un punado de filas sin que nada fallara.
+
+    Es un envoltorio de `oraciones_con_offset()` a proposito: mientras haya una
+    sola implementacion del corte, anadir offsets no puede mover una oracion.
+    Dos implementaciones que "hacen lo mismo" divergen, y esta es justo la que
+    no puede.
     """
-    trozos = re.split(r"(?<=[.!?])\s+", cuerpo)
-    salida, acumulado = [], ""
-    for t in trozos:
-        acumulado = (acumulado + " " + t).strip() if acumulado else t
-        if ABREV.search(acumulado) or _INICIAL.search(acumulado):
-            continue
-        salida.append(normalizar_espacios(acumulado))
-        acumulado = ""
-    if acumulado:
-        salida.append(normalizar_espacios(acumulado))
-    return [o for o in salida if o]
+    return [o for _, _, o in oraciones_con_offset(cuerpo)]
 
 
 def pretokenizar(oracion, protegidos):
