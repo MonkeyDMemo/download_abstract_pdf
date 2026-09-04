@@ -115,6 +115,51 @@ def normalizar_espacios(s):
     return " ".join(s.split())
 
 
+def normalizar_espacios_con_mapa(s):
+    """Lo mismo que `normalizar_espacios()`, mas como deshacerlo.
+
+    Devuelve `(texto, inverso)`, donde `inverso[i]` es la posicion en `s` del
+    caracter i-esimo de `texto`. Hace falta porque el reconocimiento de
+    menciones trabaja sobre la oracion YA normalizada, asi que sus offsets
+    estan en unas coordenadas que no existen en el documento.
+
+    Es el bucle de `pretokenizar()` con la direccion al reves. Alli el mapa va
+    de bruto a limpio, porque lo que se traduce son tramos que el llamador ya
+    tenia; aqui va de limpio a bruto, porque lo que se traduce son menciones
+    que aparecieron despues. Se colapsa a mano en vez de con `str.split()` por
+    el mismo motivo de siempre: un mapa de posiciones no puede desalinearse, y
+    recalcular las menciones sobre el texto transformado si.
+    """
+    salida, inverso = [], []
+    i, n = 0, len(s)
+    while i < n:
+        if s[i].isspace():
+            j = i
+            while j < n and s[j].isspace():
+                j += 1
+            # Ni espacio inicial ni final, igual que `" ".join(s.split())`.
+            if salida and j < n:
+                salida.append(" ")
+                inverso.append(i)
+            i = j
+        else:
+            inverso.append(i)
+            salida.append(s[i])
+            i += 1
+    return "".join(salida), inverso
+
+
+def desnormalizar_span(inverso, ini, fin):
+    """Span sobre el texto normalizado -> span sobre el texto original.
+
+    Se traduce el ULTIMO caracter incluido y se le suma uno, nunca `fin`
+    directo: `fin` es exclusivo y puede caer sobre un blanco que se colapso o
+    fuera del texto, y en los dos casos el mapa no lo conoce. Es el mismo
+    cuidado que ya toma `pretokenizar()` en su linea de spans.
+    """
+    return inverso[ini], inverso[fin - 1] + 1
+
+
 def normalizar_etiqueta(bruta):
     """Etiqueta h2 -> forma canonica en minusculas.
 

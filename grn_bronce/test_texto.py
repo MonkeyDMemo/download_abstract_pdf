@@ -146,6 +146,57 @@ class PruebasOffsets(unittest.TestCase):
         self.assertEqual(texto, cuerpo)
 
 
+class PruebasMapaInverso(unittest.TestCase):
+    """De las coordenadas de la oracion normalizada a las del texto crudo.
+
+    El reconocimiento de menciones trabaja sobre la oracion ya normalizada, o
+    sea en unas coordenadas que no existen en el documento. Sin este mapa, un
+    subrayado de gen se pinta desplazado tantas posiciones como blancos se
+    hayan colapsado antes de el.
+    """
+
+    def test_produce_lo_mismo_que_la_funcion_de_siempre(self):
+        """Si divergieran, habria dos normalizaciones distintas y el mapa
+        traduciria a un texto que nadie mas produce."""
+        for s in ["  MexT   activates\n\n mexEF-oprN. ",
+                  "sin blancos raros",
+                  "\t\ttabulado\ty todo\n",
+                  ""]:
+            texto, _inverso = T.normalizar_espacios_con_mapa(s)
+
+            self.assertEqual(texto, T.normalizar_espacios(s))
+
+    def test_hay_una_entrada_por_caracter_de_salida(self):
+        s = "  MexT   activates  mexEF-oprN.  "
+
+        texto, inverso = T.normalizar_espacios_con_mapa(s)
+
+        self.assertEqual(len(inverso), len(texto))
+
+    def test_desnormalizar_devuelve_el_texto_original_de_la_mencion(self):
+        """El caso que importa: la mencion se reconocio sobre el texto
+        normalizado y hay que pintarla sobre el crudo."""
+        crudo = "MexT   activates\n\nmexEF-oprN in PAO1."
+        texto, inverso = T.normalizar_espacios_con_mapa(crudo)
+        ini = texto.index("mexEF-oprN")
+
+        a, b = T.desnormalizar_span(inverso, ini, ini + len("mexEF-oprN"))
+
+        self.assertEqual(crudo[a:b], "mexEF-oprN")
+
+    def test_el_fin_del_span_no_se_traduce_directo(self):
+        """`fin` es exclusivo y puede caer sobre un blanco colapsado, que el
+        mapa no conoce. Traducirlo directo daria KeyError o la posicion de
+        otro caracter; hay que traducir el ultimo incluido y sumar uno."""
+        crudo = "MexT     activates"
+        texto, inverso = T.normalizar_espacios_con_mapa(crudo)
+
+        a, b = T.desnormalizar_span(inverso, 0, len("MexT"))
+
+        self.assertEqual(crudo[a:b], "MexT")
+        self.assertTrue(crudo[b].isspace())
+
+
 class PruebasBloques(unittest.TestCase):
     """El segundo mapa: del cuerpo limpio al markdown original."""
 
