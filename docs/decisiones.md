@@ -420,7 +420,7 @@ lectura de archivo, y la base se puede editar desde el propio tablero.
 
 En vez de eso la ruta se arma con el PMID y el PMCID, validados contra
 `^\d{1,12}$` y `^PMC\d{1,12}$`, más la convención de nombres de
-`structure.md`. No es una suposición: se verificó contra los 2263 documentos
+`CLAUDE.md`. No es una suposición: se verificó contra los 2263 documentos
 que **todos** los PMID son dígitos y **todos** los PMCID casan su patrón, y que
 el 100% de los archivos se localizan así —300 de 300 de texto, 43 de 43 de PDF.
 

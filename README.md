@@ -304,12 +304,12 @@ salidas/               exportaciones CSV y JSONL (fuera del repositorio)
 |---|---|
 | `docs/informe-seminario-1.md` | **el panorama del proyecto y su estado; empieza aquí** |
 | `CLAUDE.md` | contexto completo del proyecto y reglas que no se rompen |
-| `structure.md` | árbol de archivos, capas y dónde vive la idempotencia |
-| `tech.md` | restricciones técnicas, manejo de errores, convenciones |
+| `PLAN.md` | los cuatro pasos, sus capas y el contrato de cada uno |
+| `docs/hallazgos.md` | los hechos medidos, con su medición y la fecha |
 | `docs/decisiones.md` | las decisiones de diseño y por qué se tomaron así |
 | `docs/traspaso-maquina-nueva.md` | **cómo levantar el proyecto en otra computadora**: qué copiar, qué instalar y cómo comprobarlo |
 | `docs/traspaso-etapa-2.md` | qué formato tienen los datos que esta etapa entrega |
 | `docs/ficha-modelo-bert.md` | el modelo de clasificación heredado, auditado |
 | `etapa2/README.md` | la etapa 2: partición sin contaminación y patrón de oro |
-| `dominio-grn.md` | nomenclatura de genes y qué se busca extraer |
-| `migracion-servicio.md` | qué falta para operarlo como servicio compartido |
+| `.kiro/steering/dominio-grn.md` | nomenclatura de genes y qué se busca extraer |
+| `.kiro/steering/migracion-servicio.md` | qué falta para operarlo como servicio compartido |

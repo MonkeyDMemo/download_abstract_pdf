@@ -4,7 +4,7 @@ Qué se hizo desde el primer seminario, qué contestó cada cosa que pidió el
 comité, y qué falta. Corte: 27 de agosto de 2026.
 
 El detalle está en [`informe-seminario-1.md`](informe-seminario-1.md) y el
-estado día a día en [`bitacora-y-plan.md`](bitacora-y-plan.md).
+estado día a día en [`bitacora.md`](bitacora.md).
 
 Todas las cifras salen de archivos que el repositorio produce y que llevan la
 huella de sus entradas. Las de este documento son de **la corrida del 27 de
