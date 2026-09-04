@@ -40,6 +40,59 @@ contexto (que no vaya precedido de «epitope», «FLAG», «His», «Myc», o de
 guion). Sin decidir. **Es una clase nueva y conviene buscar más antes de
 elegir.**
 
+### Cobertura del bronce sobre el oro, y la autorregulación
+
+`etapa2/evaluar_cobertura_bronce.py`, nuevo. Mide **el techo del paso 1**: de las
+relaciones canónicas, cuántas llegan a tener sus dos extremos juntos en alguna
+oración candidata. Lo que no está ahí, el paso 2 no lo puede verificar porque no
+lo va a ver.
+
+Vive en `etapa2/` y no en `grn_bronce/` porque abre el patrón de oro, y el
+paquete bronce no puede. Está registrado en la lista blanca de
+`test_contaminacion.py` **como evaluador**, con la misma condición que
+`evaluar_oro.py` y `verificar_oro.py`: nadie lo importa, no produce nada que el
+pipeline consuma, y su salida es un informe.
+
+| denominador | cubiertas | recall |
+|---|---|---|
+| honesto (atestiguada + signo resuelto + sin disputa) | 149 de **176** | **84.7 %** |
+| sobre las 190, para comparar | 154 de 190 | 81.1 % |
+
+**El denominador honesto sale 176, no ~169.** No es discrepancia de criterio: de
+las 5 relaciones en disputa que documenta el README, **solo 1 se puede detectar**
+(`RhlR→rpoS`, por la marca en la columna `alias`). Las otras 4 no están nombradas
+en ninguna parte, así que no se pueden sacar del cómputo. El script avisa de eso
+en cada corrida en vez de quedarse callado. Nombrarlas —hay un flag
+`--disputadas` que las acepta— dejaría el denominador en 172.
+
+**La autorregulación queda fuera de la coocurrencia actual y necesita regla
+propia.** `grn_bronce/identificar.py` exige dos genes **distintos** por oración,
+así que `MexT → mexT` no puede salir jamás: no es que no se encuentre, es que la
+regla lo excluye por construcción. Son **11 filas del oro** (`AlgR→algR`,
+`MexL→mexL`, `MexR→mexR`, `MexT→mexT`, `MexZ→mexZ`, `NalD→nalD`, `NfxB→nfxB`,
+`AlgU→algU`, `AmrZ→amrZ`, `PchR→pchR` y `ExsA→exsCEBA`, donde ExsA es miembro de
+su propio operón), 8 de ellas dentro del denominador honesto.
+
+Es una **regresión respecto de `etapa2/extraer_pares.py`**, que sí las emitía con
+`autorregulacion: true` precisamente «para que las 10 filas autorregulatorias del
+patrón de oro no salieran de la evaluación». Sin decidir cómo se recupera.
+
+#### Dos defectos propios, encontrados al medir
+
+**El evaluador contaba la autorregulación como cubierta.** La primera versión
+miraba la cobertura antes de detectar el caso, y como los dos extremos de
+`MexT → mexT` resuelven al mismo conjunto de claves, **una sola mención de MexT
+satisfacía los dos lados**. Daba 89.2 % en vez de 84.7 %: 4.5 puntos de más, el
+5.7 % del denominador, en relaciones que el bronce no puede emitir. Corregido
+decidiendo la autorregulación antes de mirar la cobertura.
+
+**La prueba de divergencia del diccionario comparaba bytes crudos.** Falló
+avisando de una divergencia que no existía: git en Windows convierte los finales
+de línea al hacer checkout, y las dos copias diferían en 5 643 bytes sobre 5 643
+líneas — exactamente un byte por línea. El contenido era idéntico. Ahora normaliza
+los saltos antes de calcular la huella, y se comprobó que sigue atrapando
+divergencia real añadiendo una fila falsa a una de las copias.
+
 ### Pendientes anotados, no corregidos
 
 Los seis primeros tocan archivos congelados; los demás son deuda del paso 1.

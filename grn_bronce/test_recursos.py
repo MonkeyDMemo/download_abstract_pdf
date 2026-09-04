@@ -37,10 +37,22 @@ VOCABULARIOS = (
 
 
 def huella(ruta):
+    """sha256 del CONTENIDO, con los saltos de linea normalizados.
+
+    No de los bytes crudos, y la diferencia importa: git en Windows convierte
+    los finales de linea al hacer checkout, asi que dos copias identicas de un
+    TSV pueden diferir en exactamente un byte por linea sin que nadie haya
+    tocado nada. La primera version de esta prueba comparaba bytes y fallo por
+    eso --5643 bytes de diferencia sobre 5643 lineas-- avisando de una
+    divergencia que no existia.
+
+    Lo que la prueba tiene que atrapar es que alguien edite una copia y no la
+    otra. Eso cambia el contenido, y esto lo sigue viendo.
+    """
     h = hashlib.sha256()
     with io.open(ruta, "rb") as f:
         for bloque in iter(lambda: f.read(1 << 20), b""):
-            h.update(bloque)
+            h.update(bloque.replace(b"\r\n", b"\n"))
     return h.hexdigest()[:16]
 
 

@@ -57,7 +57,16 @@ LISTA_BLANCA = {
     # lo importa, no produce nada que el pipeline consuma, y su unica salida es
     # un conteo por pantalla. Verificar el oro exige abrirlo, igual que
     # evaluarlo. Si algun dia otro modulo lo importa, esto hay que revisarlo.
-    "oro_pseudomonas": {"evaluar_oro.py", "verificar_oro.py"},
+    # `evaluar_cobertura_bronce.py` mide cuantas relaciones del oro
+    # llegan a coocurrir en una oracion candidata del paso 1. Entra por
+    # la misma razon que los otros dos y con la misma condicion: es un
+    # EVALUADOR. Nadie lo importa, no produce ningun archivo que el
+    # pipeline consuma, y su salida es un informe. Vive aqui y no en
+    # grn_bronce precisamente porque el paquete bronce no puede abrir el
+    # oro: si la referencia entrara en la logica que extrae, las cifras
+    # dejarian de medir lo que el pipeline encuentra.
+    "oro_pseudomonas": {"evaluar_oro.py", "verificar_oro.py",
+                        "evaluar_cobertura_bronce.py"},
     # `auditar_signo.py` PRODUCE auditoria_signo.tsv, no lo consume. Se agrega
     # a la lista blanca con esa condicion y no en general: la prueba
     # `test_auditar_signo_solo_escribe` de mas abajo comprueba que el nombre
