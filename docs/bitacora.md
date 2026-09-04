@@ -202,7 +202,7 @@ cercano al par regulador-blanco, con desempate por especificidad léxica
 Qué desbloquea, con las cifras ya medidas:
 
 - **La cifra de acierto de signo**, hoy imposible: pasaría de 114 pares
-  utilizables a algo cercano a los 879 que tienen al menos un disparador con
+  utilizables a un techo de 675, que son los que tienen algun disparador con
   signo (`solo ?` fuera).
 - **Limpia `signo_sugerido` de los 1 188 pares dirigidos**, en particular los
   195 contradictorios, que hoy son ruido puro en la columna.
