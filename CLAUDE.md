@@ -142,8 +142,12 @@ barata de romper algo sin enterarse.
 
 ## Confidencialidad
 
-- **No leer, listar ni citar el contenido de `GRN_DATOS`, de archivos `*.db`
-  ni de `.env`.**
+- **No leer, listar ni citar el contenido de `datos/validacion/`, de
+  archivos `*.db` ni de `.env`.** Ahi es donde viven los datos del
+  laboratorio cuando lleguen. El resto de `GRN_DATOS` --el corpus de
+  PubMed, que es publico-- es el insumo del paso 1 y se lee con normalidad:
+  una regla mas ancha que lo que protege bloquea el trabajo sin ganar
+  confidencialidad.
 - **Los datos del laboratorio son confidenciales**: la base curada v2 y los
   parrafos etiquetados. Nunca se copian a fixtures, pruebas, documentacion,
   prompts ni mensajes. Se consultan solo por sus tablas
