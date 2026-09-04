@@ -224,6 +224,119 @@ class PruebasDescargas(BasePruebaDb):
 
 # ----------------------------------------------------------------- resumen
 
+
+class PruebasCorpus(BasePruebaDb):
+    """El corpus versionado: congelar que documentos entraron en una medida.
+
+    Lo que protegen estas pruebas es una sola frase: "esta cifra se midio
+    sobre estos documentos". Si el mismo nombre pudiera apuntar a dos
+    conjuntos distintos, esa frase no querria decir nada, y seria peor que
+    no tener la tabla porque daria trazabilidad aparente.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.q, _ = db.alta_consulta(self.con, "pa", "query pa")
+        db.guardar_documentos(self.con, [
+            {"pmid": "111", "abstract": "uno"},
+            {"pmid": "222", "abstract": "dos"},
+            {"pmid": "333"},
+        ])
+        db.vincular(self.con, self.q, ["111", "222", "333"])
+
+    def cuenta(self, tabla):
+        return self.con.execute(
+            "SELECT COUNT(*) c FROM %s" % tabla).fetchone()["c"]
+
+    def test_crear_dos_veces_no_duplica_ni_cambia_la_huella(self):
+        cid, estado = db.crear_corpus(self.con, "v1", consulta_id=self.q)
+        hue = db.obtener_corpus(self.con, "v1")["hash_pmids"]
+
+        cid2, estado2 = db.crear_corpus(self.con, "v1", consulta_id=self.q)
+
+        self.assertEqual(estado, "creado")
+        self.assertEqual(estado2, "ya_existia")
+        self.assertEqual(cid, cid2)
+        self.assertEqual(self.cuenta("corpus_documento"), 3)
+        self.assertEqual(db.obtener_corpus(self.con, "v1")["hash_pmids"], hue)
+
+    def test_el_mismo_nombre_con_otro_conjunto_se_niega(self):
+        """Un corpus congelado no cambia. Sin esta negativa, "se midio sobre
+        el corpus v1" deja de identificar nada."""
+        db.crear_corpus(self.con, "v1", pmids=["111", "222"])
+
+        with self.assertRaises(ValueError):
+            db.crear_corpus(self.con, "v1", pmids=["111", "333"])
+
+    def test_los_pmids_que_no_estan_en_documentos_se_ignoran(self):
+        """esearch entrega PMIDs que efetch no trae. Ligarlos violaria la
+        llave foranea y abortaria por un solo articulo retirado."""
+        cid, _ = db.crear_corpus(self.con, "v1",
+                                 pmids=["111", "999", "222"])
+
+        self.assertEqual(db.pmids_del_corpus(self.con, cid), ["111", "222"])
+        self.assertEqual(db.obtener_corpus(self.con, "v1")["n_documentos"], 2)
+
+    def test_crear_un_corpus_no_toca_las_tablas_del_etl(self):
+        """La adicion al paso 0 tiene que ser inerte: si tocara documentos o
+        consulta_documento, dejaria de ser cierto que el paso 0 esta cerrado."""
+        antes = (self.cuenta("documentos"), self.cuenta("consulta_documento"))
+
+        db.crear_corpus(self.con, "v1", consulta_id=self.q)
+
+        self.assertEqual(
+            (self.cuenta("documentos"), self.cuenta("consulta_documento")),
+            antes)
+
+    def test_verificar_detecta_que_se_borro_un_documento(self):
+        """El guardian va antes de la cifra que protege, no despues: despues
+        ya se cito."""
+        cid, _ = db.crear_corpus(self.con, "v1", consulta_id=self.q)
+        self.assertTrue(db.verificar_corpus(self.con, cid))
+
+        self.con.execute("DELETE FROM corpus_documento WHERE pmid = '333'")
+
+        self.assertFalse(db.verificar_corpus(self.con, cid))
+
+    def test_verificar_un_corpus_que_no_existe_es_falso(self):
+        self.assertFalse(db.verificar_corpus(self.con, 9999))
+
+    def test_pmids_del_corpus_es_la_lista_completa_y_ordenada(self):
+        cid, _ = db.crear_corpus(self.con, "v1", pmids=["333", "111"])
+
+        self.assertEqual(db.pmids_del_corpus(self.con, cid), ["111", "333"])
+
+    def test_documentos_del_corpus_puede_exigir_abstract(self):
+        cid, _ = db.crear_corpus(self.con, "v1", consulta_id=self.q)
+
+        todos = db.documentos_del_corpus(self.con, cid)
+        con_abs = db.documentos_del_corpus(self.con, cid,
+                                           solo_con_abstract=True)
+
+        self.assertEqual(len(todos), 3)
+        self.assertEqual([f["pmid"] for f in con_abs], ["111", "222"])
+
+    def test_cobertura_cuenta_solo_las_descargas_ok(self):
+        """Una descarga en error no es texto disponible. Contarla haria que
+        la cobertura reportada fuera mayor que la real."""
+        cid, _ = db.crear_corpus(self.con, "v1", consulta_id=self.q)
+        db.registrar_descarga(self.con, "111", "xml", "ok")
+        db.registrar_descarga(self.con, "222", "xml", "error")
+        db.registrar_descarga(self.con, "222", "pdf", "ok")
+
+        c = db.cobertura_corpus(self.con, cid)
+
+        self.assertEqual(c["documentos"], 3)
+        self.assertEqual(c["con_abstract"], 2)
+        self.assertEqual(c["xml_ok"], 1)
+        self.assertEqual(c["pdf_ok"], 1)
+        self.assertEqual(c["sin_texto_completo"], 1)
+
+    def test_crear_sin_pmids_ni_consulta_se_niega(self):
+        with self.assertRaises(ValueError):
+            db.crear_corpus(self.con, "v1")
+
+
 class PruebasResumen(BasePruebaDb):
 
     def test_el_resumen_distingue_documentos_de_vinculos(self):
@@ -280,7 +393,8 @@ class PruebasConexion(PruebaSinRed):
         tablas = {f[0] for f in con.execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}
         self.assertEqual(tablas, {"consultas", "ejecuciones", "documentos",
-                                  "consulta_documento", "descargas"})
+                                  "consulta_documento", "descargas",
+                                  "corpus", "corpus_documento"})
 
     def test_las_llaves_foraneas_quedan_activas(self):
         """Sin esto la base aceptaria vinculos a documentos inexistentes y

@@ -19,6 +19,7 @@ almacena una sola vez y se liga tres veces. Eso hace el ETL idempotente:
 volver a correr una consulta no re-descarga nada que ya se tenga.
 """
 
+import hashlib
 import json
 import sqlite3
 from datetime import datetime, timezone
@@ -95,9 +96,27 @@ CREATE TABLE IF NOT EXISTS descargas (
     UNIQUE (pmid, tipo)
 );
 
+CREATE TABLE IF NOT EXISTS corpus (
+    id           INTEGER PRIMARY KEY,
+    nombre       TEXT NOT NULL UNIQUE,
+    consulta_id  INTEGER REFERENCES consultas(id),
+    descripcion  TEXT,
+    fecha_corte  TEXT NOT NULL,
+    n_documentos INTEGER NOT NULL,
+    hash_pmids   TEXT NOT NULL,
+    creado_en    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS corpus_documento (
+    corpus_id INTEGER NOT NULL REFERENCES corpus(id),
+    pmid      TEXT    NOT NULL REFERENCES documentos(pmid),
+    PRIMARY KEY (corpus_id, pmid)
+);
+
 CREATE INDEX IF NOT EXISTS ix_doc_anio    ON documentos(anio);
 CREATE INDEX IF NOT EXISTS ix_cd_pmid     ON consulta_documento(pmid);
 CREATE INDEX IF NOT EXISTS ix_desc_estado ON descargas(tipo, estatus);
+CREATE INDEX IF NOT EXISTS ix_cdoc_pmid  ON corpus_documento(pmid);
 
 CREATE VIEW IF NOT EXISTS v_documentos_consulta AS
 SELECT c.nombre AS consulta, d.*
@@ -863,6 +882,173 @@ def borrar_descarga(con, pmid, tipo):
     )
     con.commit()
     return cur.rowcount > 0
+
+
+# ------------------------------------------------------------------ corpus
+
+def _hash_pmids(pmids):
+    """Huella del conjunto de PMIDs, para detectar que un corpus cambio.
+
+    Se recorta a 16 hexadecimales, la misma convencion que usa la etapa 2
+    (procedencia.LARGO). Son 64 bits: bastan de sobra para descartar una
+    confusion accidental entre dos corridas, que es lo unico que esto tiene
+    que atrapar. No protege de nadie que quiera enganar al sistema a
+    proposito, y no lo pretende.
+    """
+    h = hashlib.sha256(chr(10).join(sorted(pmids)).encode("utf-8"))
+    return h.hexdigest()[:16]
+
+
+def crear_corpus(con, nombre, consulta_id=None, pmids=None, descripcion=None):
+    """Congela una lista de PMIDs bajo un nombre. Devuelve (id, estado).
+
+    'estado' es "creado" o "ya_existia". Repetir la llamada con el mismo
+    nombre y el mismo conjunto no duplica nada; con el mismo nombre y otro
+    conjunto lanza ValueError.
+
+    Esa negativa es la razon de ser de la tabla. Un corpus existe para que
+    "esta metrica se midio sobre estos documentos" siga siendo cierto dentro
+    de seis meses; si el mismo nombre pudiera apuntar a dos conjuntos, la
+    frase no querria decir nada y seria peor que no tener la tabla, porque
+    daria una falsa sensacion de trazabilidad.
+
+    Si 'pmids' es None se toman los de la consulta. En los dos casos se
+    intersectan contra 'documentos' con el mismo INSERT ... SELECT que usa
+    vincular(): esearch entrega PMIDs que efetch luego no trae, y ligarlos
+    violaria la llave foranea y abortaria por un solo articulo.
+    """
+    if pmids is None:
+        if consulta_id is None:
+            raise ValueError("hace falta 'pmids' o 'consulta_id'")
+        pmids = [f["pmid"] for f in con.execute(
+            """SELECT cd.pmid FROM consulta_documento cd
+                 JOIN documentos d ON d.pmid = cd.pmid
+                WHERE cd.consulta_id = ?""", (consulta_id,))]
+    else:
+        # Se descartan aqui los que no existen para que n_documentos y
+        # hash_pmids describan lo que de verdad quedo ligado, no lo que se
+        # pidio. Si contaran la peticion, verificar_corpus() fallaria
+        # siempre sobre un corpus recien creado.
+        conocidos = pmids_conocidos(con, list(pmids))
+        pmids = [p for p in pmids if p in conocidos]
+
+    pmids = sorted(set(pmids))
+    hue = _hash_pmids(pmids)
+
+    previo = obtener_corpus(con, nombre)
+    if previo is not None:
+        if previo["hash_pmids"] != hue:
+            raise ValueError(
+                "el corpus '%s' ya existe con %d documentos y huella %s; "
+                "lo que se intenta guardar tiene %d y huella %s. Un corpus "
+                "congelado no cambia: usa otro nombre."
+                % (nombre, previo["n_documentos"], previo["hash_pmids"],
+                   len(pmids), hue))
+        return previo["id"], "ya_existia"
+
+    t = ahora()
+    with con:
+        cur = con.execute(
+            """INSERT INTO corpus (nombre, consulta_id, descripcion,
+                                   fecha_corte, n_documentos, hash_pmids,
+                                   creado_en)
+               VALUES (?,?,?,?,?,?,?)""",
+            (nombre, consulta_id, descripcion, t, len(pmids), hue, t))
+        cid = cur.lastrowid
+        con.executemany(
+            """INSERT INTO corpus_documento (corpus_id, pmid)
+               SELECT ?, d.pmid FROM documentos d WHERE d.pmid = ?
+               ON CONFLICT(corpus_id, pmid) DO NOTHING""",
+            [(cid, p) for p in pmids])
+    return cid, "creado"
+
+
+def todos_los_pmids(con):
+    """Todos los PMIDs de la base, ordenados.
+
+    Existe para que 'corpus crear --todos' no tenga que escribir SQL: la
+    regla del proyecto es que solo este modulo lo hace.
+    """
+    return [f["pmid"] for f in con.execute(
+        "SELECT pmid FROM documentos ORDER BY pmid")]
+
+
+def obtener_corpus(con, nombre):
+    return con.execute(
+        "SELECT * FROM corpus WHERE nombre = ?", (nombre,)).fetchone()
+
+
+def listar_corpus(con):
+    return con.execute(
+        """SELECT c.*, q.nombre AS consulta
+             FROM corpus c
+             LEFT JOIN consultas q ON q.id = c.consulta_id
+            ORDER BY c.creado_en DESC""").fetchall()
+
+
+def pmids_del_corpus(con, corpus_id):
+    """La lista completa de PMIDs del corpus, ordenada. Ninguna otra.
+
+    Es la unica entrada legitima del paso 1: sin esto cada script decide por
+    su cuenta que documentos mirar, y dos metricas dejan de ser comparables
+    sin que nada avise.
+    """
+    return [f["pmid"] for f in con.execute(
+        "SELECT pmid FROM corpus_documento WHERE corpus_id = ? ORDER BY pmid",
+        (corpus_id,))]
+
+
+def documentos_del_corpus(con, corpus_id, solo_con_abstract=False):
+    """Las filas de 'documentos' del corpus, para que nadie escriba SQL fuera.
+
+    Reemplaza los SELECT sueltos que hoy hacen los scripts de la etapa 2.
+    """
+    sql = """SELECT d.* FROM documentos d
+               JOIN corpus_documento cd ON cd.pmid = d.pmid
+              WHERE cd.corpus_id = ?"""
+    if solo_con_abstract:
+        sql += " AND d.tiene_abstract = 1"
+    return con.execute(sql + " ORDER BY d.pmid", (corpus_id,)).fetchall()
+
+
+def cobertura_corpus(con, corpus_id):
+    """Cuanto texto hay para este corpus, por tipo. Contesta PLAN.md 8.3."""
+    def cuenta(sql, params=()):
+        return con.execute(sql, params).fetchone()["c"]
+
+    base = """FROM corpus_documento cd JOIN documentos d ON d.pmid = cd.pmid
+              WHERE cd.corpus_id = ?"""
+    total = cuenta("SELECT COUNT(*) c " + base, (corpus_id,))
+    con_abs = cuenta("SELECT COUNT(*) c " + base + " AND d.tiene_abstract = 1",
+                     (corpus_id,))
+    def ok(tipo):
+        return cuenta(
+            """SELECT COUNT(*) c FROM corpus_documento cd
+                 JOIN descargas z ON z.pmid = cd.pmid
+                WHERE cd.corpus_id = ? AND z.tipo = ? AND z.estatus = 'ok'""",
+            (corpus_id, tipo))
+    xml, pdf = ok("xml"), ok("pdf")
+    sin = cuenta(
+        """SELECT COUNT(*) c FROM corpus_documento cd
+            WHERE cd.corpus_id = ? AND NOT EXISTS (
+              SELECT 1 FROM descargas z
+               WHERE z.pmid = cd.pmid AND z.estatus = 'ok')""", (corpus_id,))
+    return {"documentos": total, "con_abstract": con_abs,
+            "xml_ok": xml, "pdf_ok": pdf, "sin_texto_completo": sin}
+
+
+def verificar_corpus(con, corpus_id):
+    """True si el corpus sigue siendo el que se congelo.
+
+    El guardian: si alguien borro un documento desde el tablero, la corrida
+    se entera antes de publicar una cifra y no despues, que es cuando ya se
+    cito. Recalcula la huella y la compara con la guardada.
+    """
+    fila = con.execute(
+        "SELECT hash_pmids FROM corpus WHERE id = ?", (corpus_id,)).fetchone()
+    if fila is None:
+        return False
+    return _hash_pmids(pmids_del_corpus(con, corpus_id)) == fila["hash_pmids"]
 
 
 # ----------------------------------------------------------------- resumen
