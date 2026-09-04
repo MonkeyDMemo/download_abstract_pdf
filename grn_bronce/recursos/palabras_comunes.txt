@@ -1,0 +1,113 @@
+# Palabras inglesas comunes que tambien son nombres de gen de PAO1.
+#
+# ESTE ARCHIVO NO CAMBIA HOY NI UNA SOLA FILA DEL DICCIONARIO, Y HAY QUE
+# SABERLO ANTES DE LEERLO
+# ======================================================================
+#
+# Es entrada de la regla `sensible_mayusculas` de la seccion 2 del contrato:
+# si alguna superficie de una fila, en minusculas, aparece aqui, esa fila
+# exige coincidencia exacta de mayusculas para TODAS sus superficies. La regla
+# tiene dos clausulas, y la otra es la longitud: tres caracteres o menos.
+#
+# Medido sobre `etapa2/genes_pao1.tsv`: 181 filas sensibles, **181 por la
+# clausula de longitud y 0 solo por esta lista**. Las 41 entradas tienen tres
+# caracteres o menos, asi que la longitud ya las cubre todas.
+#
+# CORREGIDO EL 27 DE AGOSTO: LO DE ARRIBA ERA FALSO
+# =================================================
+#
+# Este archivo decia que de las 1931 superficies de cuatro caracteres o mas
+# **ninguna es una palabra inglesa**, y que anadir palabras largas seria
+# inerte. Las dos cosas eran falsas, y el error de razonamiento es preciso: se
+# comprobo si la superficie TAL COMO SE ESCRIBE --`folD`-- es una palabra
+# inglesa, y no lo es. Pero el emparejamiento es insensible a mayusculas, asi
+# que lo que importa es si **su forma en minusculas** lo es.
+#
+# Son cuatro, y tres son palabras centrales de esta literatura:
+#
+#     folD -> "fold"   1166 menciones, 1151 en minuscula ("3-fold increase")
+#     hemE -> "heme"    123 menciones, 118 en minuscula (hierro, sideroforos)
+#     pilI -> "pili"    136 menciones, 115 en minuscula (motilidad, virulencia)
+#     minD -> "mind"    sin impacto medido, pero la colision es la misma
+#
+# `folD` llego a ser **el segundo blanco mas citado de toda la tabla de
+# evidencias**, solo detras de `lasR`, con el 88% de sus oraciones trayendo el
+# patron "N-fold" o "fold change". Entre los cuatro sostenian 191 aristas de
+# 8653, y 51 de ellas estaban en el estrato de mayor confianza.
+#
+# Lo encontro el muestreo para medir precision, antes de que nadie juzgara una
+# sola fila: la arista `AlgU -> folD` traia 16 articulos de respaldo y ninguna
+# de sus tres oraciones de evidencia mencionaba el gen.
+#
+# La leccion para quien lea esto: **la comprobacion hay que hacerla sobre la
+# cadena con la que se compara, no sobre la que se escribe.** Es el mismo error
+# que el verificador de fuga que media con la clave del agrupamiento.
+#
+# `construir_diccionario.py` imprime en cada corrida las dos cifras («filas
+# sensibles: N por longitud, M solo por palabras_comunes.txt») para que nadie
+# tenga que deducir a mano si esto esta haciendo algo. El contrato exige el
+# archivo y exige poblarlo con las veinte palabras de abajo, asi que se
+# conserva; lo que se quita es la impresion de que aqui hay una defensa
+# activa. Lo que si hace cada linea es dejar escrito POR QUE ese gen de tres
+# letras es un riesgo, que es informacion que la clausula de longitud no da.
+#
+# Medido en 60 documentos del corpus, reconocimiento insensible contra
+# sensible: cat 38 vs 2, his 47 vs 3, fur 32 vs 13, map 70 vs 44, sec 16 vs 8,
+# ser 7 vs 0, leu 4 vs 0. La diferencia son falsos positivos puros. Ese es el
+# dano que la sensibilidad evita, y lo evita por longitud.
+#
+# Formato: una palabra por linea, en minusculas. `#` inicia comentario.
+# Sin acentos: son palabras inglesas.
+
+# --- las veinte que el contrato exige ---
+cat
+fold    # PA1796, folD. **La peor de todas**: "3-fold", "20-fold", "fold change".
+heme    # PA5259, hemE. Omnipresente en la literatura de hierro y sideroforos.
+his
+fur
+mind    # PA3400, minD. Sustantivo y verbo ingles.
+pili    # PA4551, pilI. Plural de pilus: en cada articulo de motilidad.
+rho
+map
+sec
+ser
+leu
+sad
+fis
+can
+top
+min
+pro
+met
+arg
+lys
+ala
+gly
+thr
+
+# --- otros simbolos de tres letras de PAO1 que son palabras inglesas ---
+# Todos existen en el GFF de RefSeq como `gene=`; se listan para que quede
+# escrito cual es el riesgo de cada uno y no parezca que la sensibilidad les
+# salio por casualidad.
+aer     # PA0176, receptor de aerotaxis. "aer" no es palabra, pero "Aer" abre frase.
+arr     # PA2818. Aparece como abreviatura de "arrangement" y de "array" en tablas.
+can     # PA0102, anhidrasa carbonica. Verbo modal ingles.
+cif     # PA2934. Tambien siglas de otras cosas en la literatura clinica.
+def     # PA4470, peptido deformilasa. Abreviatura de "definition"/"default".
+end     # sustantivo y verbo ingles muy frecuente.
+era     # PA3740, GTPasa. Sustantivo ingles.
+for     # preposicion inglesa.
+hom     # PA3736. Prefijo suelto en "hom-" y abreviatura de "homolog".
+lig     # PA4952, ADN ligasa. Abreviatura de "ligand"/"ligation" en metodos.
+lon     # PA1803, proteasa Lon. Abreviatura frecuente de "longitude".
+one     # numeral ingles.
+orn     # PA4951. Abreviatura de "ornithine" en medios de cultivo.
+pra     # PA0575.
+rec     # familia rec. Abreviatura de "recombinant" y de "record".
+rep     # PA5061. Abreviatura de "replicate" y de "repeat", omnipresente en metodos.
+run     # verbo ingles.
+set     # sustantivo y verbo ingles.
+str     # abreviatura de "strain" y de "streptomycin" en toda la seccion de metodos.
+tag     # PA1751. Sustantivo ingles, y "tag" de purificacion en cada metodo.
+tal     # PA2796, transaldolasa.
+ton     # familia ton. Unidad de masa.

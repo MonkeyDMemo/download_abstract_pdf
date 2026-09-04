@@ -1,0 +1,221 @@
+termino,categoria
+pyocyanin,virulence
+virulence factor,virulence
+phenazine,virulence
+rhamnolipid,virulence
+chronic infection,virulence
+pathogenicity,virulence
+cytotoxicity,virulence
+pathogenesis,virulence
+virulence gene,virulence
+acute infection,virulence
+protease activity,virulence
+hydrogen cyanide,virulence
+exotoxin A,virulence
+tissue damage,virulence
+virulence phenotype,virulence
+alkaline protease,virulence
+extracellular protease,virulence
+elastase activity,virulence
+phospholipase C,virulence
+hemolysin,virulence
+exoenzyme S,virulence
+virulence regulation,virulence
+intracellular survival,virulence
+virulence attenuation,virulence
+immune evasion,virulence
+host colonization,virulence
+hemolytic activity,virulence
+biofilm formation,biofilm
+c-di-GMP,biofilm
+alginate production,biofilm
+biofilm development,biofilm
+exopolysaccharide,biofilm
+cyclic di-GMP,biofilm
+diguanylate cyclase,biofilm
+mucoid phenotype,biofilm
+biofilm matrix,biofilm
+microcolony,biofilm
+alginate biosynthesis,biofilm
+extracellular DNA,biofilm
+biofilm maturation,biofilm
+biofilm architecture,biofilm
+biofilm dispersal,biofilm
+mucoid conversion,biofilm
+small colony variant,biofilm
+pel polysaccharide,biofilm
+phosphodiesterase activity,biofilm
+psl polysaccharide,biofilm
+extracellular polymeric substance,biofilm
+quorum sensing,quorum_sensing
+C4-HSL,quorum_sensing
+autoinducer,quorum_sensing
+homoserine lactone,quorum_sensing
+3-oxo-C12-HSL,quorum_sensing
+pqs system,quorum_sensing
+rhl system,quorum_sensing
+quinolone signal,quorum_sensing
+las system,quorum_sensing
+cell-to-cell communication,quorum_sensing
+autoinducer synthase,quorum_sensing
+luxR family,quorum_sensing
+alkyl quinolone,quorum_sensing
+quorum quenching,quorum_sensing
+antibiotic resistance,antibiotic_resistance
+beta-lactamase,antibiotic_resistance
+antimicrobial resistance,antibiotic_resistance
+colistin resistance,antibiotic_resistance
+resistance mechanism,antibiotic_resistance
+antibiotic susceptibility,antibiotic_resistance
+drug resistance,antibiotic_resistance
+antimicrobial peptide,antibiotic_resistance
+antibiotic tolerance,antibiotic_resistance
+multidrug resistance,antibiotic_resistance
+polymyxin resistance,antibiotic_resistance
+beta-lactam resistance,antibiotic_resistance
+intrinsic resistance,antibiotic_resistance
+carbapenem resistance,antibiotic_resistance
+aminoglycoside resistance,antibiotic_resistance
+persister cells,antibiotic_resistance
+carbapenemase,antibiotic_resistance
+AmpC beta-lactamase,antibiotic_resistance
+acquired resistance,antibiotic_resistance
+adaptive resistance,antibiotic_resistance
+tetracycline resistance,antibiotic_resistance
+tobramycin resistance,antibiotic_resistance
+ciprofloxacin resistance,antibiotic_resistance
+efflux pump,efflux
+efflux system,efflux
+multidrug efflux,efflux
+ABC transporter,efflux
+RND efflux,efflux
+active efflux,efflux
+swarming motility,motility
+twitching motility,motility
+flagellin,motility
+chemotaxis,motility
+swimming motility,motility
+pilin,motility
+type IV pilus,motility
+flagellar gene,motility
+surface sensing,motility
+flagellar biosynthesis,motility
+flagellar motility,motility
+motility phenotype,motility
+pilus assembly,motility
+surface motility,motility
+flagellar assembly,motility
+motility defect,motility
+polar flagellum,motility
+secretion system,secretion
+type III secretion,secretion
+type VI secretion,secretion
+effector protein,secretion
+protein secretion,secretion
+type II secretion,secretion
+secreted protein,secretion
+outer membrane vesicle,secretion
+pyoverdine,iron_uptake
+siderophore,iron_uptake
+pyochelin,iron_uptake
+iron uptake,iron_uptake
+iron acquisition,iron_uptake
+iron homeostasis,iron_uptake
+iron starvation,iron_uptake
+heme uptake,iron_uptake
+iron limitation,iron_uptake
+ferric uptake,iron_uptake
+TonB-dependent receptor,iron_uptake
+metal homeostasis,iron_uptake
+ferric iron,iron_uptake
+ferrous iron,iron_uptake
+denitrification,metabolism
+secondary metabolite,metabolism
+TCA cycle,metabolism
+catabolite repression,metabolism
+energy metabolism,metabolism
+carbon metabolism,metabolism
+anaerobic respiration,metabolism
+polyamine,metabolism
+amino acid metabolism,metabolism
+glyoxylate shunt,metabolism
+glycolysis,metabolism
+central metabolism,metabolism
+fatty acid biosynthesis,metabolism
+amino acid biosynthesis,metabolism
+nitrite reductase,metabolism
+electron transport chain,metabolism
+terminal oxidase,metabolism
+lipid metabolism,metabolism
+nitrogen metabolism,metabolism
+fatty acid metabolism,metabolism
+nitrate reduction,metabolism
+entner-doudoroff,metabolism
+secondary metabolism,metabolism
+sulfur metabolism,metabolism
+oxidative stress,stress_response
+stress response,stress_response
+heat shock,stress_response
+hydrogen peroxide,stress_response
+reactive oxygen species,stress_response
+envelope stress,stress_response
+ppGpp,stress_response
+osmotic stress,stress_response
+stringent response,stress_response
+SOS response,stress_response
+superoxide dismutase,stress_response
+catalase activity,stress_response
+DNA repair,stress_response
+nitrosative stress,stress_response
+oxidative damage,stress_response
+cold shock,stress_response
+membrane stress,stress_response
+stress tolerance,stress_response
+nutrient starvation,stress_response
+outer membrane,cell_wall
+lipid A,cell_wall
+porin,cell_wall
+peptidoglycan,cell_wall
+lipopolysaccharide,cell_wall
+inner membrane,cell_wall
+cell envelope,cell_wall
+O-antigen,cell_wall
+cell division,cell_wall
+outer membrane protein,cell_wall
+lipoprotein,cell_wall
+membrane permeability,cell_wall
+LPS modification,cell_wall
+membrane integrity,cell_wall
+lipid A modification,cell_wall
+peptidoglycan recycling,cell_wall
+outer membrane permeability,cell_wall
+penicillin-binding protein,cell_wall
+cell wall synthesis,cell_wall
+regulon,regulation
+sigma factor,regulation
+transcription factor,regulation
+sRNA,regulation
+transcriptional regulator,regulation
+DNA binding,regulation
+response regulator,regulation
+two-component system,regulation
+regulatory network,regulation
+RNA polymerase,regulation
+signal transduction,regulation
+anti-sigma factor,regulation
+transcriptional regulation,regulation
+histidine kinase,regulation
+sensor kinase,regulation
+transcriptional activator,regulation
+global regulator,regulation
+negative regulator,regulation
+master regulator,regulation
+transcriptional repressor,regulation
+positive regulator,regulation
+post-transcriptional regulation,regulation
+autoregulation,regulation
+operator site,regulation
+riboswitch,regulation
+extracytoplasmic function sigma,regulation
+feedback regulation,regulation
+translational control,regulation
