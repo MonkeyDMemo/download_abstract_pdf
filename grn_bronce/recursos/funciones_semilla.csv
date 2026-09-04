@@ -13,19 +13,15 @@ protease activity,virulence
 hydrogen cyanide,virulence
 exotoxin A,virulence
 tissue damage,virulence
-virulence phenotype,virulence
 alkaline protease,virulence
-extracellular protease,virulence
 elastase activity,virulence
 phospholipase C,virulence
 hemolysin,virulence
 exoenzyme S,virulence
-virulence regulation,virulence
 intracellular survival,virulence
 virulence attenuation,virulence
 immune evasion,virulence
 host colonization,virulence
-hemolytic activity,virulence
 biofilm formation,biofilm
 c-di-GMP,biofilm
 alginate production,biofilm
@@ -39,13 +35,12 @@ microcolony,biofilm
 alginate biosynthesis,biofilm
 extracellular DNA,biofilm
 biofilm maturation,biofilm
-biofilm architecture,biofilm
+surface attachment,biofilm
 biofilm dispersal,biofilm
 mucoid conversion,biofilm
 small colony variant,biofilm
-pel polysaccharide,biofilm
-phosphodiesterase activity,biofilm
-psl polysaccharide,biofilm
+Pel polysaccharide,biofilm
+Psl polysaccharide,biofilm
 extracellular polymeric substance,biofilm
 quorum sensing,quorum_sensing
 C4-HSL,quorum_sensing
@@ -67,7 +62,6 @@ antimicrobial resistance,antibiotic_resistance
 colistin resistance,antibiotic_resistance
 resistance mechanism,antibiotic_resistance
 antibiotic susceptibility,antibiotic_resistance
-drug resistance,antibiotic_resistance
 antimicrobial peptide,antibiotic_resistance
 antibiotic tolerance,antibiotic_resistance
 multidrug resistance,antibiotic_resistance
@@ -82,8 +76,6 @@ AmpC beta-lactamase,antibiotic_resistance
 acquired resistance,antibiotic_resistance
 adaptive resistance,antibiotic_resistance
 tetracycline resistance,antibiotic_resistance
-tobramycin resistance,antibiotic_resistance
-ciprofloxacin resistance,antibiotic_resistance
 efflux pump,efflux
 efflux system,efflux
 multidrug efflux,efflux
@@ -101,11 +93,8 @@ flagellar gene,motility
 surface sensing,motility
 flagellar biosynthesis,motility
 flagellar motility,motility
-motility phenotype,motility
 pilus assembly,motility
 surface motility,motility
-flagellar assembly,motility
-motility defect,motility
 polar flagellum,motility
 secretion system,secretion
 type III secretion,secretion
@@ -127,8 +116,6 @@ iron limitation,iron_uptake
 ferric uptake,iron_uptake
 TonB-dependent receptor,iron_uptake
 metal homeostasis,iron_uptake
-ferric iron,iron_uptake
-ferrous iron,iron_uptake
 denitrification,metabolism
 secondary metabolite,metabolism
 TCA cycle,metabolism
@@ -148,10 +135,8 @@ electron transport chain,metabolism
 terminal oxidase,metabolism
 lipid metabolism,metabolism
 nitrogen metabolism,metabolism
-fatty acid metabolism,metabolism
 nitrate reduction,metabolism
-entner-doudoroff,metabolism
-secondary metabolism,metabolism
+Entner-Doudoroff,metabolism
 sulfur metabolism,metabolism
 oxidative stress,stress_response
 stress response,stress_response
@@ -170,7 +155,6 @@ nitrosative stress,stress_response
 oxidative damage,stress_response
 cold shock,stress_response
 membrane stress,stress_response
-stress tolerance,stress_response
 nutrient starvation,stress_response
 outer membrane,cell_wall
 lipid A,cell_wall
@@ -185,10 +169,8 @@ outer membrane protein,cell_wall
 lipoprotein,cell_wall
 membrane permeability,cell_wall
 LPS modification,cell_wall
-membrane integrity,cell_wall
 lipid A modification,cell_wall
 peptidoglycan recycling,cell_wall
-outer membrane permeability,cell_wall
 penicillin-binding protein,cell_wall
 cell wall synthesis,cell_wall
 regulon,regulation
@@ -206,6 +188,7 @@ anti-sigma factor,regulation
 transcriptional regulation,regulation
 histidine kinase,regulation
 sensor kinase,regulation
+ECF sigma factor,regulation
 transcriptional activator,regulation
 global regulator,regulation
 negative regulator,regulation
@@ -214,8 +197,5 @@ transcriptional repressor,regulation
 positive regulator,regulation
 post-transcriptional regulation,regulation
 autoregulation,regulation
-operator site,regulation
 riboswitch,regulation
-extracytoplasmic function sigma,regulation
-feedback regulation,regulation
-translational control,regulation
+extracytoplasmic function sigma factor,regulation

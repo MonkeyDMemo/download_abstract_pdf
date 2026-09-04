@@ -34,17 +34,71 @@ COLUMNAS_MENCIONES = [
     "metodo", "version", "corrida_id",
 ]
 
-# La columna que no afirma nada, y hay que decirlo donde se lee.
-AVISO_SIGNO = "signo_sugerido (NO VERIFICADO)"
+# Las dos columnas que no afirman lo que su nombre sugiere, y hay que decirlo
+# donde se leen y no en una nota al pie que nadie abre.
+AVISOS = {
+    "signo_sugerido": "signo_sugerido (NO VERIFICADO)",
+    "score": "score: ordena, no es umbral; sin calibrar",
+}
 
 
 def _encabezado_visible(columna):
-    """Lo que ve una persona. `signo_sugerido` lleva su aviso pegado.
+    """Lo que ve una persona. El nombre de la columna en los CSV no cambia:
+    es parte del contrato tabular y otra cosa lo consume."""
+    return AVISOS.get(columna, columna)
 
-    La etiqueta cambia; el nombre de la columna en los CSV no, porque es parte
-    del contrato tabular y otra cosa lo consume.
+
+def filas_candidatas(con, db, corrida_id):
+    """La hoja 1, armada desde las tablas.
+
+    Las columnas agregadas --`genes`, `proteinas`, `funciones_biologicas`...--
+    se derivan de `menciones`, que es donde viven de verdad. Repetirlas en
+    `oraciones_candidatas` habria sido guardar dos veces lo mismo y abrir la
+    puerta a que las dos copias dejen de coincidir.
     """
-    return AVISO_SIGNO if columna == "signo_sugerido" else columna
+    por_unidad = db.menciones_por_unidad_candidata(con, corrida_id)
+    filas = []
+    for c in db.candidatas_de(con, corrida_id):
+        mens = por_unidad.get(c["unidad_id"], [])
+
+        def juntar(*tipos, **kw):
+            campo = 2 if kw.get("normalizado") else 1
+            return ";".join(sorted(set(
+                m[campo] for m in mens if m[0] in tipos and m[campo])))
+
+        genes = sorted(set(m[1] for m in mens if m[0] in ("gen", "proteina")))
+        filas.append({
+            "pmid": c["pmid"], "doi": c["doi"] or "",
+            "titulo": c["titulo"] or "", "anio": c["anio"] or "",
+            "revista": c["revista"] or "",
+            "fecha_ingesta": c["fecha_ingesta"] or "",
+            "fuente_texto": c["fuente_texto"], "seccion": c["seccion"] or "",
+            "num_oracion": c["num_oracion"], "oracion": c["oracion"],
+            "genes": ";".join(genes),
+            "genes_locus_tag": ";".join(sorted(set(
+                m[2] for m in mens
+                if m[0] in ("gen", "proteina")
+                and str(m[2] or "").startswith("PA")))),
+            "proteinas": ";".join(sorted(set(
+                m[1] for m in mens if m[0] == "proteina"))),
+            "regulador_candidato": c["regulador_candidato"] or "",
+            "blanco_candidato": c["blanco_candidato"] or "",
+            "disparador": c["disparador"] or "",
+            "signo_sugerido": c["signo_sugerido"] or "",
+            "funciones_biologicas": juntar("funcion"),
+            "evidencia_experimental": juntar("evidencia", normalizado=True),
+            "organismo": juntar("organismo"),
+            "score": c["score"],
+            "metodo": c["metodo"], "version": c["version"],
+            "corrida_id": c["corrida_id"],
+            "fecha_corrida": c["fecha_corrida"],
+        })
+    return filas
+
+
+def filas_menciones(con, db, corrida_id):
+    """La hoja 2, tal cual sale de la tabla."""
+    return [dict(f) for f in db.menciones_de(con, corrida_id)]
 
 
 def escribir_csv(ruta, columnas, filas, log=lambda m: None):

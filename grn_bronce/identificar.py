@@ -6,10 +6,19 @@ relacion, ni cual es su signo: eso pertenece al paso 2. La columna
 `signo_sugerido` es lo que dice el lexico del disparador, no lo que dice el
 articulo, y en esta literatura las dos cosas se contradicen a menudo -- "the
 expression of mexEF-oprN was increased in the mexT mutant" lleva un verbo de
-aumento y significa represion. Por eso la columna va etiquetada NO VERIFICADO
-en la exportacion y no se usa para nada aguas abajo.
+aumento y significa represion. Por eso va etiquetada NO VERIFICADO y no se usa
+para nada aguas abajo.
 
-No imprime: recibe un callable `log`, como el resto de la orquestacion.
+**Escribe en las tablas del bronce, no en memoria.** La exportacion sale
+despues de consultar esas tablas. Si la exportacion tuviera su propio camino,
+un dia el archivo y la base dirian cosas distintas y no habria forma de saber
+cual miente.
+
+Se guardan TODAS las oraciones en `texto_unidades`, incluidas las que ningun
+filtro deja pasar a candidata. Asi cambiar un umbral es una consulta y no una
+relectura del corpus, y `n_oracion` indexa el documento completo.
+
+No imprime: recibe un callable `log`.
 
 Solo biblioteca estandar.
 """
@@ -27,6 +36,7 @@ sys.path.insert(0, _RAIZ)
 # puede permitir. Su mudanza a grn_bronce esta anotada como pendiente.
 sys.path.insert(0, os.path.join(_RAIZ, "etapa2"))
 
+from grn_bronce import db as _db                  # noqa: E402
 from grn_bronce import texto as _texto            # noqa: E402
 from grn_bronce import vocabulario as _vocab      # noqa: E402
 
@@ -35,14 +45,17 @@ METODO = "baseline-deterministico"
 
 # Una oracion mas corta que esto casi nunca es prosa; mas larga suele ser una
 # tabla que el extractor de JATS aplano. Los mismos topes que ya usaba la
-# etapa 2, para que las cifras sean comparables.
+# etapa 2, para que las cifras sean comparables. Se aplican al elegir
+# candidatas, no al guardar: la unidad se persiste igual.
 MIN_ORACION = 40
 MAX_ORACION = 700
 
-# Tope de menciones distintas por oracion. Hay parrafos que son listas de
-# treinta genes ("the 30 most influential hubs"): ahi la coocurrencia no dice
-# nada y solo multiplica pares.
+# Tope de genes distintos por oracion. Hay parrafos que son listas de treinta
+# ("the 30 most influential hubs"): ahi la coocurrencia no dice nada.
 MAX_MENCIONES = 8
+
+# Secciones que no aportan relaciones y si mucho ruido de nombres.
+SECCIONES_FUERA = frozenset(["excluir"])
 
 
 def cargar_lexico():
@@ -58,8 +71,8 @@ def cargar_locus_tags():
 
     El id canonico del lexico es el simbolo cuando existe y el locus tag
     cuando no. `PLAN.md` pide normalizar a locus tag, asi que hace falta el
-    puente. Se guardan los dos: cambiar el id canonico romperia el cruce con
-    todo lo que ya se midio.
+    puente. No se cambia el id canonico: eso romperia el cruce con todo lo que
+    ya se midio.
     """
     ruta = os.path.join(AQUI, "recursos", "genes_pao1.tsv")
     mapa = {}
@@ -69,8 +82,7 @@ def cargar_locus_tags():
             if not linea.strip():
                 continue
             d = dict(zip(cols, linea.rstrip("\n").split("\t")))
-            lt = d.get("locus_tag") or ""
-            simbolo = d.get("simbolo") or ""
+            lt, simbolo = d.get("locus_tag") or "", d.get("simbolo") or ""
             if lt:
                 mapa[lt] = lt
                 if simbolo:
@@ -83,13 +95,12 @@ def _es_proteina(superficie):
 
     Es la convencion de la nomenclatura bacteriana y la unica senal que da el
     texto. No es infalible --una oracion que empieza por el gen lo capitaliza
-    igual-- y por eso se reporta la superficie tal cual junto al locus tag.
+    igual-- y por eso se guarda la superficie tal cual junto al locus tag.
     """
     return bool(superficie) and superficie[0].isupper()
 
 
 def _entre(ini, fin, marcas):
-    """Cuantas marcas caen estrictamente entre dos posiciones."""
     a, b = min(ini, fin), max(ini, fin)
     return sum(1 for m in marcas if a < m[0] < b)
 
@@ -98,17 +109,16 @@ def calcular_score(hay_disparador, disparador_entre, n_tf, n_evidencia,
                    intercalados):
     """Un numero transparente entre 0 y 1, para ordenar. NO calibrado.
 
-    Es una formula escrita a mano, no aprendida: no hay etiquetas con que
-    aprender nada en esta capa. Sirve para poder pedir "las k mejores" y para
-    que exista la columna que `PLAN.md` pide; **no se ha comprobado que
-    ordenar por ella mejore la precision**, y hasta que se compruebe no debe
-    usarse como umbral de decision.
+    Formula escrita a mano, no aprendida: en esta capa no hay etiquetas con que
+    aprender nada. Sirve para pedir "las k mejores"; **no se ha comprobado que
+    ordenar por ella mejore la precision**, y hasta comprobarlo no debe usarse
+    como umbral de decision.
 
-    Los pesos salen de lo que ya se midio en este proyecto: exigir disparador
-    en cualquier parte de la oracion sube la precision del entregable de
-    31.7 % a 33.0 %, o sea dentro del intervalo de confianza. Por eso el peso
-    grande se lo lleva el disparador ENTRE los dos genes, que es mas estricto y
-    cuyo efecto esta sin medir, y no la mera presencia.
+    Los pesos salen de lo ya medido: exigir disparador en cualquier parte de la
+    oracion movio la precision del entregable de 31.7 % a 33.0 %, o sea dentro
+    del intervalo de confianza. Por eso el peso grande se lo lleva el
+    disparador ENTRE los dos genes, que es mas estricto y cuyo efecto esta sin
+    medir, y no la mera presencia.
     """
     s = 0.0
     if disparador_entre:
@@ -137,28 +147,75 @@ def piezas_de_documento(fila, ruta_txt, clases):
             md = f.read()
         tiene_resumen = False
         for etiqueta, cuerpo, tramos in _texto.bloques_con_offset(md):
-            clase = clases.get(etiqueta, _texto.CLASE_DESCONOCIDA) \
-                if etiqueta else _texto.CLASE_DESCONOCIDA
+            clase = (clases.get(etiqueta, _texto.CLASE_DESCONOCIDA)
+                     if etiqueta else _texto.CLASE_DESCONOCIDA)
             if clase == "abstract":
                 tiene_resumen = True
             piezas.append(("xml", clase, cuerpo, tramos))
         if not tiene_resumen and (fila["abstract"] or "").strip():
-            piezas.insert(0, ("abstract", "abstract",
-                              fila["abstract"], None))
+            piezas.insert(0, ("abstract", "abstract", fila["abstract"], None))
         return piezas
     if (fila["abstract"] or "").strip():
         piezas.append(("abstract", "abstract", fila["abstract"], None))
     return piezas
 
 
-def procesar_documento(fila, ruta_txt, lex, vocab, locus, clases, cuenta):
-    """(candidatas, menciones) de un documento. Listas de dict."""
-    candidatas, menciones = [], []
-    n_oracion = 0
+def _menciones_de_oracion(oracion, lex, vocab, locus):
+    """Las cinco clases, en la forma que espera `db.guardar_menciones()`."""
+    genes = lex.menciones(oracion)
+    disp = vocab.disparadores_en(oracion)
+    func = vocab.funciones_en(oracion)
+    evid = vocab.evidencia_en(oracion)
+    orgs = _vocab.organismos_en(oracion)
 
-    for fuente, seccion, cuerpo, _tramos in piezas_de_documento(
+    filas = []
+    for i, f_, s_, idc, _tf in genes:
+        filas.append({"tipo": "proteina" if _es_proteina(s_) else "gen",
+                      "texto": s_, "id_normalizado": locus.get(idc, idc),
+                      "offset_ini": i, "offset_fin": f_})
+    for etiqueta, datos in (("disparador", disp), ("funcion", func),
+                            ("evidencia", evid), ("organismo", orgs)):
+        for i, f_, s_, extra in datos:
+            filas.append({"tipo": etiqueta, "texto": s_,
+                          "id_normalizado": extra,
+                          "offset_ini": i, "offset_fin": f_})
+    return filas, genes, disp, evid
+
+
+def procesar_documento(con, corrida_id, fila, ruta_txt, lex, vocab, locus,
+                       clases, cuenta):
+    """Persiste las unidades, menciones y candidatas de un documento."""
+    n_oracion = 0
+    hubo_mencion = False
+
+    for fuente, seccion, cuerpo, tramos in piezas_de_documento(
             fila, ruta_txt, clases):
-        for _ini, _fin, oracion in _texto.oraciones_con_offset(cuerpo):
+        for ini, fin, oracion in _texto.oraciones_con_offset(cuerpo):
+            if tramos is not None:
+                a, b, contiguo = _texto.traducir_span(tramos, ini, fin)
+                if a is None:
+                    a, b, contiguo = ini, fin, False
+            else:
+                a, b, contiguo = ini, fin, True
+
+            unidad_id = _db.guardar_unidad(con, corrida_id, {
+                "pmid": fila["pmid"], "fuente_texto": fuente,
+                "seccion": seccion, "num_oracion": n_oracion,
+                "texto": oracion, "offset_ini": a, "offset_fin": b,
+                "contiguo": contiguo})
+            indice = n_oracion
+            n_oracion += 1
+            if not contiguo:
+                cuenta["unidades_no_contiguas"] += 1
+
+            filas_m, genes, disp, evid = _menciones_de_oracion(
+                oracion, lex, vocab, locus)
+            ids = _db.guardar_menciones(con, corrida_id, METODO, unidad_id,
+                                        filas_m)
+            if filas_m:
+                hubo_mencion = True
+
+            # --- de unidad a candidata
             largo = len(oracion)
             if largo < MIN_ORACION:
                 cuenta["oraciones_cortas"] += 1
@@ -166,111 +223,64 @@ def procesar_documento(fila, ruta_txt, lex, vocab, locus, clases, cuenta):
             if largo > MAX_ORACION:
                 cuenta["oraciones_largas"] += 1
                 continue
+            if seccion in SECCIONES_FUERA:
+                cuenta["oraciones_en_seccion_excluida"] += 1
+                continue
             cuenta["oraciones_examinadas"] += 1
-            indice = n_oracion
-            n_oracion += 1
-
-            genes = lex.menciones(oracion)
-            disp = vocab.disparadores_en(oracion)
-            func = vocab.funciones_en(oracion)
-            evid = vocab.evidencia_en(oracion)
-            orgs = _vocab.organismos_en(oracion)
-
-            base = {"pmid": fila["pmid"], "fuente_texto": fuente,
-                    "seccion": seccion, "num_oracion": indice}
-            for i, f_, s_, idc, _tf in genes:
-                menciones.append(dict(
-                    base, tipo="proteina" if _es_proteina(s_) else "gen",
-                    texto=s_, id_normalizado=locus.get(idc, idc),
-                    offset_ini=i, offset_fin=f_))
-            for i, f_, s_, sig in disp:
-                menciones.append(dict(base, tipo="disparador", texto=s_,
-                                      id_normalizado=sig,
-                                      offset_ini=i, offset_fin=f_))
-            for i, f_, s_, cat in func:
-                menciones.append(dict(base, tipo="funcion", texto=s_,
-                                      id_normalizado=cat,
-                                      offset_ini=i, offset_fin=f_))
-            for i, f_, s_, tec in evid:
-                menciones.append(dict(base, tipo="evidencia", texto=s_,
-                                      id_normalizado=tec,
-                                      offset_ini=i, offset_fin=f_))
-            for i, f_, s_, forma in orgs:
-                menciones.append(dict(base, tipo="organismo", texto=s_,
-                                      id_normalizado=forma,
-                                      offset_ini=i, offset_fin=f_))
 
             distintos = set(g[3] for g in genes)
             if len(distintos) < 2:
                 cuenta["oraciones_sin_par"] += 1
                 continue
             if len(distintos) > MAX_MENCIONES:
-                cuenta["oraciones_con_demasiadas_menciones"] += 1
+                cuenta["oraciones_con_demasiados_genes"] += 1
                 continue
 
             tfs = sorted(set(g[3] for g in genes if g[4]))
             regulador = blanco = ""
-            if disp:
-                if len(tfs) == 1:
-                    regulador = tfs[0]
-                    otros = sorted(distintos - {regulador})
-                    if len(otros) == 1:
-                        blanco = otros[0]
-                    else:
-                        cuenta["sin_blanco_unico"] += 1
-                elif len(tfs) > 1:
-                    cuenta["dos_o_mas_tf"] += 1
-                else:
-                    cuenta["sin_tf"] += 1
-            else:
+            if not disp:
                 cuenta["sin_disparador"] += 1
+            elif len(tfs) == 1:
+                regulador = tfs[0]
+                otros = sorted(distintos - {regulador})
+                if len(otros) == 1:
+                    blanco = otros[0]
+                else:
+                    cuenta["sin_blanco_unico"] += 1
+            elif len(tfs) > 1:
+                cuenta["dos_o_mas_tf"] += 1
+            else:
+                cuenta["sin_tf"] += 1
 
-            entre = 0
-            disp_entre = False
+            entre, disp_entre = 0, False
             if regulador and blanco:
                 pr = [g for g in genes if g[3] == regulador]
                 pb = [g for g in genes if g[3] == blanco]
                 if pr and pb:
-                    a, b = pr[0][0], pb[0][0]
-                    disp_entre = _entre(a, b, disp) > 0
-                    entre = _entre(a, b, genes)
+                    x, y = pr[0][0], pb[0][0]
+                    disp_entre = _entre(x, y, disp) > 0
+                    entre = _entre(x, y, genes)
 
-            candidatas.append({
-                "pmid": fila["pmid"], "doi": fila["doi"] or "",
-                "titulo": fila["titulo"] or "", "anio": fila["anio"] or "",
-                "revista": fila["revista"] or "",
-                "fecha_ingesta": fila["extraido_en"] or "",
-                "fuente_texto": fuente, "seccion": seccion,
-                "num_oracion": indice, "oracion": oracion,
-                "genes": ";".join(sorted(set(g[2] for g in genes))),
-                "genes_locus_tag": ";".join(
-                    sorted(set(locus[g[3]] for g in genes if g[3] in locus))),
-                "proteinas": ";".join(
-                    sorted(set(g[2] for g in genes if _es_proteina(g[2])))),
-                "regulador_candidato": regulador,
-                "blanco_candidato": blanco,
+            _db.guardar_candidata(con, corrida_id, METODO, unidad_id, {
                 "disparador": ";".join(sorted(set(d[2] for d in disp))),
                 "signo_sugerido": ";".join(sorted(set(d[3] for d in disp))),
-                "funciones_biologicas": ";".join(
-                    sorted(set(f[2] for f in func))),
-                "evidencia_experimental": ";".join(
-                    sorted(set(e[3] for e in evid))),
-                "organismo": ";".join(sorted(set(o[2] for o in orgs))),
+                "regulador_candidato": regulador,
+                "blanco_candidato": blanco,
                 "score": calcular_score(bool(disp), disp_entre, len(tfs),
                                         len(evid), entre),
-            })
-    return candidatas, menciones
+            }, ids)
+            _ = indice
+    return hubo_mencion
 
 
-def identificar(documentos, fulltext, lex, vocab, locus, log=lambda m: None):
-    """Recorre el corpus. Devuelve (candidatas, menciones, cuenta)."""
+def identificar(con, corrida_id, documentos, fulltext, lex, vocab, locus,
+                log=lambda m: None):
+    """Recorre el corpus y lo escribe en las tablas. Devuelve los contadores."""
     clases = _texto.cargar_clases()
     cuenta = collections.Counter()
-    candidatas, menciones = [], []
-    sin_mencion = []
 
     for i, fila in enumerate(documentos, 1):
-        if i % 250 == 0:
+        if i % 200 == 0:
             log("  %d de %d documentos" % (i, len(documentos)))
         ruta = fulltext.get(fila["pmid"])
         cuenta["documentos"] += 1
@@ -279,16 +289,15 @@ def identificar(documentos, fulltext, lex, vocab, locus, log=lambda m: None):
         elif ruta:
             cuenta["ruta_de_fulltext_no_existe"] += 1
         try:
-            c, m = procesar_documento(fila, ruta, lex, vocab, locus, clases,
-                                      cuenta)
+            hubo = procesar_documento(con, corrida_id, fila, ruta, lex, vocab,
+                                      locus, clases, cuenta)
+            con.commit()
         except Exception as e:                       # noqa: BLE001
+            con.rollback()
             cuenta["documentos_con_error"] += 1
             log("  ERROR en %s: %s" % (fila["pmid"], e))
             continue
-        if not m:
-            sin_mencion.append(fila["pmid"])
-        candidatas.extend(c)
-        menciones.extend(m)
+        if not hubo:
+            cuenta["documentos_sin_ninguna_mencion"] += 1
 
-    cuenta["documentos_sin_ninguna_mencion"] = len(sin_mencion)
-    return candidatas, menciones, cuenta
+    return cuenta

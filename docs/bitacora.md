@@ -8,6 +8,104 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 3 y 4 de septiembre de 2026 — el paso 1 corre de punta a punta
+
+**Qué se corrió.** `python -m grn_bronce.cli exportar --corpus v0-agosto`,
+método `baseline-deterministico` versión `1`, corrida 1. **1 min 20 s** sobre
+2 361 documentos.
+
+**Resultado.** 273 062 oraciones persistidas, 488 221 menciones, **29 659
+oraciones candidatas**, 95.1 % de normalización a locus tag. Salidas en
+`salidas/bronce_identificacion_20260903.*` — tres CSV y un `.xlsx`, generados
+por consulta a las tablas y no desde memoria.
+
+**Antes de eso**, en la misma sesión: se fusionaron los dos `CLAUDE.md` y se
+reestructuró el steering de Kiro, que vivía en cinco `.md` sueltos en la raíz
+que Kiro nunca leyó. Se congelaron `CLAUDE.md`, `PLAN.md`, `.kiro/`, `docs/`
+salvo esta bitácora, `servidor.py` y `trabajos.py`.
+
+### Hallazgo: una colisión que `sensible_mayusculas` no puede arreglar
+
+`tag` es **PA0010**, un gen real (DNA-3-metiladenina glicosidasa I). Sus **568
+menciones** en el corpus son todas jerga de laboratorio: «epitope tag», «FLAG
+tag», «Myc tag». Es la segunda superficie de gen más frecuente después de `fur`.
+
+Lo que lo hace distinto de `folD`/fold: **la defensa existente no sirve**. El
+símbolo del gen es minúscula `tag` y la palabra inglesa también, así que exigir
+coincidencia exacta de mayúsculas no distingue nada. La fila ya está marcada
+`sensible_mayusculas=true` por la cláusula de longitud y aun así entra.
+
+Las salidas son: quitar `tag` del diccionario y aceptar perder el gen, o exigir
+contexto (que no vaya precedido de «epitope», «FLAG», «His», «Myc», o de un
+guion). Sin decidir. **Es una clase nueva y conviene buscar más antes de
+elegir.**
+
+### Pendientes anotados, no corregidos
+
+Los seis primeros tocan archivos congelados; los demás son deuda del paso 1.
+
+1. **`PLAN.md` sección 4** nombra los módulos del bronce como `menciones.py`,
+   `candidatos.py`, `disparadores.py`, `indice.py`, `llm_local.py`. Los reales
+   son `rutas.py`, `db.py`, `vocabulario.py`, `identificar.py`, `exportar.py` y
+   `texto.py`. Actualizar al descongelar.
+2. **`PLAN.md` describe mal `grn_etl/`**: lista `resolvers.py` y `downloader.py`,
+   que no existen, y omite `trabajos.py` y `credenciales.py`. No menciona
+   `servidor.py` ni `web/`.
+3. **`grn_comun/` no está en `PLAN.md`.** Hizo falta para `procedencia.py`, que
+   usan los tres pasos.
+4. **El DDL aplicado se desvía del plan en cuatro puntos**, todos por motivo
+   medido: `corridas` recupera `estatus`, `error`, `terminada_en` y contadores,
+   que `ejecuciones` ya tenía y el plan perdía; `version` es TEXT para que
+   `"3e-5"` no se vuelva `"3e-05"`; `texto_unidades` gana `contiguo`, por las
+   594 oraciones que cruzan un encabezado borrado; y `oraciones_candidatas`
+   gana `signo_sugerido`, `regulador_candidato` y `blanco_candidato`, que la
+   hoja 1 necesita. Las columnas agregadas (`genes`, `funciones_biologicas`...)
+   **no** se guardan: se derivan de `menciones` al exportar, para no tener dos
+   copias que puedan dejar de coincidir.
+5. **`palabras_comunes.txt` cita mal tres de sus cuatro locus tags** (`hemE` es
+   PA5034, `minD` es PA3244, `pilI` es PA0410) y el número 191 de su cabecera
+   no corresponde a nada: son 193 tocadas y 189 eliminadas.
+6. **La corrección del diccionario del 27 de agosto añadió 24 aristas** además
+   de quitar 189, y ningún documento lo explica.
+7. **`lexico.py` sigue en `etapa2/`** y `grn_bronce` lo importa. Se copió el
+   diccionario a `recursos/` con una prueba que falla si las dos copias
+   divergen, pero el módulo no se movió: `etapa2/` está congelada.
+8. **`transcriptional regulator` está en `disparadores.csv` y en
+   `funciones_semilla.csv`**, así que produce dos menciones de la misma
+   superficie. No es incorrecto —es las dos cosas— pero conviene decidirlo.
+9. **El score no está calibrado.** Ordena; no debe usarse como umbral hasta
+   medir si mejora la precisión.
+10. **PDF sin procesar.** Los documentos con `pdf` estatus ok quedaron fuera;
+    van después, con PyMuPDF.
+
+### Una decisión que quedó sin poder cumplirse como se pidió
+
+Se pidió poner en la hoja resumen **precisión y recall contra el oro que se usó
+para el 31.7 %**. No se pudo, por tres razones que conviene dejar escritas:
+
+- **El 31.7 % no salió de un patrón de oro.** Es precisión del estrato A de la
+  red del paso 2, medida por muestreo estratificado con juicio.
+  `evaluar_oro.py` prohíbe calcular precisión contra el oro, y con razón: cubre
+  6 subsistemas, y una arista fuera de esa lista no está mal, solo no está
+  listada.
+- **Es de otro nivel.** La referencia lista pares regulador-blanco; esta capa
+  produce oraciones. No hay denominador común.
+- **El bronce no puede leer la referencia.** `test_contaminacion.py` prohíbe
+  esa cadena en los tres paquetes, y partirla para colarla sería evadir la
+  propia guarda.
+
+La hoja lleva el tamaño de la referencia (190 pares, 6 subsistemas, 312
+documentos citados) y dice explícitamente que las dos métricas no se calculan
+ahí y por qué.
+
+### Pendiente de confidencialidad, ya resuelto
+
+La regla `deny: Read(./datos/**)` bloqueaba el corpus de PubMed, que es público
+y es el insumo del paso 1. Se acotó a `datos/validacion/`, que es donde irán la
+base curada v2 y los párrafos etiquetados cuando lleguen.
+
+---
+
 ## Lo que se hizo antes
 
 ### Fase 0 — el ETL (17 y 18 de agosto)
