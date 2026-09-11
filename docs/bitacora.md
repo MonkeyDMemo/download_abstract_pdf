@@ -8,6 +8,67 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 11 de septiembre de 2026 — precisión del paso 1 por juicio humano: 44.0 %
+
+**Qué se corrió.** `python etapa2/unir_juicios.py` sobre
+`salidas/muestra_precision_50.csv` (50 candidatas de la corrida 1,
+`baseline-deterministico` v1, semilla 20260904) y
+`salidas/juicio_consolidado.csv`, llenado a mano el 11-sep sin ver el
+`signo_sugerido`. Los criterios del juez están en
+`Criterios_jucio_consolidado@11-09.txt` (sus números de fila son líneas del
+CSV, con el encabezado como línea 1).
+
+**Resultado.** Las 50 filas juzgadas: `si` 22, `no` 24, `dudoso` 4.
+
+| cifra | valor |
+|---|---|
+| **precisión de relación** | **22 de 50 = 44.0 %**, IC 95 % Wilson [31.2, 57.7] |
+| acierto de signo | 1 de 1; sin intervalo, por debajo de 10 |
+
+Los 4 dudosos están en el denominador y fuera del numerador, como manda el
+script.
+
+**Cómo se reparten los 24 `no`.** Seis son inversión de dirección: la oración
+dice la relación al revés de como el bronce asignó regulador y blanco (líneas
+8, 11, 20, 41, 44 y 50 del CSV). En esas seis el par es correcto y solo falla
+la orientación. Contando el par sin dirección, la precisión subiría a 28 de 50
+= 56.0 %. Es una lectura, no la cifra: el bronce emite pares dirigidos y así se
+evalúa. El resto de los `no` son interacción proteína-proteína o co-regulación
+sin vínculo, efectos negados en la oración, y casos sin relación.
+
+**Por qué el signo casi no se evalúa.** De las 22 filas con relación, 7 llevan
+`?` del juez (la oración no fija el sentido: «MexT-regulated», «under the
+control of», pertenencia al regulón) y 14 llevan `signo_sugerido` sin resolver
+(`?`, `+;?` o `-;?`). Queda una fila evaluable, y acertó. Cruzando lo sugerido
+con lo juzgado en las 22: `+;?`→`+` 4, `-;?`→`-` 2, `+;?`→`-` 1, `+`→`+` 1,
+`?`→`+` 6, `?`→`-` 1, `?`→`?` 7. Si el disparador dominante resolviera `+;?`
+como `+` y `-;?` como `-`, habría 8 evaluables con 7 aciertos: todavía por
+debajo del umbral de 10, y es un supuesto sobre cómo resolvería, no una
+medición.
+
+**Cómo leer el 44 %.** Es precisión de la candidata como relación dirigida,
+leída solo desde su oración. El paso 1 entrega el *dónde*: una candidata «no»
+sigue siendo una oración con dos genes y un disparador, que el paso 2 tiene
+que descartar. La cifra dice cuánto ruido le llega al paso 2, no cuánto acierta
+el pipeline. Va siempre junto al techo de cobertura (84.7 % contra el oro,
+30.2 % contra la base curada con XML).
+
+**Dónde quedó.** La muestra, el juicio, los criterios y el script del sorteo
+se versionaron en `etapa2/evaluacion/`: antes vivían en `salidas/` (ignorado)
+y en la raíz (sin rastrear), y el único número de precisión del paso 1 no
+estaba en el repositorio. `muestrear_candidatas.py` es el script del 4 de
+septiembre, recuperado de la sesión: con la semilla 20260904 y el barajado con
+20260905 reproduce el CSV byte a byte. `unir_juicios.py` apunta ahí por
+omisión. En `PLAN.md`: 2.3 lleva la cifra, los puntos 15 y 29 quedan hechos,
+el 18 anota que el disparador dominante también desbloquea la medición de
+signo, y entra el 30 (inversión de dirección).
+
+**Nota del juez.** Dos lecturas discutibles, líneas 14 (`mvfR → pqsA`, `si/+`)
+y 27 (`rpoS → dinB` vía inducción del regulón en *E. coli*, `si/+`). Si se
+cambiaran a `no`, la precisión sería 20 de 50 = 40.0 %.
+
+---
+
 ## 10 de septiembre de 2026 — un `grep` recorrió `datos/validacion/`
 
 **Qué pasó.** Al verificar las secciones 2.1 a 2.3 del `PLAN.md` nuevo con

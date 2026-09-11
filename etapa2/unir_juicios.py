@@ -4,9 +4,9 @@
 
     python3 etapa2/unir_juicios.py
 
-Lee `salidas/muestra_precision_50.csv` --lo que el bronce afirma, incluido el
-`signo_sugerido`-- y `salidas/juicio_consolidado.csv` --lo que la persona
-juzgo, sin haber visto ese signo-- y reporta:
+Lee `etapa2/evaluacion/muestra_precision_50.csv` --lo que el bronce afirma,
+incluido el `signo_sugerido`-- y `etapa2/evaluacion/juicio_consolidado.csv`
+--lo que la persona juzgo, sin haber visto ese signo-- y reporta:
 
 - **Precision de relacion**: los `si` sobre el total juzgado, con intervalo de
   Wilson al 95 %.
@@ -220,8 +220,12 @@ def informar_signo(filas, log):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--muestra", default="salidas/muestra_precision_50.csv")
-    ap.add_argument("--juicios", default="salidas/juicio_consolidado.csv")
+    ap.add_argument("--muestra",
+                    default=os.path.join(AQUI, "evaluacion",
+                                         "muestra_precision_50.csv"))
+    ap.add_argument("--juicios",
+                    default=os.path.join(AQUI, "evaluacion",
+                                         "juicio_consolidado.csv"))
     args = ap.parse_args(argv)
 
     filas, sin_pareja = unir(leer(args.muestra), leer(args.juicios))

@@ -62,7 +62,8 @@ Verificado contra el repositorio el 10-sep-2026.
 
 - `evaluar_cobertura_bronce.py`: recall **84.7 %** (149/176) con denominador honesto; 81.1 % (154/190) sobre el total.
 - Las 27 pérdidas por causa: diccionario 12, autorregulación 8, coocurrencia 7. METHODS y longitud pierden cero.
-- Muestra de 50 candidatas extraída con semilla fija; `unir_juicios.py` listo (dudosos en el denominador, Wilson 95 %). **Juicios sin llenar.**
+- Precisión por juicio humano sobre 50 candidatas dirigidas: 44.0 % (22/50), IC 95 % [31.2, 57.7]; 4 dudosos en el denominador. 6 de los 24 `no` son inversión de dirección: el par es correcto y el bronce lo orientó al revés (sin exigir dirección, 56.0 %). Acierto de signo no evaluable: 1 de 1.
+- Muestra, juicio, criterios del juez y script del sorteo (semilla 20260904) en `etapa2/evaluacion/`; la cifra sale de `unir_juicios.py`.
 - Guarda anticircularidad: `test_contaminacion.py` impide que el bronce nombre `oro_pseudomonas`.
 
 ### 2.4 Evaluación contra la base curada — medido el 10-sep-2026
@@ -139,15 +140,16 @@ La regla b) mide si el paso 1 recupera la evidencia citada; la a) mide lo que el
 
 | # | Qué | Nota |
 |---|---|---|
-| 15 | Llenar los 50 juicios y correr `unir_juicios.py` | Pendiente desde el 03-sep. Único número que falta de la evaluación del paso 1 |
+| 15 | Llenar los 50 juicios y correr `unir_juicios.py` | **Hecho** el 11-sep (2.3): 44.0 % (22/50) |
 | 16 | Regla de autorregulación con bandera propia | Oro: 84.7 % → 89.2 %. Base curada: 43 filas del denominador hoy imposibles |
 | 17 | Cerrar los huecos del diccionario | Mayor causa de pérdida en ambas referencias: 12 de 27 en el oro; 917 menciones (77 ids) sin locus en el cruce |
-| 18 | Disparador dominante | Sube el signo utilizable de 114 a ~675 pares. No arregla la inversión del fenotipo del mutante |
+| 18 | Disparador dominante | Sube el signo utilizable de 114 a ~675 pares. También desbloquea la medición de signo, hoy imposible: 14 de las 22 relaciones juzgadas traen `signo_sugerido` sin resolver y queda 1 evaluable. No arregla la inversión del fenotipo del mutante |
 | 19 | Lista `requiere_contexto` para símbolos ambiguos (`tag` = PA0010, 568 menciones de jerga) | |
 | 20 | Pruebas para `unir_juicios.py`, `evaluar_cobertura_bronce.py` y el subcomando `pares` | Tres piezas sin cobertura |
 | 27 | Revisar el 2.º PMID más frecuente del denominador: 179 filas, XML disponible, 25.1 % de cobertura | O reporta en tablas, o hay un patrón de redacción que el bronce no capta |
 | 28 | Unificar la cifra de autorregulación | El comentario de `evaluar_cobertura_bronce.py` dice 10 filas / 5.7 %, la bitácora mezcla 4.5 puntos con 5.7 %, y lo medido es 8 de 176 (4.5 puntos) y 11 de 190 (5.8 puntos). Tres cifras para lo mismo en tres lugares |
-| 29 | Versionar el script que sorteó la muestra de 50 | Hoy la semilla reproduce las filas pero el script no está en el repositorio |
+| 29 | Versionar el script que sorteó la muestra de 50 | **Hecho** el 11-sep: `etapa2/evaluacion/muestrear_candidatas.py` reproduce el archivo fila por fila |
+| 30 | Inversión de dirección | 6 de 24 errores de la muestra son pares correctos mal orientados. Hoy la dirección sale de `es_tf`; revisar los 6 casos para ver si son dos TF, ninguno, o sintaxis contraria a la heurística. Candidato: parseo de dependencias con scispaCy |
 
 ### 3.5 Diferido
 
