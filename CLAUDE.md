@@ -148,6 +148,14 @@ barata de romper algo sin enterarse.
   PubMed, que es publico-- es el insumo del paso 1 y se lee con normalidad:
   una regla mas ancha que lo que protege bloquea el trabajo sin ganar
   confidencialidad.
+- **Para buscar en el repositorio se usa la herramienta `Grep`, no un
+  comando.** `Grep` respeta `.gitignore` y no entra en `datos/`; un `grep -r`,
+  `rg`, `findstr` o `Select-String` lanzado desde la raiz si entra, y ninguna
+  regla `deny` lo detiene porque llega a `datos/validacion/` sin nombrarla.
+  Negar el comando no sirve: el siguiente comando, o un script de Python, lo
+  esquiva sin querer. Si un comando es inevitable, se acota a rutas de codigo
+  o lleva `--exclude-dir=datos`. Ya paso una vez; ver la bitacora del 10 de
+  septiembre de 2026.
 - **Los datos del laboratorio son confidenciales**: la base curada v2 y los
   parrafos etiquetados. Nunca se copian a fixtures, pruebas, documentacion,
   prompts ni mensajes. Se consultan solo por sus tablas
@@ -433,11 +441,15 @@ Las pruebas que no pueden faltar:
   con las oraciones auditadas es por igualdad de texto, sin identificador
   estable, y su guardian solo salta por debajo de 80 de 93 uniones.
 - **La frontera de la contaminacion**
-  (`etapa2/test_contaminacion.py`). Vigila los tres paquetes: si el patron de
-  oro entra al diccionario, al generador de pares o a la calibracion de
-  umbrales, las metricas dejan de medir lo que el pipeline encuentra y pasan a
-  medir lo que le sopla el oro, con la misma etiqueta y la misma pinta de
-  correcto.
+  (`etapa2/test_contaminacion.py`). Vigila los tres paquetes, subcarpetas
+  incluidas y sin distinguir mayusculas, y protege cuatro nombres: el patron
+  de oro, la auditoria de signo, la base curada (`GRN_experimental`) y su
+  carpeta (`datos/validacion`). Si una referencia entra al diccionario, al
+  generador de pares o a la calibracion de umbrales, las metricas dejan de
+  medir lo que el pipeline encuentra y pasan a medir lo que les sopla la
+  referencia, con la misma etiqueta y la misma pinta de correcto. Atrapa el
+  descuido, no la evasion: un nombre concatenado o una ruta que llega por
+  variable de entorno pasan, y su docstring lo dice.
 
 ## Flujo de trabajo
 

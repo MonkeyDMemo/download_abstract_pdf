@@ -1,22 +1,24 @@
 # -*- coding: utf-8 -*-
 """La frontera de la contaminacion (seccion 0.4 del contrato de datos).
 
-`etapa2/oro_pseudomonas.tsv` y `etapa2/auditoria_signo.tsv` solo pueden
-abrirse desde `evaluar_oro.py`, `evaluar_signo.py` y las pruebas. Esta prueba
-busca esos dos nombres en el texto de todos los `.py` de `etapa2/` y falla si
-aparecen fuera de la lista blanca.
+Cuatro nombres que el pipeline no puede teclear: el patron de oro
+(`oro_pseudomonas`), la auditoria de signo (`auditoria_signo`), la base curada
+del laboratorio (`GRN_experimental`) y la carpeta donde vive
+(`datos/validacion`). Esta prueba los busca en el texto de todos los `.py` de
+los paquetes vigilados, subcarpetas incluidas y sin distinguir mayusculas, y
+falla si aparecen fuera de la lista blanca.
 
 Por que una prueba tan tonta merece existir
 ===========================================
 
 Es la unica que impide, por descuido, el unico error que invalidaria todo el
-trabajo. Si el patron de oro entra al diccionario, al generador de pares o a
-la calibracion de umbrales, las metricas de las etapas 5 y 6 dejan de medir lo
-que el pipeline encuentra y pasan a medir lo que le sopla el oro, y el numero
-que sale sigue teniendo la misma etiqueta y la misma pinta de correcto. Ya
-paso dos veces en este proyecto: un verificador de fuga que media con la misma
-clave del agrupamiento (daba cero por construccion) y una metrica inflada por
-ejemplos repetidos entre entrenamiento y prueba.
+trabajo. Si el patron de oro o la base curada entran al diccionario, al
+generador de pares o a la calibracion de umbrales, las metricas dejan de medir
+lo que el pipeline encuentra y pasan a medir lo que le sopla la referencia, y
+el numero que sale sigue teniendo la misma etiqueta y la misma pinta de
+correcto. Ya paso dos veces en este proyecto: un verificador de fuga que media
+con la misma clave del agrupamiento (daba cero por construccion) y una metrica
+inflada por ejemplos repetidos entre entrenamiento y prueba.
 
 La verificacion adversarial demostro la version de este pipeline: un
 `genes_pao1.tsv` cuyas 785 filas utiles eran copia literal del oro, rellenado
@@ -27,11 +29,26 @@ con filas vacias hasta 5700, se aceptaba sin una queja y publicaba
 Es una prueba de texto, no de importaciones, a proposito: `open()` no es la
 unica forma de leer un archivo, y lo que se quiere atrapar es que alguien
 teclee el nombre.
+
+Lo que NO atrapa, y es deliberado
+=================================
+
+Protege contra el error honesto, no contra la evasion. Un nombre partido en
+dos cadenas y concatenado, una ruta que llega por `GRN_DATOS` o por un archivo
+de configuracion, un `glob` sobre `*.xlsx` o un `pathlib` armado con variables
+pasan sin que la prueba lo note, y convertirla en un analisis de flujo no vale
+lo que cuesta: quien quiera evadirla puede, y quien no quiere, teclea el
+nombre. Mira solo `.py`: cuadernos, `.sh` y `.ps1` quedan fuera. No vigila
+`grn_etl/` ni los scripts de la raiz, que no producen filas del pipeline. Los
+`test_*` quedan exentos. Si revisa archivos que git ignora, como
+`etapa2/para_colab/`, y es a proposito: lo que se quiere atrapar es el script
+local que alguien corre hoy, este o no en el historial.
 """
 
 import ast
 import os
 import re
+import tempfile
 import unittest
 
 DIRECTORIO = os.path.dirname(os.path.abspath(__file__))
@@ -43,10 +60,21 @@ RAIZ = os.path.dirname(DIRECTORIO)
 # paquete nuevo que produzca filas del pipeline se agrega aqui.
 VIGILADOS = ("etapa2", "grn_bronce", "grn_comun")
 
-# Los dos archivos que no se pueden abrir desde fuera, por su nombre sin
-# extension: asi tambien se atrapa `oro_pseudomonas.csv` o una variable que se
-# llame `ORO_PSEUDOMONAS`.
-PROTEGIDOS = ("oro_pseudomonas", "auditoria_signo")
+# Los nombres que no se pueden teclear, cada uno con la expresion que lo
+# atrapa. Sin distinguir mayusculas: `ORO_PSEUDOMONAS` como constante o
+# `Grn_Experimental.xlsx` nombran el mismo archivo, y la version anterior de
+# esta prueba prometia atraparlos y no lo hacia. `datos/validacion` se busca
+# como componente de ruta --`datos`, separadores, `validacion`; o `validacion`
+# entre comillas o diagonales-- para que la «validacion cruzada» de un texto
+# de ayuda no dispare la guarda. El `_` entra entre los separadores porque
+# `DATOS_VALIDACION` es la forma honesta de escribirlo como constante.
+PROTEGIDOS = {
+    "oro_pseudomonas": re.compile(r"oro_pseudomonas", re.I),
+    "auditoria_signo": re.compile(r"auditoria_signo", re.I),
+    "GRN_experimental": re.compile(r"grn_experimental", re.I),
+    "datos/validacion": re.compile(
+        r"datos[\W_]{1,8}validacion|[\"'/\\]validacion[\"'/\\]", re.I),
+}
 
 # §0.4 nombra a los dos evaluadores. Las pruebas quedan fuera de la
 # prohibicion por el mismo motivo por el que existen: comprobar que la
@@ -77,6 +105,12 @@ LISTA_BLANCA = {
     # exactamente esa entrada, y quedaria tapado por una excepcion escrita
     # anos antes. El contrato §0.4 no lo resolvia y esta es la decision.
     "auditoria_signo": {"evaluar_signo.py", "auditar_signo.py"},
+    # La base curada y su carpeta todavia no tienen a nadie en la lista
+    # blanca: el cargador que decida el punto 11 del plan entra aqui cuando
+    # exista, no antes, porque la prueba de los archivos fantasma exige que
+    # cada nombre de la lista exista.
+    "GRN_experimental": set(),
+    "datos/validacion": set(),
 }
 
 # Los scripts del pipeline propiamente dicho. Ninguno puede nombrar los
@@ -101,38 +135,61 @@ def _ruta_de(nombre):
     return os.path.join(DIRECTORIO, nombre)
 
 
-def _fuentes():
-    for paquete in VIGILADOS:
-        carpeta = os.path.join(RAIZ, paquete)
+def _fuentes(raiz=RAIZ, vigilados=VIGILADOS):
+    """(ruta relativa, nombre, texto) de cada `.py` de los paquetes vigilados.
+
+    Entra en las subcarpetas: `etapa2/para_colab/` y `etapa2/evaluacion/`
+    tienen scripts, y con `os.listdir` la prueba no los veia. Se saltan
+    `__pycache__` y las carpetas ocultas. Se lee con `errors="replace"`: los
+    nombres protegidos son ASCII, y un archivo ajeno mal codificado no tiene
+    por que tumbar la guarda.
+    """
+    for paquete in vigilados:
+        carpeta = os.path.join(raiz, paquete)
         if not os.path.isdir(carpeta):
             continue
-        for nombre in sorted(os.listdir(carpeta)):
-            if nombre.endswith(".py"):
-                ruta = os.path.join(carpeta, nombre)
-                with open(ruta, encoding="utf-8") as f:
-                    yield nombre, f.read()
+        for actual, subcarpetas, nombres in os.walk(carpeta):
+            subcarpetas[:] = sorted(
+                s for s in subcarpetas
+                if s != "__pycache__" and not s.startswith("."))
+            for nombre in sorted(nombres):
+                if not nombre.endswith(".py"):
+                    continue
+                ruta = os.path.join(actual, nombre)
+                with open(ruta, encoding="utf-8", errors="replace") as f:
+                    texto = f.read()
+                yield os.path.relpath(ruta, raiz), nombre, texto
 
 
 def _es_prueba(nombre):
     return nombre.startswith("test_")
 
 
+def _en_primer_nivel(relativa):
+    """La lista blanca vale para `etapa2/evaluar_oro.py`, no para un archivo
+    con el mismo nombre metido en una subcarpeta: el permiso es del archivo
+    concreto, no del nombre."""
+    return relativa.count(os.sep) == 1
+
+
 class PruebasFrontera(unittest.TestCase):
 
     def test_el_oro_no_se_nombra_fuera_de_la_lista_blanca(self):
         intrusos = []
-        for nombre, texto in _fuentes():
+        for relativa, nombre, texto in _fuentes():
             if _es_prueba(nombre):
                 continue
-            for protegido in PROTEGIDOS:
-                if protegido in texto and nombre not in LISTA_BLANCA[protegido]:
-                    intrusos.append("%s nombra %s" % (nombre, protegido))
+            for protegido, patron in PROTEGIDOS.items():
+                permitido = (_en_primer_nivel(relativa)
+                             and nombre in LISTA_BLANCA[protegido])
+                if patron.search(texto) and not permitido:
+                    intrusos.append("%s nombra %s" % (relativa, protegido))
         self.assertEqual(
             [], intrusos,
-            "Estos archivos nombran el patron de oro o la auditoria de signo "
-            "fuera de la lista blanca de la seccion 0.4 del contrato. Si el "
-            "oro entra al pipeline, la evaluacion mide el oro contra si mismo: "
-            "%s" % intrusos)
+            "Estos archivos nombran el patron de oro, la auditoria de signo o "
+            "la base curada fuera de la lista blanca de la seccion 0.4 del "
+            "contrato. Si la referencia entra al pipeline, la evaluacion la "
+            "mide contra si misma: %s" % intrusos)
 
     def test_la_lista_blanca_no_tiene_archivos_fantasma(self):
         """Una lista blanca que nombre un archivo inexistente es un permiso
@@ -153,11 +210,11 @@ class PruebasFrontera(unittest.TestCase):
                             "%s no existe; actualiza DEL_PIPELINE." % nombre)
             with open(ruta, encoding="utf-8") as f:
                 texto = f.read()
-            for protegido in PROTEGIDOS:
-                self.assertNotIn(
-                    protegido, texto,
-                    "%s nombra %s. Ningun script del pipeline puede leer el "
-                    "patron de oro." % (nombre, protegido))
+            for protegido, patron in PROTEGIDOS.items():
+                self.assertIsNone(
+                    patron.search(texto),
+                    "%s nombra %s. Ningun script del pipeline puede leer la "
+                    "referencia con la que se evalua." % (nombre, protegido))
 
     def test_auditar_signo_solo_escribe(self):
         """`auditar_signo.py` esta en la lista blanca como PRODUCTOR.
@@ -178,9 +235,10 @@ class PruebasFrontera(unittest.TestCase):
             lineas_docstring = set(range(primero.lineno,
                                          getattr(primero, "end_lineno",
                                                  primero.lineno) + 1))
+        patron = PROTEGIDOS["auditoria_signo"]
         malas = []
         for numero, linea in enumerate(texto.splitlines(), 1):
-            if "auditoria_signo" not in linea:
+            if not patron.search(linea):
                 continue
             if numero in lineas_docstring or "--salida" in linea:
                 continue
@@ -194,15 +252,55 @@ class PruebasFrontera(unittest.TestCase):
     def test_nadie_importa_auditar_signo(self):
         """El permiso de escritura no se hereda por importacion."""
         importadores = []
-        for nombre, texto in _fuentes():
+        for relativa, nombre, texto in _fuentes():
             if nombre == "auditar_signo.py":
                 continue
             if re.search(r"^\s*(import\s+auditar_signo|from\s+auditar_signo\s)",
                          texto, re.M):
-                importadores.append(nombre)
+                importadores.append(relativa)
         self.assertEqual([], importadores,
                          "Estos modulos importan auditar_signo.py: %s"
                          % importadores)
+
+    def test_la_guarda_atrapa_variantes(self):
+        """Las formas en que alguien teclearia un nombre protegido sin
+        querer, y las frases parecidas que no deben disparar la guarda."""
+        deben = ["ORO_PSEUDOMONAS", "Grn_Experimental.xlsx",
+                 "Auditoria_Signo.tsv", "DATOS_VALIDACION",
+                 'os.path.join("datos", "validacion")',
+                 r"datos\validacion", "DATOS/VALIDACION/", "'validacion'"]
+        no_deben = ["validacion cruzada", '"validacion cruzada (--folds 5)"',
+                    "evidencia_experimental", "GRN_DATOS"]
+
+        def atrapa(cadena):
+            return any(p.search(cadena) for p in PROTEGIDOS.values())
+
+        self.assertEqual([], [c for c in deben if not atrapa(c)],
+                         "Estas formas del nombre pasan sin que la guarda las "
+                         "vea.")
+        self.assertEqual([], [c for c in no_deben if atrapa(c)],
+                         "Estas frases inocentes disparan la guarda.")
+
+    def test_fuentes_recorre_subcarpetas(self):
+        """Lo que motivo el cambio: un `.py` en una subcarpeta del paquete
+        tiene que aparecer, y `__pycache__` y las carpetas ocultas no."""
+        with tempfile.TemporaryDirectory() as raiz:
+            paquete = os.path.join(raiz, "paq")
+            os.makedirs(os.path.join(paquete, "sub", "__pycache__"))
+            os.makedirs(os.path.join(paquete, ".oculta"))
+            for rel in ("arriba.py",
+                        os.path.join("sub", "abajo.py"),
+                        os.path.join("sub", "__pycache__", "cache.py"),
+                        os.path.join(".oculta", "oculto.py"),
+                        os.path.join("sub", "datos.txt")):
+                with open(os.path.join(paquete, rel), "w",
+                          encoding="utf-8") as f:
+                    f.write("# nada\n")
+            vistos = [rel for rel, _, _ in _fuentes(raiz, ("paq",))]
+        self.assertEqual([os.path.join("paq", "arriba.py"),
+                          os.path.join("paq", "sub", "abajo.py")], vistos)
+        self.assertTrue(_en_primer_nivel(vistos[0]))
+        self.assertFalse(_en_primer_nivel(vistos[1]))
 
     def test_el_diccionario_no_declara_procedencia_de_oro(self):
         """`oro` no es un valor valido de la columna `fuente` (§2).

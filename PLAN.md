@@ -1,6 +1,6 @@
 # PLAN — Pipeline GRN · *Pseudomonas aeruginosa*
 
-Actualizado: 10-sep-2026. Documento guía del repositorio.
+Actualizado: 11-sep-2026. Documento guía del repositorio.
 Tres registros separados a propósito: lo **acordado** con el asesor es la fuente de verdad; lo **construido** es lo que el repositorio demuestra hoy; lo **pendiente** es la resta de los dos primeros. Nada se mueve de registro sin evidencia.
 
 Numeración: paso 0 extracción · paso 1 identificación (bronce) · paso 2 verificación · paso 3 consolidación.

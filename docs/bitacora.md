@@ -8,15 +8,20 @@ Para el detalle técnico de cada punto está
 
 ---
 
-## 11 de septiembre de 2026 — precisión del paso 1 por juicio humano: 44.0 %
+## 11 de septiembre de 2026 — precisión 44.0 %, evaluación versionada y guarda ampliada
+
+Tres cosas en el día: los 50 juicios y la precisión del paso 1, la evaluación
+versionada en `etapa2/evaluacion/`, y la guarda de contaminación ampliada, con
+un hallazgo de CRLF que habría roto la reproducibilidad del muestreo.
+
+### Los 50 juicios y la precisión del paso 1
 
 **Qué se corrió.** `python etapa2/unir_juicios.py` sobre
-`salidas/muestra_precision_50.csv` (50 candidatas de la corrida 1,
-`baseline-deterministico` v1, semilla 20260904) y
-`salidas/juicio_consolidado.csv`, llenado a mano el 11-sep sin ver el
-`signo_sugerido`. Los criterios del juez están en
-`Criterios_jucio_consolidado@11-09.txt` (sus números de fila son líneas del
-CSV, con el encabezado como línea 1).
+`muestra_precision_50.csv` (50 candidatas de la corrida 1,
+`baseline-deterministico` v1, semilla 20260904) y `juicio_consolidado.csv`,
+llenado a mano el 11-sep sin ver el `signo_sugerido`. Los criterios del juez
+están en `etapa2/evaluacion/criterios_juicio.md` (sus números de fila son
+líneas del CSV, con el encabezado como línea 1).
 
 **Resultado.** Las 50 filas juzgadas: `si` 22, `no` 24, `dudoso` 4.
 
@@ -53,19 +58,52 @@ que descartar. La cifra dice cuánto ruido le llega al paso 2, no cuánto aciert
 el pipeline. Va siempre junto al techo de cobertura (84.7 % contra el oro,
 30.2 % contra la base curada con XML).
 
-**Dónde quedó.** La muestra, el juicio, los criterios y el script del sorteo
-se versionaron en `etapa2/evaluacion/`: antes vivían en `salidas/` (ignorado)
-y en la raíz (sin rastrear), y el único número de precisión del paso 1 no
-estaba en el repositorio. `muestrear_candidatas.py` es el script del 4 de
-septiembre, recuperado de la sesión: con la semilla 20260904 y el barajado con
-20260905 reproduce el CSV byte a byte. `unir_juicios.py` apunta ahí por
-omisión. En `PLAN.md`: 2.3 lleva la cifra, los puntos 15 y 29 quedan hechos,
-el 18 anota que el disparador dominante también desbloquea la medición de
-signo, y entra el 30 (inversión de dirección).
-
 **Nota del juez.** Dos lecturas discutibles, líneas 14 (`mvfR → pqsA`, `si/+`)
 y 27 (`rpoS → dinB` vía inducción del regulón en *E. coli*, `si/+`). Si se
 cambiaran a `no`, la precisión sería 20 de 50 = 40.0 %.
+
+### La evaluación, versionada
+
+La muestra, el juicio, los criterios y el script del sorteo se versionaron en
+`etapa2/evaluacion/`: antes vivían en `salidas/` (ignorado) y en la raíz (sin
+rastrear), y el único número de precisión del paso 1 no estaba en el
+repositorio. `muestrear_candidatas.py` es el script del 4 de septiembre,
+recuperado de la sesión: población ordenada por id de candidata, sorteo con la
+semilla 20260904 y barajado aparte con 20260905. `unir_juicios.py` apunta ahí
+por omisión y da la misma cifra. En `PLAN.md`: 2.3 lleva la cifra, los puntos
+15 y 29 quedan hechos, el 18 anota que el disparador dominante también
+desbloquea la medición de signo, y entra el 30 (inversión de dirección).
+
+**El hallazgo de CRLF.** La primera versión del script reproducía byte a byte
+el archivo de `salidas/`, y con eso se dio por buena. Pero `csv` escribe CRLF
+por omisión y `.gitattributes` guarda los CSV en LF, así que tras un checkout
+limpio el archivo versionado y el regenerado habrían diferido en un byte por
+línea: reproducible en esta máquina y en ninguna otra. Ahora escribe LF y
+coincide byte a byte con el blob del commit. Es la misma trampa que el 3-sep
+hizo fallar la prueba de divergencia del diccionario; la lección es que
+«reproduce el archivo» hay que comprobarlo contra lo que git guarda, no contra
+la copia local.
+
+### La guarda de contaminación, ampliada
+
+Es el punto 1 de la sección 3.1 del `PLAN.md`, la mitigación del incidente del
+10-sep, en dos capas. La regla de usar la herramienta `Grep` y no un comando
+quedó en `CLAUDE.md` (Confidencialidad), que es lo que se carga en cada
+sesión. Y `test_contaminacion.py` protege también `GRN_experimental` y
+`datos/validacion`, ya sin distinguir mayúsculas (`ORO_PSEUDOMONAS` no la
+disparaba, aunque su comentario decía que sí) y entrando en subcarpetas
+(`etapa2/para_colab/` y `etapa2/evaluacion/` quedaban fuera). La lista blanca
+solo vale en el primer nivel del paquete. Dos pruebas nuevas fijan las
+variantes que atrapa y el recorrido de subcarpetas.
+
+Se comprobó con tres archivos sonda que nombraban `Datos/Validacion`,
+`ORO_PSEUDOMONAS` y `grn_EXPERIMENTAL` desde subcarpetas: la guarda falló con
+los tres, y se borraron. Lo que no atrapa (nombre concatenado, ruta por
+variable de entorno, `glob`, `pathlib` por partes, archivos que no son `.py`)
+está escrito en su docstring: protege contra el descuido, no contra la
+evasión, y convertirla en análisis de flujo no vale lo que cuesta.
+`settings.json` no se tocó. Suites: `etapa2` 524 pruebas con los 2 errores de
+siempre de `test_clasificar`; raíz 412, OK.
 
 ---
 
@@ -100,8 +138,9 @@ recursión desde la raíz:
 usar la herramienta `Grep` en vez del comando, porque negar comandos es frágil:
 `rg`, `findstr`, `Select-String` o un script de Python esquivan la regla sin
 querer. Como refuerzo, el mismo punto registra negar `Bash(grep *)` sobre rutas
-de datos o exigir `--exclude-dir=datos`. No se aplicó nada; queda pendiente,
-como el resto del plan.
+de datos o exigir `--exclude-dir=datos`.
+
+**Aplicado el 11 de septiembre**; el detalle está en la entrada de ese día.
 
 ---
 
