@@ -8,6 +8,42 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 10 de septiembre de 2026 — un `grep` recorrió `datos/validacion/`
+
+**Qué pasó.** Al verificar las secciones 2.1 a 2.3 del `PLAN.md` nuevo con
+agentes de solo lectura, uno de ellos buscó el script que sorteó la muestra de
+50 con `grep -rn` sobre la raíz del repositorio. El recorrido entró en
+`datos/`, incluida `datos/validacion/`. Según su propio reporte, filtró la
+salida con `grep -v` y no se mostró nada de esa carpeta. Lo detectó el mismo
+agente y lo avisó en su informe.
+
+**El riesgo fue de recorrido, no de lectura de contenido.** El `--include`
+limitaba la búsqueda a `.py`, `.md`, `.ipynb`, `.sh` y `.ps1`, así que el
+`.xlsx` quedaba fuera del alcance de grep por construcción. Queda escrito para
+que más adelante no se lea como una fuga.
+
+**Por qué la regla no lo impidió.** Ninguna de las cuatro defensas cubre una
+recursión desde la raíz:
+
+- `CLAUDE.md` es una instrucción, no un bloqueo.
+- `.claude/settings.json` niega `Read(./datos/validacion/**)` y
+  `Bash(cat ./datos/validacion/*)`: frena la herramienta de lectura y un `cat`
+  que nombre la ruta, pero no un `grep -r` lanzado desde la raíz, que llega a
+  la carpeta sin nombrarla.
+- La herramienta `Grep` respeta `.gitignore` y no entra en `datos/`; el `grep`
+  de la shell sí.
+- `test_contaminacion.py` vigila nombres dentro del código de los paquetes, no
+  comandos.
+
+**Mitigación: el punto 1 de la sección 3.1 del `PLAN.md`.** La preferente es
+usar la herramienta `Grep` en vez del comando, porque negar comandos es frágil:
+`rg`, `findstr`, `Select-String` o un script de Python esquivan la regla sin
+querer. Como refuerzo, el mismo punto registra negar `Bash(grep *)` sobre rutas
+de datos o exigir `--exclude-dir=datos`. No se aplicó nada; queda pendiente,
+como el resto del plan.
+
+---
+
 ## 3 y 4 de septiembre de 2026 — el paso 1 corre de punta a punta
 
 **Qué se corrió.** `python -m grn_bronce.cli exportar --corpus v0-agosto`,

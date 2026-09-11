@@ -1,178 +1,171 @@
 # PLAN — Pipeline GRN · *Pseudomonas aeruginosa*
 
-Actualizado: 02-sep-2026. Documento guía del repositorio. Define qué construye cada paso, qué entrega y cómo se conectan.
+Actualizado: 10-sep-2026. Documento guía del repositorio.
+Tres registros separados a propósito: lo **acordado** con el asesor es la fuente de verdad; lo **construido** es lo que el repositorio demuestra hoy; lo **pendiente** es la resta de los dos primeros. Nada se mueve de registro sin evidencia.
 
-## 1. Panorama
+Numeración: paso 0 extracción · paso 1 identificación (bronce) · paso 2 verificación · paso 3 consolidación.
+Objetivo: una GRN como grafo dirigido — nodos = genes y sus reguladores; aristas = regulador → blanco, con signo y condición.
 
-Objetivo: una red de regulación génica (GRN) construida desde la literatura. La red es un grafo dirigido: nodos = genes y sus productos reguladores (factores de transcripción y factores sigma); aristas = relación regulador → gen blanco, con signo (activación / represión / desconocido) y, cuando el texto lo dice, condición. La red resultante se compara contra la red curada del laboratorio (data de validación).
+**Dos referencias distintas, nunca intercambiables:**
+- **Oro propio** — `etapa2/oro_pseudomonas.tsv`, 190 pares construidos por el equipo, seleccionados por estar atestiguados en el corpus.
+- **Base curada** — `datos/validacion/GRN_experimental.xlsx`, 5 584 interacciones del laboratorio, sin filtro de encontrabilidad en texto.
 
-| Paso | Nombre | Capa | Estado | Entrega |
+Toda cifra debe declarar contra cuál se midió.
+
+---
+
+## 1. Acordado con el asesor
+
+### 1.1 De la reunión del 04-sep-2026
+
+- **Dos niveles de fuerza en la relación.** Regulación directa fuerte (unión al promotor, activación, represión explícita) frente a influencia indirecta (over-expression, regulates, sobreexpresión, efecto biológico sin mecanismo). Los disparadores que ya se extraen son lo que permite la clasificación.
+- **Dos listas de disparadores**, una robusta de unión directa y otra experimental/indirecta, en lugar de una sola lista.
+- **Columna de tipo de efecto** en la salida: directo / indirecto / pasivo.
+- **Recursos separados en dos clases.** Específicos del organismo (genes, TFs, operones, locus tags), que cambian al pasar a otra bacteria; e inherentes o estándar (evidencia experimental, funciones biológicas, signos), reutilizables para cualquier organismo. Cambiar de organismo debe ser cambiar solo los archivos específicos.
+- **Todo esto es trabajo del bronce, antes de la validación.** El bronce clasifica fuerza por léxico; el paso 2 verifica.
+- **Cruce contra la base curada como entregable**: cuáles interacciones tienen su artículo entre los descargados, y cuáles serían candidatas nuevas.
+- **Las interacciones por homología no son exigibles al pipeline.** Confirmado empíricamente (ver 2.4).
+- **Catálogos actualizables por retroalimentación**, en base de datos, por organismo.
+- **Visión de actualización recurrente**: rehacer la búsqueda periódicamente, versionar por fecha, medir qué interacciones son nuevas.
+
+### 1.2 De acuerdos previos vigentes
+
+- El paso 1 entrega el *dónde*, no el *sí*. Existencia y signo se deciden en el paso 2.
+- El bronce se construye solo desde el texto. La base curada entra en pasos 2 y 3, nunca en la extracción.
+- Tres vías de verificación sobre el mismo conjunto de evaluación: BERT del laboratorio reajustado, fine-tuning de LLM, agente con directrices.
+- Fine-tuning sobre la base curada solo con partición por PMID y test retenido.
+- Trazabilidad: toda fila conserva documento, fuente, offsets y la corrida que la produjo.
+
+---
+
+## 2. Lo que ya se tiene
+
+Verificado contra el repositorio el 10-sep-2026.
+
+### 2.1 Paso 0 — extracción
+
+- Corpus congelado **v0-agosto**: 2 361 artículos; 2 354 con resumen; 918 con texto completo de PMC; 184 con PDF, ninguno procesado; 96 tienen también XML, así que solo 88 dependen del PDF.
+- Control en SQLite: `consultas`, `ejecuciones`, `documentos`, `consulta_documento`, `descargas`, `corpus`, `corpus_documento`.
+- Búsqueda por año de publicación (`--desde/--hasta`) y descarga incremental. Versionado con `corpus crear --nombre`.
+
+### 2.2 Paso 1 — bronce
+
+- **Corrida 1** sobre los 2 361 (entrada), 2 354 con texto; 7 sin resumen ni XML. 29 659 oraciones candidatas, estatus ok.
+- **Tablas pobladas** en `datos/grn.db`: `texto_unidades` 273 062 · `menciones` 488 221 · `oraciones_candidatas` 29 659. El CSV y el Excel salen de consultar estas tablas.
+- Menciones por clase: disparadores 153 024 · proteínas 94 674 · genes 71 865 · organismos 63 250 · funciones 60 134 · evidencia 45 274.
+- Normalización a locus tag: 95.1 %, con diccionario de 5 642 filas / 5 639 genes con locus tag (RefSeq, KEGG, UniProt, más 22 filas de curación manual).
+- 1 188 pares dirigidos; 307 con dos o más PMIDs distintos (la independencia no se verifica); 17 191 sin orientar.
+- Exclusión de secciones y longitud: 61 etiquetas mapeadas a excluir; `MIN_ORACION=40`, `MAX_ORACION=700`.
+- Recursos: `genes_pao1`, `operones_pao1`, `manual_pao1`, `palabras_comunes`, `disparadores` (239 filas, separadas por signo), `funciones_semilla`, `evidencia_experimental`, con `PROCEDENCIA.md`.
+
+### 2.3 Evaluación contra el oro propio
+
+- `evaluar_cobertura_bronce.py`: recall **84.7 %** (149/176) con denominador honesto; 81.1 % (154/190) sobre el total.
+- Las 27 pérdidas por causa: diccionario 12, autorregulación 8, coocurrencia 7. METHODS y longitud pierden cero.
+- Muestra de 50 candidatas extraída con semilla fija; `unir_juicios.py` listo (dudosos en el denominador, Wilson 95 %). **Juicios sin llenar.**
+- Guarda anticircularidad: `test_contaminacion.py` impide que el bronce nombre `oro_pseudomonas`.
+
+### 2.4 Evaluación contra la base curada — medido el 10-sep-2026
+
+**Estructura.** 5 584 filas, 8 columnas: `Source`, `Target`, `Interaction`, `Reference`, `Source_Locus_id`, `Target_Locus_id`, `Origen`, `Contributions`. Protegida por `.gitignore`, sin rastro en el historial de git.
+
+- `Origen` (3 valores) indica en qué versión de la base vive la fila, no cómo se obtuvo: Histórica 4 824 · BioBERT 544 · Ambos 216. **No sirve para separar el denominador.**
+- `Interaction` codifica solo signo: `+` 4 059 · `Unknown` 786 · `-` 598 · vacío 123 · `d` 14 · `+, +` 1 · 3 celdas con un locus corrido. Mapea uno a uno con el +/−/? del bronce.
+- **La etiqueta de `Reference` sí marca procedencia:** dos variantes que dicen "homology", en **2 850 filas (51 %)**, 2 808 de ellas de Histórica. Una variante indica inferencia desde la cepa PA14.
+- `Reference` son PMIDs; requiere normalizar (float con `.0`, listas por coma, etiqueta pegada, PMIDs de 7 dígitos, 1 DOI). 310 PMIDs distintos, 208 en el corpus (67.1 %).
+- Locus: formato PA#### en las 5 584 filas; 3 006 distintos, de los que 1 796 (59.7 %) aparecen en `menciones`.
+
+**Construcción del denominador exigible: 2 003 filas.**
+
+| Exclusión | Filas | Motivo |
+|---|---|---|
+| Base completa | 5 584 | |
+| − homología | 2 850 | El artículo citado no reporta la relación; acuerdo del asesor, confirmado abajo |
+| − PMID B | 731 | Un solo artículo, con PDF y sin XML; el bronce no lee PDF, solo tiene 6 oraciones de abstract |
+| **Denominador exigible** | **2 003** | `+` 1 177 · `-` 569 · `Unknown` 116 · vacío 123; 87.2 % con signo resuelto |
+
+De esas 2 003: 1 488 (74.3 %) tienen su PMID en el corpus; de ellas 791 con XML y 697 solo abstract.
+
+**Cobertura del bronce (corrida 1), con dos reglas:**
+
+| Regla | Denominador completo | En corpus | Con XML | Solo abstract |
 |---|---|---|---|---|
-| 0 | Extracción | — | cerrado | corpus versionado: abstracts, XML de PMC, PDF, con estado en SQLite |
-| 1 | Identificación de elementos | bronce | foco actual | menciones normalizadas con offsets y oraciones candidatas con score |
-| 2 | Verificación | bronce → silver | siguiente | relaciones candidatas con signo, condición y confianza |
-| 3 | Consolidación | silver → gold | posterior | tabla de aristas verificadas, red agregada, diff contra data de validación |
+| a) par en cualquier oración candidata | 857/2 003 (42.8 %) | 656/1 488 (44.1 %) | **353/791 (44.6 %)** | 303/697 (43.5 %) |
+| b) par en oración del artículo citado | 346/2 003 (17.3 %) | 346/1 488 (23.3 %) | **239/791 (30.2 %)** | 107/697 (15.4 %) |
 
-Regla de capas: bronce se construye solo desde el texto. La data de validación entra en el paso 2 (evaluación y, con partición por PMID, entrenamiento) y en el paso 3 (diff). Queda fuera de la lógica de extracción.
+La regla b) mide si el paso 1 recupera la evidencia citada; la a) mide lo que el paso 3 podría juntar sumando artículos. **La cifra a reportar es 30.2 %**, con la a) como complemento.
 
-Toda fila de cualquier tabla conserva `doc_id`, `pmid`, la fuente del texto y la corrida que la produjo (método, versión, fecha). Todo es exportable a CSV/Parquet.
+**Contraste de homología (2 850 filas, 2 823 con XML):** cobertura 4.7 % con la regla a) y **0.3 %** con la b). El bronce tiene esos artículos completos y aun así no encuentra las relaciones: el artículo citado no las dice. Queda probado que excluirlas es correcto. Si entraran, la b) con XML caería de 30.2 % a 6.9 %.
 
-## 2. Repositorio: decisión y estructura
+**Por qué 30.2 % y no 84.7 %.** El oro propio se construyó exigiendo que la relación estuviera atestiguada en el corpus, es decir, seleccionado para ser encontrable. La base curada no tiene ese filtro: sus relaciones existen porque son ciertas, no porque estén dichas en una oración. La brecha mide la distancia entre lo que el corpus dice en prosa y lo que la literatura sabe.
 
-**Decisión: un solo repositorio, un paquete por paso.** Copiar el proyecto a otra carpeta para empezar de cero produce dos bases de código divergentes y tira el historial del ETL. La sensación de "empezar limpio" se obtiene con un paquete nuevo dentro del mismo repositorio.
+**Cautelas de la medición.** Es un piso: 917 menciones (77 ids distintos) no se pudieron llevar a locus, y una relación repartida en dos oraciones no cuenta. Mide coocurrencia, no dirección ni signo: es el techo del paso 1. La expansión de operones aporta 53 filas (sin ella, la a) con XML baja a 37.9 %). 43 filas del denominador son autorregulación y nunca pueden contar como cubiertas. La concentración sesga hacia abajo: 5 PMIDs sostienen 642 filas (32.1 %); sin ellos la b) con XML sube a 37.3 %.
 
-Regla para elegir:
-- El repositorio contiene solo `grn_etl/`, `cli.py`, `.kiro/`, `tests/` y configuración → opción A: se queda como está y se agrega `grn_bronce/`.
-- El repositorio arrastra scripts sueltos de las primeras iteraciones (los módulos 06–09 u otros) → opción B: repositorio nuevo `grn-pipeline`, se copian solo `grn_etl/`, `cli.py`, `.kiro/`, `.gitignore` y `tests/`; el viejo se archiva.
+---
 
-En ambos casos, antes de tocar nada:
+## 3. Lo que falta hacer
 
-```bash
-git tag -a v0-extraccion -m "Paso 0 cerrado"
-git checkout -b bronce
-```
+### 3.1 Crítico — integridad y reproducibilidad
 
-Estructura objetivo:
-
-```
-grn-pipeline/
-├── PLAN.md                    <- este documento
-├── pyproject.toml             <- extras por paso: [bronce], [verificacion]
-├── .kiro/steering/reglas.md   <- apunta a CLAUDE.md y a este archivo
-├── grn_etl/                   <- paso 0, cerrado; solo correcciones de errores
-│   ├── db.py                  <- unico modulo con SQL del paso 0
-│   ├── pubmed.py              <- clientes E-utilities, PMC, Unpaywall
-│   ├── resolvers.py           <- cascada de resolucion de PDF
-│   ├── downloader.py
-│   ├── etl.py                 <- orquestacion
-│   └── cli.py                 <- grn-etl: query, run, fulltext, estado, export
-├── grn_bronce/                <- paso 1, en construccion
-│   ├── db.py                  <- tablas del bronce; no toca tablas del paso 0
-│   ├── texto.py               <- lectura de fuentes y segmentacion en oraciones
-│   ├── diccionario.py         <- locus tags PAO1, sinonimos, lista negra
-│   ├── menciones.py           <- matching por diccionario e ingesta de PubTator
-│   ├── disparadores.py        <- vocabulario de verbos de regulacion
-│   ├── candidatos.py          <- co-ocurrencia y score
-│   ├── indice.py              <- embeddings (bloque 3)
-│   ├── llm_local.py           <- Ollama (bloque 4)
-│   └── cli.py                 <- grn-bronce: texto, menciones, candidatos, corrida
-├── grn_verificacion/          <- paso 2, futuro
-├── grn_red/                   <- paso 3, futuro
-├── datos/                     <- ignorado por git: grn.db, fulltext/, diccionarios/
-├── docs/
-└── tests/
-```
-
-Convenciones que se conservan del paso 0: capas con dependencia en una sola dirección (`cli → orquestación → db / clientes`), sin `print()` fuera de `cli.py`, credenciales solo en variables de entorno, español sin acentos en identificadores. Diferencia con el paso 0: `grn_etl` se mantiene con librería estándar; `grn_bronce` sí usa terceros (PyMuPDF, scispaCy o pysbd, numpy; sentence-transformers y el cliente de Ollama como extras opcionales). Cada paso instala sus dependencias con `pip install -e .[bronce]`.
-
-Todos los pasos comparten un solo archivo SQLite (`datos/grn.db`). Cada paquete crea y administra únicamente sus tablas.
-
-## 3. Paso 0 — Extracción (cerrado)
-
-**Responsabilidad única:** dado un conjunto de consultas de PubMed, obtener los documentos, su texto completo cuando exista, y registrar el estado de todo. Nada de interpretación del contenido.
-
-**Entradas:** consultas registradas en `consultas`. La query refinada del Dr. se registra como consulta canónica en cuanto llegue.
-
-**Salidas (contrato que consume el paso 1):**
-
-| Tabla | Contenido | Campos que usa el paso 1 |
+| # | Qué | Por qué |
 |---|---|---|
-| `documentos` | un artículo, único por PMID | `pmid`, `doi`, `titulo`, `abstract`, `anio`, `revista`, `fecha_ingesta` |
-| `consulta_documento` | qué consulta trajo qué documento | `consulta_id`, `pmid` |
-| `descargas` | estado de texto completo por PMID y tipo (`xml` / `pdf`) | `pmid`, `tipo`, `ruta`, `sha256`, `estado`, `fuente`, `fecha` |
-| `ejecuciones` | cada corrida de una consulta | trazabilidad |
+| 1 | Extender la lista blanca de `test_contaminacion.py` a `GRN_experimental` y `datos/validacion` | La regla de confidencialidad frena las herramientas de Claude, no los scripts. `test_contaminacion` protege `oro_pseudomonas` y `auditoria_signo` y vigila `etapa2`, `grn_bronce` y `grn_comun`; falta cubrir `GRN_experimental` y `datos/validacion`, y tiene dos límites: distingue mayúsculas y no revisa subcarpetas. Ampliar también a comandos: un `grep` sobre la raíz recorre `datos/validacion`. Negar `Bash(grep *)` sobre rutas de datos o exigir `--exclude-dir=datos` |
+| 2 | Nomenclatura de las dos referencias en repositorio y documentos | Toda cifra debe declarar contra cuál se midió |
+| 3 | Crear `pyproject.toml` con el extra `[bronce]` | Un clon limpio no reproduce la exportación a Excel; openpyxl está instalado a mano |
+| 4 | Alinear `CLAUDE.md` con la realidad del bronce (dice idempotente; `identificar.py` es todo-o-nada) | Documento que gobierna afirmando algo falso |
+| 5 | Registrar en `corridas` las secciones excluidas y la huella de `secciones.tsv` | Si el archivo cambia, la corrida no puede decir con qué regla se hizo |
 
-Archivos en disco: `datos/fulltext/{pmid}.xml` (JATS de PMC) y `datos/fulltext/{pmid}.pdf`.
+### 3.2 Lo que pidió el asesor
 
-**Adición única permitida en el paso 0: el corpus versionado.** Dos tablas que siguen el mismo patrón N a N del ETL:
-
-- `corpus`: `corpus_id`, `nombre` (p. ej. `v1`), `consulta_id`, `fecha_corte`, `n_documentos`, `hash_pmids`.
-- `corpus_documento`: `corpus_id`, `pmid`.
-
-Comando: `grn-etl corpus crear --nombre v1 --consulta <id>`. Se ejecuta después de correr la consulta canónica del Dr. y de correr `fulltext` sobre ella. A partir de ahí, el paso 1 recibe un `corpus_id`; cualquier métrica se reporta contra ese corpus.
-
-**Cómo toma el paso 1 la información del paso 0:**
-
-1. Lee `corpus_documento` para el `corpus_id` indicado. Esa es la lista completa de PMIDs; ninguna otra.
-2. Por cada PMID toma el abstract de `documentos`, siempre.
-3. Toma el texto completo en este orden: `descargas.tipo = 'xml'` con `estado = 'ok'` → `descargas.tipo = 'pdf'` con `estado = 'ok'` → ninguno. OCR queda reservado a PDF escaneados y se agrega después.
-4. Solo lectura sobre las tablas del paso 0. El paso 1 nunca llama a las API de documentos; sus únicas llamadas externas son fuentes de anotación (Pseudomonas Genome DB, PubTator 3.0).
-
-**Pendientes del paso 0 (única actividad permitida además de correcciones):** registrar la query canónica; ejecutar `fulltext` sobre ella y medir cobertura de XML y PDF; crear `corpus v1`. El soporte para XML de PMC ya existe en `descargas`; el pendiente es ejecutarlo sobre el corpus y reportar la cobertura.
-
-## 4. Paso 1 — Identificación de elementos (capa bronce)
-
-**Objetivo:** por cada documento del corpus, localizar dónde están los elementos y dónde puede haber una relación. Entrega el *dónde*; la decisión de si la relación existe y su signo pertenece al paso 2.
-
-**Prioridad, en orden:** genes y proteínas normalizados a locus tag (nodos); relación con signo y condición (aristas); función biológica (atributo del nodo); evidencia experimental y organismo (metadata). El conjunto completo se nombra "funciones biológicas", como en la pizarra del Dr.
-
-**Tablas del bronce (las crea `grn_bronce/db.py`):**
-
-| Tabla | Campos |
-|---|---|
-| `corridas` | `corrida_id`, `paso`, `metodo`, `version`, `parametros`, `fecha`, `corpus_id` |
-| `texto_unidades` | `unidad_id`, `pmid`, `fuente_texto` (abstract / xml / pdf), `seccion`, `num_oracion`, `texto`, `offset_ini`, `offset_fin`, `corrida_id` |
-| `menciones` | `mencion_id`, `unidad_id`, `tipo` (gen / proteina / disparador / funcion / evidencia / organismo), `texto`, `id_normalizado`, `offset_ini`, `offset_fin`, `metodo`, `corrida_id` |
-| `oraciones_candidatas` | `unidad_id`, `entidades` (lista de `mencion_id`), `disparador`, `score`, `metodo`, `corrida_id` |
-
-Reglas: los offsets son absolutos sobre el texto original de la unidad, para reproducir el subrayado. Idempotencia por corrida: una corrida procesa solo las unidades sin resultado para su par (`metodo`, `version`). Toda fila apunta a su `corrida_id` y, por la unidad, a su PMID y fuente.
-
-**Orden de construcción:**
-
-| Bloque | Qué | Terminado cuando |
+| # | Qué | Nota |
 |---|---|---|
-| 1. Esqueleto | tablas, lectura de fuentes (abstract, JATS de PMC, PDF con PyMuPDF), segmentación con scispaCy o pysbd, diccionario PAO1 con sinónimos y lista negra de colisiones (`fur`, `cap`) | `texto_unidades` poblada para todo el corpus; diccionario cargado con conteo de entradas |
-| 2. Baseline | matching por diccionario, disparadores léxicos, co-ocurrencia de dos entidades o más por oración con score; ingesta de PubTator 3.0 por lote de PMIDs como segunda fuente de menciones | `menciones` y `oraciones_candidatas` pobladas; tasa de normalización y acuerdo diccionario vs PubTator reportados |
-| 3. Embeddings | modelo local de sentence-transformers, índice en numpy o FAISS plano, consultas semilla con plantillas de regulación | precisión@k sobre la muestra de evaluación |
-| 4. LLM local | Ollama, salida JSON estricta, batch multihilo | calidad y costo (tokens y minutos por 1,000 abstracts) reportados |
-| 2b (opcional) | parseo de dependencias con scispaCy para pre-asignar dirección regulador → blanco en oraciones simples | se activa solo si el baseline da buena precisión en pares |
+| 6 | Partir `disparadores.csv` en dos por fuerza: unión directa y experimental/indirecta, conservando el signo | Precursor en `etapa2/extraer_pares.py`; mide otra cosa, sirve de referencia |
+| 7 | Columna `tipo_efecto` (directo / indirecto / pasivo) en `oraciones_candidatas` | Eje distinto de `tipo_relacion`, que es del paso 2 |
+| 8 | Reorganizar `recursos/` en `organismo/` y `estandar/`; mover a recursos el patrón de organismo, hoy en `vocabulario.py` | Decidir dónde va `palabras_comunes.txt` |
+| 9 | Vía del bronce que produzca la clasificación de fuerza antes de la validación | No existe ni como rama de git ni como vía del pipeline |
 
-Contexto de oración anterior y siguiente (±1) como entrada de cualquier modelo de etiquetado, tomado del paper compartido por el Dr.
+### 3.3 Cruce contra la base curada — parcialmente resuelto
 
-**Métricas del paso:** tasa de normalización, cobertura de menciones por documento, precisión y recall contra la muestra de evaluación, precisión@k de candidatas, costo por 1,000 abstracts.
+| # | Qué | Estado |
+|---|---|---|
+| 10 | Vocabulario de `Origen`, `Interaction`, `Reference` | **Hecho** (2.4) |
+| 11 | Decidir dónde vive el cargador de la base curada | Pendiente. No cabe en ningún paquete: `grn_etl` y `etapa2` son biblioteca estándar; `grn_bronce` no puede leer validación; `grn_verificacion` está fuera de alcance. Opciones: adelantar `grn_verificacion/`, o leer el xlsx con `zipfile` + XML estándar desde `etapa2/`. Hoy la medición vive en scripts de un solo uso, no reproducible |
+| 12 | Cruce de PMIDs con normalización | **Hecho** (2.4). Falta persistirlo como script versionado |
+| 13 | Separar el denominador por origen | **Hecho**: 2 003 filas exigibles, vía la etiqueta de homología |
+| 14 | Reportar candidatas nuevas: pares del bronce ausentes de la base curada | Pendiente. Entregable que el asesor quiere ver |
+| 26 | Adoptar el vocabulario de signo de `Interaction` como tabla de equivalencias en el paso 2 | `+`/`-`/`Unknown` ↔ `+`/`-`/`?`. Sin tocar el bronce. `d` sin mapear hasta que el asesor lo defina |
 
-**Terminado significa:** `texto_unidades`, `menciones` y `oraciones_candidatas` pobladas sobre el corpus v1; tabla comparativa de los métodos con precisión@k, recall estimado y costo; decisión escrita de qué alimenta al paso 2.
+### 3.4 Bronce v1, cierre
 
-**Extensión prevista (diseño, sin implementar ahora):** el identificador es configurable por vocabulario (organismo, tipo de relación), para que el mismo módulo sirva a otras bacterias o a PPI cambiando diccionario y disparadores.
+| # | Qué | Nota |
+|---|---|---|
+| 15 | Llenar los 50 juicios y correr `unir_juicios.py` | Pendiente desde el 03-sep. Único número que falta de la evaluación del paso 1 |
+| 16 | Regla de autorregulación con bandera propia | Oro: 84.7 % → 89.2 %. Base curada: 43 filas del denominador hoy imposibles |
+| 17 | Cerrar los huecos del diccionario | Mayor causa de pérdida en ambas referencias: 12 de 27 en el oro; 917 menciones (77 ids) sin locus en el cruce |
+| 18 | Disparador dominante | Sube el signo utilizable de 114 a ~675 pares. No arregla la inversión del fenotipo del mutante |
+| 19 | Lista `requiere_contexto` para símbolos ambiguos (`tag` = PA0010, 568 menciones de jerga) | |
+| 20 | Pruebas para `unir_juicios.py`, `evaluar_cobertura_bronce.py` y el subcomando `pares` | Tres piezas sin cobertura |
+| 27 | Revisar el 2.º PMID más frecuente del denominador: 179 filas, XML disponible, 25.1 % de cobertura | O reporta en tablas, o hay un patrón de redacción que el bronce no capta |
+| 28 | Unificar la cifra de autorregulación | El comentario de `evaluar_cobertura_bronce.py` dice 10 filas / 5.7 %, la bitácora mezcla 4.5 puntos con 5.7 %, y lo medido es 8 de 176 (4.5 puntos) y 11 de 190 (5.8 puntos). Tres cifras para lo mismo en tres lugares |
+| 29 | Versionar el script que sorteó la muestra de 50 | Hoy la semilla reproduce las filas pero el script no está en el repositorio |
 
-## 5. Paso 2 — Verificación (panorama)
+### 3.5 Diferido
 
-**Entrada:** tripletas (regulador candidato, gen blanco candidato, oración) construidas desde `oraciones_candidatas` y `menciones`.
+| # | Qué | Nota |
+|---|---|---|
+| 21 | Bronce incremental por (método, versión) | Hoy es todo-o-nada; la clave única de `texto_unidades` incluye `corrida_id`. Bloquea la recurrencia |
+| 22 | Comando que encadene re-búsqueda → texto completo → corpus nuevo → bronce, y diff entre versiones de corpus | Visión de actualización mensual del asesor |
+| 23 | Procesamiento de PDF con PyMuPDF | **Baja prioridad, confirmado con datos:** solo 66 filas del denominador (9.5 % de las que tienen solo abstract) ganarían texto. En el corpus, solo 88 documentos dependen del PDF: los otros 96 con PDF ya tienen XML. PMID B quedó fuera del denominador por inalcanzable |
+| 24 | Ventana de contexto para las 7 pérdidas de coocurrencia del oro | Caso por caso |
+| 25 | Segundo eje de fuerza: la del método experimental | Distinto del eje léxico que pidió el asesor. Decidir si entra |
 
-**Tres vías sobre el mismo conjunto de evaluación:** BERT del laboratorio re-fine-tuneado; fine-tuning de un LLM (local u OpenAI); agente con directrices y base de evaluación como filtro. La plantilla de prompt del paper compartido ("dada la oración, entre estas opciones, ¿qué relación hay entre la entidad 1 y la 2?") se reutiliza con nuestro conjunto de etiquetas.
+---
 
-**Salida:** `relaciones_candidatas`: `regulador_id`, `blanco_id`, `signo` (activacion / represion / desconocido), `condicion` (texto libre), `tipo_relacion` (regulacion_tx / ppi / otra), `confianza`, `unidad_id` de evidencia, `evidencia_experimental`, `metodo`, `corrida_id`. Alcance de tesis: `regulacion_tx`; el resto se almacena etiquetado.
+## 4. Preguntas para el asesor
 
-**Data de validación:** tabla `validacion_interacciones` cargada desde el dump del Dr. (`regulador`, `blanco`, `signo`, `pmid_fuente`). Uso: referencia de evaluación; para fine-tuning, solo con partición por PMID registrada en `particion` (`pmid`, `split`). Antes de usar los párrafos etiquetados del laboratorio como conjunto de prueba: conocer con qué se entrenó el BERT previo.
-
-## 6. Paso 3 — Consolidación (panorama)
-
-**Silver:** promoción de `relaciones_candidatas` a `aristas` cuando la verificación supera el umbral de confianza. Campos: `regulador`, `blanco`, `signo`, `condicion`, `evidencia_experimental`, `pmids` (agregados), `n_evidencias`, `confianza`. Único nivel visible para consumidores.
-
-**Gold:** red agregada desde `aristas` y diff contra `validacion_interacciones`: coincide, falta, candidata nueva. Las candidatas nuevas bien soportadas por texto pasan a curación con el Dr. Export a GraphML para Cytoscape; la tabla de aristas en CSV/Parquet es el producto principal.
-
-## 7. Cómputo y entorno de trabajo
-
-**Orden:** local → máquina del laboratorio → AWS bajo demanda.
-
-| Dónde | Qué corre |
-|---|---|
-| Local | plan, reestructura del repositorio, bloques 1 y 2 del bronce (CPU) |
-| Máquina del laboratorio (GPU) | bloques 3 y 4 del bronce, fine-tuning del paso 2, evaluaciones |
-| AWS (EC2 con GPU o SageMaker, S3 como espejo de `datos/`) | solo cuando se cumple un disparador |
-
-**Disparadores para pasar a AWS:** el modelo no cabe en la VRAM con batch de 8 y 512 tokens; un experimento supera 4 horas de pared; la GPU está ocupada por otros usuarios del laboratorio. Cuenta personal: usuario IAM acotado con MFA, alarma de presupuesto, instancias spot para experimentos interrumpibles, apagar al terminar.
-
-**En la máquina del laboratorio:** usuario y carpeta propios; venv propio; el repositorio se clona por git, sin copias sueltas; `datos/` vive fuera del repositorio y con respaldo; `.env` sin commit; verificar `nvidia-smi` y versión de CUDA antes de instalar torch. SQLite es un solo escritor: el archivo `grn.db` se mueve entre entornos como snapshot, nunca se edita en dos lugares a la vez.
-
-**Claude Code en la máquina del laboratorio:** aviso por escrito al Dr. de que se usa y de que el código y los fragmentos de archivo abiertos en sesión se envían a Anthropic; trabajo restringido a la carpeta propia y al repositorio; los datos de la base v2 y los párrafos etiquetados quedan fuera de toda sesión. Un `CLAUDE.md` en la raíz replica las reglas del steering de Kiro (capas, sin `print()` fuera de `cli.py`, credenciales en variables de entorno, español sin acentos en identificadores) y agrega: no leer `datos/`, `*.db` ni archivos fuera del repositorio. `.claude/settings.json`, versionado, refuerza lo anterior con reglas `deny` sobre `datos/`, `*.db` y `.env`. Sesión con la cuenta personal; sin credenciales en perfiles de shell compartidos.
-
-**Documentación:** `docs/bitacora.md` con entradas fechadas por sesión de trabajo (qué se corrió, con qué versión, resultado, decisión). Cada experimento queda además como fila en `corridas`, así que la bitácora registra decisiones y la base registra hechos.
-
-## 8. Próximos pasos
-
-1. Ejecutar la regla de la sección 2 (opción A o B); crear `tag v0-extraccion` y rama `bronce`.
-2. Agregar `grn_bronce/` con `db.py`, `texto.py` y el CLI mínimo; actualizar la estructura en `CLAUDE.md`.
-3. Correr `fulltext` sobre el corpus actual y reportar cobertura de XML y PDF.
-4. Construir el diccionario PAO1 desde Pseudomonas Genome DB.
-5. Poblar `texto_unidades` sobre el corpus actual (bloque 1). Al llegar la query del Dr.: consulta canónica, `fulltext`, `corpus v1`, y re-ejecución del bloque 1 sobre el corpus congelado.
+1. **Confirmar la exclusión de homología** del denominador exigible (2 850 filas), y qué hacer con las 66 que traen además una cita directa.
+2. **Posible error de captura en la base:** 15 filas con etiqueta de homología terminan en PA15, PA16… hasta PA29, un número distinto en cada una, todas con signo `-`. El patrón sugiere un arrastre de celda en Excel. Observación, no conclusión.
+3. **Qué significa `d`** en `Interaction` (14 filas), y si el vacío de BioBERT (123 filas) equivale a `Unknown`.
+4. **¿"Histórica" y "Validada" son la misma base?** Los dos valores de `Origen` usan nombres distintos para lo que parece lo mismo.
+5. **Las 515 filas del denominador cuyo artículo no está en el corpus** (25.7 %) son el argumento más fuerte para la query refinada pendiente del grupo de OPM.
+6. **¿La actualización recurrente es requisito o visión?** De la respuesta depende si el punto 21 sube de prioridad.
