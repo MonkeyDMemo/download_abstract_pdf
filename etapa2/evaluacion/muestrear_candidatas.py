@@ -83,8 +83,11 @@ def sortear(filas, tamano=TAMANO, semilla=SEMILLA):
 
 def escribir(muestra, ruta):
     tmp = ruta + ".tmp"
+    # Saltos LF: `.gitattributes` normaliza los CSV a LF al guardarlos, asi que
+    # escribir CRLF (lo que `csv` hace por omision) daria un archivo que nunca
+    # coincide byte a byte con el versionado.
     with io.open(tmp, "w", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=COLUMNAS)
+        w = csv.DictWriter(f, fieldnames=COLUMNAS, lineterminator="\n")
         w.writeheader()
         for fila in muestra:
             w.writerow({"pmid": fila["pmid"], "oracion": fila["oracion"],
