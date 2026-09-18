@@ -283,6 +283,52 @@ pares guion/espacio del mismo termino (`gel shift` y `gel-shift`, `rt-pcr` y
 no hacen falta y se quitaron; sus dos variantes tenian la misma `tecnica`, asi
 que no se pierde nada.
 
+## El patron: informacion que no vive donde vive la relacion
+
+Vale para todo este directorio y conviene leerlo antes de anadir una categoria
+nueva, porque decide **si un vocabulario merece ser categoria del bronce o no**.
+
+Hay informacion que el articulo enuncia en una seccion y usa en otra. El
+contexto clinico se declara en el resumen y la introduccion; la tecnica
+experimental se declara en METHODS; la relacion entre dos genes se afirma en
+RESULTS y en DISCUSSION. **Atar esa informacion a la oracion donde aparece la
+desperdicia**, porque la oracion donde aparece casi nunca es una candidata: una
+candidata exige dos genes distintos, y las oraciones de contexto rara vez los
+traen.
+
+El sintoma se reconoce en dos numeros: **donde caen las menciones** y **cuantas
+llegan a una candidata**. Medido sobre la corrida 4, y el patron no es igual de
+fuerte en los dos casos:
+
+**`infection_type`, el caso severo.** 4 668 menciones y **216 candidatas, el
+0.73 %**. El 48.3 % de sus menciones esta en el resumen y la introduccion
+--introduction 25.9 %, abstract 22.4 %--, que es donde se declara de que
+enfermedad va el articulo y donde practicamente nunca hay dos genes distintos.
+Llego a 216 candidatas **despues** de triplicar su vocabulario: ampliar no
+arreglo nada, porque el problema no era el vocabulario.
+
+**`evidencia_experimental.csv`, el mismo patron pero mas suave, y conviene no
+exagerarlo.** Tiene 46 107 menciones y **7 518 candidatas (25.3 %)**, asi que
+no es un caso perdido. Lo que si ocurre es el desfase de seccion: **el 16.6 %
+de sus menciones cae en seccion excluida** (METHODS y companyia), donde una
+oracion como "EMSA was performed as described" nombra la tecnica sin nombrar
+ningun par de genes, mientras la relacion que esa tecnica sostiene se afirma
+paginas despues sin repetir el nombre de la tecnica. El coste concreto: **211
+documentos tienen evidencia experimental que no llega a ninguna candidata**,
+sobre 946 que si.
+
+**El sitio de esta informacion es una condicion a nivel de documento en el paso
+2**, no una columna por oracion en el bronce. El paso 1 entrega el *donde*: que
+la tecnica y el escenario existen en el documento, y en que oracion se dijeron.
+Cruzarlos con la relacion es una decision, y las decisiones son del paso 2.
+
+Consecuencia practica para quien anada un vocabulario: **antes de darle
+categoria propia, cuenta sus menciones, sus candidatas y en que seccion caen.**
+Si la proporcion de candidatas es una fraccion minuscula del corpus, o si el
+grueso de las menciones esta en resumen, introduccion o METHODS, no es que
+falten terminos: la informacion vive en otra seccion y ampliar el catalogo no
+la va a mover de sitio.
+
 ## Nota sobre la copia
 
 `genes_pao1.tsv`, `operones_pao1.tsv`, `manual_pao1.tsv` y
