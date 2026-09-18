@@ -40,14 +40,18 @@ from grn_bronce import db as _db                  # noqa: E402
 from grn_bronce import texto as _texto            # noqa: E402
 from grn_bronce import vocabulario as _vocab      # noqa: E402
 
-# Sube a "2" porque las menciones de operon dejaron de guardarse como 'gen' o
-# 'proteina' y pasaron a tipo propio. Es otra version del metodo, no la misma
-# corriendo otra vez: una fila del bronce de la version 1 y una de la 2 dicen
-# cosas distintas del mismo texto. Subirla, y no rehacer sobre la 1, es lo que
-# deja las dos en la base para poder compararlas; `etapa2/evaluacion/
+# Sube cada vez que una fila del bronce pasa a decir algo distinto del mismo
+# texto. No es "la misma corrida otra vez": son versiones del metodo, y quedan
+# todas en la base para poder compararlas. `etapa2/evaluacion/
 # muestrear_candidatas.py` sigue anclado a la corrida 1 y su muestra de 50 no
 # se mueve.
-VERSION = "2"
+#
+#   1 -> 2  el operon deja de guardarse como 'gen' o 'proteina'.
+#   2 -> 3  `regulation` sale de `funciones_semilla.csv` al catalogo de
+#           contexto regulatorio, con tipo propio; y el emparejamiento del
+#           vocabulario normaliza mayusculas y guiones, asi que aparecen
+#           menciones que antes no salian y categorias que antes salian vacias.
+VERSION = "3"
 METODO = "baseline-deterministico"
 
 # Una oracion mas corta que esto casi nunca es prosa; mas larga suele ser una
@@ -173,6 +177,7 @@ def _menciones_de_oracion(oracion, lex, vocab, locus):
     disp = vocab.disparadores_en(oracion)
     func = vocab.funciones_en(oracion)
     evid = vocab.evidencia_en(oracion)
+    ctx = vocab.contexto_en(oracion)
     orgs = _vocab.organismos_en(oracion)
 
     filas = []
@@ -190,8 +195,13 @@ def _menciones_de_oracion(oracion, lex, vocab, locus):
             idn = locus.get(idc, idc)
         filas.append({"tipo": tipo, "texto": s_, "id_normalizado": idn,
                       "offset_ini": i, "offset_fin": f_})
+    # `contexto_regulatorio` es tipo propio y no una categoria mas de
+    # `funcion`: dice que la oracion habla de regulacion, no de que proceso
+    # biologico habla. Mezclarlos era lo que hacia que la categoria mas grande
+    # del catalogo no discriminara nada.
     for etiqueta, datos in (("disparador", disp), ("funcion", func),
-                            ("evidencia", evid), ("organismo", orgs)):
+                            ("evidencia", evid), ("organismo", orgs),
+                            ("contexto_regulatorio", ctx)):
         for i, f_, s_, extra in datos:
             filas.append({"tipo": etiqueta, "texto": s_,
                           "id_normalizado": extra,

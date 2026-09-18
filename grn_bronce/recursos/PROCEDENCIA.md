@@ -170,6 +170,63 @@ le sopla la referencia, con la misma etiqueta y la misma pinta de correcto.
 Cada termino se conto contra los 918 textos completos del corpus antes de
 incluirse; lo que no aparece nunca se descarto.
 
+**Ese filtro explica por que ningun termino del catalogo tiene cero menciones,
+y por que ese cero no significa nada.** El catalogo se construyo exigiendo
+presencia en el corpus, asi que medir "cuantos terminos no aparecen" solo
+confirma el filtro. Para medir si un termino *sirve* hace falta otra cosa: por
+ejemplo, si aparece solo en oraciones sin par de genes.
+
+## `contexto_regulatorio.csv` — 26 terminos
+
+**Salio de `funciones_semilla.csv` el 17 de septiembre de 2026**, con las
+mismas dos columnas (`termino`, `categoria`) y el mismo criterio de
+construccion. Era la categoria `regulation`, la mas grande del archivo con
+14 342 menciones (el 23.9 % de 60 134), y la que menos informacion propia
+aportaba. Las tres cifras que lo decidieron, medidas sobre la corrida 2:
+
+- de las 3 172 candidatas que la activaban, **el 72 % no activaba ninguna otra
+  funcion**: como funcion biologica no discriminaba nada;
+- **el 87.8 %** de sus menciones caia en oraciones que ya traian un disparador,
+  y el 48.6 % en oraciones que ya traian un factor de transcripcion;
+- **siete de sus terminos estaban literalmente en `disparadores.csv`**
+  (4 460 menciones, el 31.1 %): `regulon`, `transcriptional regulator`,
+  `transcriptional activator`, `negative regulator`,
+  `transcriptional repressor`, `positive regulator` y `autoregulation`.
+
+No se borro porque la senal sirve, pero en otro eje. Un termino de aqui dice
+que la oracion **habla de regulacion**, no de que proceso biologico habla, y
+eso es insumo del `tipo_relacion` del paso 2, no de la anotacion funcional.
+Por eso sus menciones se guardan con `menciones.tipo = 'contexto_regulatorio'`
+y salen en su propia columna de la exportacion, separadas de
+`funciones_biologicas`.
+
+## Como se emparejan los terminos
+
+Desde la version 3 del metodo, termino y superficie se comparan por una clave
+normalizada: **minusculas, y guiones y espacios colapsados a un espacio**. El
+patron hace el camino inverso, de modo que cada separador de un termino acepta
+guion o espacio y una sola entrada cubre las dos formas.
+
+Arregla dos defectos que eran silenciosos --la mencion salia igual, solo que
+sin categoria, o directamente no salia-- y que por eso no aparecian en ningun
+conteo:
+
+1. **Mayusculas.** La categoria se resolvia probando primero la superficie en
+   minusculas y despues la superficie cruda. Los 32 terminos del catalogo que
+   llevan mayuscula (`exotoxin A`, `c-di-GMP`, `sRNA`, `type III secretion`,
+   `lipid A`...) solo resolvian cuando el corpus usaba exactamente esa
+   capitalizacion: `Exotoxin A` con E mayuscula salia con categoria vacia.
+   Eran **329 menciones**, el 0.5 %.
+2. **Guiones.** `two component system` no emparejaba con `two-component
+   system`, que si estaba en el catalogo. El arreglo aporto **2 243 menciones
+   nuevas**.
+
+Consecuencia de limpieza: ocho filas de `evidencia_experimental.csv` eran
+pares guion/espacio del mismo termino (`gel shift` y `gel-shift`, `rt-pcr` y
+`rt pcr`...), escritas a mano justo porque el emparejamiento era literal. Ya
+no hacen falta y se quitaron; sus dos variantes tenian la misma `tecnica`, asi
+que no se pierde nada.
+
 ## Nota sobre la copia
 
 `genes_pao1.tsv`, `operones_pao1.tsv`, `manual_pao1.tsv` y

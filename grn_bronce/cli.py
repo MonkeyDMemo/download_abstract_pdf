@@ -94,11 +94,14 @@ def _exportar(con, args, t0):
     locus = identificar.cargar_locus_tags()
     vocab = vocabulario.Vocabulario.cargar()
     log("  diccionario : %d superficies" % len(lex))
-    log("  disparadores: %d   funciones: %d   evidencia: %d"
-        % (len(vocab.disparadores), len(vocab.funciones), len(vocab.evidencia)))
+    log("  disparadores: %d   funciones: %d   evidencia: %d   "
+        "contexto regulatorio: %d"
+        % (len(vocab.disparadores), len(vocab.funciones),
+           len(vocab.evidencia), len(vocab.contexto)))
     faltan = [n for n, v in (("disparadores", vocab.disparadores),
                              ("funciones", vocab.funciones),
-                             ("evidencia", vocab.evidencia)) if not v]
+                             ("evidencia", vocab.evidencia),
+                             ("contexto_regulatorio", vocab.contexto)) if not v]
 
     documentos = db.documentos_del_corpus(con, corpus_id)
     fulltext = db.fulltext_disponible(con, "xml")
@@ -185,7 +188,7 @@ def _armar_resumen(c, cuenta, corpus, corrida_id, segundos, faltan,
         ("Menciones totales", c["menciones"]),
     ]
     for tipo in ("gen", "proteina", "operon", "disparador", "funcion",
-                 "evidencia", "organismo"):
+                 "contexto_regulatorio", "evidencia", "organismo"):
         filas.append(("  de tipo %s" % tipo, t.get(tipo, 0)))
     sin_catalogo = [f for f in filas_operones if f["en_catalogo"] == "no"]
     filas += [

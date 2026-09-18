@@ -8,6 +8,104 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 17 de septiembre de 2026 (tarde) — `regulation` sale de las funciones, corrida 3
+
+`regulation` era la categoría más grande de `funciones_semilla.csv` y la que
+menos información propia aportaba. Los datos de la corrida 2 la cerraron: de
+las 3 172 candidatas que la activaban **el 72 % no activaba ninguna otra
+función**, el 87.8 % de sus menciones caía en oraciones que ya traían un
+disparador, y **siete de sus términos estaban literalmente en
+`disparadores.csv`** (4 460 menciones, el 31.1 %).
+
+No se borró: se movió a `grn_bronce/recursos/contexto_regulatorio.csv`, con las
+mismas dos columnas. La señal sirve, pero en otro eje — dice que la oración
+**habla de regulación**, no de qué proceso biológico habla — y ese eje es
+insumo del `tipo_relacion` del paso 2. Sus menciones se guardan con
+`menciones.tipo = 'contexto_regulatorio'` y salen en su propia columna,
+separadas de `funciones_biologicas`.
+
+### Dos defectos silenciosos del emparejamiento, arreglados
+
+Silenciosos porque la mención salía igual, sólo que sin categoría, o
+directamente no salía: ninguno aparecía en los conteos.
+
+**Mayúsculas.** La categoría se resolvía probando la superficie en minúsculas
+y, si fallaba, la superficie cruda. Los 32 términos del catálogo que llevan
+mayúscula (`exotoxin A`, `c-di-GMP`, `sRNA`, `type III secretion`, `lipid A`…)
+sólo resolvían cuando el corpus usaba exactamente su capitalización:
+`Exotoxin A` con E mayúscula salía con categoría vacía. **Recupera las 329
+menciones**, 322 de función y 7 de contexto, y no queda ninguna sin categoría.
+
+**Guiones.** `two component system` no emparejaba con `two-component system`.
+**Aporta 2 243 menciones nuevas**: 1 339 de función y 904 de contexto.
+
+Los dos se arreglan con la misma clave: minúsculas y `[-\s]+` colapsado a un
+espacio, aplicada **a los dos lados**. Normalizar uno solo era el defecto.
+
+De limpieza: ocho filas de `evidencia_experimental.csv` eran pares
+guion/espacio del mismo término (`gel shift` y `gel-shift`, `rt-pcr` y
+`rt pcr`…), escritas a mano justo porque el emparejamiento era literal. Se
+quitaron; sus dos variantes tenían la misma `tecnica`.
+
+### El punto 3 salió distinto de lo previsto, y es la corrección que importa
+
+La lista de n-gramas del análisis anterior **sobreestimó los huecos**. El
+filtro excluía un n-grama si era subcadena de un término más largo del
+catálogo, pero no si lo *contenía*. Medido contra el corpus, de los términos
+que se iban a trasladar:
+
+| término | oraciones | ya detectadas |
+|---|---|---|
+| `mobility shift assay` | 55 | **55** (por `mobility shift`) |
+| `mobility shift assays` | 51 | **51** |
+| `shift assay` | 63 | 62 |
+| `lacz transcriptional fusion` | 23 | **23** (por `lacz fusion`) |
+| `directly binds` | 64 | **64** (por `binds`) |
+| `western blot` | 119 | 50 |
+
+Sólo **`western blot` era un hueco real** — `northern blot` estaba en el
+catálogo y `western blot` no —, y añadirlo da evidencia a 69 oraciones que no
+la tenían. Los demás se habrían duplicado, que es justo lo que el encargo
+prohibía. `directly binds` sí se añadió pese a estar cubierto por `binds`: no
+es la misma cadena sino una más específica, y la regla de coincidencia más
+larga hace que 64 menciones registren el adverbio, que es la señal de unión
+directa que pide el punto 6 del plan.
+
+### Resultado, corrida 3
+
+| | corrida 2 | corrida 3 |
+|---|---|---|
+| menciones de función | 60 134 | **47 123** |
+| … sin categoría | 329 | **0** |
+| contexto regulatorio | — | **15 268** |
+| candidatas con alguna función | 8 652 (29.2 %) | **6 554 (22.1 %)** |
+| candidatas con contexto regulatorio | — | 3 291 (11.1 %) |
+| menciones de evidencia | 45 274 | 46 107 |
+
+La caída de candidatas con función es la salida de `regulation`, no una
+pérdida: **8 895 candidatas activan función o contexto**, contra 8 652 antes.
+950 activan las dos. El neto es +243 por el arreglo de guiones.
+
+### `pa14 pa14 pa14` no era un artefacto de tabla
+
+Era un artefacto de **mi** tokenizador de n-gramas, y tapaba un hallazgo mejor.
+Las 20 apariciones salen de locus tags de la cepa **PA14** (`PA14_23420`,
+`PA14_59010`): el tokenizador partía por el guion bajo, se quedaba con `pa14` y
+tiraba el número. Siete oraciones candidatas en cinco documentos.
+
+Lo que hay debajo sí importa: **377 locus tags `PA14_#####` distintos, 837
+menciones en 83 documentos, y `genes_pao1.tsv` no reconoce ninguno.** El
+diccionario es de PAO1 y esa es otra nomenclatura. Es material del punto 17 del
+plan (cerrar los huecos del diccionario) y no se tocó aquí.
+
+### Pendiente
+
+No se añadió ningún término nuevo al vocabulario más allá de `western blot` y
+`directly binds`: primero limpiar, luego ampliar. Los candidatos del análisis
+de n-gramas siguen sin entrar.
+
+---
+
 ## 17 de septiembre de 2026 — soporte de operones en el bronce, corrida 2
 
 El bronce guarda ahora **las dos capas del operón**: la mención tal como el

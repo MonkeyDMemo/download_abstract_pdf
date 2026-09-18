@@ -33,6 +33,7 @@ VOCABULARIOS = (
     ("disparadores.csv", ("palabra", "signo_sugerido")),
     ("funciones_semilla.csv", ("termino", "categoria")),
     ("evidencia_experimental.csv", ("termino", "tecnica")),
+    ("contexto_regulatorio.csv", ("termino", "categoria")),
 )
 
 
@@ -180,6 +181,105 @@ class PruebasDeteccion(unittest.TestCase):
         salida = V.organismos_en("Grown in Pseudomonas aeruginosa cultures.")
 
         self.assertEqual([s[2] for s in salida], ["Pseudomonas aeruginosa"])
+
+
+class PruebasNormalizacion(unittest.TestCase):
+    """Los dos defectos silenciosos del emparejamiento, medidos y fijados.
+
+    Silenciosos porque no rompian nada: la mencion salia igual, solo que sin
+    categoria, o directamente no salia. Ninguno de los dos aparecia en los
+    conteos, y por eso vivieron hasta que alguien miro las menciones de funcion
+    con la categoria vacia.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.v = V.Vocabulario.cargar()
+
+    def test_la_clave_colapsa_mayusculas_guiones_y_espacios(self):
+        for a, b in (("Two-Component  System", "two component system"),
+                     ("exotoxin A", "Exotoxin  A"),
+                     ("c-di-GMP", "C DI GMP")):
+            self.assertEqual(V.normalizar(a), V.normalizar(b),
+                             "%r y %r deberian dar la misma clave" % (a, b))
+
+    def test_un_termino_con_mayuscula_se_reconoce_como_lo_escriba_el_corpus(self):
+        """Eran 329 menciones sin categoria. El catalogo dice `exotoxin A` y el
+        corpus escribe `Exotoxin A`: antes eso resolvia a cadena vacia."""
+        for texto in ("Exotoxin A was secreted.", "exotoxin A was secreted.",
+                      "EXOTOXIN A was secreted."):
+            salida = self.v.funciones_en(texto)
+
+            self.assertEqual(len(salida), 1, texto)
+            self.assertEqual(salida[0][3], "virulence", texto)
+
+    def test_ninguna_mencion_sale_con_categoria_vacia(self):
+        """La forma general del defecto: si un termino del catalogo emparejo,
+        su categoria tiene que estar. Vacia significa que la resolucion fallo."""
+        texto = ("Exotoxin A, C-di-GMP, Type III secretion, LuxR family and "
+                 "Lipid A were measured by Western blot.")
+
+        for metodo in ("funciones_en", "evidencia_en", "contexto_en"):
+            for m in getattr(self.v, metodo)(texto):
+                self.assertTrue(m[3], "%s: %r salio sin categoria"
+                                % (metodo, m[2]))
+
+    def test_el_guion_es_opcional_al_emparejar(self):
+        """`two component system` no emparejaba con `two-component system`."""
+        for texto in ("The two-component system responds.",
+                      "The two component system responds."):
+            salida = self.v.contexto_en(texto)
+
+            self.assertEqual(len(salida), 1, texto)
+            self.assertEqual(salida[0][3], "regulation", texto)
+
+    def test_el_catalogo_no_repite_terminos_tras_normalizar(self):
+        """`gel shift` y `gel-shift` eran dos filas que ahora son la misma
+        clave. Una repetida ya no aporta nada y tapa que la normalizacion
+        funciona."""
+        for nombre, columnas in VOCABULARIOS:
+            ruta = os.path.join(RECURSOS, nombre)
+            if not os.path.exists(ruta):
+                continue
+            with io.open(ruta, encoding="utf-8", newline="") as f:
+                lineas = [l for l in f
+                          if l.strip() and not l.lstrip().startswith("#")]
+            claves = [V.normalizar(f[columnas[0]])
+                      for f in csv.DictReader(lineas)]
+            repetidas = sorted(set(k for k in claves if claves.count(k) > 1))
+
+            self.assertEqual(repetidas, [],
+                             "%s repite tras normalizar: %s" % (nombre, repetidas))
+
+
+class PruebasContextoRegulatorio(unittest.TestCase):
+    """`regulation` salio de las funciones a su propio catalogo.
+
+    No por gusto: era el 23.9 % de las menciones de funcion y el 72 % de las
+    candidatas que la activaban no activaban ninguna otra, asi que como funcion
+    no discriminaba nada. Aqui es contexto, y alimenta el `tipo_relacion` del
+    paso 2.
+    """
+
+    def test_regulation_ya_no_es_una_funcion_biologica(self):
+        v = V.Vocabulario.cargar()
+
+        self.assertEqual(
+            [c for c in v.funciones.values() if c == "regulation"], [],
+            "regulation sigue en funciones_semilla.csv")
+
+    def test_sus_terminos_viven_en_el_catalogo_de_contexto(self):
+        v = V.Vocabulario.cargar()
+
+        self.assertTrue(v.contexto)
+        self.assertEqual(sorted(set(v.contexto.values())), ["regulation"])
+
+    def test_un_termino_de_contexto_no_sale_como_funcion(self):
+        v = V.Vocabulario.cargar()
+        texto = "The sigma factor controls pyocyanin production."
+
+        self.assertEqual([m[2] for m in v.contexto_en(texto)], ["sigma factor"])
+        self.assertEqual([m[2] for m in v.funciones_en(texto)], ["pyocyanin"])
 
 
 if __name__ == "__main__":

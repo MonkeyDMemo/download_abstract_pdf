@@ -1,0 +1,51 @@
+# Contexto regulatorio: el vocabulario que dice que la oracion habla de
+# regulacion, no de que proceso biologico habla.
+#
+# Salio de `funciones_semilla.csv` el 17 de septiembre de 2026, con datos y no
+# por gusto. Era la categoria mas grande --14 342 menciones, el 23.9 % de las
+# 60 134-- y la que menos informacion propia aportaba:
+#
+#   - el 72 % de las 3 172 candidatas que la activaban no activaban ninguna
+#     otra funcion, asi que como funcion no discriminaba nada;
+#   - el 87.8 % de sus menciones caian en oraciones que YA traian un
+#     disparador, y el 48.6 % en oraciones que ya traian un factor de
+#     transcripcion;
+#   - siete de sus terminos estaban literalmente en `disparadores.csv`
+#     (4 460 menciones, el 31.1 %): `regulon`, `transcriptional regulator`,
+#     `transcriptional activator`, `negative regulator`,
+#     `transcriptional repressor`, `positive regulator`, `autoregulation`.
+#
+# No se borro porque la senal sirve, pero en otro eje: **alimenta el
+# `tipo_relacion` del paso 2**, que es donde se decide si la relacion existe y
+# de que clase es. Aqui es contexto, no funcion biologica, y por eso sale en su
+# propia columna de la exportacion (`contexto_regulatorio`) y no mezclada en
+# `funciones_biologicas`.
+#
+# Mismas dos columnas que el archivo del que salio.
+termino,categoria
+regulon,regulation
+sigma factor,regulation
+transcription factor,regulation
+sRNA,regulation
+transcriptional regulator,regulation
+DNA binding,regulation
+response regulator,regulation
+two-component system,regulation
+regulatory network,regulation
+RNA polymerase,regulation
+signal transduction,regulation
+anti-sigma factor,regulation
+transcriptional regulation,regulation
+histidine kinase,regulation
+sensor kinase,regulation
+ECF sigma factor,regulation
+transcriptional activator,regulation
+global regulator,regulation
+negative regulator,regulation
+master regulator,regulation
+transcriptional repressor,regulation
+positive regulator,regulation
+post-transcriptional regulation,regulation
+autoregulation,regulation
+riboswitch,regulation
+extracytoplasmic function sigma factor,regulation
