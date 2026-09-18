@@ -8,6 +8,60 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 17 de septiembre de 2026 (noche) — `virulence` se parte en tres, corrida 4
+
+`virulence` juntaba cosas que se comportan distinto y medirla entera escondía
+la diferencia. De las 1 417 candidatas que la activaban, el 53.5 % lo hacía
+sólo por cuatro términos y el 46.5 % por algo concreto. Queda partida en tres,
+que es donde estaba el corte:
+
+| categoría | menciones | candidatas | sólo esa categoría |
+|---|---|---|---|
+| `virulence_molecule` | 5 453 | 1 005 | 698 |
+| `virulence_general` | 2 547 | 291 | 174 |
+| `virulence_phenotype` | 1 289 | 113 | 69 |
+
+`acute infection` y `chronic infection` salieron a `infection_type`: son
+escenario clínico, no mecanismo. Las tres juntas dan 1 352 candidatas, contra
+las 1 417 de antes; los 65 que faltan son justo ésos.
+
+**`virulence_general` queda marcada como señal débil en `PROCEDENCIA.md`.** Sus
+cuatro términos son cómo el artículo resume, no lo que mide, y 174 candidatas
+se activan sólo por ellos. Sirve para decir que la oración habla de virulencia;
+no sirve como atributo de nodo, porque que una oración diga "pathogenicity" no
+dice nada del gen que nombra.
+
+### `infection_type`: se amplió, se midió, y se para ahí
+
+Se añadieron 36 términos de tipo y sitio de infección, todos contados contra el
+corpus antes de entrar. Tres candidatos se descartaron por no aparecer nunca
+(`eye infection`, `catheter-associated infection`,
+`community-acquired infection`), y se dejaron fuera `wound healing`,
+`gut colonization` e `intestinal colonization`, que aparecen pero son procesos
+y no tipos de infección.
+
+**Resultado: 216 candidatas de 29 659, el 0.73 %.** Triplica la cobertura —eran
+68— y aun así no llega al 1 % acordado, así que queda documentado como señal
+débil y no se le da más trabajo.
+
+Lo que explica la cifra, y es lo aprovechable: la categoría tiene **4 668
+menciones (el 9.1 % de las de función) y sólo 216 candidatas**. `cystic
+fibrosis` y compañía viven en el resumen y la introducción, donde se describe
+el contexto clínico, y esas oraciones casi nunca traen dos genes distintos.
+**El tipo de infección se enuncia donde no hay relación que extraer.** Si el
+eje agudo-crónico hace falta, el sitio es una condición a nivel de documento en
+el paso 2, no una categoría del bronce.
+
+### Corrida 4
+
+Menciones de función 47 123 → 51 160, ninguna sin categoría. Candidatas con
+alguna función 6 554 → **6 665 (22.5 %)**; el alza son los términos de
+infección nuevos. Las categorías no son comparables con la corrida 3 por
+nombre: la misma mención cambia de etiqueta sin que cambie el texto, y por eso
+la versión del método sube a 4.
+
+---
+
 ## 17 de septiembre de 2026 (tarde) — `regulation` sale de las funciones, corrida 3
 
 `regulation` era la categoría más grande de `funciones_semilla.csv` y la que

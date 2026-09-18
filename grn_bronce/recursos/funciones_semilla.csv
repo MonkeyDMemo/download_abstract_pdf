@@ -1,27 +1,27 @@
 termino,categoria
-pyocyanin,virulence
-virulence factor,virulence
-phenazine,virulence
-rhamnolipid,virulence
-chronic infection,virulence
-pathogenicity,virulence
-cytotoxicity,virulence
-pathogenesis,virulence
-virulence gene,virulence
-acute infection,virulence
-protease activity,virulence
-hydrogen cyanide,virulence
-exotoxin A,virulence
-tissue damage,virulence
-alkaline protease,virulence
-elastase activity,virulence
-phospholipase C,virulence
-hemolysin,virulence
-exoenzyme S,virulence
-intracellular survival,virulence
-virulence attenuation,virulence
-immune evasion,virulence
-host colonization,virulence
+pyocyanin,virulence_molecule
+virulence factor,virulence_general
+phenazine,virulence_molecule
+rhamnolipid,virulence_molecule
+chronic infection,infection_type
+pathogenicity,virulence_general
+cytotoxicity,virulence_phenotype
+pathogenesis,virulence_general
+virulence gene,virulence_general
+acute infection,infection_type
+protease activity,virulence_phenotype
+hydrogen cyanide,virulence_molecule
+exotoxin A,virulence_molecule
+tissue damage,virulence_phenotype
+alkaline protease,virulence_molecule
+elastase activity,virulence_phenotype
+phospholipase C,virulence_molecule
+hemolysin,virulence_molecule
+exoenzyme S,virulence_molecule
+intracellular survival,virulence_phenotype
+virulence attenuation,virulence_phenotype
+immune evasion,virulence_phenotype
+host colonization,virulence_phenotype
 biofilm formation,biofilm
 c-di-GMP,biofilm
 alginate production,biofilm
@@ -173,3 +173,39 @@ lipid A modification,cell_wall
 peptidoglycan recycling,cell_wall
 penicillin-binding protein,cell_wall
 cell wall synthesis,cell_wall
+cystic fibrosis,infection_type
+cf patients,infection_type
+cf lung,infection_type
+cf airway,infection_type
+wound infection,infection_type
+burn wound,infection_type
+burn infection,infection_type
+burn patients,infection_type
+keratitis,infection_type
+corneal infection,infection_type
+corneal ulcer,infection_type
+bacteremia,infection_type
+bacteraemia,infection_type
+septicemia,infection_type
+sepsis,infection_type
+pneumonia,infection_type
+acute pneumonia,infection_type
+ventilator-associated pneumonia,infection_type
+urinary tract infection,infection_type
+lung infection,infection_type
+chronic lung infection,infection_type
+pulmonary infection,infection_type
+airway infection,infection_type
+respiratory infection,infection_type
+systemic infection,infection_type
+bloodstream infection,infection_type
+soft tissue infection,infection_type
+skin infection,infection_type
+otitis,infection_type
+endocarditis,infection_type
+osteomyelitis,infection_type
+meningitis,infection_type
+folliculitis,infection_type
+ocular infection,infection_type
+nosocomial infection,infection_type
+hospital-acquired infection,infection_type

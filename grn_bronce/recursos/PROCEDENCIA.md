@@ -176,6 +176,62 @@ presencia en el corpus, asi que medir "cuantos terminos no aparecen" solo
 confirma el filtro. Para medir si un termino *sirve* hace falta otra cosa: por
 ejemplo, si aparece solo en oraciones sin par de genes.
 
+## `virulence`, partida en tres el 17 de septiembre de 2026
+
+La categoria `virulence` juntaba cosas que se comportan distinto, y medirla
+entera escondia esa diferencia. Sobre la corrida 3, de las 1 417 candidatas que
+la activaban, el 53.5 % lo hacia solo por cuatro terminos y el 46.5 % por algo
+concreto. Se parte en tres, que es donde estaba el corte de verdad:
+
+| categoria | que es | terminos |
+|---|---|---|
+| `virulence_molecule` | moleculas medibles: se cuantifican en un ensayo | 9 |
+| `virulence_phenotype` | fenotipos de ensayo: se observan, no se pesan | 8 |
+| `virulence_general` | etiquetas de resumen del articulo | 4 |
+
+**`virulence_general` no discrimina, y hay que decirlo donde se lee.** Sus
+cuatro terminos --`pathogenicity`, `pathogenesis`, `virulence factor`,
+`virulence gene`-- son como el articulo resume, no lo que mide: **222
+candidatas se activan solo por ellos**, sin ninguna otra funcion que las
+acompane. Sirve como **senal debil** --dice que la oracion habla de virulencia
+en general-- y **no como atributo de nodo**: que una oracion diga
+"pathogenicity" no dice nada del gen que nombra. Usarla como si fuera un
+atributo pondria la misma etiqueta a todo gen que aparezca cerca de la palabra.
+
+`acute infection` y `chronic infection` salieron de aqui: son el escenario
+clinico, no el mecanismo. Viven ahora en `infection_type`.
+
+## `infection_type` — 38 terminos
+
+El eje agudo-cronico y los escenarios clinicos. Se midio antes de decidir si
+merecia categoria propia: con solo `acute infection` y `chronic infection` eran
+**68 candidatas de 29 659, el 0.23 %**, que no da para medir nada. Se amplio con
+36 terminos de tipo y sitio de infeccion, todos contados contra el corpus antes
+de entrar; tres candidatos se descartaron por no aparecer nunca (`eye
+infection`, `catheter-associated infection`, `community-acquired infection`), y
+se dejaron fuera `wound healing`, `gut colonization` e `intestinal
+colonization`, que aparecen pero son procesos y no tipos de infeccion.
+
+Incluye variantes de grafia que la normalizacion no cubre porque son palabras
+distintas: `bacteremia`/`bacteraemia`, y las formas cortas del entorno de
+fibrosis quistica que el corpus usa de verdad (`cf patients`, `cf lung`,
+`cf airway`).
+
+**Resultado de la ampliacion, y la decision que cierra: senal debil.** Con los
+38 terminos, `infection_type` llega a **216 candidatas de 29 659, el 0.73 %**.
+Amplio la cobertura por un factor de tres --eran 68 con solo `acute infection`
+y `chronic infection`-- y aun asi **no llega al 1 %**, que era el umbral
+acordado para darle mas trabajo. Se queda como esta y no se amplia mas.
+
+La asimetria entre sus **4 668 menciones (el 9.1 % de las de funcion)** y sus
+216 candidatas es la explicacion, y conviene entenderla antes de volver a
+tocarla: `cystic fibrosis` y compania aparecen sobre todo en el resumen y la
+introduccion, donde se describe el contexto clinico, y esas oraciones casi
+nunca traen dos genes distintos, que es lo que exige una candidata. **El tipo
+de infeccion se enuncia donde no hay relacion que extraer.** Por eso, si el
+eje agudo-cronico llega a hacer falta, el sitio no es una categoria del bronce
+sino una condicion a nivel de documento en el paso 2.
+
 ## `contexto_regulatorio.csv` — 26 terminos
 
 **Salio de `funciones_semilla.csv` el 17 de septiembre de 2026**, con las
@@ -226,6 +282,52 @@ pares guion/espacio del mismo termino (`gel shift` y `gel-shift`, `rt-pcr` y
 `rt pcr`...), escritas a mano justo porque el emparejamiento era literal. Ya
 no hacen falta y se quitaron; sus dos variantes tenian la misma `tecnica`, asi
 que no se pierde nada.
+
+## El patron: informacion que no vive donde vive la relacion
+
+Vale para todo este directorio y conviene leerlo antes de anadir una categoria
+nueva, porque decide **si un vocabulario merece ser categoria del bronce o no**.
+
+Hay informacion que el articulo enuncia en una seccion y usa en otra. El
+contexto clinico se declara en el resumen y la introduccion; la tecnica
+experimental se declara en METHODS; la relacion entre dos genes se afirma en
+RESULTS y en DISCUSSION. **Atar esa informacion a la oracion donde aparece la
+desperdicia**, porque la oracion donde aparece casi nunca es una candidata: una
+candidata exige dos genes distintos, y las oraciones de contexto rara vez los
+traen.
+
+El sintoma se reconoce en dos numeros: **donde caen las menciones** y **cuantas
+llegan a una candidata**. Medido sobre la corrida 4, y el patron no es igual de
+fuerte en los dos casos:
+
+**`infection_type`, el caso severo.** 4 668 menciones y **216 candidatas, el
+0.73 %**. El 48.3 % de sus menciones esta en el resumen y la introduccion
+--introduction 25.9 %, abstract 22.4 %--, que es donde se declara de que
+enfermedad va el articulo y donde practicamente nunca hay dos genes distintos.
+Llego a 216 candidatas **despues** de triplicar su vocabulario: ampliar no
+arreglo nada, porque el problema no era el vocabulario.
+
+**`evidencia_experimental.csv`, el mismo patron pero mas suave, y conviene no
+exagerarlo.** Tiene 46 107 menciones y **7 518 candidatas (25.3 %)**, asi que
+no es un caso perdido. Lo que si ocurre es el desfase de seccion: **el 16.6 %
+de sus menciones cae en seccion excluida** (METHODS y companyia), donde una
+oracion como "EMSA was performed as described" nombra la tecnica sin nombrar
+ningun par de genes, mientras la relacion que esa tecnica sostiene se afirma
+paginas despues sin repetir el nombre de la tecnica. El coste concreto: **211
+documentos tienen evidencia experimental que no llega a ninguna candidata**,
+sobre 946 que si.
+
+**El sitio de esta informacion es una condicion a nivel de documento en el paso
+2**, no una columna por oracion en el bronce. El paso 1 entrega el *donde*: que
+la tecnica y el escenario existen en el documento, y en que oracion se dijeron.
+Cruzarlos con la relacion es una decision, y las decisiones son del paso 2.
+
+Consecuencia practica para quien anada un vocabulario: **antes de darle
+categoria propia, cuenta sus menciones, sus candidatas y en que seccion caen.**
+Si la proporcion de candidatas es una fraccion minuscula del corpus, o si el
+grueso de las menciones esta en resumen, introduccion o METHODS, no es que
+falten terminos: la informacion vive en otra seccion y ampliar el catalogo no
+la va a mover de sitio.
 
 ## Nota sobre la copia
 
