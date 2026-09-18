@@ -40,7 +40,14 @@ from grn_bronce import db as _db                  # noqa: E402
 from grn_bronce import texto as _texto            # noqa: E402
 from grn_bronce import vocabulario as _vocab      # noqa: E402
 
-VERSION = "1"
+# Sube a "2" porque las menciones de operon dejaron de guardarse como 'gen' o
+# 'proteina' y pasaron a tipo propio. Es otra version del metodo, no la misma
+# corriendo otra vez: una fila del bronce de la version 1 y una de la 2 dicen
+# cosas distintas del mismo texto. Subirla, y no rehacer sobre la 1, es lo que
+# deja las dos en la base para poder compararlas; `etapa2/evaluacion/
+# muestrear_candidatas.py` sigue anclado a la corrida 1 y su muestra de 50 no
+# se mueve.
+VERSION = "2"
 METODO = "baseline-deterministico"
 
 # Una oracion mas corta que esto casi nunca es prosa; mas larga suele ser una
@@ -170,8 +177,18 @@ def _menciones_de_oracion(oracion, lex, vocab, locus):
 
     filas = []
     for i, f_, s_, idc, _tf in genes:
-        filas.append({"tipo": "proteina" if _es_proteina(s_) else "gen",
-                      "texto": s_, "id_normalizado": locus.get(idc, idc),
+        if lex.es_operon(idc):
+            # Un operon se guarda COMO operon. Su id normalizado es su nombre
+            # --`mexEF-oprN`-- y no un locus tag: la expansion a los genes que
+            # contiene va en columna aparte, porque el texto dice una cosa y el
+            # grafo necesita la otra y ninguna sustituye a la otra. Aplanarlo a
+            # gen aqui perderia lo que el articulo dijo de verdad, y perderia
+            # tambien la unica senal de que al catalogo le falta esa entrada.
+            tipo, idn = "operon", idc
+        else:
+            tipo = "proteina" if _es_proteina(s_) else "gen"
+            idn = locus.get(idc, idc)
+        filas.append({"tipo": tipo, "texto": s_, "id_normalizado": idn,
                       "offset_ini": i, "offset_fin": f_})
     for etiqueta, datos in (("disparador", disp), ("funcion", func),
                             ("evidencia", evid), ("organismo", orgs)):

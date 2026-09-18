@@ -53,6 +53,22 @@ import evaluar_oro as E                                  # noqa: E402
 from grn_bronce import db as bronce_db                   # noqa: E402
 from grn_bronce import rutas                             # noqa: E402
 
+# Las menciones que el bronce reconoce con el diccionario PAO1, y que por tanto
+# pueden emparejar con un extremo de la referencia.
+#
+# `operon` entra, y es el punto delicado. Antes de que las menciones de operon
+# tuvieran tipo propio caian en 'gen' o 'proteina' segun su mayuscula inicial,
+# asi que estas tres consultas ya las veian: son 7 136 menciones de la corrida
+# 1, el 4.3 % del total. Dejarlas fuera ahora haria bajar la cobertura sin que
+# el pipeline hubiera encontrado una relacion menos, y el numero seguiria
+# saliendo con la misma etiqueta y la misma pinta de correcto. La expansion de
+# operones aporta 53 filas al cruce contra la base curada, asi que la caida no
+# seria pequena.
+#
+# Una constante y no tres literales: un cuarto sitio que se olvide de anadirlo
+# mide otra cosa, y nada avisa.
+TIPOS_DE_GEN = "('gen','proteina','operon')"
+
 
 def claves_de(fila, operones):
     """Las claves de los dos extremos de una fila del oro.
@@ -83,7 +99,7 @@ def leer_bronce(con, corrida_id):
             """SELECT m.unidad_id, m.texto, m.id_normalizado
                  FROM menciones m
                  JOIN oraciones_candidatas c ON c.unidad_id = m.unidad_id
-                WHERE m.corrida_id = ? AND m.tipo IN ('gen','proteina')""",
+                WHERE m.corrida_id = ? AND m.tipo IN %s""" % TIPOS_DE_GEN,
             (corrida_id,)):
         por_unidad[f["unidad_id"]].add(E.clave(f["texto"]))
         if f["id_normalizado"]:
@@ -92,7 +108,7 @@ def leer_bronce(con, corrida_id):
     vistas = set()
     for f in con.execute(
             """SELECT DISTINCT texto, id_normalizado FROM menciones
-                WHERE corrida_id = ? AND tipo IN ('gen','proteina')""",
+                WHERE corrida_id = ? AND tipo IN %s""" % TIPOS_DE_GEN,
             (corrida_id,)):
         vistas.add(E.clave(f["texto"]))
         if f["id_normalizado"]:
@@ -120,7 +136,7 @@ def contexto_de_perdidas(con, corrida_id):
             """SELECT m.unidad_id, m.texto, m.id_normalizado, u.seccion,
                       LENGTH(u.texto) largo
                  FROM menciones m JOIN texto_unidades u ON u.id = m.unidad_id
-                WHERE m.corrida_id = ? AND m.tipo IN ('gen','proteina')""",
+                WHERE m.corrida_id = ? AND m.tipo IN %s""" % TIPOS_DE_GEN,
             (corrida_id,)):
         todas[f["unidad_id"]].add(E.clave(f["texto"]))
         if f["id_normalizado"]:

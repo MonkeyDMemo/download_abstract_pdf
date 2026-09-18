@@ -2,6 +2,8 @@
 """grn-bronce: la linea de comandos del paso 1.
 
     python -m grn_bronce.cli exportar [--corpus v0-agosto] [--datos RUTA]
+    python -m grn_bronce.cli pares    [--corrida N]
+    python -m grn_bronce.cli operones [--corrida N] [--solo-faltantes]
 
 Parsea, llama a la orquestacion y formatea. Sin logica de negocio y sin SQL:
 lo primero vive en `identificar.py` y lo segundo en `db.py`. Es el unico modulo
@@ -18,7 +20,8 @@ import time
 _RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _RAIZ)
 
-from grn_bronce import db, exportar, identificar, rutas, vocabulario  # noqa: E402
+from grn_bronce import (db, exportar, identificar, operones, rutas,  # noqa: E402
+                        vocabulario)
 
 # Semilla fija: las diez filas de muestra tienen que ser las mismas si alguien
 # repite el comando para comprobar lo que se reporto.
@@ -121,11 +124,13 @@ def _exportar(con, args, t0):
 
     log("")
     log("Consultando las tablas para exportar...")
-    candidatas = exportar.filas_candidatas(con, db, corrida_id)
+    catalogo = operones.Catalogo.cargar(operones.RUTA_POR_OMISION)
+    candidatas = exportar.filas_candidatas(con, db, corrida_id, catalogo)
     menciones = exportar.filas_menciones(con, db, corrida_id)
+    filas_operones = exportar.filas_operones(con, db, corrida_id, catalogo)
     conteos = db.conteos_de(con, corrida_id)
     resumen = _armar_resumen(conteos, cuenta, corpus_nombre, corrida_id,
-                             time.time() - t0, faltan)
+                             time.time() - t0, faltan, filas_operones)
 
     dia = datetime.date.today().strftime("%Y%m%d")
     base = os.path.join("salidas", "bronce_identificacion_%s" % dia)
@@ -135,9 +140,11 @@ def _exportar(con, args, t0):
                           exportar.COLUMNAS_CANDIDATAS, candidatas, log)
     exportar.escribir_csv(base + "_menciones.csv",
                           exportar.COLUMNAS_MENCIONES, menciones, log)
+    exportar.escribir_csv(base + "_operones.csv",
+                          exportar.COLUMNAS_OPERONES, filas_operones, log)
     exportar.escribir_resumen_csv(base + "_resumen.csv", resumen, log)
     hubo_xlsx = exportar.escribir_xlsx(base + ".xlsx", candidatas, menciones,
-                                       resumen, log)
+                                       resumen, filas_operones, log)
 
     db.cerrar_corrida(con, corrida_id, "ok", None, len(documentos),
                       len(candidatas))
@@ -145,7 +152,8 @@ def _exportar(con, args, t0):
     return 0
 
 
-def _armar_resumen(c, cuenta, corpus, corrida_id, segundos, faltan):
+def _armar_resumen(c, cuenta, corpus, corrida_id, segundos, faltan,
+                   filas_operones=()):
     """Los numeros salen de `conteos_de()`, o sea de la base, no de memoria."""
     t = c["por_tipo"]
     filas = [
@@ -176,10 +184,20 @@ def _armar_resumen(c, cuenta, corpus, corrida_id, segundos, faltan):
          cuenta["oraciones_con_demasiados_genes"]),
         ("Menciones totales", c["menciones"]),
     ]
-    for tipo in ("gen", "proteina", "disparador", "funcion", "evidencia",
-                 "organismo"):
+    for tipo in ("gen", "proteina", "operon", "disparador", "funcion",
+                 "evidencia", "organismo"):
         filas.append(("  de tipo %s" % tipo, t.get(tipo, 0)))
+    sin_catalogo = [f for f in filas_operones if f["en_catalogo"] == "no"]
     filas += [
+        ("Operones distintos nombrados por el corpus",
+         c.get("operones_distintos", 0)),
+        ("  que estan en operones_pao1.tsv",
+         len(filas_operones) - len(sin_catalogo)),
+        ("  que NO estan: huecos del catalogo", len(sin_catalogo)),
+        ("  menciones que sostienen esos huecos",
+         sum(f["n_menciones"] for f in sin_catalogo)),
+        ("Oraciones candidatas con al menos un operon",
+         c.get("candidatas_con_operon", 0)),
         ("Genes distintos (superficies)", c["genes_distintos"]),
         ("Tasa de normalizacion a locus tag",
          _tasa(c["genes_normalizados"], c["genes_totales"])),
@@ -300,15 +318,7 @@ def cmd_pares(args):
     ruta_datos = rutas.raiz_datos(args.datos)
     con = db.conectar(os.path.join(ruta_datos, "grn.db"))
     try:
-        if args.corrida:
-            corrida_id = args.corrida
-        else:
-            fila = con.execute(
-                """SELECT id FROM corridas WHERE paso='1' AND estatus='ok'
-                    ORDER BY id DESC LIMIT 1""").fetchone()
-            if fila is None:
-                sys.exit("No hay ninguna corrida del bronce terminada.")
-            corrida_id = fila["id"]
+        corrida_id = args.corrida or _ultima_corrida(con)
         filas = [dict(f) for f in db.pares_candidatos(con, corrida_id)]
     finally:
         con.close()
@@ -332,6 +342,94 @@ def cmd_pares(args):
     return 0
 
 
+def _ultima_corrida(con):
+    """La ultima corrida 'ok', o se sale con un mensaje.
+
+    La consulta la hace `db.ultima_corrida()`: aqui solo queda decidir que
+    hacer cuando no hay ninguna, que es formateo y no SQL.
+    """
+    corrida_id = db.ultima_corrida(con)
+    if corrida_id is None:
+        sys.exit("No hay ninguna corrida del bronce terminada.")
+    return corrida_id
+
+
+def cmd_operones(args):
+    """El distinto de operones del corpus, y que le falta al catalogo.
+
+    Lo que el asesor quiere ver es la ultima columna del informe: los operones
+    que el texto nombra y `operones_pao1.tsv` no conoce. Esos no expanden a
+    ningun gen, asi que hoy el bronce sabe que el articulo hablo de un operon
+    pero no de cual. Cada uno es una fila que le falta al catalogo.
+    """
+    ruta_datos = rutas.raiz_datos(args.datos)
+    catalogo = operones.Catalogo.cargar(operones.RUTA_POR_OMISION)
+    con = db.conectar(os.path.join(ruta_datos, "grn.db"))
+    try:
+        corrida_id = args.corrida or _ultima_corrida(con)
+        filas = exportar.filas_operones(con, db, corrida_id, catalogo)
+    finally:
+        con.close()
+
+    # El resumen se cuenta SIEMPRE sobre todos los operones, aunque el CSV
+    # lleve solo los faltantes. Contarlo despues de filtrar daba "103 de 103,
+    # el 100 % de las menciones", que es verdad sobre lo filtrado y mentira
+    # sobre el corpus, que es de lo que el lector cree que le estan hablando.
+    faltan = [f for f in filas if f["en_catalogo"] == "no"]
+    escritas = faltan if args.solo_faltantes else filas
+
+    # El nombre lleva la corrida, no solo el dia. Sin ella, mirar la corrida 1
+    # despues de la 2 --que es lo natural al comparar versiones-- machacaba el
+    # CSV bueno con uno vacio, el mismo dia y sin avisar.
+    dia = datetime.date.today().strftime("%Y%m%d")
+    ruta = os.path.join("salidas",
+                        "operones_corrida%d_%s.csv" % (corrida_id, dia))
+    exportar.escribir_csv(ruta, exportar.COLUMNAS_OPERONES, escritas, log)
+
+    log("")
+    if not filas:
+        # Una corrida anterior a la version 2 guardaba las menciones de operon
+        # como 'gen' o 'proteina', asi que no tiene ninguna fila de tipo
+        # 'operon' y este informe sale vacio. Sin este aviso, "0 operones" se
+        # lee como "el corpus no nombra operones", que es falso: son 7 136
+        # menciones que esa corrida etiqueto de otra forma.
+        log("  La corrida %d no tiene menciones de tipo 'operon'." % corrida_id)
+        log("  Si es una corrida de la version 1, es lo esperado: entonces el")
+        log("  operon se guardaba como gen o proteina. Vuelve a correr")
+        log("  'exportar' para producir una corrida de la version actual.")
+        log("")
+    log("  corrida                      : %d" % corrida_id)
+    log("  catalogo operones_pao1.tsv   : %d operones" % len(catalogo))
+    log("  operones distintos en corpus : %d" % len(filas))
+    log("  en el catalogo               : %d" % (len(filas) - len(faltan)))
+    log("  FUERA del catalogo           : %d  (%s de las menciones)"
+        % (len(faltan),
+           _tasa(sum(f["n_menciones"] for f in faltan),
+                 sum(f["n_menciones"] for f in filas))))
+    log("  menciones de operon totales  : %d"
+        % sum(f["n_menciones"] for f in filas))
+    if args.solo_faltantes:
+        log("  (el CSV lleva solo los %d faltantes; el resumen, todos)"
+            % len(faltan))
+    if faltan:
+        log("")
+        log("  Los %d que le faltan al catalogo, por menciones:" % len(faltan))
+        log("    %-20s %9s %9s  %s" % ("operon", "menciones", "articulos",
+                                       "superficies"))
+        for f in sorted(faltan, key=lambda x: -x["n_menciones"])[:args.top]:
+            sup = f["superficies"][:44]
+            log("    %-20s %9d %9d  %s"
+                % (f["operon"], f["n_menciones"], f["n_documentos"], sup))
+        if len(faltan) > args.top:
+            log("    ... y %d mas; estan todos en el CSV."
+                % (len(faltan) - args.top))
+    log("")
+    log("  Un operon fuera del catalogo no expande a ningun gen: el bronce")
+    log("  sabe que el articulo nombro un operon y no de que se compone.")
+    log("  La expansion es solo por tabla, nunca deducida del nombre.")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(
         prog="grn-bronce",
@@ -350,6 +448,19 @@ def main():
     pa.add_argument("--datos", help="Raiz de datos; gana sobre GRN_DATOS.")
     pa.add_argument("--corrida", type=int, default=None)
     pa.set_defaults(func=cmd_pares)
+
+    op = sub.add_parser(
+        "operones",
+        help="Operones del corpus y los que le faltan al catalogo.")
+    op.add_argument("--datos", help="Raiz de datos; gana sobre GRN_DATOS.")
+    op.add_argument("--corrida", type=int, default=None)
+    op.add_argument("--solo-faltantes", action="store_true",
+                    dest="solo_faltantes",
+                    help="Solo los que no estan en operones_pao1.tsv.")
+    op.add_argument("--top", type=int, default=30,
+                    help="Cuantos faltantes listar en pantalla (el CSV los "
+                         "lleva todos).")
+    op.set_defaults(func=cmd_operones)
 
     args = ap.parse_args()
     if getattr(args, "corpus", None) == "":

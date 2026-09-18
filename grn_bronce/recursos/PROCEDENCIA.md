@@ -63,9 +63,90 @@ PAO1**: es el nombre de *E. coli*, y el homologo aqui se llama `vfr` (PA0652).
 
 ## `operones_pao1.tsv` — 3 030 operones
 
-Derivados del genoma. Columnas: `operon`, `miembros`, `locus_tags`, `fuente`.
-Sirven para que `mexEF-oprN` se reconozca como una unidad y no como tres genes
-sueltos.
+Columnas: `operon`, `miembros`, `locus_tags`, `fuente`. Sirven para que
+`mexEF-oprN` se reconozca como una unidad y no como tres genes sueltos, y para
+expandirlo despues a los genes que contiene.
+
+### De donde salen
+
+**Derivados del mismo GFF de RefSeq que el diccionario**
+(`GCF_000006765.1_ASM676v1`), por adyacencia de locus tags. Las 3 030 filas
+llevan `fuente = refseq_adyacencia`; no hay ninguna otra fuente en la tabla.
+Los construye `etapa2/construir_diccionario.py::derivar_operones()`.
+
+La regla, en cuatro pasos:
+
+1. Se recorren los genes en el orden del GFF y se agrupan los que tienen locus
+   tags consecutivos **y** un simbolo de la forma prefijo de tres minusculas
+   mas una mayuscula (`mexA`, `oprM`). Un gen sin simbolo o con otra forma
+   corta la corrida.
+2. **Una corrida no cruza un cambio de hebra.** Dos genes contiguos en hebras
+   opuestas son divergentes o convergentes: no comparten promotor y no forman
+   operon.
+3. Los miembros se escriben en **orden de transcripcion**, no de locus tag
+   ascendente. Verificado en el GFF: `mexCD-oprJ` va en la hebra menos (PA4597
+   `oprJ`, PA4598 `mexD`, PA4599 `mexC`), asi que por locus tag ascendente el
+   nombre que sale es `oprJ-mexDC`, que no existe en ninguna parte.
+   `mexAB-oprM` y `mexEF-oprN` salian bien solo porque van en la hebra mas.
+4. De cada corrida maximal se emiten **todas las sub-corridas contiguas de dos
+   o mas genes**. De ahi el reparto de tamanos: 873 filas de 2 genes, 536 de 3,
+   373 de 4, y una cola hasta 31. Es lo que permite que el texto nombre
+   `pqsABCDE` o solo `pqsAB` y las dos formas emparejen.
+
+Un nombre de operon que choque con el simbolo de un gen se descarta: esa
+superficie resolveria a dos entidades y `lexico` no emitiria ninguna mencion.
+Se descarta el operon, que es el derivado.
+
+### La cautela que hay que leer antes de usarla
+
+**Es una prediccion por adyacencia, no una lista de operones verificados
+experimentalmente.** Genes contiguos en la misma hebra suelen cotranscribirse,
+pero no siempre, y la regla no mira promotores ni terminadores ni datos de
+transcriptoma. Lo que la tabla afirma es "estos genes son vecinos en la misma
+hebra y sus nombres componen esta cadena", no "estos genes forman un operon".
+La distincion importa aguas abajo: expandir un operon mete aristas en el grafo,
+y una expansion falsa mete aristas falsas.
+
+### Con que criterio se expande
+
+**Solo por tabla, nunca deducido del nombre.** `grn_bronce/operones.py` es la
+unica expansion del proyecto; `etapa2/evaluar_oro.py` delega ahi en vez de
+repetirla.
+
+- Un nombre expande a lo que su fila diga, y a nada mas. La expansion mecanica
+  --leer `pqsABCDE` y deducir pqsA..pqsE-- queda fuera, y no por gusto:
+  `etapa2/lexico.py` acuna operones sinteticos leyendo el texto en cuanto todos
+  los miembros existen en el diccionario (`lasRIAB`, `rsmZA`, `gacAS`,
+  `exoSTY`), y con la expansion mecanica una sola arista inventada
+  `LasR -> lasRIAB` se contaba como recuperacion de **tres** filas del oro a la
+  vez. Un nodo fabricado por una concatenacion del texto subia la exhaustividad
+  sin haber encontrado ninguna relacion.
+- **Un operon que la tabla no conoce no expande a nada**, y eso es el
+  comportamiento buscado: sale listado como hueco del catalogo en
+  `python -m grn_bronce.cli operones --solo-faltantes`. Es el entregable, no un
+  fallo.
+- El nombre se compara **en minusculas**: `MexEF-OprN` y `mexEF-oprN` son el
+  mismo operon, porque la mayuscula es convencion de nomenclatura --forma
+  proteina contra forma gen-- y no identidad.
+- Hay **dos vistas de las mismas filas**, no dos reglas. `miembros()` devuelve
+  simbolos y locus tags juntos en minusculas, que es lo que el emparejamiento
+  del evaluador necesita porque las referencias nombran los extremos de las dos
+  formas. `locus_tags()` devuelve solo los `PA####` tal como estan escritos, y
+  es lo que llena la columna `genes_expandidos`, porque el grafo se arma sobre
+  locus tags y no sobre simbolos.
+
+### Las dos capas, y por que se guardan las dos
+
+El bronce guarda la **mencion del operon tal como aparece en el texto** y su
+**expansion a los genes que contiene**, en columnas separadas. El texto dice
+`mexEF-oprN`; el grafo necesita PA2493, PA2494 y PA2495. Ninguna sustituye a la
+otra: aplanar el operon a sus genes al guardarlo perderia lo que el articulo
+dijo de verdad --y con ello la unica senal de que al catalogo le falta esa
+entrada-- y dejarlo sin expandir dejaria al paso 3 sin nodos.
+
+Por eso una mencion de operon se guarda con `menciones.tipo = 'operon'` y su
+nombre como `id_normalizado`, y **una oracion sobre un operon de cinco genes
+sigue siendo una fila y no cinco**.
 
 ## `palabras_comunes.txt` — 41 entradas
 

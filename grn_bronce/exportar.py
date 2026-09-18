@@ -18,10 +18,13 @@ import csv
 import io
 import os
 
+from grn_bronce import operones as _operones
+
 COLUMNAS_CANDIDATAS = [
     "pmid", "doi", "titulo", "anio", "revista", "fecha_ingesta",
     "fuente_texto", "seccion", "num_oracion", "oracion",
     "genes", "genes_locus_tag", "proteinas",
+    "operones", "genes_expandidos",
     "regulador_candidato", "blanco_candidato",
     "disparador", "signo_sugerido",
     "funciones_biologicas", "evidencia_experimental", "organismo",
@@ -34,11 +37,18 @@ COLUMNAS_MENCIONES = [
     "metodo", "version", "corrida_id",
 ]
 
+COLUMNAS_OPERONES = [
+    "operon", "en_catalogo", "n_genes_catalogo", "genes_expandidos",
+    "n_menciones", "n_documentos", "n_oraciones", "n_candidatas",
+    "superficies",
+]
+
 # Las dos columnas que no afirman lo que su nombre sugiere, y hay que decirlo
 # donde se leen y no en una nota al pie que nadie abre.
 AVISOS = {
     "signo_sugerido": "signo_sugerido (NO VERIFICADO)",
     "score": "score: ordena, no es umbral; sin calibrar",
+    "genes_expandidos": "genes_expandidos (expansion del catalogo, no del texto)",
 }
 
 
@@ -48,14 +58,45 @@ def _encabezado_visible(columna):
     return AVISOS.get(columna, columna)
 
 
-def filas_candidatas(con, db, corrida_id):
+# Las tres clases que el diccionario PAO1 reconoce sobre el texto. `operon`
+# entra aqui porque antes de tener tipo propio las menciones de operon se
+# guardaban como 'gen' o 'proteina' segun su mayuscula inicial: la columna
+# `genes` las traia, y tiene que seguir trayendolas. Lo que NO se mezcla es la
+# expansion, que va en `genes_expandidos`.
+TIPOS_DE_GEN = ("gen", "proteina", "operon")
+
+
+def _catalogo_o_el_de_recursos(catalogo):
+    """El catalogo que pasaron, o el de `recursos/` si no pasaron ninguno.
+
+    La comparacion es `is None` y no un `or`, y la diferencia no es de estilo:
+    `Catalogo` define `__len__`, asi que **un catalogo vacio es falsy**. Con un
+    `or`, quien pasara un catalogo vacio a proposito --para exportar sin
+    expansion, o para aislar una prueba-- se lo habria encontrado sustituido en
+    silencio por el real de 3 030 filas, y habria visto `en_catalogo = si` y
+    tres locus tag donde pidio nada.
+    """
+    if catalogo is None:
+        return _operones.Catalogo.cargar(_operones.RUTA_POR_OMISION)
+    return catalogo
+
+
+def filas_candidatas(con, db, corrida_id, catalogo=None):
     """La hoja 1, armada desde las tablas.
 
     Las columnas agregadas --`genes`, `proteinas`, `funciones_biologicas`...--
     se derivan de `menciones`, que es donde viven de verdad. Repetirlas en
     `oraciones_candidatas` habria sido guardar dos veces lo mismo y abrir la
     puerta a que las dos copias dejen de coincidir.
+
+    Las dos capas del operon salen en columnas separadas y eso es el punto:
+    `operones` trae lo que el articulo escribio y `genes_expandidos` trae los
+    locus tag que el catalogo dice que hay detras. Una oracion sobre
+    `mexEF-oprN` no se convierte en tres filas ni pierde el nombre que uso el
+    autor. Si el catalogo no conoce el operon, `genes_expandidos` sale vacio:
+    eso es el hueco del catalogo, visible, y no una expansion inventada.
     """
+    catalogo = _catalogo_o_el_de_recursos(catalogo)
     por_unidad = db.menciones_por_unidad_candidata(con, corrida_id)
     filas = []
     for c in db.candidatas_de(con, corrida_id):
@@ -66,7 +107,10 @@ def filas_candidatas(con, db, corrida_id):
             return ";".join(sorted(set(
                 m[campo] for m in mens if m[0] in tipos and m[campo])))
 
-        genes = sorted(set(m[1] for m in mens if m[0] in ("gen", "proteina")))
+        genes = sorted(set(m[1] for m in mens if m[0] in TIPOS_DE_GEN))
+        # Por nombre canonico, no por superficie: `mexAB-oprM` y `MexAB-OprM`
+        # son el mismo operon y expanden a los mismos genes.
+        ops = sorted(set(m[2] for m in mens if m[0] == "operon" and m[2]))
         filas.append({
             "pmid": c["pmid"], "doi": c["doi"] or "",
             "titulo": c["titulo"] or "", "anio": c["anio"] or "",
@@ -77,10 +121,15 @@ def filas_candidatas(con, db, corrida_id):
             "genes": ";".join(genes),
             "genes_locus_tag": ";".join(sorted(set(
                 m[2] for m in mens
-                if m[0] in ("gen", "proteina")
+                if m[0] in TIPOS_DE_GEN
                 and str(m[2] or "").startswith("PA")))),
             "proteinas": ";".join(sorted(set(
                 m[1] for m in mens if m[0] == "proteina"))),
+            # La superficie tal como la escribio el articulo, no el nombre
+            # canonico: es la capa del texto.
+            "operones": ";".join(sorted(set(
+                m[1] for m in mens if m[0] == "operon"))),
+            "genes_expandidos": ";".join(catalogo.expandir_varios(ops)),
             "regulador_candidato": c["regulador_candidato"] or "",
             "blanco_candidato": c["blanco_candidato"] or "",
             "disparador": c["disparador"] or "",
@@ -99,6 +148,39 @@ def filas_candidatas(con, db, corrida_id):
 def filas_menciones(con, db, corrida_id):
     """La hoja 2, tal cual sale de la tabla."""
     return [dict(f) for f in db.menciones_de(con, corrida_id)]
+
+
+def filas_operones(con, db, corrida_id, catalogo=None):
+    """El distinto de operones del corpus: que se nombro y que no se conoce.
+
+    Dos preguntas en la misma tabla, y la segunda es la que pidio el asesor:
+    cuanto se menciona cada operon, y **cuales no estan en
+    `operones_pao1.tsv`**. Los que salen con `en_catalogo` en `no` son los
+    huecos del catalogo, y no expanden a ningun gen: hoy `etapa2/lexico.py`
+    los acuna leyendo el texto --`pqsABCDE` resuelve a una entidad en cuanto
+    sus cinco miembros existen en el diccionario-- asi que el bronce sabe que
+    el articulo hablo de un operon pero no de que genes se compone.
+
+    La base aporta los conteos y el catalogo aporta el contraste. Se ordena
+    por menciones porque lo que falta y aparece cien veces urge mas que lo que
+    falta y aparece una.
+    """
+    catalogo = _catalogo_o_el_de_recursos(catalogo)
+    filas = []
+    for f in db.operones_del_corpus(con, corrida_id):
+        nombre = f["operon"]
+        filas.append({
+            "operon": nombre,
+            "en_catalogo": "si" if catalogo.tiene(nombre) else "no",
+            "n_genes_catalogo": catalogo.n_genes(nombre),
+            "genes_expandidos": ";".join(catalogo.locus_tags(nombre)),
+            "n_menciones": f["n_menciones"],
+            "n_documentos": f["n_documentos"],
+            "n_oraciones": f["n_oraciones"],
+            "n_candidatas": f["n_candidatas"],
+            "superficies": f["superficies"],
+        })
+    return filas
 
 
 def escribir_csv(ruta, columnas, filas, log=lambda m: None):
@@ -126,8 +208,9 @@ def escribir_resumen_csv(ruta, resumen, log=lambda m: None):
     log("  %s  (%d filas)" % (ruta, len(resumen)))
 
 
-def escribir_xlsx(ruta, candidatas, menciones, resumen, log=lambda m: None):
-    """Las tres hojas en un libro. Devuelve True si se escribio.
+def escribir_xlsx(ruta, candidatas, menciones, resumen, operones=None,
+                  log=lambda m: None):
+    """Las cuatro hojas en un libro. Devuelve True si se escribio.
 
     Si openpyxl no esta, se dice y se sigue: los CSV ya salieron y son el
     producto canonico.
@@ -159,22 +242,39 @@ def escribir_xlsx(ruta, candidatas, menciones, resumen, log=lambda m: None):
     for concepto, valor in resumen:
         h3.append([concepto, valor])
 
-    for hoja in (h1, h2, h3):
+    h4 = libro.create_sheet("operones")
+    h4.append(COLUMNAS_OPERONES)
+    for fila in (operones or []):
+        h4.append([fila.get(c, "") for c in COLUMNAS_OPERONES])
+
+    for hoja in (h1, h2, h3, h4):
         for celda in hoja[1]:
             celda.font = Font(bold=True)
         hoja.freeze_panes = "A2"
 
     # Anchos a ojo, no calculados: recorrer 300 000 celdas para medir la mas
     # larga cuesta mas que el valor de tener la columna justa.
-    for hoja, anchos in ((h1, {"A": 11, "C": 46, "J": 90, "K": 26, "L": 22}),
-                         (h2, {"A": 11, "F": 22, "G": 18}),
-                         (h3, {"A": 46, "B": 30})):
-        for letra, ancho in anchos.items():
-            hoja.column_dimensions[letra].width = ancho
-    for i in range(1, len(COLUMNAS_CANDIDATAS) + 1):
-        letra = get_column_letter(i)
-        if letra not in ("A", "C", "J", "K", "L"):
-            h1.column_dimensions[letra].width = 16
+    #
+    # Por NOMBRE de columna y no por letra. Antes eran letras fijas ("A", "C",
+    # "J", "K", "L") atadas a posiciones de COLUMNAS_CANDIDATAS: insertar una
+    # columna corria todas las siguientes y los anchos pasaban a adornar la
+    # columna equivocada, en silencio y sin que ninguna prueba lo notara.
+    ANCHOS = {
+        "pmid": 11, "titulo": 46, "oracion": 90, "genes": 26,
+        "genes_locus_tag": 22, "operones": 24, "genes_expandidos": 30,
+        "texto": 22, "id_normalizado": 18, "superficies": 28, "operon": 18,
+    }
+
+    def anchos_por_nombre(hoja, columnas, por_omision=16):
+        for i, nombre in enumerate(columnas, 1):
+            hoja.column_dimensions[get_column_letter(i)].width = ANCHOS.get(
+                nombre, por_omision)
+
+    anchos_por_nombre(h1, COLUMNAS_CANDIDATAS)
+    anchos_por_nombre(h2, COLUMNAS_MENCIONES)
+    anchos_por_nombre(h4, COLUMNAS_OPERONES)
+    h3.column_dimensions["A"].width = 46
+    h3.column_dimensions["B"].width = 30
 
     tmp = ruta + ".tmp"
     os.makedirs(os.path.dirname(ruta) or ".", exist_ok=True)
