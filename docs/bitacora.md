@@ -88,15 +88,32 @@ pérdida: **8 895 candidatas activan función o contexto**, contra 8 652 antes.
 
 ### `pa14 pa14 pa14` no era un artefacto de tabla
 
-Era un artefacto de **mi** tokenizador de n-gramas, y tapaba un hallazgo mejor.
-Las 20 apariciones salen de locus tags de la cepa **PA14** (`PA14_23420`,
-`PA14_59010`): el tokenizador partía por el guion bajo, se quedaba con `pa14` y
-tiraba el número. Siete oraciones candidatas en cinco documentos.
+Era un artefacto de **tokenización**, y tapaba un hallazgo mejor. Las 20
+apariciones salen de locus tags de la cepa **PA14** (`PA14_23420`,
+`PA14_59010`): el tokenizador parte por el guion bajo, se queda con `pa14` y
+tira el número, así que tres locus tags seguidos en una enumeración se leen
+como el mismo token tres veces. Siete oraciones candidatas en cinco documentos
+(18927620, 24386415, 32459613, 33106346, 33995291).
+
+**El defecto sigue ocurriendo, y hay que decir exactamente dónde.** El
+tokenizador del análisis de n-gramas era de un script de un solo uso y no está
+versionado, pero el del pipeline hace lo mismo: `etapa2/lexico.py::_TOKEN` es
+`[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*`, que **no incluye el guion bajo**, así
+que `PA14_23420` se parte igual en `PA14` y un `23420` que ya no empieza por
+letra y no llega a token.
+
+Lo que cambia es la consecuencia, y por eso no es urgente: **`PA14` no resuelve
+a ninguna entrada del diccionario**, así que el pipeline no emite ninguna
+mención. Comprobado: cero menciones con `texto = 'PA14'` en las corridas 2 y 3.
+No fabrica falsos positivos; pierde en silencio. Las 195 menciones cuyo texto
+empieza por `PA14` son locus tags PAO1 legítimos del rango `PA14xx`, otra cosa.
 
 Lo que hay debajo sí importa: **377 locus tags `PA14_#####` distintos, 837
 menciones en 83 documentos, y `genes_pao1.tsv` no reconoce ninguno.** El
-diccionario es de PAO1 y esa es otra nomenclatura. Es material del punto 17 del
-plan (cerrar los huecos del diccionario) y no se tocó aquí.
+diccionario es de PAO1 y esa es otra nomenclatura. Arreglar el tokenizador sin
+añadir antes el mapeo PA14 → PAO1 no serviría de nada: produciría tokens
+`PA14_23420` que el diccionario tampoco sabría resolver. Queda como punto 35
+del plan, ligado al 17.
 
 ### Pendiente
 

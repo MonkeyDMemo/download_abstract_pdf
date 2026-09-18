@@ -133,7 +133,7 @@ La regla b) mide si el paso 1 recupera la evidencia citada; la a) mide lo que el
 | 8 | Reorganizar `recursos/` en `organismo/` y `estandar/`; mover a recursos el patrón de organismo, hoy en `vocabulario.py` | Decidir dónde va `palabras_comunes.txt` |
 | 9 | Vía del bronce que produzca la clasificación de fuerza antes de la validación | No existe ni como rama de git ni como vía del pipeline |
 | 31 | Columna de operón en la salida del bronce, con el distinto de operones encontrados | **Hecho** (17-sep, corrida 2): 7 136 menciones de operón, 363 operones distintos, 3 603 candidatas afectadas (12.1 %), 393 con operón como blanco. Expansión única en `grn_bronce/operones.py`; `etapa2/evaluar_oro.py` delega ahí. El bronce guarda la mención del operón y su expansión a genes por separado |
-| 32 | Ampliar catálogos de funciones biológicas y revisar las proteínas | Pendiente heredado de la reunión del 04-sep; no avanzó |
+| 32 | Ampliar catálogos de funciones biológicas y revisar las proteínas | **Limpieza hecha** (17-sep, corrida 3): emparejamiento normalizado por mayúsculas y guiones (recupera las 329 menciones sin categoría, aporta 2 243 nuevas), `regulation` movida a `contexto_regulatorio.csv` con tipo y columna propios, `western blot` añadido y 8 filas redundantes quitadas de `evidencia_experimental.csv`. **Queda la ampliación**: términos nuevos, que no se tocaron a propósito — primero limpiar, luego ampliar |
 | 33 | Conectar el bronce con la capa silver usando el BioBERT entrenado | Depende de que el paso 1 tenga métricas — ya las tiene |
 | 34 | Completar `operones_pao1.tsv` con los 103 operones del corpus ausentes del catálogo | 447 menciones; los mayores: cyaAB, exoSTY, rsmZY, phzMS, lasRI, sodAB. Listado completo en `salidas/operones_corrida2_20260917.csv`. Es el trabajo de catálogo que pidió el asesor |
 
@@ -162,6 +162,7 @@ La regla b) mide si el paso 1 recupera la evidencia citada; la a) mide lo que el
 | 28 | Unificar la cifra de autorregulación | El comentario de `evaluar_cobertura_bronce.py` dice 10 filas / 5.7 %, la bitácora mezcla 4.5 puntos con 5.7 %, y lo medido es 8 de 176 (4.5 puntos) y 11 de 190 (5.8 puntos). Tres cifras para lo mismo en tres lugares |
 | 29 | Versionar el script que sorteó la muestra de 50 | **Hecho** el 11-sep: `etapa2/evaluacion/muestrear_candidatas.py` reproduce el archivo fila por fila |
 | 30 | Inversión de dirección | 6 de 24 errores de la muestra son pares correctos mal orientados. Hoy la dirección sale de `es_tf`; revisar los 6 casos para ver si son dos TF, ninguno, o sintaxis contraria a la heurística. Candidato: parseo de dependencias con scispaCy |
+| 35 | Nomenclatura PA14 | 377 locus tags `PA14_#####` distintos, 837 menciones en 83 documentos, ninguno reconocido por `genes_pao1.tsv`. Es una causa medible de los huecos del diccionario (punto 17) y es la cepa de la que provienen las 2 850 interacciones por homología de la base curada. Evaluar un mapeo PA14 → PAO1 por ortología |
 
 ### 3.5 Diferido
 
