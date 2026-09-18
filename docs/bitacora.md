@@ -60,6 +60,31 @@ infección nuevos. Las categorías no son comparables con la corrida 3 por
 nombre: la misma mención cambia de etiqueta sin que cambie el texto, y por eso
 la versión del método sube a 4.
 
+### Decisión de cierre: las bombas de expulsión no entran como función
+
+`MexAB-OprM` y las demás familias **se quedan como operón y como genes**, y no
+se les da categoría de función. `efflux` —6 términos, 1 126 menciones— ya cubre
+el concepto.
+
+La razón es la misma que sacó a `regulation`: `mexAB-oprM` ya existe hoy en dos
+capas, como operón del catálogo (PA0425-PA0427, 550 menciones) y como genes
+sueltos. Añadirlo como función haría que **la misma mención produjera tres
+filas en tres ejes distintos**, que es exactamente el solapamiento que se acaba
+de deshacer. Un vocabulario que repite lo que otro ya dice no aporta señal: la
+infla.
+
+Quedan por medir **anaerobiosis y respiración microaerobia** y **metabolismo de
+fosfato**. Antes de añadirlos se les aplica la regla de `PROCEDENCIA.md`:
+menciones, candidatas y reparto por sección. Si se comportan como
+`infection_type`, no entran.
+
+### Deuda que sigue abierta al cerrar la semana
+
+- Los acentos de `cli.py`, `exportar.py` y `PROCEDENCIA.md`, que hay que
+  normalizar de una pasada y no a medias.
+- El mapeo PA14 → PAO1 y, sólo después, el tokenizador (punto 35).
+- Los 103 operones que le faltan al catálogo (punto 34).
+
 ---
 
 ## 17 de septiembre de 2026 (tarde) — `regulation` sale de las funciones, corrida 3
