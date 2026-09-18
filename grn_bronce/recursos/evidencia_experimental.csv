@@ -13,7 +13,6 @@ dna binding assays,emsa
 band shift,emsa
 electromobility shift,emsa
 dna pull-down,emsa
-gel-shift,emsa
 footprint assay,emsa
 dna affinity,emsa
 dna binding assay,emsa
@@ -44,18 +43,13 @@ quantitative pcr,rt_qpcr
 quantitative rt-pcr,rt_qpcr
 primer extension,rt_qpcr
 northern blot,rt_qpcr
-real time pcr,rt_qpcr
 quantitative reverse transcription,rt_qpcr
 real-time rt-pcr,rt_qpcr
 reverse transcription-pcr,rt_qpcr
-reverse transcription pcr,rt_qpcr
 reverse transcriptase pcr,rt_qpcr
 semi-quantitative rt-pcr,rt_qpcr
 northern blotting,rt_qpcr
 taqman,rt_qpcr
-quantitative real time pcr,rt_qpcr
-real time rt-pcr,rt_qpcr
-rt pcr,rt_qpcr
 rtqpcr,rt_qpcr
 microarray,microarray
 affymetrix,microarray
@@ -67,12 +61,10 @@ rnaseq,rna_seq
 rna sequencing,rna_seq
 rpkm,rna_seq
 transcriptome sequencing,rna_seq
-rna-sequencing,rna_seq
 edger,rna_seq
 fpkm,rna_seq
 tpm,rna_seq
 deseq,rna_seq
-rna seq,rna_seq
 mutant,mutante
 mutants,mutante
 overexpression,mutante
@@ -149,3 +141,4 @@ lux fusion,reportero
 promoter-gfp,reportero
 promoter-reporter,reportero
 luxab,reportero
+western blot,western_blot

@@ -28,6 +28,47 @@ RECURSOS = os.path.join(AQUI, "recursos")
 _BORDE_IZQ = r"(?<![A-Za-z0-9-])"
 _BORDE_DER = r"(?![A-Za-z0-9-])"
 
+# Guiones y espacios son lo mismo al comparar, y las mayusculas no cuentan.
+#
+# Arregla dos defectos medidos sobre la corrida 2, los dos silenciosos --la
+# mencion se emitia igual, solo que sin categoria o directamente no se emitia--
+# y por eso ninguno se veia en los conteos:
+#
+#   1. Mayusculas. La categoria se resolvia con `mapa[superficie.lower()]` y,
+#      si fallaba, con `mapa.get(superficie)`. Los 32 terminos del catalogo que
+#      llevan mayuscula (`exotoxin A`, `c-di-GMP`, `sRNA`, `type III
+#      secretion`, `lipid A`...) solo resolvian cuando el corpus usaba
+#      exactamente su capitalizacion: `Exotoxin A` con E mayuscula salia con
+#      categoria vacia. Eran 329 menciones, el 0.5 %.
+#   2. Guiones. `two component system` no emparejaba con `two-component
+#      system`, que si esta en el catalogo, porque la comparacion era literal.
+#
+# Los dos se arreglan con la misma clave: minusculas y `[-\s]+` colapsado a un
+# espacio. El patron hace el camino inverso --cada separador del termino acepta
+# guion o espacio-- asi que una sola entrada del catalogo cubre las dos formas.
+_SEPARADOR = re.compile(r"[\s-]+")
+
+
+def normalizar(termino):
+    """La clave con la que se comparan termino y superficie.
+
+    `Two-Component  System` y `two component system` dan la misma. Se usa en
+    los dos lados --al cargar el CSV y al resolver lo que se encontro-- porque
+    normalizar uno solo es justo el defecto que esto viene a arreglar.
+    """
+    return _SEPARADOR.sub(" ", (termino or "").strip().lower())
+
+
+def _patron_de(termino):
+    """El termino como expresion, con cada separador abierto a guion o espacio.
+
+    `two component system` -> `two[-\\s]+component[-\\s]+system`, que casa las
+    dos formas que el corpus usa de verdad. Es el camino inverso de
+    `normalizar()`: una escribe la clave, la otra la busca.
+    """
+    partes = [re.escape(p) for p in _SEPARADOR.split(termino.strip()) if p]
+    return r"[-\s]+".join(partes)
+
 # Organismo. No va por lista de especies porque la lista util es abierta: el
 # corpus nombra decenas de bacterias de paso. Va por las dos formas en que la
 # nomenclatura binomial se escribe de verdad en esta literatura:
@@ -85,13 +126,20 @@ class Vocabulario(object):
     entre una pasada y cuatrocientas no es un detalle.
     """
 
-    def __init__(self, disparadores, funciones, evidencia):
-        self.disparadores = dict(disparadores)      # palabra -> signo
-        self.funciones = dict(funciones)            # termino -> categoria
-        self.evidencia = dict(evidencia)            # termino -> tecnica
+    def __init__(self, disparadores, funciones, evidencia, contexto=()):
+        # Las claves van normalizadas; los valores, tal cual vienen del CSV.
+        self.disparadores = self._mapa(disparadores)   # palabra -> signo
+        self.funciones = self._mapa(funciones)         # termino -> categoria
+        self.evidencia = self._mapa(evidencia)         # termino -> tecnica
+        self.contexto = self._mapa(contexto)           # termino -> categoria
         self._pat_disp = self._compilar(self.disparadores)
         self._pat_func = self._compilar(self.funciones)
         self._pat_evid = self._compilar(self.evidencia)
+        self._pat_ctx = self._compilar(self.contexto)
+
+    @staticmethod
+    def _mapa(filas):
+        return dict((normalizar(k), v) for k, v in filas if normalizar(k))
 
     @staticmethod
     def _compilar(mapa):
@@ -101,7 +149,7 @@ class Vocabulario(object):
         # sobre "immunoprecipitation" y no se reporta la mencion corta dentro
         # de la larga.
         claves = sorted(mapa, key=len, reverse=True)
-        cuerpo = "|".join(re.escape(k) for k in claves)
+        cuerpo = "|".join(_patron_de(k) for k in claves)
         return re.compile(_BORDE_IZQ + "(" + cuerpo + ")" + _BORDE_DER,
                           re.IGNORECASE)
 
@@ -111,6 +159,7 @@ class Vocabulario(object):
             _leer_csv("disparadores.csv", ("palabra", "signo_sugerido")),
             _leer_csv("funciones_semilla.csv", ("termino", "categoria")),
             _leer_csv("evidencia_experimental.csv", ("termino", "tecnica")),
+            _leer_csv("contexto_regulatorio.csv", ("termino", "categoria")),
         )
 
     def _buscar(self, patron, mapa, oracion):
@@ -125,9 +174,13 @@ class Vocabulario(object):
                 continue
             ocupado.append((ini, fin))
             superficie = oracion[ini:fin]
-            salida.append((ini, fin, superficie, mapa[superficie.lower()]
-                           if superficie.lower() in mapa else
-                           mapa.get(superficie, "")))
+            # Una sola via de resolucion, y por la clave normalizada. La
+            # cadena de dos intentos que habia antes --minusculas, y si no la
+            # superficie cruda-- dejaba sin categoria a todo termino del
+            # catalogo escrito con mayuscula cuando el corpus lo escribia de
+            # otra forma.
+            salida.append((ini, fin, superficie,
+                           mapa.get(normalizar(superficie), "")))
         salida.sort(key=lambda t: t[0])
         return salida
 
@@ -143,9 +196,18 @@ class Vocabulario(object):
         """[(ini, fin, termino, tecnica)]"""
         return self._buscar(self._pat_evid, self.evidencia, oracion)
 
+    def contexto_en(self, oracion):
+        """[(ini, fin, termino, categoria)] del contexto regulatorio.
+
+        Es un eje distinto del de `funciones_en()`: dice que la oracion habla
+        de regulacion, no de que proceso biologico habla. Sale en su propia
+        columna y alimenta el `tipo_relacion` del paso 2.
+        """
+        return self._buscar(self._pat_ctx, self.contexto, oracion)
+
     def __len__(self):
         return (len(self.disparadores) + len(self.funciones)
-                + len(self.evidencia))
+                + len(self.evidencia) + len(self.contexto))
 
 
 def organismos_en(oracion):

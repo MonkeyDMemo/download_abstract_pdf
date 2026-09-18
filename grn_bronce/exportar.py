@@ -27,7 +27,8 @@ COLUMNAS_CANDIDATAS = [
     "operones", "genes_expandidos",
     "regulador_candidato", "blanco_candidato",
     "disparador", "signo_sugerido",
-    "funciones_biologicas", "evidencia_experimental", "organismo",
+    "funciones_biologicas", "contexto_regulatorio",
+    "evidencia_experimental", "organismo",
     "score", "metodo", "version", "corrida_id", "fecha_corrida",
 ]
 
@@ -135,6 +136,10 @@ def filas_candidatas(con, db, corrida_id, catalogo=None):
             "disparador": c["disparador"] or "",
             "signo_sugerido": c["signo_sugerido"] or "",
             "funciones_biologicas": juntar("funcion"),
+            # Columna aparte y no mezclada con la anterior: es otro eje. Dice
+            # que la oracion habla de regulacion, no de que proceso habla, y
+            # alimenta el `tipo_relacion` del paso 2.
+            "contexto_regulatorio": juntar("contexto_regulatorio"),
             "evidencia_experimental": juntar("evidencia", normalizado=True),
             "organismo": juntar("organismo"),
             "score": c["score"],
