@@ -184,6 +184,7 @@ grn_etl/               paso 0, cerrado
   credenciales.py        entorno primero, archivo despues
 grn_bronce/            paso 1, en construccion
   texto.py               segmentacion en oraciones y offsets absolutos
+  operones.py            el catalogo y la UNICA expansion operon -> genes
   secciones.tsv          etiqueta h2 -> clase de seccion
 grn_comun/             lo que usan los tres pasos
   procedencia.py         huella por contenido de cada eslabon de la cadena
@@ -274,6 +275,16 @@ administra unicamente sus tablas.
 
 **Paso 1 — `grn_bronce/db.py`:** `corridas`, `texto_unidades`, `menciones`,
 `oraciones_candidatas`.
+
+`menciones.tipo` toma siete valores: `gen`, `proteina`, **`operon`**,
+`disparador`, `funcion`, `evidencia` y `organismo`. El `operon` se anadio en la
+version 2 del metodo; antes esas menciones caian en `gen` o `proteina` segun su
+mayuscula inicial. **Toda consulta que filtre por los tipos del diccionario
+PAO1 tiene que decir `tipo IN ('gen','proteina','operon')`**: dejar `operon`
+fuera resta 7 136 menciones y baja la cifra sin que el pipeline haya encontrado
+menos. El `id_normalizado` de un operon es su nombre (`mexEF-oprN`), no un
+locus tag; la expansion a locus tags vive en `grn_bronce/operones.py` y sale en
+columna aparte.
 
 Ojo con los nombres reales: la columna de estado de `descargas` se llama
 **`estatus`**, no `estado`.
@@ -453,8 +464,13 @@ Las pruebas que no pueden faltar:
 
 ## Flujo de trabajo
 
-- Rama **`bronce`**. Commits pequenos, con mensaje en espanol que nombre el
-  modulo tocado.
+- **Rama `main`, con ramas cortas por experimento** que se fusionan y se
+  borran: `operones-bronce` es el patron. Una rama por trabajo con nombre, no
+  una rama de larga vida por capa. La antigua `bronce` se abandono el 3 de
+  septiembre de 2026 y se borro el 17, cuando llevaba diez commits de retraso y
+  no tenia nada que `main` no tuviera: una rama que nadie mueve solo sirve para
+  que alguien commitee ahi por error y crea que publico. Commits pequenos, con
+  mensaje en espanol que nombre el modulo tocado.
 - Antes de crear un modulo nuevo, revisar que no exista ya en `PLAN.md` con
   otro nombre.
 - **Cambios de esquema: proponer el DDL y esperar confirmacion** antes de

@@ -8,6 +8,169 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 17 de septiembre de 2026 — soporte de operones en el bronce, corrida 2
+
+El bronce guarda ahora **las dos capas del operón**: la mención tal como el
+artículo la escribió, y su expansión a los locus tag que contiene. El texto
+dice `mexEF-oprN` y el grafo necesita PA2493, PA2494 y PA2495; ninguna de las
+dos sustituye a la otra, así que van en columnas separadas y no mezcladas.
+
+### Qué se corrió
+
+`python -m grn_bronce.cli exportar --corpus v0-agosto`, que abrió la **corrida
+2** (`baseline-deterministico` v2). La versión sube de 1 a 2 porque una fila
+del bronce v1 y una de la v2 dicen cosas distintas del mismo texto. **La
+corrida 1 se conserva intacta**: no se usó `--rehacer`, así que las dos están
+en la base y se pueden comparar, y la muestra de 50 de
+`etapa2/evaluacion/muestrear_candidatas.py` sigue anclada a la corrida 1.
+
+Duración: 1 min 32 s sobre 2 361 documentos.
+
+### Resultado
+
+| cifra | valor |
+|---|---|
+| menciones de operón | **7 136** |
+| operones distintos en el corpus | **363** |
+| de ellos, en `operones_pao1.tsv` | 260 (6 689 menciones) |
+| **fuera del catálogo** | **103** (447 menciones, 6.3 %) |
+| oraciones candidatas con al menos un operón | **3 603** de 29 659 (12.1 %) |
+| de ellas, con expansión no vacía | 3 390 (las otras 213 nombran un operón que el catálogo no conoce) |
+| candidatas cuyo blanco es un operón | 393, sobre 74 operones distintos |
+
+Los 103 que faltan son el entregable para el asesor y salen ordenados por
+menciones con `python -m grn_bronce.cli operones --solo-faltantes`. Los de
+arriba: `cyaAB` (53), `exoSTY` (53), `rsmZY` (45), `phzMS` (42), `lasRI` (20),
+`sodAB` (18), `phzMSH` (16), `rhlABC` (14). Son concatenaciones que
+`etapa2/lexico.py` acuña leyendo el texto cuando todos los miembros existen en
+el diccionario, y que la tabla derivada por adyacencia no trae. **No expanden a
+ningún gen**, y eso es deliberado: la expansión es solo por tabla.
+
+### La corrida 2 es la 1 con otra etiqueta, y está comprobado
+
+Mismas 273 062 unidades, mismas 488 221 menciones, mismas 29 659 candidatas,
+mismas 5 833 con blanco. Los tipos se reparten distinto y suman igual: gen
+67 591 + proteína 91 812 + operón 7 136 = **166 539**, exactamente el gen
+71 865 + proteína 94 674 de la corrida 1.
+
+La cobertura contra el oro **no se movió**: 149/176 = 84.7 % con denominador
+honesto y 154/190 = 81.1 % sobre el total, con el mismo reparto de pérdidas
+(12 / 8 / 7). Para que siguiera siendo comparable hubo que añadir `'operon'` a
+los tres filtros `tipo IN ('gen','proteina')` de
+`etapa2/evaluar_cobertura_bronce.py`, ahora en la constante `TIPOS_DE_GEN`.
+Sin eso el evaluador habría dejado de ver 7 136 menciones y la cifra habría
+bajado sin que el pipeline encontrara una relación menos. Es el modo de fallo
+de siempre: el número sale igual de bien presentado y mide otra cosa.
+
+**Diff de los dos CSV, columna por columna:** `genes`, `genes_locus_tag`,
+`regulador_candidato`, `blanco_candidato`, `disparador`, `signo_sugerido`,
+`score` y `oracion` cambian en **0** de las 29 659 filas.
+
+### La única columna vieja que sí cambió: `proteinas`
+
+Cambia en **1 468 filas** (4.9 %). Un operón capitalizado --`MexAB-OprM`--
+empezaba por mayúscula, así que `_es_proteina()` lo mandaba a tipo `proteina` y
+aparecía en esa columna; son 2 862 menciones, el 3.0 % de las 94 674 que tenía
+la corrida 1. Un operón no es una proteína, así que sale.
+
+**La superficie no se pierde**: sigue en `genes`, está en la nueva columna
+`operones` y en la hoja de menciones con `tipo='operon'`. Queda fijado por
+`grn_bronce/test_operones.py::test_un_operon_capitalizado_ya_no_cuenta_como_proteina`
+para que no vuelva a ser un cambio silencioso.
+
+### Dónde quedó la expansión
+
+**`grn_bronce/operones.py`**, y es la única del proyecto.
+`etapa2/evaluar_oro.py::cargar_operones()` y `miembros_de_tabla()` delegan ahí
+en vez de repetirla; comprobado que el mapa de 3 030 filas sale idéntico al que
+construía antes. Dos expansiones que se separan sin que nadie lo note dejarían
+al evaluador y al bronce emparejando distinto.
+
+Expone dos vistas de las mismas filas, no dos reglas: `miembros()` da símbolos
+y locus tags juntos en minúsculas, que es lo que el emparejamiento del
+evaluador necesita, y `locus_tags()` da solo los `PA####`, que es lo que llena
+`genes_expandidos` porque el grafo se arma sobre locus tags.
+
+### Salida
+
+Dos columnas nuevas en `oraciones_candidatas`, **después de `proteinas`** para
+no correr de sitio ninguna de las que ya existían: `operones` (la forma del
+texto) y `genes_expandidos` (los locus tag del catálogo). Un CSV nuevo
+`_operones.csv` y una cuarta hoja `operones` en el `.xlsx`, las dos desde
+`db.operones_del_corpus()`. **Una oración sobre un operón de cinco genes sigue
+siendo una fila y no cinco.**
+
+De paso, los anchos de columna del `.xlsx` pasaron de letras fijas
+(`"A"`, `"C"`, `"J"`...) a nombres de columna. Estaban atados a posiciones de
+`COLUMNAS_CANDIDATAS`, así que insertar una columna los habría dejado
+adornando la columna equivocada, en silencio.
+
+### Dos defectos que salieron en la revisión y ya están arreglados
+
+**`LIKE 'PA%'` no distinguía mayúsculas.** En SQLite `LIKE` es insensible para
+ASCII y nadie activa `PRAGMA case_sensitive_like`, así que el numerador de la
+tasa de normalización casaba también con los nombres de operón que empiezan por
+`pa` minúscula: `parRS`, `panBC`, `panBCD`, `panCD`, `pabC-mltG`. En el corpus
+son **78 menciones de `parRS`** contadas como locus tag sin serlo. Con
+`GLOB 'PA*'`, que sí distingue, la tasa pasa de 95.12 % a 95.07 %: **el 95.1 %
+publicado no se mueve**. Lo que sí se arregla es una incoherencia interna, que
+era el síntoma preocupante: el mismo `id_normalizado='parRS'` era locus tag para
+la métrica de la base y no lo era para la columna `genes_locus_tag` del CSV, que
+filtra con el `startswith("PA")` de Python. El defecto es anterior a este
+cambio.
+
+**Un catálogo vacío pasado a propósito se descartaba en silencio.** `Catalogo`
+define `__len__`, así que uno sin filas es *falsy*, y el
+`catalogo = catalogo or Catalogo.cargar(...)` del exportador lo sustituía por el
+real de 3 030 filas. Quien pidiera exportar sin expansión veía `en_catalogo=si`
+y tres locus tag donde pidió nada. Ahora es `is None`.
+
+Las dos correcciones están fijadas con pruebas que se comprobó que fallan contra
+el código defectuoso; una prueba de regresión que no atrapa su regresión no
+sirve de nada.
+
+### Decisiones pendientes
+
+- **`operones_pao1.tsv` es una predicción por adyacencia, no una lista de
+  operones verificados.** Genes contiguos en la misma hebra suelen
+  cotranscribirse, pero la regla no mira promotores ni terminadores ni
+  transcriptoma. Expandir mete aristas en el grafo, y una expansión falsa mete
+  aristas falsas. Anotado en `recursos/PROCEDENCIA.md`; decidir en el paso 3 si
+  la expansión entra en la red o se queda como anotación.
+- **Los 103 huecos del catálogo esperan criterio del asesor**: añadirlos a la
+  tabla a mano, o aceptar que un operón sin expansión es un nodo sin resolver.
+  Quedan como punto 34 de `PLAN.md`, con el listado completo en
+  `salidas/operones_corrida2_20260917.csv`.
+- **`PLAN.md` no traía el punto de operones.** La numeración llegaba a 30 y la
+  sección 3.2 listaba los puntos 6 a 9. Resuelto el mismo día: la edición vivía
+  fuera del repositorio y no se había aplicado. Ahora están los puntos 31 a 34 y
+  la subsección 1.1 con la reunión del 11-sep; las dos subsecciones siguientes
+  de la sección 1 se renumeraron a 1.2 y 1.3.
+
+### Deuda: los acentos, y hay que arreglarlos de una vez
+
+`grn_bronce/cli.py`, `grn_bronce/exportar.py` y
+`grn_bronce/recursos/PROCEDENCIA.md` **no tienen un solo acento en todo el
+archivo**, y eso incumple la regla de `CLAUDE.md`: el texto que lee una persona
+--salida de terminal del CLI, encabezados, títulos y documentación-- lleva los
+acentos correctos del español, y solo los identificadores van en ASCII.
+
+Al añadir el soporte de operones se escribió sin acentos para no dejar los
+archivos a medias, así que la deuda no creció en proporción pero sí en tamaño
+absoluto. **La corrección es normalizar cada archivo entero de una pasada, no
+acentuar las líneas nuevas**: un archivo con "operón" en una línea y "operon" en
+la siguiente es peor que uno consistente, porque quien lo edite después no sabrá
+cuál de los dos criterios seguir, y el diff de la normalización real quedará
+enterrado entre las líneas ya tocadas.
+
+Lo que hay que respetar al hacerlo: los identificadores **no** se tocan. Las
+columnas `operones` y `genes_expandidos`, las claves del JSON, los nombres de
+tabla y los `id=` del HTML siguen en ASCII sin acentos, como manda `CLAUDE.md`,
+porque cambiarlos rompe el contrato tabular y la base. Lo que cambia es solo el
+texto entre comillas que termina en pantalla o en un `.md`.
+
+---
+
 ## 11 de septiembre de 2026 — precisión 44.0 %, evaluación versionada y guarda ampliada
 
 Tres cosas en el día: los 50 juicios y la precisión del paso 1, la evaluación

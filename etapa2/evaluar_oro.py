@@ -140,6 +140,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from grn_bronce import operones as _operones   # noqa: E402
 from grn_comun import procedencia      # noqa: E402
 
 
@@ -913,16 +914,19 @@ def revisar_procedencia(info):
 
 
 def cargar_operones(ruta):
-    """operon -> [miembros]. Opcional: si falta, queda la expansión mecánica."""
+    """operon -> [miembros]. Opcional: si falta, queda la expansión mecánica.
+
+    La lectura del archivo se queda aquí --`leer_tsv()` aborta con el mensaje
+    que este evaluador ya daba-- y el armado del mapa se delega a
+    `grn_bronce/operones.py`, que es donde vive la única expansión del
+    proyecto. Dos expansiones que se separan sin que nadie lo note dejarían al
+    evaluador y al bronce emparejando distinto, con las cifras saliendo igual
+    de bien presentadas y midiendo otra cosa.
+    """
     if not ruta or not os.path.exists(ruta):
         return {}, False
     filas = leer_tsv(ruta, COLUMNAS_OPERONES, "tabla de operones")
-    mapa = {}
-    for fila in filas:
-        miembros = [m for m in fila["miembros"].split("|") if m]
-        miembros += [m for m in fila["locus_tags"].split("|") if m]
-        if miembros:
-            mapa[clave(fila["operon"])] = [clave(m) for m in miembros]
+    mapa, _ = _operones.desde_filas(filas)
     return mapa, True
 
 
@@ -949,10 +953,11 @@ def miembros_de_tabla(nombre, operones):
 
     §6.3 autoriza exactamente esta tabla, "derivada del diccionario sin mirar
     el oro", y nada más.
+
+    El cuerpo vive en `grn_bronce/operones.py`: el bronce expande con esta
+    misma regla y una segunda copia acabaría divergiendo.
     """
-    miembros = set(operones.get(clave(nombre), []))
-    miembros.discard(clave(nombre))
-    return frozenset(miembros)
+    return _operones.miembros_de_tabla(nombre, operones)
 
 
 def miembros_laxos(nombre, operones):

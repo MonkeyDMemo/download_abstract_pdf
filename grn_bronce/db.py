@@ -153,6 +153,20 @@ def corrida_previa(con, metodo, version, corpus_id=None):
     return con.execute(sql + " ORDER BY id DESC LIMIT 1", params).fetchone()
 
 
+def ultima_corrida(con, paso="1"):
+    """El id de la ultima corrida terminada bien de ese paso, o None.
+
+    Vive aqui porque el SQL vive aqui: `cli.py` la llamaba con su propio
+    `con.execute()`, que es justo lo que la regla de capas prohibe. Mira solo
+    estatus 'ok' por el mismo motivo que `corrida_previa()`: una corrida
+    cortada con Ctrl-C queda en 'corriendo' para siempre y nadie la limpia.
+    """
+    fila = con.execute(
+        """SELECT id FROM corridas WHERE paso = ? AND estatus = 'ok'
+            ORDER BY id DESC LIMIT 1""", (paso,)).fetchone()
+    return fila["id"] if fila else None
+
+
 def listar_corridas(con, limite=20):
     return con.execute(
         "SELECT * FROM corridas ORDER BY id DESC LIMIT ?", (limite,)).fetchall()
@@ -344,6 +358,66 @@ def pares_candidatos(con, corrida_id):
     return con.execute(SQL_PARES, (corrida_id,)).fetchall()
 
 
+SQL_OPERONES = """
+SELECT m.id_normalizado        AS operon,
+       COUNT(*)                AS n_menciones,
+       COUNT(DISTINCT u.pmid)  AS n_documentos,
+       COUNT(DISTINCT u.id)    AS n_oraciones
+  FROM menciones m
+  JOIN texto_unidades u ON u.id = m.unidad_id
+ WHERE m.corrida_id = ? AND m.tipo = 'operon'
+ GROUP BY m.id_normalizado
+ ORDER BY n_menciones DESC, operon
+"""
+
+SQL_OPERONES_SUPERFICIES = """
+SELECT id_normalizado AS operon, texto, COUNT(*) AS n
+  FROM menciones
+ WHERE corrida_id = ? AND tipo = 'operon'
+ GROUP BY id_normalizado, texto
+ ORDER BY n DESC
+"""
+
+SQL_OPERONES_EN_CANDIDATAS = """
+SELECT m.id_normalizado AS operon, COUNT(DISTINCT c.unidad_id) AS n_candidatas
+  FROM menciones m
+  JOIN oraciones_candidatas c ON c.unidad_id = m.unidad_id
+ WHERE m.corrida_id = ? AND m.tipo = 'operon'
+ GROUP BY m.id_normalizado
+"""
+
+
+def operones_del_corpus(con, corrida_id):
+    """Los operones que el corpus nombra, con su respaldo. Tres consultas.
+
+    Tres y no una con dos JOIN: unir `texto_unidades` y `oraciones_candidatas`
+    en la misma agregacion multiplica las filas antes de contarlas, y los
+    `COUNT(*)` saldrian inflados por el producto. Separadas, cada conteo mide
+    sobre su propia tabla y se juntan por clave en Python.
+
+    Lo que NO decide esta funcion es si el operon esta en el catalogo: eso lo
+    sabe `operones.Catalogo`, y mezclarlo aqui metaria SQL y recurso en el
+    mismo sitio. La base dice que se menciono; el catalogo dice que se conoce.
+    """
+    superficies = {}
+    for f in con.execute(SQL_OPERONES_SUPERFICIES, (corrida_id,)):
+        superficies.setdefault(f["operon"], []).append(f["texto"])
+    candidatas = dict(
+        (f["operon"], f["n_candidatas"])
+        for f in con.execute(SQL_OPERONES_EN_CANDIDATAS, (corrida_id,)))
+    salida = []
+    for f in con.execute(SQL_OPERONES, (corrida_id,)):
+        salida.append({
+            "operon": f["operon"],
+            "n_menciones": f["n_menciones"],
+            "n_documentos": f["n_documentos"],
+            "n_oraciones": f["n_oraciones"],
+            "n_candidatas": candidatas.get(f["operon"], 0),
+            "superficies": ";".join(superficies.get(f["operon"], [])),
+        })
+    return salida
+
+
 def conteos_de(con, corrida_id):
     """Los numeros de la hoja resumen, contados en la base y no en memoria."""
     def uno(sql, params=()):
@@ -371,18 +445,42 @@ def conteos_de(con, corrida_id):
         "menciones": uno("SELECT COUNT(*) FROM menciones WHERE corrida_id=?",
                          (corrida_id,)),
         "por_tipo": por_tipo,
+        # `operon` entra en los tres conteos de gen a proposito. Antes de que
+        # las menciones de operon tuvieran tipo propio caian en 'gen' o
+        # 'proteina' segun su mayuscula inicial, asi que ya estaban dentro:
+        # dejarlas fuera ahora bajaria la tasa de normalizacion sin que nada
+        # hubiera empeorado, y la cifra publicada dejaria de ser comparable.
+        # Son 7 136 menciones sobre 166 539, el 4.3 %.
         "genes_distintos": uno(
             """SELECT COUNT(DISTINCT texto) FROM menciones
-                WHERE corrida_id=? AND tipo IN ('gen','proteina')""",
+                WHERE corrida_id=? AND tipo IN ('gen','proteina','operon')""",
             (corrida_id,)),
+        # GLOB y no LIKE. En SQLite `LIKE` no distingue mayusculas para ASCII
+        # y nadie activa `PRAGMA case_sensitive_like`, asi que `LIKE 'PA%'`
+        # casaba tambien con los nombres de operon que empiezan por `pa`
+        # minuscula --`parRS`, `panBC`, `panBCD`, `panCD`, `pabC-mltG`-- y los
+        # contaba como normalizados a locus tag sin serlo. Medido: 78 menciones
+        # de `parRS`; la tasa pasa de 95.12 % a 95.07 %, que redondea al mismo
+        # 95.1 % publicado. `GLOB` si distingue, y asi la metrica de la base
+        # coincide con la columna `genes_locus_tag` del CSV, que filtra con el
+        # `startswith("PA")` de Python. Antes decian cosas distintas del mismo
+        # id.
         "genes_normalizados": uno(
             """SELECT COUNT(*) FROM menciones
-                WHERE corrida_id=? AND tipo IN ('gen','proteina')
-                  AND id_normalizado LIKE 'PA%'""", (corrida_id,)),
+                WHERE corrida_id=? AND tipo IN ('gen','proteina','operon')
+                  AND id_normalizado GLOB 'PA*'""", (corrida_id,)),
         "genes_totales": uno(
             """SELECT COUNT(*) FROM menciones
-                WHERE corrida_id=? AND tipo IN ('gen','proteina')""",
+                WHERE corrida_id=? AND tipo IN ('gen','proteina','operon')""",
             (corrida_id,)),
+        "operones_distintos": uno(
+            """SELECT COUNT(DISTINCT id_normalizado) FROM menciones
+                WHERE corrida_id=? AND tipo='operon'""", (corrida_id,)),
+        "candidatas_con_operon": uno(
+            """SELECT COUNT(DISTINCT c.unidad_id)
+                 FROM oraciones_candidatas c
+                 JOIN menciones m ON m.unidad_id = c.unidad_id
+                WHERE c.corrida_id=? AND m.tipo='operon'""", (corrida_id,)),
         "con_regulador": uno(
             """SELECT COUNT(*) FROM oraciones_candidatas
                 WHERE corrida_id=? AND regulador_candidato <> ''""",

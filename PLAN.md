@@ -16,7 +16,15 @@ Toda cifra debe declarar contra cuál se midió.
 
 ## 1. Acordado con el asesor
 
-### 1.1 De la reunión del 04-sep-2026
+### 1.1 De la reunión del 11-sep-2026
+
+- **Operones.** Cuando el texto dice que un regulador actúa sobre un operón (ej. "ambos operones pel y psl son directamente regulados por AmrZ"), la relación alcanza a todos los genes que ese operón contiene, no a uno solo. Acordado: agregar una columna de operón en el bronce, extraer el distinto de operones encontrados, y documentar los catálogos de operón → genes.
+- **El 44 % como línea base aceptada.** Se presentó como precisión de un sistema sin entrenar, juzgada a mano sobre 50 abstracts. El asesor lo aceptó en ese marco; se recalculará al conectar el clasificador.
+- **Conectar el bronce con la capa de evaluación (silver)** usando el BioBERT ya entrenado, ahora que existen la base de evaluación y la salida tabular.
+- **Pendiente heredado**: ampliar los catálogos de funciones biológicas y revisar las proteínas, que no avanzó esta semana.
+- **Nomenclatura**: la capa se llama **silver** en el repositorio. En la sesión se dijo "Silva"; se unifica en silver para no duplicar vocabulario.
+
+### 1.2 De la reunión del 04-sep-2026
 
 - **Dos niveles de fuerza en la relación.** Regulación directa fuerte (unión al promotor, activación, represión explícita) frente a influencia indirecta (over-expression, regulates, sobreexpresión, efecto biológico sin mecanismo). Los disparadores que ya se extraen son lo que permite la clasificación.
 - **Dos listas de disparadores**, una robusta de unión directa y otra experimental/indirecta, en lugar de una sola lista.
@@ -28,7 +36,7 @@ Toda cifra debe declarar contra cuál se midió.
 - **Catálogos actualizables por retroalimentación**, en base de datos, por organismo.
 - **Visión de actualización recurrente**: rehacer la búsqueda periódicamente, versionar por fecha, medir qué interacciones son nuevas.
 
-### 1.2 De acuerdos previos vigentes
+### 1.3 De acuerdos previos vigentes
 
 - El paso 1 entrega el *dónde*, no el *sí*. Existencia y signo se deciden en el paso 2.
 - El bronce se construye solo desde el texto. La base curada entra en pasos 2 y 3, nunca en la extracción.
@@ -124,6 +132,10 @@ La regla b) mide si el paso 1 recupera la evidencia citada; la a) mide lo que el
 | 7 | Columna `tipo_efecto` (directo / indirecto / pasivo) en `oraciones_candidatas` | Eje distinto de `tipo_relacion`, que es del paso 2 |
 | 8 | Reorganizar `recursos/` en `organismo/` y `estandar/`; mover a recursos el patrón de organismo, hoy en `vocabulario.py` | Decidir dónde va `palabras_comunes.txt` |
 | 9 | Vía del bronce que produzca la clasificación de fuerza antes de la validación | No existe ni como rama de git ni como vía del pipeline |
+| 31 | Columna de operón en la salida del bronce, con el distinto de operones encontrados | **Hecho** (17-sep, corrida 2): 7 136 menciones de operón, 363 operones distintos, 3 603 candidatas afectadas (12.1 %), 393 con operón como blanco. Expansión única en `grn_bronce/operones.py`; `etapa2/evaluar_oro.py` delega ahí. El bronce guarda la mención del operón y su expansión a genes por separado |
+| 32 | Ampliar catálogos de funciones biológicas y revisar las proteínas | Pendiente heredado de la reunión del 04-sep; no avanzó |
+| 33 | Conectar el bronce con la capa silver usando el BioBERT entrenado | Depende de que el paso 1 tenga métricas — ya las tiene |
+| 34 | Completar `operones_pao1.tsv` con los 103 operones del corpus ausentes del catálogo | 447 menciones; los mayores: cyaAB, exoSTY, rsmZY, phzMS, lasRI, sodAB. Listado completo en `salidas/operones_corrida2_20260917.csv`. Es el trabajo de catálogo que pidió el asesor |
 
 ### 3.3 Cruce contra la base curada — parcialmente resuelto
 
