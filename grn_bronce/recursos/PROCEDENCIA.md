@@ -176,6 +176,62 @@ presencia en el corpus, asi que medir "cuantos terminos no aparecen" solo
 confirma el filtro. Para medir si un termino *sirve* hace falta otra cosa: por
 ejemplo, si aparece solo en oraciones sin par de genes.
 
+## `virulence`, partida en tres el 17 de septiembre de 2026
+
+La categoria `virulence` juntaba cosas que se comportan distinto, y medirla
+entera escondia esa diferencia. Sobre la corrida 3, de las 1 417 candidatas que
+la activaban, el 53.5 % lo hacia solo por cuatro terminos y el 46.5 % por algo
+concreto. Se parte en tres, que es donde estaba el corte de verdad:
+
+| categoria | que es | terminos |
+|---|---|---|
+| `virulence_molecule` | moleculas medibles: se cuantifican en un ensayo | 9 |
+| `virulence_phenotype` | fenotipos de ensayo: se observan, no se pesan | 8 |
+| `virulence_general` | etiquetas de resumen del articulo | 4 |
+
+**`virulence_general` no discrimina, y hay que decirlo donde se lee.** Sus
+cuatro terminos --`pathogenicity`, `pathogenesis`, `virulence factor`,
+`virulence gene`-- son como el articulo resume, no lo que mide: **222
+candidatas se activan solo por ellos**, sin ninguna otra funcion que las
+acompane. Sirve como **senal debil** --dice que la oracion habla de virulencia
+en general-- y **no como atributo de nodo**: que una oracion diga
+"pathogenicity" no dice nada del gen que nombra. Usarla como si fuera un
+atributo pondria la misma etiqueta a todo gen que aparezca cerca de la palabra.
+
+`acute infection` y `chronic infection` salieron de aqui: son el escenario
+clinico, no el mecanismo. Viven ahora en `infection_type`.
+
+## `infection_type` — 38 terminos
+
+El eje agudo-cronico y los escenarios clinicos. Se midio antes de decidir si
+merecia categoria propia: con solo `acute infection` y `chronic infection` eran
+**68 candidatas de 29 659, el 0.23 %**, que no da para medir nada. Se amplio con
+36 terminos de tipo y sitio de infeccion, todos contados contra el corpus antes
+de entrar; tres candidatos se descartaron por no aparecer nunca (`eye
+infection`, `catheter-associated infection`, `community-acquired infection`), y
+se dejaron fuera `wound healing`, `gut colonization` e `intestinal
+colonization`, que aparecen pero son procesos y no tipos de infeccion.
+
+Incluye variantes de grafia que la normalizacion no cubre porque son palabras
+distintas: `bacteremia`/`bacteraemia`, y las formas cortas del entorno de
+fibrosis quistica que el corpus usa de verdad (`cf patients`, `cf lung`,
+`cf airway`).
+
+**Resultado de la ampliacion, y la decision que cierra: senal debil.** Con los
+38 terminos, `infection_type` llega a **216 candidatas de 29 659, el 0.73 %**.
+Amplio la cobertura por un factor de tres --eran 68 con solo `acute infection`
+y `chronic infection`-- y aun asi **no llega al 1 %**, que era el umbral
+acordado para darle mas trabajo. Se queda como esta y no se amplia mas.
+
+La asimetria entre sus **4 668 menciones (el 9.1 % de las de funcion)** y sus
+216 candidatas es la explicacion, y conviene entenderla antes de volver a
+tocarla: `cystic fibrosis` y compania aparecen sobre todo en el resumen y la
+introduccion, donde se describe el contexto clinico, y esas oraciones casi
+nunca traen dos genes distintos, que es lo que exige una candidata. **El tipo
+de infeccion se enuncia donde no hay relacion que extraer.** Por eso, si el
+eje agudo-cronico llega a hacer falta, el sitio no es una categoria del bronce
+sino una condicion a nivel de documento en el paso 2.
+
 ## `contexto_regulatorio.csv` — 26 terminos
 
 **Salio de `funciones_semilla.csv` el 17 de septiembre de 2026**, con las

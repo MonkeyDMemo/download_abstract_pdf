@@ -51,7 +51,12 @@ from grn_bronce import vocabulario as _vocab      # noqa: E402
 #           contexto regulatorio, con tipo propio; y el emparejamiento del
 #           vocabulario normaliza mayusculas y guiones, asi que aparecen
 #           menciones que antes no salian y categorias que antes salian vacias.
-VERSION = "3"
+#   3 -> 4  `virulence` se parte en `virulence_molecule`,
+#           `virulence_phenotype` y `virulence_general`; el escenario clinico
+#           sale a `infection_type`, ampliado con 36 terminos contados contra
+#           el corpus. La categoria de una mencion cambia sin que cambie el
+#           texto, asi que las dos corridas no son comparables por categoria.
+VERSION = "4"
 METODO = "baseline-deterministico"
 
 # Una oracion mas corta que esto casi nunca es prosa; mas larga suele ser una

@@ -11,6 +11,7 @@ medidas sobre otro vocabulario.
     python -m unittest discover .
 """
 
+import collections
 import csv
 import hashlib
 import io
@@ -211,7 +212,7 @@ class PruebasNormalizacion(unittest.TestCase):
             salida = self.v.funciones_en(texto)
 
             self.assertEqual(len(salida), 1, texto)
-            self.assertEqual(salida[0][3], "virulence", texto)
+            self.assertEqual(salida[0][3], "virulence_molecule", texto)
 
     def test_ninguna_mencion_sale_con_categoria_vacia(self):
         """La forma general del defecto: si un termino del catalogo emparejo,
@@ -250,6 +251,45 @@ class PruebasNormalizacion(unittest.TestCase):
 
             self.assertEqual(repetidas, [],
                              "%s repite tras normalizar: %s" % (nombre, repetidas))
+
+
+class PruebasCorteDeVirulencia(unittest.TestCase):
+    """`virulence` se partio en tres porque juntaba cosas que se comportan
+    distinto: moleculas que se cuantifican, fenotipos que se observan y
+    etiquetas con las que el articulo resume."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.v = V.Vocabulario.cargar()
+
+    def test_virulence_ya_no_existe_como_categoria_unica(self):
+        self.assertNotIn("virulence", set(self.v.funciones.values()))
+
+    def test_las_tres_categorias_existen_y_no_se_solapan(self):
+        cats = collections.Counter(self.v.funciones.values())
+
+        for c in ("virulence_molecule", "virulence_phenotype",
+                  "virulence_general"):
+            self.assertTrue(cats[c], "falta la categoria %s" % c)
+
+    def test_cada_termino_cae_donde_le_toca(self):
+        for texto, esperada in (
+                ("Pyocyanin production increased.", "virulence_molecule"),
+                ("Cytotoxicity was measured.", "virulence_phenotype"),
+                ("The pathogenicity of the strain.", "virulence_general"),
+                ("Isolated from cystic fibrosis patients.", "infection_type")):
+            salida = self.v.funciones_en(texto)
+
+            self.assertTrue(salida, texto)
+            self.assertEqual(salida[0][3], esperada, texto)
+
+    def test_el_tipo_de_infeccion_salio_de_virulencia(self):
+        """`acute infection` y `chronic infection` son escenario clinico, no
+        mecanismo: dejaron de contar como virulencia."""
+        for texto in ("Seen in acute infection.", "Seen in chronic infection."):
+            salida = self.v.funciones_en(texto)
+
+            self.assertEqual(salida[0][3], "infection_type", texto)
 
 
 class PruebasContextoRegulatorio(unittest.TestCase):
