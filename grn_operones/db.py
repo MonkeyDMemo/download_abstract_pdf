@@ -83,10 +83,21 @@ CREATE TABLE IF NOT EXISTS operones_extracciones (
 -- Un archivo traido en una corrida, con su procedencia. Sin url, bytes y
 -- huella, un archivo en disco es un archivo que alguien dejo ahi.
 --
--- La clave es `(extraccion_id, sha256)`: dentro de una corrida los mismos
--- bytes son el mismo archivo. Entre corridas distintas se registran dos
--- veces a proposito, porque cada extraccion es una foto y lo que importa de
--- un archivo es en que foto salio.
+-- La clave es `(extraccion_id, url)`: **cada URL se registra una vez por
+-- corrida**, y el `sha256` es un atributo, no parte de la identidad.
+--
+-- Identificar por contenido se tragaba URLs. Si dos peticiones distintas de
+-- la misma corrida devuelven bytes identicos --en ODB pasa: una pagina fuera
+-- de rango devuelve la plantilla vacia, o el servidor repite la ultima
+-- valida-- la segunda caia por `DO NOTHING` y su URL desaparecia del
+-- registro, con lo que no habia forma de saber que se habia pedido. Con la
+-- clave por URL, los contenidos repetidos quedan **visibles** en vez de
+-- absorbidos, y detectarlos es una consulta: `GROUP BY sha256 HAVING
+-- COUNT(*) > 1`.
+--
+-- Entre corridas distintas la misma URL se registra otra vez a proposito:
+-- cada extraccion es una foto y lo que importa de un archivo es en que foto
+-- salio.
 CREATE TABLE IF NOT EXISTS operones_descargas (
     id            INTEGER PRIMARY KEY,
     extraccion_id INTEGER NOT NULL REFERENCES operones_extracciones(id),
@@ -96,7 +107,7 @@ CREATE TABLE IF NOT EXISTS operones_descargas (
     sha256        TEXT NOT NULL,
     descargado_en TEXT NOT NULL,
     nota          TEXT,
-    UNIQUE (extraccion_id, sha256)
+    UNIQUE (extraccion_id, url)
 );
 
 -- Lo que la fuente dijo en esa descarga, partido en campos y sin interpretar.
@@ -183,20 +194,34 @@ def _migrar(con):
         (f["name"], f["sql"] or "") for f in con.execute(
             """SELECT name, sql FROM sqlite_master
                 WHERE type='table' AND name LIKE 'operones_%'"""))
-    vieja = ("operones_descargas" in tablas
-             and "extraccion_id" not in tablas["operones_descargas"])
-    if not vieja:
+    if "operones_descargas" not in tablas:
         return
-    for t in ("operones_bronze", "operones_descargas"):
+
+    # Se comprueba la forma ESPERADA, no las formas viejas conocidas. Mirar
+    # solo si falta `extraccion_id` dejaba pasar la version intermedia, cuya
+    # clave era `(extraccion_id, sha256)`: el `CREATE TABLE IF NOT EXISTS` no
+    # la tocaba y el `ON CONFLICT(extraccion_id, url)` reventaba en la primera
+    # descarga real. Enumerar defectos conocidos siempre deja fuera el
+    # siguiente; comprobar lo que se espera, no.
+    esperado = "UNIQUE (extraccion_id, url)"
+    if esperado in tablas["operones_descargas"]:
+        return
+
+    afectadas = ("operones_bronze", "operones_descargas",
+                 "operones_extracciones")
+    for t in afectadas:
+        if t not in tablas:
+            continue
         n = con.execute("SELECT COUNT(*) FROM %s" % t).fetchone()[0]
         if n:
             raise ErrorBase(
-                "%s tiene %d filas con el esquema anterior. La migracion a "
-                "operones_extracciones no se hace sola con datos dentro: "
-                "exporta, vacia y vuelve a extraer." % (t, n))
+                "%s tiene %d filas con un esquema anterior. La migracion no "
+                "se hace sola con datos dentro: exporta lo que valga, vacia "
+                "las tablas operones_* y vuelve a extraer." % (t, n))
     with con:
-        con.execute("DROP TABLE IF EXISTS operones_bronze")
-        con.execute("DROP TABLE IF EXISTS operones_descargas")
+        # En orden inverso a las llaves foraneas.
+        for t in afectadas:
+            con.execute("DROP TABLE IF EXISTS %s" % t)
 
 
 def conectar(ruta="datos/grn.db"):
@@ -259,23 +284,38 @@ def extracciones_de(con, fuente=None, limite=50):
 def registrar_descarga(con, extraccion_id, url, ruta, cuerpo, nota=None):
     """Anota un archivo de esta corrida y devuelve su id.
 
-    Idempotente por `(extraccion_id, sha256)`: reintentar la misma pagina
-    dentro de la misma corrida no duplica. La fuente no se pasa ni se guarda:
-    es la de la extraccion.
+    Idempotente por `(extraccion_id, url)`: reintentar la misma peticion
+    dentro de la misma corrida no duplica, y **dos URLs distintas con el mismo
+    contenido se registran las dos**. La fuente no se pasa ni se guarda: es la
+    de la extraccion.
     """
-    sha = huella(cuerpo)
     con.execute(
         """INSERT INTO operones_descargas
              (extraccion_id, url, ruta, bytes, sha256, descargado_en, nota)
            VALUES (?,?,?,?,?,?,?)
-           ON CONFLICT(extraccion_id, sha256) DO NOTHING""",
-        (extraccion_id, url, ruta, len(cuerpo), sha, ahora(), nota))
+           ON CONFLICT(extraccion_id, url) DO NOTHING""",
+        (extraccion_id, url, ruta, len(cuerpo), huella(cuerpo), ahora(), nota))
     con.commit()
     fila = con.execute(
         """SELECT id FROM operones_descargas
-            WHERE extraccion_id = ? AND sha256 = ?""",
-        (extraccion_id, sha)).fetchone()
+            WHERE extraccion_id = ? AND url = ?""",
+        (extraccion_id, url)).fetchone()
     return fila["id"] if fila else None
+
+
+def contenidos_repetidos(con, extraccion_id):
+    """[(sha256, [urls])] de los archivos que llegaron identicos en la corrida.
+
+    Antes esto era invisible: la clave por contenido descartaba la segunda URL
+    y no quedaba rastro de que se habia pedido. Sirve para reconocer la
+    plantilla vacia con la que ODB contesta a una pagina fuera de rango.
+    """
+    salida = {}
+    for f in con.execute(
+            """SELECT sha256, url FROM operones_descargas
+                WHERE extraccion_id = ? ORDER BY id""", (extraccion_id,)):
+        salida.setdefault(f["sha256"], []).append(f["url"])
+    return [(s, u) for s, u in salida.items() if len(u) > 1]
 
 
 SQL_DESCARGAS = """
@@ -392,6 +432,32 @@ def ultima_extraccion_completa(con):
     """{fuente: extraccion_id}. Sin entrada para una fuente sin foto buena."""
     return dict((f["fuente"], f["extraccion_id"])
                 for f in con.execute(SQL_ULTIMA_COMPLETA))
+
+
+def edad_de_la_foto(con):
+    """{fuente: {extraccion_id, fecha, incompletas_despues}} de la foto curada.
+
+    Que una corrida incompleta conserve la foto anterior es lo correcto, pero
+    tiene un modo de fallo lento: si las extracciones fallan varias veces
+    seguidas, se cura una foto vieja **indefinidamente y sin ruido**, porque
+    todo sigue funcionando. `incompletas_despues` es lo que lo delata: un
+    numero que sube corrida tras corrida mientras la fecha no se mueve.
+    """
+    salida = {}
+    for f in con.execute(SQL_ULTIMA_COMPLETA):
+        fila = con.execute(
+            "SELECT fin, inicio FROM operones_extracciones WHERE id = ?",
+            (f["extraccion_id"],)).fetchone()
+        fallidas = con.execute(
+            """SELECT COUNT(*) FROM operones_extracciones
+                WHERE fuente = ? AND id > ? AND completa = 0""",
+            (f["fuente"], f["extraccion_id"])).fetchone()[0]
+        salida[f["fuente"]] = {
+            "extraccion_id": f["extraccion_id"],
+            "fecha": (fila["fin"] or fila["inicio"]) if fila else None,
+            "incompletas_despues": fallidas,
+        }
+    return salida
 
 
 def fuentes_sin_foto(con):

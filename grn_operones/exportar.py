@@ -16,7 +16,7 @@ import io
 import os
 
 COLUMNAS_SILVER = [
-    "clave_genes", "locus_tags", "n_genes", "cadena", "nivel_evidencia",
+    "clave_genes", "nombre", "locus_tags", "n_genes", "cadena", "nivel_evidencia",
     "n_fuentes", "fuentes", "pmids", "adyacente", "es_alternativa",
     "promotor_cdbprom", "revisar", "curado_en",
 ]
@@ -47,6 +47,7 @@ def filas_silver(con, db):
     for s in db.silver_de(con):
         filas.append({
             "clave_genes": s["clave_genes"],
+            "nombre": s["nombre"] or "",
             "locus_tags": s["locus_tags"],
             "n_genes": s["n_genes"],
             "cadena": s["cadena"] or "",
@@ -73,6 +74,7 @@ def filas_conflictos(con, db):
             continue
         filas.append({
             "clave_genes": s["clave_genes"],
+            "nombre": s["nombre"] or "",
             "locus_tags": s["locus_tags"],
             "n_genes": s["n_genes"],
             "motivo": "; ".join(MOTIVOS.get(m, m) for m in marcas),

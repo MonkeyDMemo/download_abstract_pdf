@@ -188,15 +188,32 @@ class PruebasInspeccionar(unittest.TestCase):
         self.assertEqual(F.inspeccionar(b"<html><body>x</body></html>")["tipo"],
                          "html")
 
-    def test_delata_una_pagina_renderizada_por_javascript(self):
-        """Tabla con encabezado y sin filas de datos: el esqueleto llego y el
-        contenido lo carga el navegador. Es el caso que hay que reconocer
-        antes de escribir un parser que devolveria cero filas."""
+    def test_delata_el_esqueleto_de_una_aplicacion_javascript(self):
+        """El caso REAL de ODB v4, comprobado el 18-sep-2026: 689 bytes con un
+        div vacio y un script, sin NINGUNA tabla.
+
+        La primera version de la heuristica exigia `tablas > 0` y se le
+        escapaba justo esto, que es el caso que vino a detectar: suponia que
+        el sitio al menos intenta renderizar algo en el servidor.
+        """
+        shell = (b"<!DOCTYPE html><html><head><title>Operon database v4"
+                 b"</title></head><body><div id=\"app\"></div>"
+                 b"<script src=\"/assets/js/index.js\"></script></body></html>")
+
+        d = F.inspeccionar(shell)
+
+        self.assertTrue(d["parece_render_js"])
+        self.assertTrue(d["sin_datos"])
+        self.assertEqual(d["tablas"], 0)
+
+    def test_una_tabla_con_encabezado_y_sin_filas_es_sin_datos(self):
+        """No es necesariamente render por JavaScript --puede ser una busqueda
+        sin resultados-- pero tampoco trae nada que parsear."""
         html = b"<html><table><tr><th>Operon</th></tr></table></html>"
 
         d = F.inspeccionar(html)
 
-        self.assertTrue(d["parece_render_js"])
+        self.assertTrue(d["sin_datos"])
         self.assertEqual(d["locus_tags_visibles"], 0)
 
     def test_una_tabla_con_datos_no_se_confunde_con_un_esqueleto(self):
@@ -241,11 +258,14 @@ class PruebasParserBioCyc(unittest.TestCase):
                           "los frameid no son nombres de gen")
 
     def test_los_parsers_que_faltan_fallan_diciendo_que_llego(self):
-        """Un parser a ciegas devolveria cero filas y pareceria correcto."""
-        with self.assertRaises(F.FormatoDesconocido) as ctx:
-            F.parsear_odb(b"<html><table><tr><th>x</th></tr></table></html>")
+        """Un parser a ciegas devolveria cero filas y pareceria correcto.
 
-        self.assertIn("render", str(ctx.exception).lower())
+        PGD y CDBProm siguen sin formato conocido; ODB ya no, porque su
+        volcado real se vio el 18-sep-2026."""
+        with self.assertRaises(F.FormatoDesconocido) as ctx:
+            F.parsear_tabular(b"no hay locus tags aqui", "pgd")
+
+        self.assertIn("pgd", str(ctx.exception).lower())
 
 
 class PruebasIdempotencia(unittest.TestCase):
@@ -270,12 +290,32 @@ class PruebasIdempotencia(unittest.TestCase):
         self.assertEqual(a, b)
         self.assertEqual(len(D.descargas_de(self.con, "odb")), 1)
 
-    def test_bytes_distintos_son_otro_archivo(self):
+    def test_dos_urls_con_el_mismo_contenido_se_registran_las_dos(self):
+        """Identificar por contenido se tragaba URLs. En ODB pasa: una pagina
+        fuera de rango devuelve la plantilla vacia, o el servidor repite la
+        ultima valida, y no quedaba rastro de que se habia pedido."""
         eid = D.abrir_extraccion(self.con, "odb")
-        D.registrar_descarga(self.con, eid, "u", "r", b"XYZ")
-        D.registrar_descarga(self.con, eid, "u", "r", b"OTRO")
+        D.registrar_descarga(self.con, eid, "p=1", "r1", b"IGUAL")
+        D.registrar_descarga(self.con, eid, "p=2", "r2", b"IGUAL")
 
-        self.assertEqual(len(D.descargas_de(self.con, "odb")), 2)
+        descargas = D.descargas_de(self.con, "odb")
+
+        self.assertEqual(len(descargas), 2)
+        self.assertEqual(sorted(d["url"] for d in descargas), ["p=1", "p=2"])
+
+    def test_los_contenidos_repetidos_se_pueden_consultar(self):
+        """Visibles en vez de absorbidos: es lo que permite reconocer la
+        plantilla vacia del final de la paginacion."""
+        eid = D.abrir_extraccion(self.con, "odb")
+        D.registrar_descarga(self.con, eid, "p=1", "r1", b"DATOS")
+        D.registrar_descarga(self.con, eid, "p=2", "r2", b"VACIA")
+        D.registrar_descarga(self.con, eid, "p=3", "r3", b"VACIA")
+
+        repetidos = D.contenidos_repetidos(self.con, eid)
+
+        self.assertEqual(len(repetidos), 1)
+        _sha, urls = repetidos[0]
+        self.assertEqual(sorted(urls), ["p=2", "p=3"])
 
     def test_el_mismo_archivo_en_otra_corrida_se_registra_aparte(self):
         """Cada extraccion es una foto, y lo que importa de un archivo es en
@@ -359,6 +399,30 @@ class PruebasIdempotencia(unittest.TestCase):
                          "no se retiro nada: no hay con que comparar")
         self.assertEqual(len(D.bronze_de(self.con, "odb")), 1,
                          "el crudo si se conserva; lo que no se cura")
+
+    def test_la_edad_de_la_foto_cuenta_las_corridas_fallidas_despues(self):
+        """El modo de fallo lento: si las extracciones fallan varias veces
+        seguidas se cura una foto vieja indefinidamente y sin ruido, porque
+        todo sigue funcionando. El contador es lo que lo delata."""
+        _e1, d1 = self._corrida("odb", b"BUENA")
+        D.guardar_bronze(self.con, [
+            _fila("odb", "a", "PA0425|PA0426", descarga_id=d1)])
+        self._corrida("odb", b"FALLO1", completa=False)
+        self._corrida("odb", b"FALLO2", completa=False)
+
+        edad = D.edad_de_la_foto(self.con)
+
+        self.assertEqual(edad["odb"]["extraccion_id"], _e1)
+        self.assertEqual(edad["odb"]["incompletas_despues"], 2)
+        self.assertTrue(edad["odb"]["fecha"])
+
+    def test_sin_corridas_fallidas_el_contador_es_cero(self):
+        _e1, d1 = self._corrida("odb", b"BUENA")
+        D.guardar_bronze(self.con, [
+            _fila("odb", "a", "PA0425|PA0426", descarga_id=d1)])
+
+        self.assertEqual(
+            D.edad_de_la_foto(self.con)["odb"]["incompletas_despues"], 0)
 
     def test_una_fuente_con_foto_no_aparece_como_sin_foto(self):
         _eid, did = self._corrida("odb", b"BUENA")

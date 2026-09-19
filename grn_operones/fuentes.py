@@ -48,7 +48,18 @@ GENOMA = "NC_002516.2"
 
 FUENTES = ("odb", "biocyc", "pgd", "cdbprom")
 
-URL_ODB = "https://operondb.jp/known"
+# El volcado de texto plano que el propio sitio ofrece en la pagina de la
+# tabla ("Download Known Operons (Plain text)"). Es UNA peticion en vez de
+# paginar, y es la via que el sitio quiere que se use.
+#
+# La paginacion HTML que se intento primero no sirve, y la razon merece
+# quedar escrita: **ODB v4 es una aplicacion de JavaScript**. `GET /known`
+# devuelve 689 bytes de esqueleto --`<div id="app"></div>` mas un `<script>`--
+# sin un solo dato, y cualquier ruta del sitio devuelve ese mismo esqueleto,
+# `robots.txt` incluido. Un parser sobre ese HTML habria devuelto cero filas
+# para siempre. Comprobado el 18 de septiembre de 2026.
+URL_ODB = "https://operondb.jp/download/known_operon.download.txt"
+URL_ODB_TABLA = "https://operondb.jp/known"
 URL_BIOCYC_LOGIN = "https://websvc.biocyc.org/credentials/login/"
 URL_BIOCYC_QUERY = "https://websvc.biocyc.org/xmlquery"
 
@@ -119,6 +130,9 @@ class _Tablas(HTMLParser):
         self.tablas = 0
         self.filas = 0
         self.celdas = 0
+        self.scripts = 0
+        self.divs = 0
+        self.texto = 0
 
     def handle_starttag(self, tag, attrs):
         if tag == "table":
@@ -127,6 +141,14 @@ class _Tablas(HTMLParser):
             self.filas += 1
         elif tag in ("td", "th"):
             self.celdas += 1
+        elif tag == "script":
+            self.scripts += 1
+        elif tag == "div":
+            self.divs += 1
+
+    def handle_data(self, datos):
+        if datos.strip():
+            self.texto += len(datos.strip())
 
 
 def inspeccionar(cuerpo):
@@ -159,11 +181,18 @@ def inspeccionar(cuerpo):
     if "<html" in recorte.lower() or "<!doctype html" in recorte.lower():
         p = _Tablas()
         p.feed(texto)
-        d.update(tipo="html", tablas=p.tablas, filas=p.filas, celdas=p.celdas)
-        # Una pagina con tablas pero sin filas de datos es la firma de un
-        # render por JavaScript: el esqueleto llega y el contenido no.
-        d["parece_render_js"] = p.tablas > 0 and p.filas <= 1
+        d.update(tipo="html", tablas=p.tablas, filas=p.filas,
+                 celdas=p.celdas, scripts=p.scripts,
+                 texto_visible=p.texto)
         d["locus_tags_visibles"] = len(set(LOCUS.findall(texto)))
+        # HTML que no lleva datos, en sus dos formas. La primera version de
+        # esto exigia `tablas > 0` y se le escapo el caso real: ODB v4 es una
+        # aplicacion de JavaScript y su esqueleto no tiene NINGUNA tabla, solo
+        # un `<div id="app">` vacio y un `<script>`. Exigir tabla era suponer
+        # que el sitio al menos intenta renderizar algo en el servidor.
+        d["sin_datos"] = (not d["locus_tags_visibles"] and p.filas <= 1)
+        d["parece_render_js"] = bool(
+            d["sin_datos"] and p.scripts and p.texto < 200)
         return d
     lineas = [l for l in texto.splitlines() if l.strip()]
     d["tipo"] = "texto"
@@ -177,50 +206,90 @@ def inspeccionar(cuerpo):
 
 # --------------------------------------------------------------------- ODB
 
-def traer_odb(sesion, carpeta, max_paginas=500, log=lambda m: None):
-    """Descarga las paginas de operones conocidos. Devuelve [(url, ruta, bytes)].
+def traer_odb(sesion, carpeta, max_paginas=None, log=lambda m: None):
+    """Trae el volcado completo de operones conocidos. Una sola peticion.
 
-    Para cuando una pagina repite a la anterior o viene vacia. Repetir es la
-    senal de que la paginacion se acabo y el servidor devuelve la ultima
-    pagina valida, que es lo que hacen varios sitios en vez de un 404.
+    `max_paginas` se conserva en la firma pero ya no se usa: la paginacion
+    HTML no da datos y la sustituye este volcado. Se deja para no romper a
+    quien llame con el argumento.
     """
-    salida = []
-    previo = None
-    for p in range(1, max_paginas + 1):
-        params = {"species": TAXID, "p": p}
-        cuerpo = sesion.pedir(URL_ODB, params=params)
-        if cuerpo is None:
-            log("  [odb] la fuente contesto que no en la pagina %d" % p)
-            break
-        if not cuerpo.strip() or cuerpo == previo:
-            log("  [odb] fin en la pagina %d" % (p - 1))
-            break
-        ruta = guardar_crudo(carpeta, "pagina_%04d.html" % p, cuerpo)
-        salida.append(("%s?species=%s&p=%d" % (URL_ODB, TAXID, p), ruta,
-                       cuerpo))
-        previo = cuerpo
-    return salida
+    cuerpo = sesion.pedir(URL_ODB, timeout=300)
+    if cuerpo is None:
+        log("  [odb] la fuente contesto que no")
+        return []
+    ruta = guardar_crudo(carpeta, "known_operon.download.txt", cuerpo)
+    log("  [odb] %s  (%d bytes)" % (ruta, len(cuerpo)))
+    return [(URL_ODB, ruta, cuerpo)]
 
 
-def parsear_odb(cuerpo):
-    """Operones de una pagina de ODB. Levanta si el HTML no trae datos.
+# Las seis columnas del volcado, comprobadas contra el archivo real del
+# 18-sep-2026: 9 480 filas, 33 de ellas del taxid de PAO1.
+COLUMNAS_ODB = ["koid", "org", "name", "op", "definition", "source"]
 
-    No se escribe a ciegas el mapeo de columnas: se comprueba primero que la
-    pagina traiga filas y locus tags, y si no, se dice exactamente que llego.
-    Ver la tarea 3 del encargo.
+
+def parsear_odb(cuerpo, taxid=TAXID):
+    """Los operones de PAO1 del volcado de ODB.
+
+    El archivo trae todos los organismos, asi que se filtra por `org`, que es
+    el taxid. `op` son los locus tags separados por coma --de PAO1 salen como
+    `PA3569,PA3570`-- y `source` es el PMID del articulo que sostiene el
+    operon, que es lo que hace de ODB la unica fuente con evidencia de
+    literatura directa.
+
+    Se exige el encabezado del contrato: si ODB cambia el formato, esto falla
+    en vez de leer columnas corridas en silencio.
     """
-    d = inspeccionar(cuerpo)
-    if d.get("tipo") != "html" or not d.get("locus_tags_visibles"):
+    texto = cuerpo.decode("utf-8", "replace")
+    lineas = [l for l in texto.splitlines() if l.strip()]
+    if not lineas:
+        raise FormatoDesconocido("odb: el volcado llego vacio")
+    cabecera = lineas[0].split("	")
+    if cabecera != COLUMNAS_ODB:
         raise FormatoDesconocido(
-            "ODB no devolvio una tabla con locus tags de PAO1. Lo que llego: "
-            "%s. Si `parece_render_js` es True, los datos los carga el "
-            "navegador y hay que buscar el endpoint JSON en DevTools."
-            % json.dumps(d, ensure_ascii=False, sort_keys=True))
-    raise FormatoDesconocido(
-        "ODB devolvio HTML con %d filas y %d locus tags, pero el mapeo de "
-        "columnas no esta escrito: hace falta ver una pagina real para saber "
-        "que columna es el operon y cual la lista de genes."
-        % (d.get("filas", 0), d.get("locus_tags_visibles", 0)))
+            "odb: encabezado %r; el contrato pide %r. El volcado cambio de "
+            "formato y el parseo se detiene en vez de leer columnas corridas."
+            % (cabecera, COLUMNAS_ODB))
+
+    filas = []
+    for linea in lineas[1:]:
+        partes = linea.split("	")
+        partes += [""] * (len(COLUMNAS_ODB) - len(partes))
+        d = dict(zip(COLUMNAS_ODB, partes))
+        if d["org"].strip() != taxid:
+            continue
+        genes = [g.strip() for g in d["op"].split(",") if g.strip()]
+        if not genes:
+            continue
+        crudo = {}
+        if d["name"].strip():
+            crudo["name"] = d["name"].strip()
+        if d["definition"].strip():
+            crudo["definition"] = d["definition"].strip()
+        filas.append({
+            "fuente": "odb",
+            "id_fuente": d["koid"].strip(),
+            # `genes_raw` queda vacio, como en BioCyc y por el mismo motivo:
+            # esta columna es para los nombres de GEN tal como los escribio la
+            # fuente, y ODB no da nombres de gen. Da locus tags en `op` y, en
+            # `name`, el nombre del OPERON (`mmsAB`, `mexAB-oprM`), que es una
+            # etiqueta y no una lista de genes. Ponerlo aqui hacia que la
+            # cobertura de mapeo diera 3.2 %, alarmante y falso: no hay nada
+            # que mapear porque el locus tag ya viene resuelto. El nombre va a
+            # `registro_raw` y de ahi lo toma la capa curada.
+            "genes_raw": None,
+            "locus_tags": "|".join(genes),
+            "cadena": None,
+            "tipo_evidencia": "literatura",
+            # ODB separa varios PMID con espacios; el resto del
+            # proyecto usa ";" y la capa curada parte por ese.
+            "pmid": ";".join(d["source"].split()) or None,
+            "registro_raw": crudo or None,
+        })
+    if not filas:
+        raise FormatoDesconocido(
+            "odb: el volcado tiene %d filas pero ninguna del taxid %s"
+            % (len(lineas) - 1, taxid))
+    return filas
 
 
 # ------------------------------------------------------------------ BioCyc

@@ -37,6 +37,7 @@ Solo biblioteca estandar.
 
 import collections
 import gzip
+import json
 import io
 import os
 import re
@@ -216,6 +217,28 @@ def nivel_de(filas):
         if any(c in ev for c in EVIDENCIA_CURADA):
             return "curado"
     return "predicho"
+
+
+def _nombre_de(filas):
+    """El nombre del operon segun la fuente, si alguna lo trae.
+
+    Vive en `registro_raw` porque es lo que la fuente dijo sin interpretar.
+    Se prefiere el mas corto entre los disponibles: cuando dos fuentes nombran
+    el mismo operon, la forma corta suele ser la canonica (`mmsAB` antes que
+    `mmsAB operon region`).
+    """
+    nombres = []
+    for f in filas:
+        crudo = f["registro_raw"]
+        if not crudo:
+            continue
+        try:
+            d = json.loads(crudo) if isinstance(crudo, str) else crudo
+        except ValueError:
+            continue
+        if isinstance(d, dict) and d.get("name"):
+            nombres.append(d["name"])
+    return sorted(nombres, key=len)[0] if nombres else None
 
 
 def clave_de(locus_tags):
@@ -398,7 +421,9 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
 
         _db.guardar_silver(con, {
             "clave_genes": clave,
-            "nombre": None,
+            # El nombre que la fuente le da al operon, si alguna lo da.
+            # ODB lo trae en `name` (`mmsAB`); BioCyc no.
+            "nombre": _nombre_de(filas),
             "locus_tags": "|".join(locus),
             "n_genes": len(locus),
             "cadena": hebra,
@@ -432,6 +457,11 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
     # indistinguible de una que no trajo nada, y piden acciones
     # distintas.
     resumen["sin_foto"] = _db.fuentes_sin_foto(con)
+    # De que fecha es la foto que se esta curando, y cuantas corridas
+    # fallaron despues. Si las extracciones fallan varias veces seguidas
+    # se cura una foto vieja indefinidamente y sin ruido, porque todo
+    # sigue funcionando; esto es lo que lo delata.
+    resumen["edad_foto"] = _db.edad_de_la_foto(con)
     resumen["ambiguos"] = sin_resolver_ambiguo
     # El tamano del diccionario de sinonimos, por la misma razon. Una prueba
     # que fallara al crecer castigaria la mejora y romperia CI por una buena

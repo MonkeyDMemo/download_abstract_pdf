@@ -97,8 +97,9 @@ def _informe_extraccion(informes):
         if i.get("error"):
             log("    sin parsear: %s" % i["error"])
         elif i["filas"]:
-            log("    %d filas al bronce (%d nuevas, %d actualizadas)"
-                % (i["filas"], i.get("nuevas", 0), i.get("actualizadas", 0)))
+            log("    %d filas al bronce (%d nuevas, %d ya estaban)"
+                % (i["filas"], i.get("insertadas", 0),
+                   i.get("ya_estaban", 0)))
     log("")
     log("  La descarga cruda se guarda aunque el parser no exista todavia:")
     log("  es justo lo que hace falta para escribirlo.")
@@ -137,6 +138,19 @@ def cmd_curar(args):
     filas, con_sinonimo = resumen["sinonimos"]
     log("  sinonimos en el diccionario    %d de %d filas (%.1f %%)"
         % (con_sinonimo, filas, 100.0 * con_sinonimo / filas))
+
+    if resumen["edad_foto"]:
+        log("")
+        log("  DE QUE FECHA ES LA FOTO QUE SE CURA")
+        log("  Una corrida incompleta conserva la foto anterior, que es lo")
+        log("  correcto. El riesgo es lento: si fallan varias seguidas se cura")
+        log("  una foto vieja sin que nada chirrie. Mira la ultima columna.")
+        log("    %-10s %-22s %s" % ("fuente", "foto", "corridas fallidas despues"))
+        for f in sorted(resumen["edad_foto"]):
+            e = resumen["edad_foto"][f]
+            aviso = "  <- revisar" if e["incompletas_despues"] >= 2 else ""
+            log("    %-10s %-22s %d%s"
+                % (f, e["fecha"] or "?", e["incompletas_despues"], aviso))
 
     if resumen["sin_foto"]:
         log("")
