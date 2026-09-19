@@ -106,6 +106,25 @@ def _informe_extraccion(informes):
     return 0
 
 
+def cmd_reparsear(args):
+    """Re-parsea el crudo ya descargado. Sin red, sin credenciales."""
+    con = _conectar(args)
+    pedidas = (fuentes.FUENTES if args.fuente == "todo" else (args.fuente,))
+    try:
+        for f in pedidas:
+            log(f)
+            try:
+                fuentes.reparsear(con, f, log)
+            except fuentes.FormatoDesconocido as e:
+                log("  [%s] %s" % (f, e))
+    finally:
+        con.close()
+    log("")
+    log("  Re-parsear no cuesta una peticion: los bytes ya estaban en disco")
+    log("  con su huella, y se comprobo antes de usarlos.")
+    return 0
+
+
 def cmd_curar(args):
     con = _conectar(args)
     try:
@@ -281,6 +300,12 @@ def main():
     ex.add_argument("--max-paginas", type=int, default=500,
                     dest="max_paginas")
     ex.set_defaults(func=cmd_extraer)
+
+    rp = sub.add_parser("reparsear",
+                        help="Volver a parsear el crudo ya descargado.")
+    rp.add_argument("--fuente", default="todo",
+                    choices=list(fuentes.FUENTES) + ["todo"])
+    rp.set_defaults(func=cmd_reparsear)
 
     cu = sub.add_parser("curar", help="De bronce a curado: normalizar y validar.")
     cu.set_defaults(func=cmd_curar)

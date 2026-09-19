@@ -605,6 +605,92 @@ class PruebasCuracion(unittest.TestCase):
         self.assertEqual(len(D.fuentes_de_silver(self.con)), 1)
 
 
+class PruebasNivelDeEvidencia(unittest.TestCase):
+    """La regla 4, por unidad y no por fuente.
+
+    BioCyc mezcla en la misma consulta 39 unidades con respaldo experimental y
+    3 705 predichas por Pathway Tools: darle a toda la fuente el nivel de su
+    mejor fila, o el de la peor, seria falso en las dos direcciones.
+    """
+
+    def _fila(self, codigos, pmid=None):
+        return {"tipo_evidencia": codigos, "pmid": pmid}
+
+    def test_ev_exp_con_pmid_es_conocido(self):
+        nivel, marcas = C.nivel_de_fila(
+            self._fila("EV-EXP-IDA", "12345"), "biocyc")
+
+        self.assertEqual((nivel, marcas), ("conocido", []))
+
+    def test_ev_exp_sin_pmid_es_curado(self):
+        nivel, marcas = C.nivel_de_fila(self._fila("EV-EXP-IEP"), "biocyc")
+
+        self.assertEqual((nivel, marcas), ("curado", []))
+
+    def test_solo_ev_comp_es_predicho(self):
+        nivel, marcas = C.nivel_de_fila(self._fila("EV-COMP-AINF"), "biocyc")
+
+        self.assertEqual((nivel, marcas), ("predicho", []))
+
+    def test_ev_comp_con_cita_sigue_predicho_y_se_marca(self):
+        """La cita de una prediccion suele ser la del metodo, no la de una
+        demostracion del operon. Dejar que el PMID mande habria subido 16
+        predicciones a conocido por la puerta de atras."""
+        nivel, marcas = C.nivel_de_fila(
+            self._fila("EV-COMP-AINF", "19683048"), "biocyc")
+
+        self.assertEqual(nivel, "predicho")
+        self.assertEqual(marcas, ["comp_con_cita"])
+
+    def test_sin_codigo_es_predicho_pero_se_distingue(self):
+        """Sin codigo no es lo mismo que predicho, aunque acabe en el mismo
+        nivel: son 30 unidades que no declaran metodo, y sin la marca se
+        confunden con las 3 705 que si."""
+        nivel, marcas = C.nivel_de_fila(self._fila(None), "biocyc")
+
+        self.assertEqual((nivel, marcas), ("predicho", ["sin_evidencia"]))
+
+    def test_entre_varios_codigos_manda_ev_exp(self):
+        """Una unidad respaldada por experimento no deja de estarlo porque
+        ademas la haya predicho un programa."""
+        nivel, _m = C.nivel_de_fila(
+            self._fila("EV-COMP-AINF;EV-EXP-IDA;EV-COMP", "999"), "biocyc")
+
+        self.assertEqual(nivel, "conocido")
+
+    def test_odb_con_pmid_es_conocido(self):
+        nivel, _m = C.nivel_de_fila(
+            self._fila("literatura", "12345"), "odb")
+
+        self.assertEqual(nivel, "conocido")
+
+    def test_el_grupo_se_queda_con_el_mejor_nivel(self):
+        """Si ODB lo documenta y BioCyc lo predice, el operon esta
+        documentado; y la marca de la prediccion se conserva."""
+        filas = [
+            {"fuente": "odb", "tipo_evidencia": "literatura", "pmid": "111"},
+            {"fuente": "biocyc", "tipo_evidencia": "EV-COMP-AINF",
+             "pmid": "222"},
+        ]
+
+        nivel, marcas, codigos = C.nivel_de(filas, lambda f: f["fuente"])
+
+        self.assertEqual(nivel, "conocido")
+        self.assertIn("comp_con_cita", marcas)
+        self.assertIn("biocyc:EV-COMP-AINF", codigos)
+
+    def test_los_codigos_originales_se_conservan(self):
+        """El nivel es una lectura nuestra; el codigo es el dato del que
+        salio, y sin el no hay forma de revisar la lectura."""
+        filas = [{"fuente": "biocyc",
+                  "tipo_evidencia": "EV-EXP-IDA;EV-COMP-AINF", "pmid": "1"}]
+
+        _n, _m, codigos = C.nivel_de(filas, lambda f: f["fuente"])
+
+        self.assertEqual(codigos,
+                         ["biocyc:EV-EXP-IDA", "biocyc:EV-COMP-AINF"])
+
+
 class PruebasMonocistronicos(unittest.TestCase):
     """Una unidad de transcripcion de un solo gen se conserva, marcada.
 

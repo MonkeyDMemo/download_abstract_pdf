@@ -208,37 +208,93 @@ def misma_hebra(locus_tags, hebras):
     return (len(vistas) == 1), (vistas.pop() if len(vistas) == 1 else None)
 
 
-def nivel_de(filas):
-    """El mejor nivel de evidencia entre las filas que respaldan un operon."""
-    if any((f["pmid"] or "").strip() for f in filas):
-        return "conocido"
-    for f in filas:
-        ev = (f["tipo_evidencia"] or "").upper()
-        if any(c in ev for c in EVIDENCIA_CURADA):
-            return "curado"
-    return "predicho"
+def codigos_de(fila):
+    """Los evidence codes de una fila de bronce, en lista."""
+    return [c.strip() for c in (fila["tipo_evidencia"] or "").split(";")
+            if c.strip()]
 
 
-def _nombre_de(filas):
-    """El nombre del operon segun la fuente, si alguna lo trae.
+def _pmids_de(fila):
+    return [p.strip() for p in (fila["pmid"] or "").replace(",", ";").split(";")
+            if p.strip()]
 
-    Vive en `registro_raw` porque es lo que la fuente dijo sin interpretar.
-    Se prefiere el mas corto entre los disponibles: cuando dos fuentes nombran
-    el mismo operon, la forma corta suele ser la canonica (`mmsAB` antes que
-    `mmsAB operon region`).
+
+def nivel_de_fila(fila, fuente):
+    """(nivel, [marcas]) de UNA fila de bronce, segun su fuente.
+
+    No hay un nivel fijo por fuente: BioCyc mezcla en la misma consulta 39
+    unidades con respaldo experimental y 3 705 predichas por Pathway Tools, y
+    darle a toda la fuente el nivel de su mejor fila --o el de la peor-- seria
+    falso en las dos direcciones.
+
+    La regla para BioCyc, con las cifras de la corrida del 18-sep-2026:
+
+    | codigos            | PMID | nivel    | marca           | TUs   |
+    |--------------------|------|----------|-----------------|-------|
+    | algun `EV-EXP*`    | si   | conocido |                 |    32 |
+    | algun `EV-EXP*`    | no   | curado   |                 |     7 |
+    | solo `EV-COMP*`    | si   | predicho | `comp_con_cita` |    16 |
+    | solo `EV-COMP*`    | no   | predicho |                 | 3 702 |
+    | ninguno            | -    | predicho | `sin_evidencia` |    30 |
+
+    **Un `EV-COMP*` con cita no asciende a conocido**, y esa es la decision
+    que mas se podria discutir. La cita de una prediccion suele ser la del
+    metodo, no la de una demostracion del operon; dejar que el PMID mande
+    habria subido 16 predicciones a `conocido` por la puerta de atras. Se
+    conserva el PMID y se marca `comp_con_cita` para que alguien pueda
+    mirarlas: son 17 PMIDs distintos, uno por unidad.
+
+    **Sin codigo no es lo mismo que predicho**, aunque acabe en el mismo
+    nivel. `sin_evidencia` las separa de las 3 705 que si declaran metodo; 16
+    de esas 30 traen cita, y son 20 PMIDs distintos.
     """
-    nombres = []
+    codigos = codigos_de(fila)
+    tiene_pmid = bool(_pmids_de(fila))
+
+    if fuente == "biocyc":
+        exp = [c for c in codigos if c.upper().startswith("EV-EXP")]
+        if exp:
+            # Si hay EV-EXP* entre varios codigos, manda EV-EXP*: una unidad
+            # respaldada por experimento no deja de estarlo porque ademas la
+            # haya predicho un programa.
+            return ("conocido" if tiene_pmid else "curado"), []
+        if not codigos:
+            return "predicho", ["sin_evidencia"]
+        return "predicho", (["comp_con_cita"] if tiene_pmid else [])
+
+    if fuente == "odb":
+        # ODB es literatura por construccion: cada fila cita su articulo.
+        return ("conocido" if tiene_pmid else "curado"), []
+
+    # PGD y CDBProm son predictores. Si alguna trajera PMID se marcaria igual.
+    return "predicho", (["comp_con_cita"] if tiene_pmid else [])
+
+
+_ORDEN = {"conocido": 0, "curado": 1, "predicho": 2}
+
+
+def nivel_de(filas, fuente_de):
+    """(mejor nivel, marcas, codigos) del grupo de filas de un operon.
+
+    Se queda con el mejor nivel entre las fuentes que lo respaldan: si ODB lo
+    documenta con PMID y BioCyc lo predice, el operon esta documentado. Las
+    marcas se acumulan, porque `comp_con_cita` sigue siendo cierto de la fila
+    de BioCyc aunque otra fuente lo eleve.
+    """
+    mejor, marcas, codigos = "predicho", [], []
     for f in filas:
-        crudo = f["registro_raw"]
-        if not crudo:
-            continue
-        try:
-            d = json.loads(crudo) if isinstance(crudo, str) else crudo
-        except ValueError:
-            continue
-        if isinstance(d, dict) and d.get("name"):
-            nombres.append(d["name"])
-    return sorted(nombres, key=len)[0] if nombres else None
+        fuente = fuente_de(f)
+        nivel, ms = nivel_de_fila(f, fuente)
+        if _ORDEN[nivel] < _ORDEN[mejor]:
+            mejor = nivel
+        for m in ms:
+            if m not in marcas:
+                marcas.append(m)
+        for c in codigos_de(f):
+            etiqueta = "%s:%s" % (fuente, c)
+            if etiqueta not in codigos:
+                codigos.append(etiqueta)
+    return mejor, marcas, codigos
 
 
 def clave_de(locus_tags):
@@ -343,6 +399,45 @@ def cobertura_de_fuente(con, fuente, diccionario=None):
     return cobertura_mapeo(nombres, diccionario)
 
 
+def _nombre_de(filas):
+    """El nombre del operon segun la fuente, si alguna lo trae.
+
+    Vive en `registro_raw` porque es lo que la fuente dijo sin interpretar.
+    Se prefiere el mas corto entre los disponibles: cuando dos fuentes nombran
+    el mismo operon, la forma corta suele ser la canonica (`mmsAB` antes que
+    `mmsAB operon region`).
+    """
+    nombres = []
+    for f in filas:
+        crudo = f["registro_raw"]
+        if not crudo:
+            continue
+        try:
+            d = json.loads(crudo) if isinstance(crudo, str) else crudo
+        except ValueError:
+            continue
+        if isinstance(d, dict) and d.get("name"):
+            nombres.append(d["name"])
+    return sorted(nombres, key=len)[0] if nombres else None
+
+
+def _huerfanos(fila):
+    """Los frameid de gen que la fuente referencia y su consulta no devolvio.
+
+    En BioCyc son 6 TUs: `tus.xml` los cita y `genes.xml` no los trae, asi que
+    no hay locus tag al que llevarlos. No es un fallo del parser ni un gen sin
+    `accession-1`: esos frameids no existen en la respuesta de Genes.
+    """
+    crudo = fila["registro_raw"]
+    if not crudo:
+        return []
+    try:
+        d = json.loads(crudo) if isinstance(crudo, str) else crudo
+    except ValueError:
+        return []
+    return d.get("sin_mapear") or [] if isinstance(d, dict) else []
+
+
 def curar(con, log=lambda m: None, diccionario=None, hebras=None):
     """Recorre el bronce y reescribe la capa curada. Devuelve el resumen.
 
@@ -408,7 +503,8 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
         adyacente = True if mono else es_adyacente(locus)
         igual_hebra, hebra = misma_hebra(locus, hebras)
 
-        revisar = []
+        nivel, marcas, codigos = nivel_de(filas, lambda f: f["fuente"])
+        revisar = list(marcas)
         if not adyacente:
             revisar.append("no_adyacente")
         if igual_hebra is False:
@@ -419,6 +515,11 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
             revisar.append("genes_sin_resolver")
         if any(g[3] for g in grupo):
             revisar.append("nombre_ambiguo")
+        # Una TU cuyo frameid de gen no aparece en la consulta de Genes: es
+        # una inconsistencia interna de la fuente, no un fallo del parser, y
+        # el operon queda con menos genes de los que la fuente dice tener.
+        if any(_huerfanos(f) for f in filas):
+            revisar.append("gen_huerfano")
 
         pmids = sorted(set(
             p.strip() for f in filas for p in (f["pmid"] or "").split(";")
@@ -432,7 +533,8 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
             "locus_tags": "|".join(locus),
             "n_genes": len(locus),
             "cadena": hebra,
-            "nivel_evidencia": nivel_de(filas),
+            "nivel_evidencia": nivel,
+            "evidencia_codigos": ";".join(codigos) or None,
             # Cuenta fuentes distintas, y las dos que comparten motor de
             # prediccion valen por una: coincidir no es confirmacion.
             "n_fuentes": len(independientes) + (1 if len(

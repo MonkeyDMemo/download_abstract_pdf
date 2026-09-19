@@ -147,6 +147,10 @@ CREATE TABLE IF NOT EXISTS operones_silver (
     n_genes       INTEGER NOT NULL,
     cadena        TEXT,
     nivel_evidencia TEXT NOT NULL,
+    -- Los codigos tal como los dio la fuente, sin interpretar. El nivel es
+    -- una lectura nuestra; esto es el dato del que salio, y sin el no hay
+    -- forma de revisar la lectura ni de cambiarla despues.
+    evidencia_codigos TEXT,
     n_fuentes     INTEGER NOT NULL DEFAULT 0,
     pmids         TEXT,
     adyacente     INTEGER NOT NULL DEFAULT 0,
@@ -199,6 +203,20 @@ def _migrar(con):
         (f["name"], f["sql"] or "") for f in con.execute(
             """SELECT name, sql FROM sqlite_master
                 WHERE type='table' AND name LIKE 'operones_%'"""))
+    # Aditivas, y ANTES de cualquier salida temprana: `operones_silver` puede
+    # tener datos y anadir una columna no los pierde, asi que esto corre
+    # siempre. Ponerlo despues del `return` de las tablas que se rehacen
+    # significaba que una base ya migrada no recibia las columnas nuevas, y el
+    # fallo aparecia tarde: al escribir, con un "no such column".
+    for columna, ddl in (
+            ("monocistronico", "INTEGER NOT NULL DEFAULT 0"),
+            ("evidencia_codigos", "TEXT")):
+        if ("operones_silver" in tablas
+                and columna not in tablas["operones_silver"]):
+            with con:
+                con.execute("ALTER TABLE operones_silver ADD COLUMN %s %s"
+                            % (columna, ddl))
+
     if "operones_descargas" not in tablas:
         return
 
@@ -211,14 +229,6 @@ def _migrar(con):
     esperado = "UNIQUE (extraccion_id, url)"
     if esperado in tablas["operones_descargas"]:
         return
-
-    # Aditiva y aparte del rehacer: `operones_silver` puede tener datos y
-    # anadir una columna no los pierde. Las migraciones de este proyecto son
-    # aditivas por contrato.
-    if "operones_silver" in tablas and "monocistronico" not in tablas["operones_silver"]:
-        with con:
-            con.execute("ALTER TABLE operones_silver "
-                        "ADD COLUMN monocistronico INTEGER NOT NULL DEFAULT 0")
 
     afectadas = ("operones_bronze", "operones_descargas",
                  "operones_extracciones")
@@ -537,6 +547,27 @@ def retirados(con):
     return salida
 
 
+def descargas_de_extraccion(con, extraccion_id):
+    return con.execute(
+        """SELECT * FROM operones_descargas WHERE extraccion_id = ?
+            ORDER BY id""", (extraccion_id,)).fetchall()
+
+
+def borrar_bronze_de_extraccion(con, extraccion_id):
+    """Borra las filas de bronce de una extraccion, para volver a parsearla.
+
+    Es lo que hace posible corregir un parser sin volver a descargar: los
+    bytes siguen en disco con su huella, asi que re-parsear no cuesta una
+    peticion a la fuente. Borra SOLO las de esa extraccion; las de corridas
+    anteriores son historia y no se tocan.
+    """
+    with con:
+        con.execute(
+            """DELETE FROM operones_bronze WHERE descarga_id IN
+                 (SELECT id FROM operones_descargas WHERE extraccion_id = ?)""",
+            (extraccion_id,))
+
+
 def conteos_bronze(con):
     """{fuente: n}, para decir que trajo cada fuente sin volcar filas."""
     return dict((f["fuente"], f["n"]) for f in con.execute(
@@ -551,13 +582,15 @@ def guardar_silver(con, fila, respaldos):
     con.execute(
         """INSERT INTO operones_silver
              (clave_genes, nombre, locus_tags, n_genes, cadena,
-              nivel_evidencia, n_fuentes, pmids, adyacente, es_alternativa,
+              nivel_evidencia, evidencia_codigos, n_fuentes, pmids,
+              adyacente, es_alternativa,
               monocistronico,
               promotor_cdbprom, revisar, curado_en)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(clave_genes) DO UPDATE SET
              nombre=excluded.nombre,
              nivel_evidencia=excluded.nivel_evidencia,
+             evidencia_codigos=excluded.evidencia_codigos,
              n_fuentes=excluded.n_fuentes,
              pmids=excluded.pmids,
              adyacente=excluded.adyacente,
@@ -568,6 +601,7 @@ def guardar_silver(con, fila, respaldos):
              curado_en=excluded.curado_en""",
         (fila["clave_genes"], fila.get("nombre"), fila["locus_tags"],
          fila["n_genes"], fila.get("cadena"), fila["nivel_evidencia"],
+         fila.get("evidencia_codigos"),
          fila.get("n_fuentes", 0), fila.get("pmids"),
          1 if fila.get("adyacente") else 0,
          1 if fila.get("es_alternativa") else 0,

@@ -362,6 +362,12 @@ def parsear_biocyc(xml_tus, xml_genes):
                 sin_mapear.append(fid)
         if not locus:
             continue
+        # El PMID vive en `<citation><Publication><pubmed-id>`, no en los
+        # `<dblink>`. Mirar solo los dblink daba cero PMIDs para toda la
+        # fuente y dejaba la regla de nivel de evidencia sin su primera rama:
+        # de las 3 774 TUs, 64 traen cita y suman 77 PMIDs distintos.
+        pmids = sorted(set(p.text.strip() for p in tu.iter("pubmed-id")
+                           if (p.text or "").strip()))
         frameids = [c.get("frameid") or ""
                     for c in tu.findall("component/Gene")]
         crudo = {"frameids": frameids}
@@ -383,7 +389,7 @@ def parsear_biocyc(xml_tus, xml_genes):
             "locus_tags": "|".join(locus),
             "cadena": None,
             "tipo_evidencia": ";".join(evid) or None,
-            "pmid": None,
+            "pmid": ";".join(pmids) or None,
             "registro_raw": crudo,
         })
     return filas
@@ -521,3 +527,47 @@ def _parsear(fuente, bajadas):
             filas.extend(parsear_odb(cuerpo))
         return filas
     return parsear_tabular(bajadas[0][2], fuente)
+
+
+def reparsear(con, fuente, log=lambda m: None):
+    """Vuelve a parsear los archivos de la ultima extraccion completa.
+
+    Es la razon de ser de la capa cruda: corregir un parser no debe costar una
+    peticion a la fuente. Los bytes estan en disco con su huella registrada, y
+    se comprueba antes de usarlos --si el archivo cambio, se para-- porque
+    re-parsear bytes distintos de los que se descargaron produciria un bronce
+    cuya procedencia dice otra cosa de la que tiene.
+    """
+    eid = _db.ultima_extraccion_completa(con).get(fuente)
+    if not eid:
+        raise FormatoDesconocido(
+            "%s no tiene ninguna extraccion completa que re-parsear" % fuente)
+
+    bajadas = []
+    for d in _db.descargas_de_extraccion(con, eid):
+        if not os.path.exists(d["ruta"]):
+            raise FormatoDesconocido(
+                "falta el archivo %s de la extraccion %d. Sin el crudo no se "
+                "puede re-parsear; hay que volver a extraer." % (d["ruta"], eid))
+        with io.open(d["ruta"], "rb") as f:
+            cuerpo = f.read()
+        sha = _db.huella(cuerpo)
+        if sha != d["sha256"]:
+            raise FormatoDesconocido(
+                "%s no coincide con su huella registrada (%s contra %s). Esos "
+                "no son los bytes que se descargaron, asi que el bronce que "
+                "saldria de ellos no tendria la procedencia que dice tener."
+                % (d["ruta"], sha[:16], d["sha256"][:16]))
+        bajadas.append((d["url"], d["ruta"], cuerpo))
+        log("  [%s] %s  (%d bytes, huella ok)"
+            % (fuente, os.path.basename(d["ruta"]), len(cuerpo)))
+
+    filas = _parsear(fuente, bajadas)
+    for f in filas:
+        f.setdefault("descarga_id", _db.descargas_de_extraccion(con, eid)[0]["id"])
+    _db.borrar_bronze_de_extraccion(con, eid)
+    insertadas, _ya = _db.guardar_bronze(con, filas)
+    log("  [%s] %d filas re-parseadas en la extraccion %d"
+        % (fuente, insertadas, eid))
+    return {"fuente": fuente, "extraccion_id": eid, "filas": insertadas,
+            "archivos": len(bajadas)}
