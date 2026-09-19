@@ -46,6 +46,15 @@ from grn_operones import db as _db
 
 LOCUS = re.compile(r"^PA(\d{4})(?:\.(\d))?$")
 
+# Los locus tags con sufijo de letra (`PA0951a`, `PA1112b`) que la clave
+# primaria del diccionario deja fuera por contrato: su regex es
+# `^PA\d{4}(\.\d)?$` y excluye 58 filas del GFF. No es un hueco de
+# sinonimos sino de clave primaria, y cambiarla obliga a revalidar el
+# pipeline entero, asi que aqui solo se MARCA para que el conteo de no
+# resueltos quede explicado. La regex propuesta es `^PA\d{4}[a-z]?(\.\d)?$`
+# y el cambio va en su propio commit, con visto bueno del asesor.
+LOCUS_SUFIJO = re.compile(r"^PA\d{4}[a-z](\.\d)?$", re.I)
+
 RUTA_GENES = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "grn_bronce", "recursos", "genes_pao1.tsv")
@@ -259,7 +268,14 @@ def nivel_de_fila(fila, fuente):
             # haya predicho un programa.
             return ("conocido" if tiene_pmid else "curado"), []
         if not codigos:
-            return "predicho", ["sin_evidencia"]
+            # Sin codigo y CON cita es el unico caso ambiguo de la fuente:
+            # no declara metodo y trae un articulo. `EV-COMP*` con cita no
+            # lo es --en la ontologia de BioCyc computacional lo decide el
+            # codigo, y el PMID adjunto es la fuente del predictor o del
+            # genoma anotado-- pero aqui no hay codigo que lo decida. Se
+            # queda en predicho y se entrega al asesor como lista.
+            return "predicho", (["pendiente_revision"] if tiene_pmid
+                                else ["sin_evidencia"])
         return "predicho", (["comp_con_cita"] if tiene_pmid else [])
 
     if fuente == "odb":
@@ -298,7 +314,21 @@ def nivel_de(filas, fuente_de):
 
 
 def clave_de(locus_tags):
-    """El identificador de un operon curado: sus genes, en su orden.
+    """El identificador de un operon curado: sus genes ORDENADOS por locus tag.
+
+    Ordenados, y no en el orden de la fuente. La version anterior usaba el
+    orden tal cual, y con eso `mexAB-oprM` salia DOS VECES de la capa curada:
+    ODB lo escribe `PA0425|PA0426|PA0427` y BioCyc `PA0427|PA0426|PA0425`,
+    porque cada una lista los miembros en su propio sentido. Dos filas para el
+    mismo operon, cada una con una sola fuente, y el solapamiento entre fuentes
+    salia artificialmente bajo: `mexAB-oprM` y `mexEF-oprN` aparecian como
+    "ausentes en BioCyc" cuando BioCyc los tiene (`TU1FZ6-520` y
+    `TU1FZ6-2790`).
+
+    **El orden es del nombre, no de la identidad.** Que `mexCD-oprJ` se escriba
+    asi y no `oprJ-mexDC` importa para nombrarlo, y por eso `locus_tags`
+    conserva el orden de transcripcion que dio la fuente. Lo que identifica al
+    operon es QUE genes lo componen.
 
     LIMITACION CONOCIDA, Y HAY QUE LEERLA ANTES DE USAR CDBPROM
     ===========================================================
@@ -316,7 +346,7 @@ def clave_de(locus_tags):
     El dia que haga falta, la salida es anadir el inicio de transcripcion a la
     clave, no cambiar el criterio de deduplicacion.
     """
-    return "|".join(locus_tags)
+    return "|".join(sorted(locus_tags))
 
 
 def cobertura_mapeo(nombres, diccionario=None):
@@ -455,6 +485,7 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
     por_clave = collections.OrderedDict()
     sin_resolver = collections.Counter()
     sin_resolver_ambiguo = {}
+    con_sufijo = collections.Counter()
     paralogos = cargar_paralogos(diccionario)
     descartadas = 0
     # `bronze_vigente` y no `bronze_de`: el bronce conserva una fila por
@@ -468,6 +499,8 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
                                            paralogos)
         for x in fuera:
             sin_resolver[x] += 1
+            if LOCUS_SUFIJO.match(x):
+                con_sufijo[x] += 1
         for nombre, candidatos in ambiguos:
             sin_resolver_ambiguo[nombre] = candidatos
         if not locus:
@@ -513,6 +546,8 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
             revisar.append("hebra_no_verificada")
         if any(g[2] for g in grupo):
             revisar.append("genes_sin_resolver")
+        if any(LOCUS_SUFIJO.match(x) for g in grupo for x in g[2]):
+            revisar.append("locus_sufijo_excluido")
         if any(g[3] for g in grupo):
             revisar.append("nombre_ambiguo")
         # Una TU cuyo frameid de gen no aparece en la consulta de Genes: es
@@ -551,6 +586,7 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
 
     resumen = _db.resumen_silver(con)
     resumen["sin_ningun_gen"] = descartadas
+    resumen["locus_con_sufijo"] = dict(con_sufijo)
     resumen["nombres_sin_resolver"] = len(sin_resolver)
     resumen["top_sin_resolver"] = sin_resolver.most_common(15)
     resumen["cobertura"] = dict(

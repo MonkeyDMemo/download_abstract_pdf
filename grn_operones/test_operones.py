@@ -529,6 +529,26 @@ class PruebasCuracion(unittest.TestCase):
         self.assertEqual(len(filas), 1)
         self.assertEqual(filas[0]["n_fuentes"], 2)
 
+    def test_dos_fuentes_que_listan_el_operon_al_reves_son_uno_solo(self):
+        """El orden es del nombre, no de la identidad.
+
+        Con la clave sensible al orden, `mexAB-oprM` salia DOS VECES: ODB lo
+        escribe PA0425|PA0426|PA0427 y BioCyc PA0427|PA0426|PA0425, porque
+        cada una lista los miembros en su propio sentido. El solapamiento
+        entre fuentes salia artificialmente bajo y dos operones bien conocidos
+        aparecian como "ausentes en BioCyc" cuando BioCyc los tiene.
+        """
+        _bronce(self.con, [
+            _fila("odb", "op1", "PA0425|PA0426|PA0427"),
+            _fila("biocyc", "TU-1", "PA0427|PA0426|PA0425")])
+
+        self._curar()
+        filas = D.silver_de(self.con)
+
+        self.assertEqual(len(filas), 1)
+        self.assertEqual(filas[0]["n_fuentes"], 2)
+        self.assertEqual(filas[0]["clave_genes"], "PA0425|PA0426|PA0427")
+
     def test_un_subconjunto_se_marca_alternativo_y_no_se_fusiona(self):
         """Un operon puede transcribirse entero o en parte, y las dos cosas
         estan documentadas. Fusionarlas perderia una."""
@@ -642,13 +662,22 @@ class PruebasNivelDeEvidencia(unittest.TestCase):
         self.assertEqual(nivel, "predicho")
         self.assertEqual(marcas, ["comp_con_cita"])
 
-    def test_sin_codigo_es_predicho_pero_se_distingue(self):
+    def test_sin_codigo_ni_cita_es_predicho_con_marca(self):
         """Sin codigo no es lo mismo que predicho, aunque acabe en el mismo
-        nivel: son 30 unidades que no declaran metodo, y sin la marca se
+        nivel: son unidades que no declaran metodo, y sin la marca se
         confunden con las 3 705 que si."""
         nivel, marcas = C.nivel_de_fila(self._fila(None), "biocyc")
 
         self.assertEqual((nivel, marcas), ("predicho", ["sin_evidencia"]))
+
+    def test_sin_codigo_pero_con_cita_queda_pendiente_de_revision(self):
+        """El unico caso ambiguo de la fuente: no declara metodo y trae un
+        articulo. `EV-COMP*` con cita no es ambiguo --en la ontologia de
+        BioCyc lo computacional lo decide el codigo-- pero aqui no hay codigo
+        que lo decida. Son 16 unidades y 20 PMIDs distintos."""
+        nivel, marcas = C.nivel_de_fila(self._fila(None, "14617143"), "biocyc")
+
+        self.assertEqual((nivel, marcas), ("predicho", ["pendiente_revision"]))
 
     def test_entre_varios_codigos_manda_ev_exp(self):
         """Una unidad respaldada por experimento no deja de estarlo porque
