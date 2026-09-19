@@ -1,8 +1,23 @@
 # -*- coding: utf-8 -*-
-"""El unico modulo del paquete que escribe SQL. Administra sus cuatro tablas.
+"""El unico modulo del paquete que escribe SQL. Administra sus cinco tablas.
 
-Las cuatro llevan prefijo `operones_` porque comparten archivo SQLite con el
+Las cinco llevan prefijo `operones_` porque comparten archivo SQLite con el
 paso 0 y el paso 1. Cada paquete crea y administra unicamente las suyas.
+
+EL MODELO, DE ARRIBA ABAJO
+==========================
+    operones_extracciones   una corrida de extraccion de UNA fuente
+      -> operones_descargas   un archivo traido en esa corrida
+           -> operones_bronze   un registro leido de ese archivo
+
+`fuente` y `completa` viven **solo** en la extraccion, y eso no es normalizar
+por gusto. Con `fuente` repetida en las tres tablas, nada impedia que una fila
+de bronce colgara de una descarga de otra fuente: quedaba fuera de su propia
+foto vigente y desaparecia del catalogo sin que nada lo dijera. Habia un
+guardian en `guardar_bronze()` comprobandolo en tiempo de corrida; ahora el
+modelo lo hace imposible, que es mejor que comprobarlo. Con `completa`
+repetida por archivo, marcar una corrida como terminada eran N escrituras que
+habia que acertar todas; ahora es una.
 
 LAS DOS CAPAS, Y POR QUE LA CRUDA SE GUARDA ENTERA
 ==================================================
@@ -24,25 +39,22 @@ apoyarse el `ON CONFLICT` falla.
 
 | tabla | clave natural | al repetir |
 |---|---|---|
-| `operones_descargas` | `(fuente, sha256)` | no hace nada: son los mismos bytes |
-| `operones_bronze` | `(fuente, id_fuente, descarga_id)` | no hace nada: el bronce no se reescribe |
+| `operones_descargas` | `(extraccion_id, sha256)` | no hace nada: ya esta en esta corrida |
+| `operones_bronze` | `(id_fuente, descarga_id)` | no hace nada: el bronce no se reescribe |
 | `operones_silver` | `clave_genes` | actualiza la evidencia agregada |
 | `operones_silver_fuente` | `(silver_id, fuente, id_fuente)` | no hace nada |
 
-**El bronce solo inserta, nunca actualiza.** Una descarga con la misma huella
-es literalmente la misma respuesta, asi que re-correr no crea nada; y si la
-fuente corrigio un operon, sus nuevos bytes son otra descarga y la fila nueva
-convive con la anterior. Reescribir habria perdido que la fuente cambio de
-opinion y cuando, que es de lo poco que una capa cruda puede aportar y nadie
-mas guarda.
+**El bronce solo inserta, nunca actualiza.** Si la fuente corrigio un operon,
+sus nuevos bytes llegan en otra extraccion y la fila nueva convive con la
+anterior. Reescribir habria perdido que la fuente cambio de opinion y cuando,
+que es de lo poco que una capa cruda puede aportar y nadie mas guarda.
 
 Quedarse con la version vigente es trabajo de la capa curada, y el criterio es
-**la ultima extraccion COMPLETA de cada fuente**, no la fila mas reciente de
-cada clave. La diferencia importa en dos casos que muerden callando: un operon
-que la fuente retira seguiria siendo "el mas reciente de su clave" para
-siempre, y una paginacion cortada a la mitad mezclaria media descarga nueva con
-media vieja. Lo que no aparece en la ultima foto buena esta retirado, y
-`retirados()` lo lista en vez de dejarlo caer.
+**la ultima extraccion COMPLETA de cada fuente**. Una fuente que nunca termino
+una extraccion queda FUERA de la curacion entera: con media foto no se puede
+decir que se retiro ni que sigue, y curar sobre ella mezclaria media descarga
+nueva con media vieja. `fuentes_sin_foto()` las lista para que el informe lo
+diga en vez de que desaparezcan sin ruido.
 
 Solo biblioteca estandar.
 """
@@ -57,50 +69,51 @@ from grn_etl import db as _paso0
 ErrorBase = sqlite3.Error
 
 ESQUEMA_OPERONES = """
--- Procedencia de cada descarga cruda. Es el manifiesto del constructor del
--- diccionario llevado a la base: sin url, bytes y huella, un archivo en disco
--- es un archivo que alguien dejo ahi.
--- `extraccion` agrupa los archivos de UNA corrida de extraccion, y hace falta
--- porque una extraccion no es un archivo: la de ODB son N paginas. Sin ese
--- grupo, "la ultima descarga completa" no se puede expresar para una fuente
--- paginada.
+-- Una corrida de extraccion de una fuente. Aqui viven `fuente` y `completa`,
+-- y en ningun otro sitio: una corrida es lo que se completa o no, y una
+-- descarga pertenece a la fuente de su corrida por construccion.
+CREATE TABLE IF NOT EXISTS operones_extracciones (
+    id        INTEGER PRIMARY KEY,
+    fuente    TEXT NOT NULL,
+    inicio    TEXT NOT NULL,
+    fin       TEXT,
+    completa  INTEGER NOT NULL DEFAULT 0
+);
+
+-- Un archivo traido en una corrida, con su procedencia. Sin url, bytes y
+-- huella, un archivo en disco es un archivo que alguien dejo ahi.
 --
--- `completa` se marca sobre todas las filas del grupo, y solo cuando la
--- extraccion termino sin error. Una paginacion que se corto en la pagina 30
--- deja sus filas en 0 y la capa curada no las mira: mezclar media descarga
--- nueva con la mitad vieja de la anterior produce un catalogo que no
--- corresponde a ningun estado real de la fuente.
+-- La clave es `(extraccion_id, sha256)`: dentro de una corrida los mismos
+-- bytes son el mismo archivo. Entre corridas distintas se registran dos
+-- veces a proposito, porque cada extraccion es una foto y lo que importa de
+-- un archivo es en que foto salio.
 CREATE TABLE IF NOT EXISTS operones_descargas (
     id            INTEGER PRIMARY KEY,
-    fuente        TEXT NOT NULL,
-    extraccion    TEXT NOT NULL,
+    extraccion_id INTEGER NOT NULL REFERENCES operones_extracciones(id),
     url           TEXT NOT NULL,
     ruta          TEXT NOT NULL,
     bytes         INTEGER NOT NULL,
     sha256        TEXT NOT NULL,
     descargado_en TEXT NOT NULL,
-    completa      INTEGER NOT NULL DEFAULT 0,
     nota          TEXT,
-    UNIQUE (fuente, sha256)
+    UNIQUE (extraccion_id, sha256)
 );
 
--- Lo que la fuente dijo en cada descarga, partido en campos y sin interpretar.
+-- Lo que la fuente dijo en esa descarga, partido en campos y sin interpretar.
 --
--- La clave incluye `descarga_id` y la insercion es DO NOTHING, no DO UPDATE:
--- el bronce conserva lo que cada fuente dijo EN CADA FECHA. Con la clave sin
--- la descarga, una fuente que corrigiera un operon entre dos bajadas
--- sobrescribia lo anterior y no quedaba forma de saber que habia cambiado ni
--- cuando. Quedarse con la version vigente es trabajo de la capa curada, que
--- para eso mira `bronze_vigente()`.
+-- **No lleva columna `fuente`.** La fuente se deriva de la extraccion de su
+-- descarga, y por eso no puede discrepar de ella. Una columna que puede
+-- discrepar acaba discrepando.
 --
 -- `descarga_id` es NOT NULL y eso no es decoracion: en SQLite los NULL son
 -- distintos entre si dentro de un UNIQUE, asi que una sola fila sin descarga
 -- abriria la puerta a duplicados ilimitados de esa misma fila. Ademas, una
 -- fila de bronce sin la descarga de la que salio no tiene procedencia, que es
 -- justo lo que esta capa existe para guardar.
+--
+-- La fecha tampoco se repite: vive en `operones_descargas.descargado_en`.
 CREATE TABLE IF NOT EXISTS operones_bronze (
     id             INTEGER PRIMARY KEY,
-    fuente         TEXT NOT NULL,
     id_fuente      TEXT NOT NULL,
     genes_raw      TEXT,
     locus_tags     TEXT,
@@ -109,11 +122,8 @@ CREATE TABLE IF NOT EXISTS operones_bronze (
     pmid           TEXT,
     descarga_id    INTEGER NOT NULL REFERENCES operones_descargas(id),
     registro_raw   TEXT,
-    UNIQUE (fuente, id_fuente, descarga_id)
+    UNIQUE (id_fuente, descarga_id)
 );
--- La fecha NO se repite aqui: vive en `operones_descargas.descargado_en` y se
--- obtiene por JOIN. Duplicarla dejaba que las dos copias divergieran, y
--- entonces no habria forma de saber cual miente.
 
 -- El operon curado. `clave_genes` es el conjunto ORDENADO de locus tags
 -- separados por '|': dos fuentes que nombran los mismos genes en el mismo
@@ -138,6 +148,7 @@ CREATE TABLE IF NOT EXISTS operones_silver (
 
 -- Que fuentes respaldan cada operon curado. N a N, y es lo que permite decir
 -- "tres fuentes independientes" sin recontar la misma prediccion dos veces.
+-- Es ademas donde se apoyaria una guarda de contaminacion por procedencia.
 CREATE TABLE IF NOT EXISTS operones_silver_fuente (
     silver_id  INTEGER NOT NULL REFERENCES operones_silver(id),
     fuente     TEXT NOT NULL,
@@ -145,8 +156,10 @@ CREATE TABLE IF NOT EXISTS operones_silver_fuente (
     PRIMARY KEY (silver_id, fuente, id_fuente)
 );
 
-CREATE INDEX IF NOT EXISTS ix_opbronze_fuente ON operones_bronze(fuente);
-CREATE INDEX IF NOT EXISTS ix_opsilver_nivel  ON operones_silver(nivel_evidencia);
+CREATE INDEX IF NOT EXISTS ix_opextr_fuente  ON operones_extracciones(fuente, completa);
+CREATE INDEX IF NOT EXISTS ix_opdesc_extr    ON operones_descargas(extraccion_id);
+CREATE INDEX IF NOT EXISTS ix_opbronze_desc  ON operones_bronze(descarga_id);
+CREATE INDEX IF NOT EXISTS ix_opsilver_nivel ON operones_silver(nivel_evidencia);
 """
 
 
@@ -158,6 +171,34 @@ def huella(cuerpo):
     return hashlib.sha256(cuerpo).hexdigest()
 
 
+def _migrar(con):
+    """Sustituye las tablas de la forma anterior si estan vacias.
+
+    `CREATE TABLE IF NOT EXISTS` no toca una tabla que ya existe, asi que sin
+    esto una base creada con el esquema viejo se quedaria con el. Se borran
+    **solo si estan vacias**: con datos dentro, migrar es una decision con
+    perdidas y la toma una persona, no un import.
+    """
+    tablas = dict(
+        (f["name"], f["sql"] or "") for f in con.execute(
+            """SELECT name, sql FROM sqlite_master
+                WHERE type='table' AND name LIKE 'operones_%'"""))
+    vieja = ("operones_descargas" in tablas
+             and "extraccion_id" not in tablas["operones_descargas"])
+    if not vieja:
+        return
+    for t in ("operones_bronze", "operones_descargas"):
+        n = con.execute("SELECT COUNT(*) FROM %s" % t).fetchone()[0]
+        if n:
+            raise ErrorBase(
+                "%s tiene %d filas con el esquema anterior. La migracion a "
+                "operones_extracciones no se hace sola con datos dentro: "
+                "exporta, vacia y vuelve a extraer." % (t, n))
+    with con:
+        con.execute("DROP TABLE IF EXISTS operones_bronze")
+        con.execute("DROP TABLE IF EXISTS operones_descargas")
+
+
 def conectar(ruta="datos/grn.db"):
     """Abre la base con el esquema del paso 0 y el de operones encima.
 
@@ -165,63 +206,92 @@ def conectar(ruta="datos/grn.db"):
     que hace el bronce. La dependencia va en el sentido correcto.
     """
     con = _paso0.conectar(ruta)
+    _migrar(con)
     con.executescript(ESQUEMA_OPERONES)
     return con
 
 
+# --------------------------------------------------------------- extracciones
+
+def abrir_extraccion(con, fuente):
+    """Registra la corrida ANTES de descargar y devuelve su id.
+
+    Antes y no despues, por la misma razon que en el paso 0: si el proceso
+    muere a la mitad tiene que quedar constancia de que se intento. Queda con
+    `completa = 0`, que es lo que mantiene su descarga fuera de la curacion
+    hasta que alguien la cierre bien.
+    """
+    cur = con.execute(
+        "INSERT INTO operones_extracciones (fuente, inicio) VALUES (?,?)",
+        (fuente, ahora()))
+    con.commit()
+    return cur.lastrowid
+
+
+def cerrar_extraccion(con, extraccion_id, completa=True):
+    """Marca el fin de la corrida. `completa=True` SOLO si termino sin error.
+
+    Una sola escritura por corrida: con el flag repetido en cada descarga,
+    cerrar eran N escrituras que habia que acertar todas, y acertar N cosas
+    siempre sale peor que acertar una.
+    """
+    con.execute(
+        "UPDATE operones_extracciones SET fin = ?, completa = ? WHERE id = ?",
+        (ahora(), 1 if completa else 0, extraccion_id))
+    con.commit()
+
+
+def extracciones_de(con, fuente=None, limite=50):
+    sql = """SELECT e.*, COUNT(d.id) AS n_archivos
+               FROM operones_extracciones e
+               LEFT JOIN operones_descargas d ON d.extraccion_id = e.id"""
+    params = []
+    if fuente:
+        sql += " WHERE e.fuente = ?"
+        params.append(fuente)
+    sql += " GROUP BY e.id ORDER BY e.id DESC LIMIT ?"
+    params.append(limite)
+    return con.execute(sql, params).fetchall()
+
+
 # ------------------------------------------------------------------ descargas
 
-def registrar_descarga(con, fuente, extraccion, url, ruta, cuerpo, nota=None):
-    """Anota una descarga cruda y devuelve su id.
+def registrar_descarga(con, extraccion_id, url, ruta, cuerpo, nota=None):
+    """Anota un archivo de esta corrida y devuelve su id.
 
-    Idempotente por `(fuente, sha256)`: volver a bajar los mismos bytes no
-    crea una fila nueva ni pisa la fecha en que se vieron por primera vez.
-    Devuelve el id de la fila existente en ese caso.
-
-    **Cuando los bytes se repiten, la fila conserva su `extraccion` original**
-    y se le asigna ademas la nueva, porque lo que interesa de una extraccion
-    es que estuvo presente en ella. Sin eso, un archivo que no cambia entre
-    dos corridas quedaria fuera de la ultima y se leeria como retirado.
+    Idempotente por `(extraccion_id, sha256)`: reintentar la misma pagina
+    dentro de la misma corrida no duplica. La fuente no se pasa ni se guarda:
+    es la de la extraccion.
     """
     sha = huella(cuerpo)
     con.execute(
         """INSERT INTO operones_descargas
-             (fuente, extraccion, url, ruta, bytes, sha256, descargado_en, nota)
-           VALUES (?,?,?,?,?,?,?,?)
-           ON CONFLICT(fuente, sha256) DO UPDATE SET
-             extraccion = excluded.extraccion,
-             completa = 0""",
-        (fuente, extraccion, url, ruta, len(cuerpo), sha, ahora(), nota))
+             (extraccion_id, url, ruta, bytes, sha256, descargado_en, nota)
+           VALUES (?,?,?,?,?,?,?)
+           ON CONFLICT(extraccion_id, sha256) DO NOTHING""",
+        (extraccion_id, url, ruta, len(cuerpo), sha, ahora(), nota))
     con.commit()
     fila = con.execute(
-        "SELECT id FROM operones_descargas WHERE fuente=? AND sha256=?",
-        (fuente, sha)).fetchone()
+        """SELECT id FROM operones_descargas
+            WHERE extraccion_id = ? AND sha256 = ?""",
+        (extraccion_id, sha)).fetchone()
     return fila["id"] if fila else None
 
 
-def cerrar_extraccion(con, fuente, extraccion):
-    """Marca completa la extraccion. Se llama SOLO si termino sin error.
-
-    Es lo que separa una descarga que se puede curar de una que no. Mientras
-    no se llame, `bronze_vigente()` ignora todo lo que trajo esa corrida, y
-    eso es deliberado: media descarga nueva mezclada con la mitad vieja de la
-    anterior produce un catalogo que no corresponde a ningun estado real de la
-    fuente.
-    """
-    con.execute(
-        """UPDATE operones_descargas SET completa = 1
-            WHERE fuente = ? AND extraccion = ?""", (fuente, extraccion))
-    con.commit()
+SQL_DESCARGAS = """
+SELECT d.*, e.fuente, e.completa, e.inicio AS extraccion_inicio
+  FROM operones_descargas d
+  JOIN operones_extracciones e ON e.id = d.extraccion_id
+"""
 
 
 def descargas_de(con, fuente=None):
     if fuente is None:
         return con.execute(
-            "SELECT * FROM operones_descargas ORDER BY descargado_en DESC"
-        ).fetchall()
+            SQL_DESCARGAS + " ORDER BY d.descargado_en DESC").fetchall()
     return con.execute(
-        """SELECT * FROM operones_descargas WHERE fuente = ?
-            ORDER BY descargado_en DESC""", (fuente,)).fetchall()
+        SQL_DESCARGAS + " WHERE e.fuente = ? ORDER BY d.descargado_en DESC",
+        (fuente,)).fetchall()
 
 
 # --------------------------------------------------------------------- bronze
@@ -229,45 +299,41 @@ def descargas_de(con, fuente=None):
 def guardar_bronze(con, filas):
     """Inserta filas de bronce. Devuelve (insertadas, ya_estaban).
 
-    Solo inserta. Repetir la misma descarga no crea nada; una descarga nueva
+    Solo inserta. Repetir la misma descarga no crea nada; una extraccion nueva
     con datos corregidos crea filas nuevas que conviven con las anteriores.
-    Lo que se conserva es la historia: que dijo cada fuente en cada fecha.
 
-    Exige `descarga_id`: una fila de bronce sin la descarga de la que salio no
-    tiene procedencia, y ademas rompe la unicidad, porque en SQLite los NULL
-    son distintos entre si dentro de un UNIQUE.
+    `fuente` **no se guarda**: se deriva de la extraccion de la descarga. Si
+    la fila la trae, se comprueba que coincida y se descarta el valor. Es una
+    comprobacion de cordura sobre quien llama, no una invariante de los datos:
+    esa ya la garantiza el modelo.
     """
     insertadas = ya_estaban = 0
     for f in filas:
         if f.get("descarga_id") is None:
             raise ValueError(
-                "fila de bronce sin descarga_id (%s/%s): una fila cruda sin "
-                "su descarga no tiene procedencia"
-                % (f.get("fuente"), f.get("id_fuente")))
-        # La descarga tiene que ser de la MISMA fuente. `bronze_vigente()`
-        # agrupa por la fuente de la descarga, asi que una fila colgada de la
-        # descarga de otra fuente quedaria fuera de su propia foto vigente y
-        # desapareceria del catalogo sin que nada lo dijera.
-        suya = con.execute(
-            "SELECT fuente FROM operones_descargas WHERE id = ?",
-            (f["descarga_id"],)).fetchone()
-        if suya is None:
+                "fila de bronce sin descarga_id (%s): una fila cruda sin su "
+                "descarga no tiene procedencia" % f.get("id_fuente"))
+        fila_fuente = con.execute(
+            """SELECT e.fuente FROM operones_descargas d
+                 JOIN operones_extracciones e ON e.id = d.extraccion_id
+                WHERE d.id = ?""", (f["descarga_id"],)).fetchone()
+        if fila_fuente is None:
             raise ValueError("descarga_id %r no existe" % f["descarga_id"])
-        if suya["fuente"] != f["fuente"]:
+        if f.get("fuente") and f["fuente"] != fila_fuente["fuente"]:
             raise ValueError(
-                "la fila %s/%s cuelga de una descarga de %r: una fila de "
-                "bronce pertenece a la descarga de su propia fuente"
-                % (f["fuente"], f["id_fuente"], suya["fuente"]))
+                "la fila %s dice ser de %r y su descarga es de %r"
+                % (f.get("id_fuente"), f["fuente"], fila_fuente["fuente"]))
+
         antes = con.total_changes
         con.execute(
             """INSERT INTO operones_bronze
-                 (fuente, id_fuente, genes_raw, locus_tags, cadena,
-                  tipo_evidencia, pmid, descarga_id, registro_raw)
-               VALUES (?,?,?,?,?,?,?,?,?)
-               ON CONFLICT(fuente, id_fuente, descarga_id) DO NOTHING""",
-            (f["fuente"], f["id_fuente"], f.get("genes_raw"),
-             f.get("locus_tags"), f.get("cadena"), f.get("tipo_evidencia"),
-             f.get("pmid"), f["descarga_id"],
+                 (id_fuente, genes_raw, locus_tags, cadena, tipo_evidencia,
+                  pmid, descarga_id, registro_raw)
+               VALUES (?,?,?,?,?,?,?,?)
+               ON CONFLICT(id_fuente, descarga_id) DO NOTHING""",
+            (f["id_fuente"], f.get("genes_raw"), f.get("locus_tags"),
+             f.get("cadena"), f.get("tipo_evidencia"), f.get("pmid"),
+             f["descarga_id"],
              json.dumps(f.get("registro_raw"), ensure_ascii=False,
                         sort_keys=True) if f.get("registro_raw") else None))
         # Con DO NOTHING la cuenta si es fiable: o inserto una fila o ninguna.
@@ -279,56 +345,87 @@ def guardar_bronze(con, filas):
     return insertadas, ya_estaban
 
 
+SQL_BRONZE = """
+SELECT b.*, e.fuente, d.descargado_en AS fecha_descarga,
+       d.extraccion_id, e.completa
+  FROM operones_bronze b
+  JOIN operones_descargas d    ON d.id = b.descarga_id
+  JOIN operones_extracciones e ON e.id = d.extraccion_id
+"""
+
+
 def bronze_de(con, fuente=None):
     if fuente is None:
         return con.execute(
-            "SELECT * FROM operones_bronze ORDER BY fuente, id_fuente"
-        ).fetchall()
+            SQL_BRONZE + " ORDER BY e.fuente, b.id_fuente").fetchall()
     return con.execute(
-        "SELECT * FROM operones_bronze WHERE fuente=? ORDER BY id_fuente",
+        SQL_BRONZE + " WHERE e.fuente = ? ORDER BY b.id_fuente",
         (fuente,)).fetchall()
 
 
+def versiones_de(con, fuente, id_fuente):
+    """Todas las versiones de un registro, de la mas nueva a la mas vieja.
+
+    Es lo que un `DO UPDATE` en el bronce haria imposible: ver que cambio una
+    fuente y cuando.
+    """
+    return con.execute(
+        SQL_BRONZE + """ WHERE e.fuente = ? AND b.id_fuente = ?
+                          ORDER BY d.extraccion_id DESC""",
+        (fuente, id_fuente)).fetchall()
+
+
 # La ultima extraccion COMPLETA de cada fuente. Una incompleta no cuenta: es
-# media foto, y media foto no dice que se retiro.
+# media foto, y media foto no dice que se retiro ni que sigue.
 SQL_ULTIMA_COMPLETA = """
-SELECT fuente, MAX(extraccion) AS extraccion
-  FROM operones_descargas WHERE completa = 1 GROUP BY fuente
+SELECT fuente, MAX(id) AS extraccion_id
+  FROM operones_extracciones WHERE completa = 1 GROUP BY fuente
 """
 
-SQL_BRONZE_VIGENTE = """
-SELECT b.*, d.descargado_en AS fecha_descarga, d.extraccion
-  FROM operones_bronze b
-  JOIN operones_descargas d ON d.id = b.descarga_id
-  JOIN (%s) u ON u.fuente = d.fuente AND u.extraccion = d.extraccion
- WHERE d.completa = 1
- ORDER BY b.fuente, b.id_fuente
+SQL_BRONZE_VIGENTE = SQL_BRONZE + """
+  JOIN (%s) u ON u.fuente = e.fuente AND u.extraccion_id = e.id
+ ORDER BY e.fuente, b.id_fuente
 """ % SQL_ULTIMA_COMPLETA
 
 
 def ultima_extraccion_completa(con):
-    """{fuente: extraccion}. Vacio para una fuente que nunca termino bien."""
-    return dict((f["fuente"], f["extraccion"])
+    """{fuente: extraccion_id}. Sin entrada para una fuente sin foto buena."""
+    return dict((f["fuente"], f["extraccion_id"])
                 for f in con.execute(SQL_ULTIMA_COMPLETA))
+
+
+def fuentes_sin_foto(con):
+    """Fuentes con bronce pero sin ninguna extraccion completa.
+
+    **Quedan fuera de la curacion entera**, y por eso hay que nombrarlas: una
+    fuente que desaparece del catalogo porque su unica descarga se corto es
+    indistinguible de una fuente que no trajo nada, y las dos piden acciones
+    distintas. El informe de `curar` las lista.
+    """
+    con_foto = set(ultima_extraccion_completa(con))
+    con_bronce = set(f["fuente"] for f in con.execute(
+        """SELECT DISTINCT e.fuente FROM operones_bronze b
+             JOIN operones_descargas d    ON d.id = b.descarga_id
+             JOIN operones_extracciones e ON e.id = d.extraccion_id"""))
+    return sorted(con_bronce - con_foto)
 
 
 def bronze_vigente(con):
     """Las filas de la ULTIMA EXTRACCION COMPLETA de cada fuente.
 
-    No es "la fila de mayor descarga_id por (fuente, id_fuente)", que era el
-    criterio anterior y tenia dos fallas que no se ven hasta que muerden:
+    No es "la fila mas reciente de cada (fuente, id_fuente)", que tenia dos
+    fallas que no se ven hasta que muerden:
 
-    1. **Registros retirados.** Si ODB elimina un operon, su ultima fila sigue
-       siendo la de mayor id para esa clave y se daba por vigente para
-       siempre. Un operon que la fuente ya no sostiene se quedaba en el
-       catalogo sin que nada lo delatara.
+    1. **Registros retirados.** Si ODB elimina un operon, su ultima fila
+       seguia siendo la mas reciente de su clave y se daba por vigente para
+       siempre, sin que nada lo delatara.
     2. **Descargas parciales.** Si la paginacion se corta en la pagina 30, los
-       operones de las paginas siguientes conservaban su version anterior, y
-       la capa curada mezclaba media descarga nueva con media vieja.
+       operones de las paginas siguientes conservaban su version anterior y la
+       capa curada mezclaba media foto nueva con media vieja.
 
-    Con el criterio de extraccion completa, lo que no aparece en la ultima
-    foto buena esta retirado, y una foto a medias no es una foto: se ignora
-    entera hasta que la corrida termine bien.
+    Una fuente sin ninguna extraccion completa **no aporta ninguna fila**: con
+    media foto no se puede decir que se retiro ni que sigue. `fuentes_sin_foto()`
+    las nombra para que el informe lo diga.
 
     Sin funciones de ventana a proposito: no todas las builds de SQLite que
     trae Python las traen, y este subselect agrupado funciona en todas.
@@ -342,16 +439,18 @@ def retirados(con):
     Es la otra mitad de la resta, y tiene que ser visible: un operon que
     desaparece de la fuente es informacion --alguien lo retiro por algo-- y
     dejarlo caer en silencio lo convierte en un hueco que nadie sabe explicar.
+
+    Una fuente sin foto completa no aporta retirados: no se ha retirado nada,
+    simplemente no hay con que comparar.
     """
     vigentes = set((f["fuente"], f["id_fuente"]) for f in bronze_vigente(con))
     ultima = ultima_extraccion_completa(con)
     salida = {}
     for f in con.execute(
-            "SELECT DISTINCT fuente, id_fuente FROM operones_bronze"):
+            """SELECT DISTINCT e.fuente, b.id_fuente FROM operones_bronze b
+                 JOIN operones_descargas d    ON d.id = b.descarga_id
+                 JOIN operones_extracciones e ON e.id = d.extraccion_id"""):
         par = (f["fuente"], f["id_fuente"])
-        # Solo cuenta como retirado si su fuente TIENE una foto vigente: si
-        # nunca termino una extraccion, no se ha retirado nada, simplemente no
-        # hay con que comparar.
         if f["fuente"] in ultima and par not in vigentes:
             salida.setdefault(f["fuente"], []).append(f["id_fuente"])
     for v in salida.values():
@@ -359,24 +458,13 @@ def retirados(con):
     return salida
 
 
-def versiones_de(con, fuente, id_fuente):
-    """Todas las versiones de un registro, de la mas nueva a la mas vieja.
-
-    Es lo que el DO UPDATE hacia imposible: ver que cambio una fuente y
-    cuando.
-    """
-    return con.execute(
-        """SELECT * FROM operones_bronze
-            WHERE fuente = ? AND id_fuente = ?
-            ORDER BY descarga_id DESC""", (fuente, id_fuente)).fetchall()
-
-
 def conteos_bronze(con):
     """{fuente: n}, para decir que trajo cada fuente sin volcar filas."""
     return dict((f["fuente"], f["n"]) for f in con.execute(
-        "SELECT fuente, COUNT(*) n FROM operones_bronze GROUP BY fuente"))
-
-
+        """SELECT e.fuente, COUNT(*) n FROM operones_bronze b
+             JOIN operones_descargas d    ON d.id = b.descarga_id
+             JOIN operones_extracciones e ON e.id = d.extraccion_id
+            GROUP BY e.fuente"""))
 # --------------------------------------------------------------------- silver
 
 def guardar_silver(con, fila, respaldos):

@@ -66,49 +66,51 @@ def _con():
     return D.conectar(":memory:")
 
 
-def _fila(fuente, idf, locus, descarga_id=1, **kw):
+def _fila(fuente, idf, locus, descarga_id=None, **kw):
     """Una fila de bronce. `descarga_id` es obligatorio en el esquema:
     una fila cruda sin la descarga de la que salio no tiene procedencia."""
-    f = {"fuente": fuente, "id_fuente": idf, "locus_tags": locus,
-         "descarga_id": descarga_id}
+    f = {"fuente": fuente, "id_fuente": idf, "locus_tags": locus}
+    if descarga_id is not None:
+        f["descarga_id"] = descarga_id
     f.update(kw)
     return f
 
 
-def _descarga(con, fuente="odb", cuerpo=b"X", extraccion="E1",
+def _descarga(con, fuente="odb", cuerpo=b"X", extraccion_id=None,
               completa=True):
-    """Registra una descarga y devuelve su id.
+    """Abre una extraccion si no se pasa una, registra el archivo y cierra.
 
-    Cierra la extraccion por omision: `bronze_vigente()` solo mira las
-    completas, asi que una prueba que no la cerrara no veria su bronce.
-    Con `completa=False` se simula una descarga interrumpida.
+    Cierra completa por omision: `bronze_vigente()` solo mira las completas,
+    asi que una prueba que no la cerrara no veria su bronce. Con
+    `completa=False` se simula una corrida interrumpida.
     """
-    did = D.registrar_descarga(con, fuente, extraccion, "u", "r", cuerpo)
-    if completa:
-        D.cerrar_extraccion(con, fuente, extraccion)
+    propia = extraccion_id is None
+    if propia:
+        extraccion_id = D.abrir_extraccion(con, fuente)
+    did = D.registrar_descarga(con, extraccion_id, "u", "r", cuerpo)
+    if propia:
+        D.cerrar_extraccion(con, extraccion_id, completa=completa)
     return did
 
 
-def _bronce(con, filas, extraccion="E1", completa=True):
-    """Guarda filas de bronce creando, por cada fuente, SU descarga.
+def _bronce(con, filas, completa=True):
+    """Guarda filas de bronce abriendo, por cada fuente, SU extraccion.
 
-    Una fila de bronce pertenece a la descarga de su propia fuente: si
-    colgara de otra, quedaria fuera de su foto vigente y desapareceria del
-    catalogo sin que nada lo dijera. El helper lo hace bien para que las
-    pruebas hablen de curacion y no de plomeria.
+    La fuente ya no es una columna del bronce: se deriva de la extraccion de
+    su descarga, y por eso no puede discrepar de ella. El helper monta esa
+    cadena para que las pruebas hablen de curacion y no de plomeria.
     """
     por_fuente = {}
     for f in filas:
         fu = f["fuente"]
         if fu not in por_fuente:
-            por_fuente[fu] = D.registrar_descarga(
-                con, fu, extraccion, "u", "r",
-                ("cuerpo-%s-%s" % (fu, extraccion)).encode())
-        f["descarga_id"] = por_fuente[fu]
+            eid = D.abrir_extraccion(con, fu)
+            por_fuente[fu] = (eid, D.registrar_descarga(
+                con, eid, "u", "r", ("cuerpo-%s-%d" % (fu, eid)).encode()))
+        f["descarga_id"] = por_fuente[fu][1]
     salida = D.guardar_bronze(con, filas)
-    if completa:
-        for fu in por_fuente:
-            D.cerrar_extraccion(con, fu, extraccion)
+    for eid, _did in por_fuente.values():
+        D.cerrar_extraccion(con, eid, completa=completa)
     return salida
 
 
@@ -252,44 +254,57 @@ class PruebasIdempotencia(unittest.TestCase):
     def setUp(self):
         self.con = _con()
         self.addCleanup(self.con.close)
-        # Una descarga semilla con id 1, que es el que `_fila` usa por
-        # omision. Con fuente propia para no contaminar los conteos de las
-        # pruebas que cuentan descargas de `odb`.
-        self.did = _descarga(self.con, "biocyc", b"SEMILLA", "E1")
 
-    def test_la_misma_descarga_no_se_registra_dos_veces(self):
-        a = D.registrar_descarga(self.con, "odb", "E1", "u", "r", b"XYZ")
-        b = D.registrar_descarga(self.con, "odb", "E1", "u", "r", b"XYZ")
+    def _corrida(self, fuente, cuerpo, completa=True):
+        """(extraccion_id, descarga_id) de una corrida ya cerrada."""
+        eid = D.abrir_extraccion(self.con, fuente)
+        did = D.registrar_descarga(self.con, eid, "u", "r", cuerpo)
+        D.cerrar_extraccion(self.con, eid, completa=completa)
+        return eid, did
+
+    def test_el_mismo_archivo_no_se_registra_dos_veces_en_una_corrida(self):
+        eid = D.abrir_extraccion(self.con, "odb")
+        a = D.registrar_descarga(self.con, eid, "u", "r", b"XYZ")
+        b = D.registrar_descarga(self.con, eid, "u", "r", b"XYZ")
 
         self.assertEqual(a, b)
         self.assertEqual(len(D.descargas_de(self.con, "odb")), 1)
 
-    def test_bytes_distintos_si_son_otra_descarga(self):
-        D.registrar_descarga(self.con, "odb", "E1", "u", "r", b"XYZ")
-        D.registrar_descarga(self.con, "odb", "E1", "u", "r", b"OTRO")
+    def test_bytes_distintos_son_otro_archivo(self):
+        eid = D.abrir_extraccion(self.con, "odb")
+        D.registrar_descarga(self.con, eid, "u", "r", b"XYZ")
+        D.registrar_descarga(self.con, eid, "u", "r", b"OTRO")
 
         self.assertEqual(len(D.descargas_de(self.con, "odb")), 2)
 
-    def test_la_misma_descarga_no_inserta_dos_veces(self):
-        """Re-correr sobre los mismos bytes no crea nada: es la idempotencia
-        que pide el encargo."""
+    def test_el_mismo_archivo_en_otra_corrida_se_registra_aparte(self):
+        """Cada extraccion es una foto, y lo que importa de un archivo es en
+        que foto salio."""
+        self._corrida("odb", b"IGUAL")
+        self._corrida("odb", b"IGUAL")
+
+        self.assertEqual(len(D.descargas_de(self.con, "odb")), 2)
+
+    def test_la_misma_descarga_no_inserta_bronce_dos_veces(self):
+        _eid, did = self._corrida("biocyc", b"A")
         D.guardar_bronze(self.con, [
-            _fila("biocyc", "TU-1", "PA0425|PA0426", descarga_id=self.did)])
+            _fila("biocyc", "TU-1", "PA0425|PA0426", descarga_id=did)])
         n, ya = D.guardar_bronze(self.con, [
-            _fila("biocyc", "TU-1", "PA0425|PA0426", descarga_id=self.did)])
+            _fila("biocyc", "TU-1", "PA0425|PA0426", descarga_id=did)])
 
         self.assertEqual(len(D.bronze_de(self.con, "biocyc")), 1)
         self.assertEqual((n, ya), (0, 1))
 
-    def test_el_bronce_conserva_lo_que_dijo_la_fuente_en_cada_fecha(self):
+    def test_el_bronce_conserva_lo_que_dijo_la_fuente_en_cada_corrida(self):
         """Si la fuente corrige un operon, la version vieja NO se pisa.
 
         Con DO UPDATE se perdia que la fuente cambio de opinion y cuando, que
         es de lo poco que una capa cruda aporta y nadie mas guarda.
         """
-        d2 = _descarga(self.con, "biocyc", b"SEGUNDA", "E2")
+        _e1, d1 = self._corrida("biocyc", b"PRIMERA")
+        _e2, d2 = self._corrida("biocyc", b"SEGUNDA")
         D.guardar_bronze(self.con, [
-            _fila("biocyc", "TU-1", "PA0425|PA0426", descarga_id=self.did)])
+            _fila("biocyc", "TU-1", "PA0425|PA0426", descarga_id=d1)])
         D.guardar_bronze(self.con, [
             _fila("biocyc", "TU-1", "PA0425|PA0426|PA0427", descarga_id=d2)])
 
@@ -299,12 +314,11 @@ class PruebasIdempotencia(unittest.TestCase):
         self.assertEqual(versiones[0]["locus_tags"], "PA0425|PA0426|PA0427")
         self.assertEqual(versiones[1]["locus_tags"], "PA0425|PA0426")
 
-    def test_la_version_vigente_es_la_de_la_descarga_mas_reciente(self):
-        """Curar mira solo esta: con la tabla entera, una version vieja y la
-        corregida entrarian las dos a la capa curada con la misma pinta."""
-        d2 = _descarga(self.con, "biocyc", b"SEGUNDA", "E2")
+    def test_vigente_es_la_ultima_corrida_completa(self):
+        _e1, d1 = self._corrida("biocyc", b"PRIMERA")
+        _e2, d2 = self._corrida("biocyc", b"SEGUNDA")
         D.guardar_bronze(self.con, [
-            _fila("biocyc", "TU-1", "PA0425|PA0426", descarga_id=self.did)])
+            _fila("biocyc", "TU-1", "PA0425|PA0426", descarga_id=d1)])
         D.guardar_bronze(self.con, [
             _fila("biocyc", "TU-1", "PA0425|PA0426|PA0427", descarga_id=d2)])
 
@@ -312,64 +326,90 @@ class PruebasIdempotencia(unittest.TestCase):
 
         self.assertEqual(len(vigente), 1)
         self.assertEqual(vigente[0]["locus_tags"], "PA0425|PA0426|PA0427")
+        self.assertEqual(vigente[0]["fuente"], "biocyc")
 
-    def test_una_fila_sin_descarga_no_entra(self):
-        """Sin la descarga de la que salio no tiene procedencia, y ademas el
-        NULL rompe la unicidad: en SQLite los NULL son distintos entre si."""
-        with self.assertRaises(ValueError):
-            D.guardar_bronze(self.con, [
-                {"fuente": "odb", "id_fuente": "x", "locus_tags": "PA0425"}])
+    def test_una_corrida_incompleta_no_desplaza_a_la_completa_anterior(self):
+        """Media foto nueva no invalida la ultima foto buena: si la
+        paginacion se corta, se sigue curando la anterior."""
+        _e1, d1 = self._corrida("odb", b"BUENA")
+        _e2, d2 = self._corrida("odb", b"CORTADA", completa=False)
+        D.guardar_bronze(self.con, [
+            _fila("odb", "a", "PA0425|PA0426", descarga_id=d1)])
+        D.guardar_bronze(self.con, [
+            _fila("odb", "a", "PA9999", descarga_id=d2)])
 
-    def test_una_extraccion_incompleta_no_se_cura(self):
-        """Media descarga nueva mezclada con media vieja produce un catalogo
-        que no corresponde a ningun estado real de la fuente. Si la
-        paginacion se corto, la foto entera se ignora."""
-        _bronce(self.con, [_fila("odb", "a", "PA0425|PA0426")],
-                extraccion="E1", completa=False)
+        vigente = D.bronze_vigente(self.con)
+
+        self.assertEqual(len(vigente), 1)
+        self.assertEqual(vigente[0]["locus_tags"], "PA0425|PA0426")
+
+    def test_una_fuente_sin_ninguna_corrida_completa_queda_fuera(self):
+        """Con media foto no se puede decir que se retiro ni que sigue, asi
+        que la fuente entera sale de la curacion. Y hay que nombrarla: que
+        desaparezca por una descarga cortada es indistinguible de que no
+        trajera nada, y son dos problemas distintos.
+        """
+        _eid, did = self._corrida("odb", b"CORTADA", completa=False)
+        D.guardar_bronze(self.con, [
+            _fila("odb", "a", "PA0425|PA0426", descarga_id=did)])
 
         self.assertEqual(D.bronze_vigente(self.con), [])
+        self.assertEqual(D.fuentes_sin_foto(self.con), ["odb"])
+        self.assertEqual(D.retirados(self.con), {},
+                         "no se retiro nada: no hay con que comparar")
         self.assertEqual(len(D.bronze_de(self.con, "odb")), 1,
                          "el crudo si se conserva; lo que no se cura")
 
+    def test_una_fuente_con_foto_no_aparece_como_sin_foto(self):
+        _eid, did = self._corrida("odb", b"BUENA")
+        D.guardar_bronze(self.con, [
+            _fila("odb", "a", "PA0425|PA0426", descarga_id=did)])
+
+        self.assertEqual(D.fuentes_sin_foto(self.con), [])
+
     def test_un_operon_que_la_fuente_retira_deja_de_estar_vigente(self):
-        """Con el criterio viejo --la fila de mayor descarga_id por clave--
-        un operon eliminado seguia vigente para siempre."""
-        _bronce(self.con, [_fila("odb", "a", "PA0425|PA0426"),
-                           _fila("odb", "b", "PA2493|PA2494")],
-                extraccion="E1")
-        # La segunda extraccion ya no trae `b`.
-        _bronce(self.con, [_fila("odb", "a", "PA0425|PA0426")],
-                extraccion="E2")
+        """Con el criterio viejo --la fila mas reciente de cada clave-- un
+        operon eliminado seguia vigente para siempre."""
+        _e1, d1 = self._corrida("odb", b"PRIMERA")
+        D.guardar_bronze(self.con, [
+            _fila("odb", "a", "PA0425|PA0426", descarga_id=d1),
+            _fila("odb", "b", "PA2493|PA2494", descarga_id=d1)])
+        _e2, d2 = self._corrida("odb", b"SEGUNDA")
+        D.guardar_bronze(self.con, [
+            _fila("odb", "a", "PA0425|PA0426", descarga_id=d2)])
 
         vigentes = set(f["id_fuente"] for f in D.bronze_vigente(self.con))
 
         self.assertEqual(vigentes, {"a"})
         self.assertEqual(D.retirados(self.con), {"odb": ["b"]})
 
-    def test_sin_ninguna_extraccion_completa_nada_esta_retirado(self):
-        """No hay con que comparar: no es que se retirara, es que no hay
-        foto."""
-        _bronce(self.con, [_fila("odb", "a", "PA0425|PA0426")],
-                extraccion="E1", completa=False)
+    def test_una_fila_sin_descarga_no_entra(self):
+        """Sin la descarga de la que salio no tiene procedencia, y ademas el
+        NULL rompe la unicidad: en SQLite los NULL son distintos entre si."""
+        with self.assertRaises(ValueError):
+            D.guardar_bronze(self.con, [
+                {"id_fuente": "x", "locus_tags": "PA0425"}])
 
-        self.assertEqual(D.retirados(self.con), {})
-
-    def test_una_fila_no_puede_colgar_de_la_descarga_de_otra_fuente(self):
-        """Quedaria fuera de su propia foto vigente y desapareceria del
-        catalogo sin que nada lo dijera."""
-        ajena = _descarga(self.con, "odb", b"AJENA", "E9")
+    def test_una_fila_que_dice_ser_de_otra_fuente_se_rechaza(self):
+        """La fuente ya no se guarda en el bronce --se deriva de la
+        extraccion-- asi que no puede discrepar. Lo que si se comprueba es que
+        quien llama no se haya equivocado de descarga."""
+        _eid, did = self._corrida("odb", b"AJENA")
 
         with self.assertRaises(ValueError):
             D.guardar_bronze(self.con, [
-                _fila("biocyc", "TU-1", "PA0425", descarga_id=ajena)])
+                _fila("biocyc", "TU-1", "PA0425", descarga_id=did)])
 
     def test_dos_fuentes_pueden_usar_el_mismo_id(self):
-        """La clave es (fuente, id_fuente): que ODB y BioCyc llamen `op1` a
-        cosas distintas no puede hacer que una pise a la otra."""
+        """Que ODB y BioCyc llamen `op1` a cosas distintas no puede hacer que
+        una pise a la otra: cada una cuelga de su propia descarga."""
         _bronce(self.con, [_fila("odb", "op1", "PA0425|PA0426"),
-                                    _fila("biocyc", "op1", "PA2493|PA2494")])
+                           _fila("biocyc", "op1", "PA2493|PA2494")])
 
         self.assertEqual(len(D.bronze_de(self.con)), 2)
+        self.assertEqual(
+            sorted(f["fuente"] for f in D.bronze_vigente(self.con)),
+            ["biocyc", "odb"])
 
 
 class PruebasCuracion(unittest.TestCase):

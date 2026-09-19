@@ -426,6 +426,12 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
     # Lo que la fuente retiro entre dos extracciones completas. Va al informe
     # y no a una prueba: es un hecho de la corrida, no un contrato del codigo.
     resumen["retirados"] = _db.retirados(con)
+    # Fuentes con bronce pero sin ninguna extraccion completa: quedan
+    # FUERA de la curacion entera, y por eso hay que nombrarlas. Una
+    # fuente que desaparece porque su descarga se corto es
+    # indistinguible de una que no trajo nada, y piden acciones
+    # distintas.
+    resumen["sin_foto"] = _db.fuentes_sin_foto(con)
     resumen["ambiguos"] = sin_resolver_ambiguo
     # El tamano del diccionario de sinonimos, por la misma razon. Una prueba
     # que fallara al crecer castigaria la mejora y romperia CI por una buena

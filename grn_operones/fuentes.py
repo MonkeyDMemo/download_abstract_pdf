@@ -374,8 +374,9 @@ def extraer(con, fuente, sesion, flag_datos=None, url=None, max_paginas=500,
     # Identifica esta corrida y agrupa sus archivos. Se marca completa al
     # final y solo si no hubo error: una extraccion a medias no la mira la
     # capa curada.
-    extraccion = _db.ahora()
-    informe = {"fuente": fuente, "extraccion": extraccion, "descargas": [],
+    extraccion_id = _db.abrir_extraccion(con, fuente)
+    informe = {"fuente": fuente, "extraccion_id": extraccion_id,
+               "descargas": [],
                "filas": 0, "error": None, "completa": False}
 
     if fuente == "odb":
@@ -393,12 +394,15 @@ def extraer(con, fuente, sesion, flag_datos=None, url=None, max_paginas=500,
 
     ids = []
     for u, ruta, cuerpo in bajadas:
-        did = _db.registrar_descarga(con, fuente, extraccion, u, ruta, cuerpo)
+        did = _db.registrar_descarga(con, extraccion_id, u, ruta, cuerpo)
         ids.append(did)
         informe["descargas"].append(
             dict(ruta=ruta, descarga_id=did, **inspeccionar(cuerpo)))
 
     if not bajadas:
+        # Sin archivos no hay foto: se cierra incompleta para que la capa
+        # curada no la tome por una extraccion vacia legitima.
+        _db.cerrar_extraccion(con, extraccion_id, completa=False)
         return informe
 
     try:
@@ -407,7 +411,7 @@ def extraer(con, fuente, sesion, flag_datos=None, url=None, max_paginas=500,
         # La descarga si termino: se marca completa aunque no se sepa leer.
         # El parser es un problema nuestro, no una foto a medias de la fuente,
         # y dejarla incompleta escondería una extraccion que si esta entera.
-        _db.cerrar_extraccion(con, fuente, extraccion)
+        _db.cerrar_extraccion(con, extraccion_id)
         informe["completa"] = True
         informe["error"] = str(e)
         log("  [%s] descargado, sin parsear: %s" % (fuente, e))
@@ -417,7 +421,7 @@ def extraer(con, fuente, sesion, flag_datos=None, url=None, max_paginas=500,
         f.setdefault("descarga_id", ids[0] if ids else None)
     insertadas, ya_estaban = _db.guardar_bronze(con, filas)
     # Solo aqui, y solo si no hubo error en ningun paso anterior.
-    _db.cerrar_extraccion(con, fuente, extraccion)
+    _db.cerrar_extraccion(con, extraccion_id)
     informe["completa"] = True
     informe["filas"] = len(filas)
     informe["insertadas"] = insertadas

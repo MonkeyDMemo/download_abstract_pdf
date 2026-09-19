@@ -138,6 +138,15 @@ def cmd_curar(args):
     log("  sinonimos en el diccionario    %d de %d filas (%.1f %%)"
         % (con_sinonimo, filas, 100.0 * con_sinonimo / filas))
 
+    if resumen["sin_foto"]:
+        log("")
+        log("  FUERA DE LA CURACION: sin ninguna extraccion completa")
+        log("  Tienen bronce, pero su extraccion no termino bien. Con media")
+        log("  foto no se puede decir que se retiro ni que sigue, asi que no")
+        log("  se curan. Vuelve a correr `extraer` para esas fuentes.")
+        for f in resumen["sin_foto"]:
+            log("    %s" % f)
+
     if resumen["retirados"]:
         log("")
         log("  RETIRADOS POR LA FUENTE desde la extraccion anterior")
