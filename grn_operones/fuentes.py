@@ -285,16 +285,29 @@ def parsear_biocyc(xml_tus, xml_genes):
                 sin_mapear.append(fid)
         if not locus:
             continue
+        frameids = [c.get("frameid") or ""
+                    for c in tu.findall("component/Gene")]
+        crudo = {"frameids": frameids}
+        if sin_mapear:
+            crudo["sin_mapear"] = sin_mapear
         filas.append({
             "fuente": "biocyc",
             "id_fuente": tu.get("frameid"),
-            "genes_raw": "|".join(
-                c.get("frameid") or "" for c in tu.findall("component/Gene")),
+            # `genes_raw` queda vacio a proposito. Esta columna es para los
+            # nombres de gen **tal como los escribio la fuente**, y BioCyc no
+            # escribe nombres: escribe `frameid` internos (`G-1`) que no
+            # identifican nada fuera de su base. Ponerlos aqui hacia que la
+            # medicion de cobertura de mapeo diera 0 % para BioCyc, que es
+            # alarmante y falso: BioCyc entrega el locus tag resuelto en
+            # `accession-1` y no hay ningun nombre que mapear. Los frameids se
+            # conservan en `registro_raw`, que es donde va lo que la fuente
+            # dijo y nosotros no interpretamos.
+            "genes_raw": None,
             "locus_tags": "|".join(locus),
             "cadena": None,
             "tipo_evidencia": ";".join(evid) or None,
             "pmid": None,
-            "registro_raw": {"sin_mapear": sin_mapear} if sin_mapear else None,
+            "registro_raw": crudo,
         })
     return filas
 
@@ -358,7 +371,12 @@ def extraer(con, fuente, sesion, flag_datos=None, url=None, max_paginas=500,
     leerla seria tirar la unica parte que si se consiguio.
     """
     carpeta = carpeta_cruda(fuente, flag_datos)
-    informe = {"fuente": fuente, "descargas": [], "filas": 0, "error": None}
+    # Identifica esta corrida y agrupa sus archivos. Se marca completa al
+    # final y solo si no hubo error: una extraccion a medias no la mira la
+    # capa curada.
+    extraccion = _db.ahora()
+    informe = {"fuente": fuente, "extraccion": extraccion, "descargas": [],
+               "filas": 0, "error": None, "completa": False}
 
     if fuente == "odb":
         bajadas = traer_odb(sesion, carpeta, max_paginas, log)
@@ -375,7 +393,7 @@ def extraer(con, fuente, sesion, flag_datos=None, url=None, max_paginas=500,
 
     ids = []
     for u, ruta, cuerpo in bajadas:
-        did = _db.registrar_descarga(con, fuente, u, ruta, cuerpo)
+        did = _db.registrar_descarga(con, fuente, extraccion, u, ruta, cuerpo)
         ids.append(did)
         informe["descargas"].append(
             dict(ruta=ruta, descarga_id=did, **inspeccionar(cuerpo)))
@@ -386,18 +404,26 @@ def extraer(con, fuente, sesion, flag_datos=None, url=None, max_paginas=500,
     try:
         filas = _parsear(fuente, bajadas)
     except FormatoDesconocido as e:
+        # La descarga si termino: se marca completa aunque no se sepa leer.
+        # El parser es un problema nuestro, no una foto a medias de la fuente,
+        # y dejarla incompleta escondería una extraccion que si esta entera.
+        _db.cerrar_extraccion(con, fuente, extraccion)
+        informe["completa"] = True
         informe["error"] = str(e)
         log("  [%s] descargado, sin parsear: %s" % (fuente, e))
         return informe
 
     for f in filas:
         f.setdefault("descarga_id", ids[0] if ids else None)
-    nuevas, actualizadas = _db.guardar_bronze(con, filas)
+    insertadas, ya_estaban = _db.guardar_bronze(con, filas)
+    # Solo aqui, y solo si no hubo error en ningun paso anterior.
+    _db.cerrar_extraccion(con, fuente, extraccion)
+    informe["completa"] = True
     informe["filas"] = len(filas)
-    informe["nuevas"] = nuevas
-    informe["actualizadas"] = actualizadas
-    log("  [%s] %d filas al bronce (%d nuevas, %d actualizadas)"
-        % (fuente, len(filas), nuevas, actualizadas))
+    informe["insertadas"] = insertadas
+    informe["ya_estaban"] = ya_estaban
+    log("  [%s] %d filas al bronce (%d nuevas, %d ya estaban)"
+        % (fuente, len(filas), insertadas, ya_estaban))
     return informe
 
 

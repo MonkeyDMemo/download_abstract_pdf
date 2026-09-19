@@ -134,6 +134,31 @@ def cmd_curar(args):
     for nombre, n in resumen["top_sin_resolver"]:
         log("      %-24s %d" % (nombre, n))
 
+    filas, con_sinonimo = resumen["sinonimos"]
+    log("  sinonimos en el diccionario    %d de %d filas (%.1f %%)"
+        % (con_sinonimo, filas, 100.0 * con_sinonimo / filas))
+
+    if resumen["retirados"]:
+        log("")
+        log("  RETIRADOS POR LA FUENTE desde la extraccion anterior")
+        log("  Estuvieron y ya no estan. Que desaparezcan es informacion:")
+        log("  alguien los retiro por algo, y dejarlos caer en silencio los")
+        log("  convierte en un hueco que nadie sabe explicar.")
+        for f in sorted(resumen["retirados"]):
+            ids = resumen["retirados"][f]
+            log("    %-10s %d: %s%s"
+                % (f, len(ids), ", ".join(ids[:8]),
+                   " ..." if len(ids) > 8 else ""))
+
+    if resumen["ambiguos"]:
+        log("")
+        log("  NOMBRES AMBIGUOS, sin resolver a proposito")
+        log("  Elegir uno meteria un gen equivocado en un operon sin dejar")
+        log("  rastro de que hubo una eleccion. Van a conflictos.")
+        for nombre in sorted(resumen["ambiguos"]):
+            log("    %-16s -> %s"
+                % (nombre, ", ".join(resumen["ambiguos"][nombre])))
+
     log("")
     log("  COBERTURA DE MAPEO POR FUENTE")
     log("  La normalizacion falla en silencio: un nombre que el diccionario no")
@@ -144,9 +169,13 @@ def cmd_curar(args):
         log("    %-10s %3d de %3d nombres  (%.1f %%)"
             % (f, c["mapeados"], c["nombres"], 100.0 * c["tasa"]))
         if c["huerfanos"]:
-            log("       sin mapear: %s%s"
+            log("       sin mapear (faltan del diccionario): %s%s"
                 % (", ".join(c["huerfanos"][:10]),
                    " ..." if len(c["huerfanos"]) > 10 else ""))
+        if c["ambiguos"]:
+            log("       ambiguos (sobran candidatos): %s%s"
+                % (", ".join(c["ambiguos"][:10]),
+                   " ..." if len(c["ambiguos"]) > 10 else ""))
     log("")
     log("  `n_fuentes` cuenta fuentes distintas, y BioCyc con Pseudomonas.com")
     log("  valen por una: comparten el motor de prediccion de Pathway Tools,")

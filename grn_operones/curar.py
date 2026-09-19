@@ -125,14 +125,41 @@ def cargar_hebras(rutas=RUTAS_GFF):
     return {}
 
 
-def normalizar(nombres, diccionario):
-    """([locus_tags], [sin_resolver]) preservando el orden de entrada.
+_SUFIJO = re.compile(r"^(.*?[a-zA-Z])(\d+)$")
 
-    No se ordena: el orden de los miembros es el de transcripcion y es lo que
-    distingue `mexCD-oprJ` de `oprJ-mexDC`, que es el mismo operon leido al
-    reves y un nombre que no existe en ninguna parte.
+
+def cargar_paralogos(diccionario):
+    """{nombre base: [locus_tags]} de las familias con sufijo numerico.
+
+    `phzA1` y `phzA2` comparten la base `phzA`, que no existe como entrada
+    propia. La literatura escribe `phzA` a secas, y eso no identifica un gen:
+    identifica dos.
     """
-    locus, fuera = [], []
+    familias = {}
+    for nombre, lt in diccionario.items():
+        m = _SUFIJO.match(nombre)
+        if m:
+            familias.setdefault(m.group(1), set()).add(lt)
+    return dict((b, sorted(v)) for b, v in familias.items()
+                if len(v) > 1 and b not in diccionario)
+
+
+def normalizar(nombres, diccionario, paralogos=None):
+    """([locus_tags], [sin_resolver], [(nombre, [candidatos])]).
+
+    El orden de entrada se preserva y no se ordena: el orden de los miembros
+    es el de transcripcion, y es lo que distingue `mexCD-oprJ` de `oprJ-mexDC`,
+    que es el mismo operon leido al reves y un nombre que no existe.
+
+    **Un nombre ambiguo no se resuelve, se reporta.** `phzA` puede ser
+    `phzA1` (PA4210) o `phzA2` (PA1899), y elegir uno por orden alfabetico o
+    por cercania meteria un gen equivocado en un operon sin dejar rastro de
+    que hubo una eleccion. El registro va a conflictos con sus candidatos, y
+    lo resuelve una persona.
+    """
+    paralogos = (cargar_paralogos(diccionario) if paralogos is None
+                 else paralogos)
+    locus, fuera, ambiguos = [], [], []
     for n in nombres:
         n = (n or "").strip()
         if not n:
@@ -141,9 +168,13 @@ def normalizar(nombres, diccionario):
         if lt:
             if lt not in locus:
                 locus.append(lt)
+            continue
+        candidatos = paralogos.get(n.lower())
+        if candidatos:
+            ambiguos.append((n, candidatos))
         else:
             fuera.append(n)
-    return locus, fuera
+    return locus, fuera, ambiguos
 
 
 def _numero(locus_tag):
@@ -230,14 +261,45 @@ def cobertura_mapeo(nombres, diccionario=None):
         n = (n or "").strip()
         if n and n not in unicos:
             unicos.append(n)
-    mapeados = [n for n in unicos if n.lower() in diccionario]
-    huerfanos = [n for n in unicos if n.lower() not in diccionario]
+    locus, huerfanos, ambiguos = normalizar(unicos, diccionario)
+    mapeados = len(unicos) - len(huerfanos) - len(ambiguos)
     return {
         "nombres": len(unicos),
-        "mapeados": len(mapeados),
+        "mapeados": mapeados,
         "huerfanos": huerfanos,
-        "tasa": (float(len(mapeados)) / len(unicos)) if unicos else 0.0,
+        # Separados de los huerfanos a proposito: son dos problemas distintos.
+        # Un huerfano no esta en el diccionario y hay que anadirlo; un ambiguo
+        # esta de sobra --`phzA` es `phzA1` y `phzA2`-- y hay que desambiguarlo
+        # a mano. Mezclarlos daria una sola cifra que no dice que hacer.
+        "ambiguos": [n for n, _c in ambiguos],
+        "tasa": (float(mapeados) / len(unicos)) if unicos else 0.0,
     }
+
+
+def contar_sinonimos(ruta=RUTA_GENES):
+    """(filas, filas_con_sinonimo) del diccionario de genes.
+
+    Un sinonimo es un nombre distinto del simbolo y del locus tag. Se cuenta
+    en cada corrida y se reporta; **no hay prueba que lo acote**, porque una
+    que fallara al crecer castigaria la mejora y rompería CI por una buena
+    noticia. Las pruebas fijan comportamiento --que el mapeo sea correcto, que
+    la ambiguedad se detecte, que lo no resuelto se reporte--; el tamano del
+    catalogo es un hecho de la corrida y va al informe.
+    """
+    filas = con_sinonimo = 0
+    with io.open(ruta, encoding="utf-8") as f:
+        cols = f.readline().rstrip("\n").split("\t")
+        for linea in f:
+            if not linea.strip():
+                continue
+            d = dict(zip(cols, linea.rstrip("\n").split("\t")))
+            filas += 1
+            alias = [a.strip() for a in (d.get("alias") or "").split("|")
+                     if a.strip()]
+            if [a for a in alias
+                    if a not in (d.get("locus_tag"), d.get("simbolo"))]:
+                con_sinonimo += 1
+    return filas, con_sinonimo
 
 
 def cobertura_de_fuente(con, fuente, diccionario=None):
@@ -274,6 +336,8 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
     # 1 y 2. Normalizar y validar, agrupando por conjunto de genes.
     por_clave = collections.OrderedDict()
     sin_resolver = collections.Counter()
+    sin_resolver_ambiguo = {}
+    paralogos = cargar_paralogos(diccionario)
     descartadas = 0
     # `bronze_vigente` y no `bronze_de`: el bronce conserva una fila por
     # descarga, asi que la tabla entera trae versiones viejas de un mismo
@@ -282,15 +346,19 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
         nombres = [x for x in (f["locus_tags"] or "").split("|") if x]
         if not nombres:
             nombres = [x for x in (f["genes_raw"] or "").split("|") if x]
-        locus, fuera = normalizar(nombres, diccionario)
+        locus, fuera, ambiguos = normalizar(nombres, diccionario,
+                                           paralogos)
         for x in fuera:
             sin_resolver[x] += 1
+        for nombre, candidatos in ambiguos:
+            sin_resolver_ambiguo[nombre] = candidatos
         if len(locus) < 2:
             # Un solo gen no es un operon. No es un error de la fuente: ODB y
             # BioCyc registran unidades de transcripcion de un gen.
             descartadas += 1
             continue
-        por_clave.setdefault(clave_de(locus), []).append((f, locus, fuera))
+        por_clave.setdefault(clave_de(locus), []).append(
+            (f, locus, fuera, ambiguos))
 
     # 3. Deduplicar: la clave ya agrupo los identicos. Los subconjuntos se
     # marcan como alternativas, no se fusionan.
@@ -321,6 +389,8 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
             revisar.append("hebra_no_verificada")
         if any(g[2] for g in grupo):
             revisar.append("genes_sin_resolver")
+        if any(g[3] for g in grupo):
+            revisar.append("nombre_ambiguo")
 
         pmids = sorted(set(
             p.strip() for f in filas for p in (f["pmid"] or "").split(";")
@@ -353,6 +423,14 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
     resumen["cobertura"] = dict(
         (f, cobertura_de_fuente(con, f, diccionario))
         for f in sorted(set(x["fuente"] for x in _db.bronze_vigente(con))))
+    # Lo que la fuente retiro entre dos extracciones completas. Va al informe
+    # y no a una prueba: es un hecho de la corrida, no un contrato del codigo.
+    resumen["retirados"] = _db.retirados(con)
+    resumen["ambiguos"] = sin_resolver_ambiguo
+    # El tamano del diccionario de sinonimos, por la misma razon. Una prueba
+    # que fallara al crecer castigaria la mejora y romperia CI por una buena
+    # noticia; el informe lo dice en cada corrida sin bloquear nada.
+    resumen["sinonimos"] = contar_sinonimos()
     log("  %d operones curados desde %d filas de bronce"
         % (n, sum(len(v) for v in por_clave.values())))
     return resumen

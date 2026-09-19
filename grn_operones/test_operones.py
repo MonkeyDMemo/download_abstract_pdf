@@ -75,9 +75,41 @@ def _fila(fuente, idf, locus, descarga_id=1, **kw):
     return f
 
 
-def _descarga(con, fuente="odb", cuerpo=b"X"):
-    """Registra una descarga y devuelve su id, para colgar bronce de ella."""
-    return D.registrar_descarga(con, fuente, "u", "r", cuerpo)
+def _descarga(con, fuente="odb", cuerpo=b"X", extraccion="E1",
+              completa=True):
+    """Registra una descarga y devuelve su id.
+
+    Cierra la extraccion por omision: `bronze_vigente()` solo mira las
+    completas, asi que una prueba que no la cerrara no veria su bronce.
+    Con `completa=False` se simula una descarga interrumpida.
+    """
+    did = D.registrar_descarga(con, fuente, extraccion, "u", "r", cuerpo)
+    if completa:
+        D.cerrar_extraccion(con, fuente, extraccion)
+    return did
+
+
+def _bronce(con, filas, extraccion="E1", completa=True):
+    """Guarda filas de bronce creando, por cada fuente, SU descarga.
+
+    Una fila de bronce pertenece a la descarga de su propia fuente: si
+    colgara de otra, quedaria fuera de su foto vigente y desapareceria del
+    catalogo sin que nada lo dijera. El helper lo hace bien para que las
+    pruebas hablen de curacion y no de plomeria.
+    """
+    por_fuente = {}
+    for f in filas:
+        fu = f["fuente"]
+        if fu not in por_fuente:
+            por_fuente[fu] = D.registrar_descarga(
+                con, fu, extraccion, "u", "r",
+                ("cuerpo-%s-%s" % (fu, extraccion)).encode())
+        f["descarga_id"] = por_fuente[fu]
+    salida = D.guardar_bronze(con, filas)
+    if completa:
+        for fu in por_fuente:
+            D.cerrar_extraccion(con, fu, extraccion)
+    return salida
 
 
 class PruebasContratoDeRed(unittest.TestCase):
@@ -202,7 +234,9 @@ class PruebasParserBioCyc(unittest.TestCase):
         tu2 = [f for f in filas if f["id_fuente"] == "TU-2"][0]
 
         self.assertEqual(tu2["locus_tags"], "PA2493|PA2494")
-        self.assertEqual(tu2["registro_raw"], {"sin_mapear": ["G-99"]})
+        self.assertEqual(tu2["registro_raw"]["sin_mapear"], ["G-99"])
+        self.assertIsNone(tu2["genes_raw"],
+                          "los frameid no son nombres de gen")
 
     def test_los_parsers_que_faltan_fallan_diciendo_que_llego(self):
         """Un parser a ciegas devolveria cero filas y pareceria correcto."""
@@ -221,27 +255,28 @@ class PruebasIdempotencia(unittest.TestCase):
         # Una descarga semilla con id 1, que es el que `_fila` usa por
         # omision. Con fuente propia para no contaminar los conteos de las
         # pruebas que cuentan descargas de `odb`.
-        self.did = _descarga(self.con, "semilla", b"SEMILLA")
+        self.did = _descarga(self.con, "biocyc", b"SEMILLA", "E1")
 
     def test_la_misma_descarga_no_se_registra_dos_veces(self):
-        a = D.registrar_descarga(self.con, "odb", "u", "r", b"XYZ")
-        b = D.registrar_descarga(self.con, "odb", "u", "r", b"XYZ")
+        a = D.registrar_descarga(self.con, "odb", "E1", "u", "r", b"XYZ")
+        b = D.registrar_descarga(self.con, "odb", "E1", "u", "r", b"XYZ")
 
         self.assertEqual(a, b)
         self.assertEqual(len(D.descargas_de(self.con, "odb")), 1)
 
     def test_bytes_distintos_si_son_otra_descarga(self):
-        D.registrar_descarga(self.con, "odb", "u", "r", b"XYZ")
-        D.registrar_descarga(self.con, "odb", "u", "r", b"OTRO")
+        D.registrar_descarga(self.con, "odb", "E1", "u", "r", b"XYZ")
+        D.registrar_descarga(self.con, "odb", "E1", "u", "r", b"OTRO")
 
         self.assertEqual(len(D.descargas_de(self.con, "odb")), 2)
 
     def test_la_misma_descarga_no_inserta_dos_veces(self):
         """Re-correr sobre los mismos bytes no crea nada: es la idempotencia
         que pide el encargo."""
-        D.guardar_bronze(self.con, [_fila("biocyc", "TU-1", "PA0425|PA0426")])
-        n, ya = D.guardar_bronze(
-            self.con, [_fila("biocyc", "TU-1", "PA0425|PA0426")])
+        D.guardar_bronze(self.con, [
+            _fila("biocyc", "TU-1", "PA0425|PA0426", descarga_id=self.did)])
+        n, ya = D.guardar_bronze(self.con, [
+            _fila("biocyc", "TU-1", "PA0425|PA0426", descarga_id=self.did)])
 
         self.assertEqual(len(D.bronze_de(self.con, "biocyc")), 1)
         self.assertEqual((n, ya), (0, 1))
@@ -252,8 +287,9 @@ class PruebasIdempotencia(unittest.TestCase):
         Con DO UPDATE se perdia que la fuente cambio de opinion y cuando, que
         es de lo poco que una capa cruda aporta y nadie mas guarda.
         """
-        d2 = _descarga(self.con, "biocyc", b"SEGUNDA")
-        D.guardar_bronze(self.con, [_fila("biocyc", "TU-1", "PA0425|PA0426")])
+        d2 = _descarga(self.con, "biocyc", b"SEGUNDA", "E2")
+        D.guardar_bronze(self.con, [
+            _fila("biocyc", "TU-1", "PA0425|PA0426", descarga_id=self.did)])
         D.guardar_bronze(self.con, [
             _fila("biocyc", "TU-1", "PA0425|PA0426|PA0427", descarga_id=d2)])
 
@@ -266,8 +302,9 @@ class PruebasIdempotencia(unittest.TestCase):
     def test_la_version_vigente_es_la_de_la_descarga_mas_reciente(self):
         """Curar mira solo esta: con la tabla entera, una version vieja y la
         corregida entrarian las dos a la capa curada con la misma pinta."""
-        d2 = _descarga(self.con, "biocyc", b"SEGUNDA")
-        D.guardar_bronze(self.con, [_fila("biocyc", "TU-1", "PA0425|PA0426")])
+        d2 = _descarga(self.con, "biocyc", b"SEGUNDA", "E2")
+        D.guardar_bronze(self.con, [
+            _fila("biocyc", "TU-1", "PA0425|PA0426", descarga_id=self.did)])
         D.guardar_bronze(self.con, [
             _fila("biocyc", "TU-1", "PA0425|PA0426|PA0427", descarga_id=d2)])
 
@@ -283,10 +320,53 @@ class PruebasIdempotencia(unittest.TestCase):
             D.guardar_bronze(self.con, [
                 {"fuente": "odb", "id_fuente": "x", "locus_tags": "PA0425"}])
 
+    def test_una_extraccion_incompleta_no_se_cura(self):
+        """Media descarga nueva mezclada con media vieja produce un catalogo
+        que no corresponde a ningun estado real de la fuente. Si la
+        paginacion se corto, la foto entera se ignora."""
+        _bronce(self.con, [_fila("odb", "a", "PA0425|PA0426")],
+                extraccion="E1", completa=False)
+
+        self.assertEqual(D.bronze_vigente(self.con), [])
+        self.assertEqual(len(D.bronze_de(self.con, "odb")), 1,
+                         "el crudo si se conserva; lo que no se cura")
+
+    def test_un_operon_que_la_fuente_retira_deja_de_estar_vigente(self):
+        """Con el criterio viejo --la fila de mayor descarga_id por clave--
+        un operon eliminado seguia vigente para siempre."""
+        _bronce(self.con, [_fila("odb", "a", "PA0425|PA0426"),
+                           _fila("odb", "b", "PA2493|PA2494")],
+                extraccion="E1")
+        # La segunda extraccion ya no trae `b`.
+        _bronce(self.con, [_fila("odb", "a", "PA0425|PA0426")],
+                extraccion="E2")
+
+        vigentes = set(f["id_fuente"] for f in D.bronze_vigente(self.con))
+
+        self.assertEqual(vigentes, {"a"})
+        self.assertEqual(D.retirados(self.con), {"odb": ["b"]})
+
+    def test_sin_ninguna_extraccion_completa_nada_esta_retirado(self):
+        """No hay con que comparar: no es que se retirara, es que no hay
+        foto."""
+        _bronce(self.con, [_fila("odb", "a", "PA0425|PA0426")],
+                extraccion="E1", completa=False)
+
+        self.assertEqual(D.retirados(self.con), {})
+
+    def test_una_fila_no_puede_colgar_de_la_descarga_de_otra_fuente(self):
+        """Quedaria fuera de su propia foto vigente y desapareceria del
+        catalogo sin que nada lo dijera."""
+        ajena = _descarga(self.con, "odb", b"AJENA", "E9")
+
+        with self.assertRaises(ValueError):
+            D.guardar_bronze(self.con, [
+                _fila("biocyc", "TU-1", "PA0425", descarga_id=ajena)])
+
     def test_dos_fuentes_pueden_usar_el_mismo_id(self):
         """La clave es (fuente, id_fuente): que ODB y BioCyc llamen `op1` a
         cosas distintas no puede hacer que una pise a la otra."""
-        D.guardar_bronze(self.con, [_fila("odb", "op1", "PA0425|PA0426"),
+        _bronce(self.con, [_fila("odb", "op1", "PA0425|PA0426"),
                                     _fila("biocyc", "op1", "PA2493|PA2494")])
 
         self.assertEqual(len(D.bronze_de(self.con)), 2)
@@ -297,7 +377,6 @@ class PruebasCuracion(unittest.TestCase):
     def setUp(self):
         self.con = _con()
         self.addCleanup(self.con.close)
-        self.did = _descarga(self.con, "semilla", b"SEMILLA")
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         ruta = os.path.join(self.tmp.name, "genes.tsv")
@@ -312,7 +391,7 @@ class PruebasCuracion(unittest.TestCase):
                        hebras=self.hebras if hebras is None else hebras)
 
     def test_normaliza_simbolos_y_alias_a_locus_tag(self):
-        locus, fuera = C.normalizar(["mexA", "mexB", "oprK"], self.dicc)
+        locus, fuera, _amb = C.normalizar(["mexA", "mexB", "oprK"], self.dicc)
 
         self.assertEqual(locus, ["PA0425", "PA0426", "PA0427"])
         self.assertEqual(fuera, [])
@@ -320,12 +399,12 @@ class PruebasCuracion(unittest.TestCase):
     def test_conserva_el_orden_de_transcripcion(self):
         """El orden distingue `mexCD-oprJ` de `oprJ-mexDC`, que es el mismo
         operon leido al reves y un nombre que no existe."""
-        locus, _ = C.normalizar(["oprM", "mexB", "mexA"], self.dicc)
+        locus, _f, _a = C.normalizar(["oprM", "mexB", "mexA"], self.dicc)
 
         self.assertEqual(locus, ["PA0427", "PA0426", "PA0425"])
 
     def test_un_nombre_que_no_esta_se_reporta_no_se_inventa(self):
-        locus, fuera = C.normalizar(["mexA", "noexiste"], self.dicc)
+        locus, fuera, _amb = C.normalizar(["mexA", "noexiste"], self.dicc)
 
         self.assertEqual(locus, ["PA0425"])
         self.assertEqual(fuera, ["noexiste"])
@@ -336,7 +415,7 @@ class PruebasCuracion(unittest.TestCase):
         self.assertFalse(C.es_adyacente(["PA0425", "PA0430"]))
 
     def test_dos_fuentes_con_los_mismos_genes_dan_un_solo_operon(self):
-        D.guardar_bronze(self.con, [
+        _bronce(self.con, [
             _fila("odb", "op1", "PA0425|PA0426|PA0427", pmid="123"),
             _fila("biocyc", "TU-1", "PA0425|PA0426|PA0427")])
 
@@ -349,7 +428,7 @@ class PruebasCuracion(unittest.TestCase):
     def test_un_subconjunto_se_marca_alternativo_y_no_se_fusiona(self):
         """Un operon puede transcribirse entero o en parte, y las dos cosas
         estan documentadas. Fusionarlas perderia una."""
-        D.guardar_bronze(self.con, [
+        _bronce(self.con, [
             _fila("odb", "largo", "PA0425|PA0426|PA0427"),
             _fila("odb", "corto", "PA0425|PA0426")])
 
@@ -361,7 +440,7 @@ class PruebasCuracion(unittest.TestCase):
         self.assertFalse(por_clave["PA0425|PA0426|PA0427"]["es_alternativa"])
 
     def test_el_nivel_de_evidencia_ordena_conocido_curado_predicho(self):
-        D.guardar_bronze(self.con, [
+        _bronce(self.con, [
             _fila("odb", "a", "PA0425|PA0426", pmid="123"),
             _fila("biocyc", "b", "PA2493|PA2494",
                   tipo_evidencia="EV-EXP-IDA"),
@@ -378,7 +457,7 @@ class PruebasCuracion(unittest.TestCase):
     def test_biocyc_y_pgd_juntas_cuentan_como_una_fuente(self):
         """Comparten el motor de prediccion de Pathway Tools: coincidir no es
         confirmacion independiente."""
-        D.guardar_bronze(self.con, [
+        _bronce(self.con, [
             _fila("biocyc", "TU-1", "PA0425|PA0426"),
             _fila("pgd", "op1", "PA0425|PA0426")])
 
@@ -387,7 +466,7 @@ class PruebasCuracion(unittest.TestCase):
         self.assertEqual(D.silver_de(self.con)[0]["n_fuentes"], 1)
 
     def test_un_operon_no_adyacente_queda_marcado_para_revisar(self):
-        D.guardar_bronze(self.con, [_fila("odb", "raro", "PA0425|PA2494")])
+        _bronce(self.con, [_fila("odb", "raro", "PA0425|PA2494")])
 
         self._curar()
         fila = D.silver_de(self.con)[0]
@@ -396,7 +475,7 @@ class PruebasCuracion(unittest.TestCase):
         self.assertIn("no_adyacente", fila["revisar"])
 
     def test_hebras_distintas_se_marcan(self):
-        D.guardar_bronze(self.con, [_fila("odb", "x", "PA2494|PA2495")])
+        _bronce(self.con, [_fila("odb", "x", "PA2494|PA2495")])
 
         self._curar()
 
@@ -405,7 +484,7 @@ class PruebasCuracion(unittest.TestCase):
     def test_sin_gff_la_hebra_no_se_da_por_buena(self):
         """Callar es peor que decir que no se comprobo: una fila sin marca se
         lee como validada."""
-        D.guardar_bronze(self.con, [_fila("odb", "x", "PA0425|PA0426")])
+        _bronce(self.con, [_fila("odb", "x", "PA0425|PA0426")])
 
         C.curar(self.con, diccionario=self.dicc, hebras={})
 
@@ -413,7 +492,7 @@ class PruebasCuracion(unittest.TestCase):
                       D.silver_de(self.con)[0]["revisar"])
 
     def test_una_unidad_de_un_solo_gen_no_es_un_operon(self):
-        D.guardar_bronze(self.con, [_fila("odb", "solo", "PA0425")])
+        _bronce(self.con, [_fila("odb", "solo", "PA0425")])
 
         resumen = self._curar()
 
@@ -421,7 +500,7 @@ class PruebasCuracion(unittest.TestCase):
         self.assertEqual(resumen["descartadas_un_gen"], 1)
 
     def test_curar_dos_veces_no_duplica(self):
-        D.guardar_bronze(self.con, [_fila("odb", "a", "PA0425|PA0426")])
+        _bronce(self.con, [_fila("odb", "a", "PA0425|PA0426")])
 
         self._curar()
         self._curar()
@@ -435,13 +514,12 @@ class PruebasExportacion(unittest.TestCase):
     def setUp(self):
         self.con = _con()
         self.addCleanup(self.con.close)
-        self.did = _descarga(self.con, "semilla", b"SEMILLA")
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         ruta = os.path.join(self.tmp.name, "genes.tsv")
         with io.open(ruta, "w", encoding="utf-8", newline="") as f:
             f.write(GENES_TSV)
-        D.guardar_bronze(self.con, [
+        _bronce(self.con, [
             _fila("odb", "bueno", "PA0425|PA0426", pmid="123"),
             _fila("odb", "raro", "PA0425|PA2494")])
         C.curar(self.con, diccionario=C.cargar_diccionario(ruta),
@@ -508,35 +586,51 @@ class PruebasCoberturaDeMapeo(unittest.TestCase):
             "esos genes desaparecen de sus operones en silencio. Sin "
             "resolver: %s" % (100.0 * c["tasa"], c["huerfanos"]))
 
-    def test_los_nombres_historicos_no_estan_y_queda_medido(self):
-        """Fija el limite conocido para que el dia que alguien amplie el
-        diccionario se vea que cambio, y para que nadie de por hecho que ODB
-        va a mapear entero."""
+    def test_los_dos_modos_de_fallo_se_reportan_por_separado(self):
+        """`nalB` falta del diccionario; `phzA` sobra de candidatos. Son dos
+        problemas con dos arreglos distintos --anadir una entrada contra
+        desambiguar a mano-- y una sola cifra no diria cual toca."""
         c = C.cobertura_mapeo(self.HISTORICOS, self.dicc)
 
-        self.assertEqual(sorted(c["huerfanos"]), ["nalB", "phzA"])
+        self.assertEqual(c["huerfanos"], ["nalB"])
+        self.assertEqual(c["ambiguos"], ["phzA"])
+        self.assertEqual(c["mapeados"], 0)
 
-    def test_el_diccionario_apenas_trae_sinonimos(self):
-        """224 de 5 642 filas. Es la causa de lo anterior, y conviene que la
-        prueba lo diga en vez de dejarlo en un comentario."""
-        import io as _io
-        con_sinonimo = 0
-        with _io.open(C.RUTA_GENES, encoding="utf-8") as f:
-            cols = f.readline().rstrip("\n").split("\t")
-            for linea in f:
-                if not linea.strip():
-                    continue
-                d = dict(zip(cols, linea.rstrip("\n").split("\t")))
-                alias = [a.strip() for a in (d.get("alias") or "").split("|")
-                         if a.strip()]
-                if [a for a in alias
-                        if a not in (d.get("locus_tag"), d.get("simbolo"))]:
-                    con_sinonimo += 1
+    def test_el_conteo_de_sinonimos_se_reporta_no_se_acota(self):
+        """No hay umbral, a proposito.
 
-        self.assertLess(
-            con_sinonimo, 500,
-            "el diccionario gano sinonimos: vuelve a medir la cobertura de "
-            "ODB, puede que ya cubra los nombres historicos")
+        Una prueba que fallara al crecer el diccionario castigaria la mejora y
+        rompería CI por una buena noticia. El tamano del catalogo es un hecho
+        de la corrida y va al informe de `curar`; lo que las pruebas fijan es
+        comportamiento. Aqui solo se comprueba que el contador existe y cuenta.
+        """
+        filas, con_sinonimo = C.contar_sinonimos()
+
+        self.assertGreater(filas, 5000)
+        self.assertGreaterEqual(con_sinonimo, 0)
+        self.assertLessEqual(con_sinonimo, filas)
+
+    def test_un_paralogo_no_se_resuelve_a_uno_de_sus_candidatos(self):
+        """`phzA` puede ser `phzA1` (PA4210) o `phzA2` (PA1899). Elegir uno
+        meteria un gen equivocado en un operon sin dejar rastro de que hubo
+        una eleccion."""
+        locus, fuera, ambiguos = C.normalizar(["phzA"], self.dicc)
+
+        self.assertEqual(locus, [])
+        self.assertEqual(fuera, [])
+        self.assertEqual(len(ambiguos), 1)
+        nombre, candidatos = ambiguos[0]
+        self.assertEqual(nombre, "phzA")
+        self.assertIn("PA4210", candidatos)
+        self.assertIn("PA1899", candidatos)
+
+    def test_un_nombre_sin_parientes_es_huerfano_no_ambiguo(self):
+        """`nalB` no tiene familia numerada: no es ambiguo, es desconocido.
+        Son dos problemas distintos y se reportan por separado."""
+        locus, fuera, ambiguos = C.normalizar(["nalB"], self.dicc)
+
+        self.assertEqual(fuera, ["nalB"])
+        self.assertEqual(ambiguos, [])
 
     def test_la_cobertura_se_mide_sobre_los_nombres_crudos_de_la_fuente(self):
         """Si se midiera sobre `locus_tags` --que ya vienen resueltos cuando
