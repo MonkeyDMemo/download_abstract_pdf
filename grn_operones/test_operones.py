@@ -595,14 +595,6 @@ class PruebasCuracion(unittest.TestCase):
         self.assertIn("hebra_no_verificada",
                       D.silver_de(self.con)[0]["revisar"])
 
-    def test_una_unidad_de_un_solo_gen_no_es_un_operon(self):
-        _bronce(self.con, [_fila("odb", "solo", "PA0425")])
-
-        resumen = self._curar()
-
-        self.assertEqual(D.silver_de(self.con), [])
-        self.assertEqual(resumen["descartadas_un_gen"], 1)
-
     def test_curar_dos_veces_no_duplica(self):
         _bronce(self.con, [_fila("odb", "a", "PA0425|PA0426")])
 
@@ -611,6 +603,76 @@ class PruebasCuracion(unittest.TestCase):
 
         self.assertEqual(len(D.silver_de(self.con)), 1)
         self.assertEqual(len(D.fuentes_de_silver(self.con)), 1)
+
+
+class PruebasMonocistronicos(unittest.TestCase):
+    """Una unidad de transcripcion de un solo gen se conserva, marcada.
+
+    BioCyc registra 3 774 TUs para unos 5 600 genes, asi que muchas son
+    monocistronicas: descartarlas tiraba la mayor parte de esa fuente. Filtrar
+    es decision de quien lee el archivo, no de quien lo construye, y por eso
+    vive en la exportacion.
+    """
+
+    def setUp(self):
+        self.con = _con()
+        self.addCleanup(self.con.close)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        ruta = os.path.join(self.tmp.name, "genes.tsv")
+        with io.open(ruta, "w", encoding="utf-8", newline="") as f:
+            f.write(GENES_TSV)
+        self.dicc = C.cargar_diccionario(ruta)
+        self.hebras = {"PA0425": "+", "PA0426": "+", "PA0427": "+",
+                       "PA2493": "+"}
+        _bronce(self.con, [
+            _fila("biocyc", "TU-solo", "PA2493"),
+            _fila("biocyc", "TU-tres", "PA0425|PA0426|PA0427")])
+        C.curar(self.con, diccionario=self.dicc, hebras=self.hebras)
+
+    def test_una_unidad_de_un_gen_llega_a_silver_marcada(self):
+        por_clave = dict((f["clave_genes"], f) for f in D.silver_de(self.con))
+
+        self.assertIn("PA2493", por_clave)
+        self.assertTrue(por_clave["PA2493"]["monocistronico"])
+        self.assertEqual(por_clave["PA2493"]["n_genes"], 1)
+
+    def test_un_operon_de_varios_genes_no_se_marca(self):
+        por_clave = dict((f["clave_genes"], f) for f in D.silver_de(self.con))
+
+        self.assertFalse(por_clave["PA0425|PA0426|PA0427"]["monocistronico"])
+
+    def test_un_monocistronico_no_se_marca_como_no_adyacente(self):
+        """Con un solo gen la adyacencia es vacuamente cierta: no hay pares que
+        comparar. Marcarlos inundaria el archivo de conflictos con lo que no es
+        un conflicto."""
+        por_clave = dict((f["clave_genes"], f) for f in D.silver_de(self.con))
+
+        self.assertTrue(por_clave["PA2493"]["adyacente"])
+        self.assertNotIn("no_adyacente", por_clave["PA2493"]["revisar"] or "")
+
+    def test_el_resumen_los_cuenta(self):
+        self.assertEqual(D.resumen_silver(self.con)["monocistronicos"], 1)
+
+    def test_exportar_los_incluye_por_omision(self):
+        filas = E.filas_silver(self.con, D)
+
+        self.assertEqual(len(filas), 2)
+        self.assertIn("si", [f["monocistronico"] for f in filas])
+
+    def test_exportar_los_deja_fuera_con_la_opcion(self):
+        filas = E.filas_silver(self.con, D, sin_monocistronicos=True)
+
+        self.assertEqual(len(filas), 1)
+        self.assertEqual(filas[0]["clave_genes"], "PA0425|PA0426|PA0427")
+
+    def test_una_fila_sin_ningun_gen_resuelto_si_se_descarta(self):
+        """Distinto de una unidad de un gen: aqui no hay nada que curar."""
+        _bronce(self.con, [_fila("odb", "vacio", "NOEXISTE")])
+
+        resumen = C.curar(self.con, diccionario=self.dicc, hebras=self.hebras)
+
+        self.assertEqual(resumen["sin_ningun_gen"], 1)
 
 
 class PruebasExportacion(unittest.TestCase):

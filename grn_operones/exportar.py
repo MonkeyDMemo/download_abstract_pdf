@@ -16,7 +16,8 @@ import io
 import os
 
 COLUMNAS_SILVER = [
-    "clave_genes", "nombre", "locus_tags", "n_genes", "cadena", "nivel_evidencia",
+    "clave_genes", "nombre", "locus_tags", "n_genes", "monocistronico",
+    "cadena", "nivel_evidencia",
     "n_fuentes", "fuentes", "pmids", "adyacente", "es_alternativa",
     "promotor_cdbprom", "revisar", "curado_en",
 ]
@@ -41,15 +42,25 @@ def _fuentes(fila_id, mapa):
     return ";".join(sorted(set(f for f, _ in mapa.get(fila_id, []))))
 
 
-def filas_silver(con, db):
+def filas_silver(con, db, sin_monocistronicos=False):
+    """La capa curada, a filas.
+
+    `sin_monocistronicos` **apaga por omision**: la curacion conserva las
+    unidades de un gen porque BioCyc registra 3 774 y descartarlas tiraba la
+    mayor parte de esa fuente. Filtrar es una decision de quien lee el archivo,
+    no de quien lo construye, asi que vive aqui y no en `curar`.
+    """
     mapa = db.fuentes_de_silver(con)
     filas = []
     for s in db.silver_de(con):
+        if sin_monocistronicos and s["monocistronico"]:
+            continue
         filas.append({
             "clave_genes": s["clave_genes"],
             "nombre": s["nombre"] or "",
             "locus_tags": s["locus_tags"],
             "n_genes": s["n_genes"],
+            "monocistronico": "si" if s["monocistronico"] else "no",
             "cadena": s["cadena"] or "",
             "nivel_evidencia": s["nivel_evidencia"],
             "n_fuentes": s["n_fuentes"],

@@ -375,9 +375,9 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
             sin_resolver[x] += 1
         for nombre, candidatos in ambiguos:
             sin_resolver_ambiguo[nombre] = candidatos
-        if len(locus) < 2:
-            # Un solo gen no es un operon. No es un error de la fuente: ODB y
-            # BioCyc registran unidades de transcripcion de un gen.
+        if not locus:
+            # Sin un solo gen resuelto no hay nada que curar. Distinto de una
+            # unidad de un gen, que si se conserva.
             descartadas += 1
             continue
         por_clave.setdefault(clave_de(locus), []).append(
@@ -400,7 +400,12 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
         locus = grupo[0][1]
         fuentes = set(f["fuente"] for f in filas)
         independientes = fuentes - FUENTES_NO_INDEPENDIENTES
-        adyacente = es_adyacente(locus)
+        mono = len(locus) == 1
+        # Con un solo gen la adyacencia es vacuamente cierta: no hay pares
+        # que comparar. Marcar 3 774 unidades monocistronicas de BioCyc como
+        # "no adyacente, revisar" habria inundado el archivo de conflictos
+        # con lo que no es un conflicto.
+        adyacente = True if mono else es_adyacente(locus)
         igual_hebra, hebra = misma_hebra(locus, hebras)
 
         revisar = []
@@ -435,6 +440,7 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
             "pmids": ";".join(pmids) or None,
             "adyacente": adyacente,
             "es_alternativa": clave in alternativas,
+            "monocistronico": mono,
             # 5. Se marca solo si CDBProm respalda este mismo conjunto.
             "promotor_cdbprom": "cdbprom" in fuentes,
             "revisar": ";".join(revisar) or None,
@@ -442,7 +448,7 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
         n += 1
 
     resumen = _db.resumen_silver(con)
-    resumen["descartadas_un_gen"] = descartadas
+    resumen["sin_ningun_gen"] = descartadas
     resumen["nombres_sin_resolver"] = len(sin_resolver)
     resumen["top_sin_resolver"] = sin_resolver.most_common(15)
     resumen["cobertura"] = dict(

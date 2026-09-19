@@ -130,7 +130,8 @@ def cmd_curar(args):
     log("  con promotor CDBProm           %d" % resumen["con_promotor"])
     log("  no adyacentes en el genoma     %d" % resumen["no_adyacentes"])
     log("  marcados para revisar          %d" % resumen["para_revisar"])
-    log("  descartados por un solo gen    %d" % resumen["descartadas_un_gen"])
+    log("  monocistronicos (un gen)       %d" % resumen["monocistronicos"])
+    log("  descartados sin ningun gen     %d" % resumen["sin_ningun_gen"])
     log("  nombres sin resolver a locus   %d" % resumen["nombres_sin_resolver"])
     for nombre, n in resumen["top_sin_resolver"]:
         log("      %-24s %d" % (nombre, n))
@@ -209,7 +210,7 @@ def cmd_curar(args):
 def cmd_exportar(args):
     con = _conectar(args)
     try:
-        silver = exportar.filas_silver(con, db)
+        silver = exportar.filas_silver(con, db, args.sin_monocistronicos)
         conflictos = exportar.filas_conflictos(con, db)
     finally:
         con.close()
@@ -226,6 +227,8 @@ def cmd_exportar(args):
     log("")
     log("  %d operones curados, %d para revisar a mano." % (len(silver),
                                                             len(conflictos)))
+    if args.sin_monocistronicos:
+        log("  (--sin-monocistronicos: las unidades de un gen se dejaron fuera)")
     return 0
 
 
@@ -283,6 +286,10 @@ def main():
     cu.set_defaults(func=cmd_curar)
 
     ex2 = sub.add_parser("exportar", help="La base curada y sus conflictos, a CSV.")
+    ex2.add_argument("--sin-monocistronicos", action="store_true",
+                     dest="sin_monocistronicos",
+                     help="Dejar fuera las unidades de un solo gen. Apagado "
+                          "por omision: se conservan marcadas.")
     ex2.set_defaults(func=cmd_exportar)
 
     es = sub.add_parser("estado", help="Que hay descargado, en bronce y curado.")

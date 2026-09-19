@@ -151,6 +151,11 @@ CREATE TABLE IF NOT EXISTS operones_silver (
     pmids         TEXT,
     adyacente     INTEGER NOT NULL DEFAULT 0,
     es_alternativa INTEGER NOT NULL DEFAULT 0,
+    -- Un operon de UN gen. BioCyc registra 3 774 unidades de transcripcion
+    -- para ~5 600 genes, asi que muchas son monocistronicas: descartarlas
+    -- tiraba la mayor parte de esa fuente. Se conservan marcadas, y filtrar
+    -- es cosa de la exportacion, no de la curacion.
+    monocistronico INTEGER NOT NULL DEFAULT 0,
     promotor_cdbprom INTEGER NOT NULL DEFAULT 0,
     revisar       TEXT,
     curado_en     TEXT NOT NULL,
@@ -206,6 +211,14 @@ def _migrar(con):
     esperado = "UNIQUE (extraccion_id, url)"
     if esperado in tablas["operones_descargas"]:
         return
+
+    # Aditiva y aparte del rehacer: `operones_silver` puede tener datos y
+    # anadir una columna no los pierde. Las migraciones de este proyecto son
+    # aditivas por contrato.
+    if "operones_silver" in tablas and "monocistronico" not in tablas["operones_silver"]:
+        with con:
+            con.execute("ALTER TABLE operones_silver "
+                        "ADD COLUMN monocistronico INTEGER NOT NULL DEFAULT 0")
 
     afectadas = ("operones_bronze", "operones_descargas",
                  "operones_extracciones")
@@ -539,8 +552,9 @@ def guardar_silver(con, fila, respaldos):
         """INSERT INTO operones_silver
              (clave_genes, nombre, locus_tags, n_genes, cadena,
               nivel_evidencia, n_fuentes, pmids, adyacente, es_alternativa,
+              monocistronico,
               promotor_cdbprom, revisar, curado_en)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(clave_genes) DO UPDATE SET
              nombre=excluded.nombre,
              nivel_evidencia=excluded.nivel_evidencia,
@@ -548,6 +562,7 @@ def guardar_silver(con, fila, respaldos):
              pmids=excluded.pmids,
              adyacente=excluded.adyacente,
              es_alternativa=excluded.es_alternativa,
+             monocistronico=excluded.monocistronico,
              promotor_cdbprom=excluded.promotor_cdbprom,
              revisar=excluded.revisar,
              curado_en=excluded.curado_en""",
@@ -556,6 +571,7 @@ def guardar_silver(con, fila, respaldos):
          fila.get("n_fuentes", 0), fila.get("pmids"),
          1 if fila.get("adyacente") else 0,
          1 if fila.get("es_alternativa") else 0,
+         1 if fila.get("monocistronico") else 0,
          1 if fila.get("promotor_cdbprom") else 0,
          fila.get("revisar"), ahora()))
     sid = con.execute("SELECT id FROM operones_silver WHERE clave_genes=?",
@@ -618,6 +634,8 @@ def resumen_silver(con):
             "SELECT COUNT(*) FROM operones_silver WHERE adyacente = 0"),
         "alternativas": uno(
             "SELECT COUNT(*) FROM operones_silver WHERE es_alternativa = 1"),
+        "monocistronicos": uno(
+            "SELECT COUNT(*) FROM operones_silver WHERE monocistronico = 1"),
         "para_revisar": uno(
             """SELECT COUNT(*) FROM operones_silver
                 WHERE revisar IS NOT NULL AND revisar <> ''"""),

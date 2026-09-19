@@ -28,6 +28,7 @@ import io
 import json
 import os
 import re
+import urllib.parse
 import xml.etree.ElementTree as ET
 from datetime import date
 from html.parser import HTMLParser
@@ -312,16 +313,23 @@ def traer_biocyc(sesion, carpeta, log=lambda m: None):
     for nombre, consulta in (
             ("tus.xml", "[x:x<-%s^^Transcription-Units]" % ORGID_BIOCYC),
             ("genes.xml", "[x:x<-%s^^Genes]" % ORGID_BIOCYC)):
-        cuerpo = sesion.pedir(URL_BIOCYC_QUERY,
-                              params={"query": consulta, "detail": "full"},
-                              timeout=600)
+        params = {"query": consulta, "detail": "full"}
+        # La URL que se REGISTRA lleva los parametros, y eso no es cosmetico.
+        # Las dos consultas de BioVelo van al mismo endpoint `/xmlquery` y solo
+        # se distinguen por `query`: registrando el endpoint pelado, la clave
+        # `(extraccion_id, url)` las daba por el mismo archivo y la segunda
+        # caia por DO NOTHING. Paso de verdad el 18-sep-2026: `genes.xml`, de
+        # 9 MB, quedo en disco sin fila de procedencia.
+        url_registrada = "%s?%s" % (URL_BIOCYC_QUERY,
+                                    urllib.parse.urlencode(params))
+        cuerpo = sesion.pedir(URL_BIOCYC_QUERY, params=params, timeout=600)
         if cuerpo is None:
             raise ErrorCredenciales(
                 "BioCyc contesto que no a la consulta de %s. Lo habitual es "
                 "que la cuenta no tenga acceso a %s, que requiere "
                 "suscripcion." % (nombre, ORGID_BIOCYC))
         ruta = guardar_crudo(carpeta, nombre, cuerpo)
-        salida.append((URL_BIOCYC_QUERY, ruta, cuerpo))
+        salida.append((url_registrada, ruta, cuerpo))
         log("  [biocyc] %s  (%d bytes)" % (nombre, len(cuerpo)))
     return salida
 
