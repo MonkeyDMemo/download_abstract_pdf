@@ -395,6 +395,140 @@ def parsear_biocyc(xml_tus, xml_genes):
     return filas
 
 
+
+
+# ----------------------------------------------------------------- CDBProm
+
+# Las diez columnas del volcado, en su orden. Los nombres son nuestros: el
+# encabezado del archivo es prosa descriptiva, no una fila de cabecera.
+COLUMNAS_CDBPROM = ["ncbi_id", "organismo", "locus_tag", "inicio", "fin",
+                    "cadena", "score", "etiqueta", "secuencia", "anotacion"]
+
+CABECERA_CDBPROM = 10
+
+# El volcado escribe D y R donde el encabezado dice F y R. Se acepta `D` como
+# directa y se RECHAZA cualquier otro valor en vez de adivinar: una cadena mal
+# leida invierte el sentido del promotor, y un promotor aguas arriba del gen
+# equivocado es peor que no tener promotor.
+CADENA_CDBPROM = {"D": "+", "R": "-"}
+
+# La fuente ya filtro por score; el minimo declarado es 0.5. No se vuelve a
+# filtrar aqui --el dato llega filtrado y volver a cortar seria cortar dos
+# veces-- pero se comprueba, porque una fila por debajo significa que el
+# volcado no es el que se describio.
+SCORE_MINIMO_CDBPROM = 0.5
+
+
+def parsear_cdbprom(cuerpo):
+    """Los promotores de PAO1 del volcado de CDBProm.
+
+    **Esto no son operones, son promotores**, y por eso cada fila trae UN
+    locus tag. La capa curada no crea un operon por cada uno: los usa para
+    marcar `promotor_cdbprom` en el operon cuyo primer gen tiene promotor, que
+    es la regla 5 del encargo. Meterlos como operones habria fabricado 1 972
+    unidades monocistronicas que nadie ha observado transcribirse.
+
+    El formato, comprobado contra el volcado del asesor:
+
+    - Diez lineas de encabezado descriptivo antes de los datos. No es una fila
+      de cabecera con nombres de columna: es prosa, y por eso se saltan por
+      conteo y no buscando un patron.
+    - Diez columnas separadas por tabulador.
+    - La cadena viene como `D`/`R` aunque el encabezado dice `F`/`R`.
+    - Las coordenadas abarcan 80 pb y la secuencia mide 60 nt. **Las dos se
+      guardan tal cual, sin interpretar posiciones exactas**: la discrepancia
+      es del volcado y resolverla a ojo seria inventar una convencion que la
+      fuente no declara.
+    """
+    texto = cuerpo.decode("utf-8", "replace")
+    lineas = texto.splitlines()
+    if len(lineas) <= CABECERA_CDBPROM:
+        raise FormatoDesconocido(
+            "cdbprom: el volcado tiene %d lineas y el encabezado solo ocupa %d"
+            % (len(lineas), CABECERA_CDBPROM))
+
+    filas, por_locus, avisos = [], {}, []
+    for n, linea in enumerate(lineas[CABECERA_CDBPROM:],
+                              start=CABECERA_CDBPROM + 1):
+        if not linea.strip():
+            continue
+        partes = linea.rstrip("\n").split("\t")
+        if len(partes) < len(COLUMNAS_CDBPROM):
+            raise FormatoDesconocido(
+                "cdbprom: la linea %d tiene %d columnas y el contrato pide %d. "
+                "El volcado cambio de formato y el parseo se detiene en vez de "
+                "leer columnas corridas." % (n, len(partes),
+                                             len(COLUMNAS_CDBPROM)))
+        d = dict(zip(COLUMNAS_CDBPROM, partes))
+
+        bruta = d["cadena"].strip().upper()
+        if bruta not in CADENA_CDBPROM:
+            raise FormatoDesconocido(
+                "cdbprom: cadena %r en la linea %d. Solo se aceptan D y R; "
+                "adivinar el sentido de un promotor lo pondria aguas arriba "
+                "del gen equivocado." % (d["cadena"], n))
+
+        locus = d["locus_tag"].strip()
+        if not LOCUS.match(locus):
+            avisos.append((n, locus))
+            continue
+        if locus in por_locus:
+            # El perfil dice un promotor maximo por locus tag. Si llegan dos,
+            # se conserva el de mayor score y se anota: elegir en silencio
+            # dejaria al operon marcado por un promotor que no es el mejor.
+            if _score(d) <= _score(por_locus[locus]):
+                continue
+        por_locus[locus] = d
+
+    for locus, d in por_locus.items():
+        filas.append({
+            "fuente": "cdbprom",
+            "id_fuente": locus,
+            "genes_raw": None,
+            "locus_tags": locus,
+            "cadena": CADENA_CDBPROM[d["cadena"].strip().upper()],
+            "tipo_evidencia": "promotor_predicho",
+            "pmid": None,
+            # Coordenadas y secuencia tal cual, sin interpretar: el rango
+            # abarca 80 pb y la secuencia mide 60 nt, y esa diferencia es del
+            # volcado. Se guarda lo que dijo y se deja constancia del desajuste.
+            "registro_raw": {
+                "inicio": d["inicio"].strip(),
+                "fin": d["fin"].strip(),
+                "score": d["score"].strip(),
+                "etiqueta": d["etiqueta"].strip(),
+                "secuencia": d["secuencia"].strip(),
+                "anotacion": d["anotacion"].strip(),
+                "cadena_original": d["cadena"].strip(),
+                "largo_rango": _largo(d),
+                "largo_secuencia": len(d["secuencia"].strip()),
+            },
+        })
+
+    if not filas:
+        raise FormatoDesconocido(
+            "cdbprom: ninguna de las %d lineas de datos trae un locus tag de "
+            "PAO1" % (len(lineas) - CABECERA_CDBPROM))
+    if avisos:
+        # No se levanta: el resto del volcado sirve. Queda en el registro para
+        # que el informe lo diga.
+        filas[0]["registro_raw"]["locus_no_pao1"] = [l for _n, l in avisos[:20]]
+    return filas
+
+
+def _score(d):
+    try:
+        return float(d["score"])
+    except (TypeError, ValueError):
+        return -1.0
+
+
+def _largo(d):
+    try:
+        return abs(int(d["fin"]) - int(d["inicio"])) + 1
+    except (TypeError, ValueError):
+        return None
+
 # ------------------------------------------------------------ PGD y CDBProm
 
 def traer_archivo(sesion, fuente, var_entorno, carpeta, url=None,
@@ -445,7 +579,7 @@ def parsear_tabular(cuerpo, fuente):
 # ------------------------------------------------------------- orquestacion
 
 def extraer(con, fuente, sesion, flag_datos=None, url=None, max_paginas=500,
-            log=lambda m: None):
+            log=lambda m: None, archivo=None):
     """Trae una fuente, guarda lo crudo, lo registra y lo parsea si se puede.
 
     Devuelve un informe: que se bajo, que se pudo leer y que no. **No aborta
@@ -462,7 +596,12 @@ def extraer(con, fuente, sesion, flag_datos=None, url=None, max_paginas=500,
                "descargas": [],
                "filas": 0, "error": None, "completa": False}
 
-    if fuente == "odb":
+    if archivo:
+        # Gana sobre la via de red de la fuente, sea cual sea: si alguien
+        # pasa un archivo es porque lo tiene, y pedirselo otra vez a la
+        # fuente seria trafico para nada.
+        bajadas = traer_archivo_local(archivo, fuente, carpeta, log)
+    elif fuente == "odb":
         bajadas = traer_odb(sesion, carpeta, max_paginas, log)
     elif fuente == "biocyc":
         entrar_biocyc(sesion)
@@ -526,6 +665,8 @@ def _parsear(fuente, bajadas):
         for _, _, cuerpo in bajadas:
             filas.extend(parsear_odb(cuerpo))
         return filas
+    if fuente == "cdbprom":
+        return parsear_cdbprom(bajadas[0][2])
     return parsear_tabular(bajadas[0][2], fuente)
 
 
@@ -571,3 +712,33 @@ def reparsear(con, fuente, log=lambda m: None):
         % (fuente, insertadas, eid))
     return {"fuente": fuente, "extraccion_id": eid, "filas": insertadas,
             "archivos": len(bajadas)}
+
+
+# ------------------------------------------------------- archivo local
+
+def traer_archivo_local(ruta_archivo, fuente, carpeta, log=lambda m: None):
+    """Ingesta un archivo que ya esta en disco. Devuelve [(url, ruta, bytes)].
+
+    La "url" registrada es `archivo-local:<nombre>`, que no es una URL y lo
+    dice: la procedencia de este archivo no es una peticion que se pueda
+    repetir, es alguien que lo entrego. Ponerle una URL inventada habria hecho
+    creer que se puede volver a bajar.
+
+    El archivo se COPIA a la carpeta de crudos en vez de referenciarse donde
+    este. Un volcado que vive en la carpeta de descargas de alguien se mueve o
+    se borra, y entonces `reparsear` deja de funcionar y la huella registrada
+    apunta a nada.
+
+    Sirve para dos cosas: el volcado de CDBProm, que llega por correo y no
+    tiene URL, y como respaldo de Pseudomonas.com si su descarga directa
+    responde 403, que es lo que ese sitio lleva haciendo desde agosto.
+    """
+    if not os.path.exists(ruta_archivo):
+        raise FormatoDesconocido("no existe el archivo %s" % ruta_archivo)
+    with io.open(ruta_archivo, "rb") as f:
+        cuerpo = f.read()
+    nombre = os.path.basename(ruta_archivo)
+    destino = guardar_crudo(carpeta, nombre, cuerpo)
+    log("  [%s] %s  (%d bytes, de %s)"
+        % (fuente, destino, len(cuerpo), ruta_archivo))
+    return [("archivo-local:%s" % nombre, destino, cuerpo)]

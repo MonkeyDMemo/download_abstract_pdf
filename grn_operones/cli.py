@@ -63,7 +63,7 @@ def cmd_extraer(args):
             try:
                 informes.append(fuentes.extraer(
                     con, f, sesion, args.datos, args.url, args.max_paginas,
-                    log))
+                    log, archivo=args.archivo))
             except (fuentes.ErrorCredenciales, red.ErrorFuente) as e:
                 log("  [%s] %s" % (f, e))
                 informes.append({"fuente": f, "descargas": [], "filas": 0,
@@ -146,7 +146,8 @@ def cmd_curar(args):
         log("    %-28s %d" % (nivel, resumen["por_nivel"].get(nivel, 0)))
     log("  con dos o mas fuentes          %d" % resumen["con_dos_o_mas_fuentes"])
     log("  unidades alternativas          %d" % resumen["alternativas"])
-    log("  con promotor CDBProm           %d" % resumen["con_promotor"])
+    log("  con promotor CDBProm           %d  (de %d promotores)"
+        % (resumen["con_promotor"], resumen.get("promotores_cdbprom", 0)))
     log("  no adyacentes en el genoma     %d" % resumen["no_adyacentes"])
     log("  marcados para revisar          %d" % resumen["para_revisar"])
     log("  monocistronicos (un gen)       %d" % resumen["monocistronicos"])
@@ -295,6 +296,10 @@ def main():
     ex.add_argument("--fuente", default="todo",
                     choices=list(fuentes.FUENTES) + ["todo"])
     ex.add_argument("--url", help="URL del archivo, para pgd y cdbprom.")
+    ex.add_argument("--archivo",
+                    help="Ingestar un archivo local en vez de descargar. Gana "
+                         "sobre la via de red de la fuente. Para el volcado de "
+                         "CDBProm y como respaldo de PGD si responde 403.")
     ex.add_argument("--pausa", type=float, default=red.PAUSA,
                     help="Segundos entre peticiones (minimo del encargo: 2).")
     ex.add_argument("--max-paginas", type=int, default=500,

@@ -625,6 +625,177 @@ class PruebasCuracion(unittest.TestCase):
         self.assertEqual(len(D.fuentes_de_silver(self.con)), 1)
 
 
+CDBPROM = (u"\n".join([
+    "# CDBProm - Promoter prediction database",
+    "# Instituto de Investigaciones en Matematicas Aplicadas y en Sistemas",
+    "# Universidad Nacional Autonoma de Mexico",
+    "# Organism: Pseudomonas aeruginosa PAO1",
+    "# Genome: NC_002516.2",
+    "# Model: XGBoost",
+    "# Score threshold: 0.5",
+    "# Strand: F = forward, R = reverse",
+    "# Columns: NCBI ID, organism, locus tag, start, end, strand, score, "
+    "label, sequence, annotation",
+    "#",
+    "\t".join(["NC_002516.2", "P. aeruginosa PAO1", "PA0425", "100", "179",
+               "D", "0.91", "promoter", "A" * 60, "mexA"]),
+    "\t".join(["NC_002516.2", "P. aeruginosa PAO1", "PA2493", "500", "579",
+               "R", "0.72", "promoter", "C" * 60, "mexE"]),
+]) + u"\n")
+
+
+class PruebasArchivoLocal(unittest.TestCase):
+    """Ingesta de un archivo que ya esta en disco, sin red."""
+
+    def setUp(self):
+        self.con = _con()
+        self.addCleanup(self.con.close)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.origen = os.path.join(self.tmp.name, "cdbprom_pao1.tsv")
+        with io.open(self.origen, "w", encoding="utf-8", newline="") as f:
+            f.write(CDBPROM)
+
+    def test_el_archivo_se_copia_a_la_carpeta_de_crudos(self):
+        """Un volcado que vive en la carpeta de descargas de alguien se mueve
+        o se borra, y entonces `reparsear` deja de funcionar y la huella
+        registrada apunta a nada."""
+        carpeta = os.path.join(self.tmp.name, "crudo")
+        os.makedirs(carpeta)
+
+        bajadas = F.traer_archivo_local(self.origen, "cdbprom", carpeta)
+
+        url, ruta, cuerpo = bajadas[0]
+        self.assertTrue(os.path.exists(ruta))
+        self.assertNotEqual(os.path.dirname(ruta),
+                            os.path.dirname(self.origen))
+        self.assertEqual(cuerpo, io.open(self.origen, "rb").read())
+
+    def test_la_procedencia_dice_que_no_es_una_url(self):
+        """Ponerle una URL inventada habria hecho creer que se puede volver a
+        bajar."""
+        carpeta = os.path.join(self.tmp.name, "crudo2")
+        os.makedirs(carpeta)
+
+        url, _r, _c = F.traer_archivo_local(self.origen, "cdbprom", carpeta)[0]
+
+        self.assertTrue(url.startswith("archivo-local:"))
+
+    def test_un_archivo_que_no_esta_falla_diciendolo(self):
+        with self.assertRaises(F.FormatoDesconocido):
+            F.traer_archivo_local(os.path.join(self.tmp.name, "no.tsv"),
+                                  "cdbprom", self.tmp.name)
+
+
+class PruebasParserCdbprom(unittest.TestCase):
+    """El volcado de CDBProm: promotores, no operones."""
+
+    def _cuerpo(self, texto=None):
+        return (texto or CDBPROM).encode("utf-8")
+
+    def test_salta_las_diez_lineas_de_encabezado(self):
+        filas = F.parsear_cdbprom(self._cuerpo())
+
+        self.assertEqual(len(filas), 2)
+        self.assertEqual(sorted(f["id_fuente"] for f in filas),
+                         ["PA0425", "PA2493"])
+
+    def test_la_cadena_D_es_directa_aunque_el_encabezado_diga_F(self):
+        """Los datos usan D/R y el encabezado dice F/R. Se acepta D."""
+        por_locus = dict((f["id_fuente"], f)
+                         for f in F.parsear_cdbprom(self._cuerpo()))
+
+        self.assertEqual(por_locus["PA0425"]["cadena"], "+")
+        self.assertEqual(por_locus["PA2493"]["cadena"], "-")
+
+    def test_una_cadena_desconocida_falla_en_vez_de_adivinar(self):
+        """Una cadena mal leida invierte el sentido del promotor, y un
+        promotor aguas arriba del gen equivocado es peor que ninguno."""
+        malo = CDBPROM.replace("\tD\t", "\tX\t")
+
+        with self.assertRaises(F.FormatoDesconocido) as ctx:
+            F.parsear_cdbprom(self._cuerpo(malo))
+
+        self.assertIn("cadena", str(ctx.exception).lower())
+
+    def test_guarda_coordenadas_y_secuencia_tal_cual(self):
+        """El rango abarca 80 pb y la secuencia mide 60 nt. La discrepancia es
+        del volcado; resolverla a ojo seria inventar una convencion que la
+        fuente no declara."""
+        f = F.parsear_cdbprom(self._cuerpo())[0]
+        crudo = f["registro_raw"]
+
+        self.assertEqual(crudo["largo_rango"], 80)
+        self.assertEqual(crudo["largo_secuencia"], 60)
+        self.assertEqual(crudo["cadena_original"], "D")
+
+    def test_guarda_el_score_como_atributo(self):
+        por_locus = dict((f["id_fuente"], f)
+                         for f in F.parsear_cdbprom(self._cuerpo()))
+
+        self.assertEqual(por_locus["PA0425"]["registro_raw"]["score"], "0.91")
+
+    def test_un_locus_repetido_conserva_el_de_mayor_score(self):
+        """El perfil dice un promotor maximo por locus tag. Elegir en silencio
+        dejaria al operon marcado por un promotor que no es el mejor."""
+        doble = CDBPROM + "\t".join(
+            ["NC_002516.2", "P. aeruginosa PAO1", "PA0425", "900", "979",
+             "D", "0.99", "promoter", "G" * 60, "mexA"]) + "\n"
+
+        por_locus = dict((f["id_fuente"], f)
+                         for f in F.parsear_cdbprom(doble.encode("utf-8")))
+
+        self.assertEqual(len(por_locus), 2)
+        self.assertEqual(por_locus["PA0425"]["registro_raw"]["score"], "0.99")
+
+    def test_un_volcado_con_menos_columnas_falla(self):
+        corto = CDBPROM.rsplit("\n", 2)[0] + "\nNC_002516.2\tsolo\tdos\n"
+
+        with self.assertRaises(F.FormatoDesconocido):
+            F.parsear_cdbprom(corto.encode("utf-8"))
+
+
+class PruebasPromotorEnLaCuracion(unittest.TestCase):
+    """Regla 5: CDBProm marca operones, no los crea."""
+
+    def setUp(self):
+        self.con = _con()
+        self.addCleanup(self.con.close)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        ruta = os.path.join(self.tmp.name, "genes.tsv")
+        with io.open(ruta, "w", encoding="utf-8", newline="") as f:
+            f.write(GENES_TSV)
+        self.dicc = C.cargar_diccionario(ruta)
+        _bronce(self.con, [
+            _fila("odb", "op1", "PA0425|PA0426|PA0427"),
+            _fila("odb", "op2", "PA2493|PA2494"),
+            # Promotor sobre el PRIMER gen de op1 y sobre el SEGUNDO de op2.
+            _fila("cdbprom", "PA0425", "PA0425"),
+            _fila("cdbprom", "PA2494", "PA2494")])
+        self.resumen = C.curar(self.con, diccionario=self.dicc, hebras={})
+
+    def test_cdbprom_no_crea_operones(self):
+        """1 972 promotores habrian fabricado 1 972 unidades monocistronicas
+        que nadie ha observado transcribirse."""
+        claves = set(f["clave_genes"] for f in D.silver_de(self.con))
+
+        self.assertEqual(claves,
+                         {"PA0425|PA0426|PA0427", "PA2493|PA2494"})
+        self.assertEqual(self.resumen["promotores_cdbprom"], 2)
+
+    def test_marca_el_operon_cuyo_primer_gen_tiene_promotor(self):
+        por_clave = dict((f["clave_genes"], f) for f in D.silver_de(self.con))
+
+        self.assertTrue(por_clave["PA0425|PA0426|PA0427"]["promotor_cdbprom"])
+
+    def test_un_promotor_interno_no_marca_el_operon(self):
+        """Un promotor sobre el segundo gen no inicia la unidad."""
+        por_clave = dict((f["clave_genes"], f) for f in D.silver_de(self.con))
+
+        self.assertFalse(por_clave["PA2493|PA2494"]["promotor_cdbprom"])
+
+
 class PruebasNivelDeEvidencia(unittest.TestCase):
     """La regla 4, por unidad y no por fuente.
 

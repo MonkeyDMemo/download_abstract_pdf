@@ -491,7 +491,18 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
     # `bronze_vigente` y no `bronze_de`: el bronce conserva una fila por
     # descarga, asi que la tabla entera trae versiones viejas de un mismo
     # operon junto a la corregida, las dos con la misma pinta de buenas.
+    promotores = {}
     for f in _db.bronze_vigente(con):
+        if f["fuente"] == "cdbprom":
+            # CDBProm da PROMOTORES, no operones: una fila por locus tag.
+            # Crear un operon por cada uno habria fabricado 1 972 unidades
+            # monocistronicas que nadie ha observado transcribirse. Se usan
+            # para marcar el operon cuyo PRIMER gen tiene promotor, que es la
+            # regla 5 del encargo.
+            for lt in (f["locus_tags"] or "").split("|"):
+                if lt:
+                    promotores[lt] = f["id_fuente"]
+            continue
         nombres = [x for x in (f["locus_tags"] or "").split("|") if x]
         if not nombres:
             nombres = [x for x in (f["genes_raw"] or "").split("|") if x]
@@ -578,8 +589,10 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
             "adyacente": adyacente,
             "es_alternativa": clave in alternativas,
             "monocistronico": mono,
-            # 5. Se marca solo si CDBProm respalda este mismo conjunto.
-            "promotor_cdbprom": "cdbprom" in fuentes,
+            # 5. Aguas arriba del PRIMER gen, no de cualquiera: un promotor
+            # interno no inicia la unidad. El primero es el primero en orden
+            # de transcripcion, que es el que `locus_tags` conserva.
+            "promotor_cdbprom": bool(locus and locus[0] in promotores),
             "revisar": ";".join(revisar) or None,
         }, [(f["fuente"], f["id_fuente"]) for f in filas])
         n += 1
@@ -587,6 +600,7 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
     resumen = _db.resumen_silver(con)
     resumen["sin_ningun_gen"] = descartadas
     resumen["locus_con_sufijo"] = dict(con_sufijo)
+    resumen["promotores_cdbprom"] = len(promotores)
     resumen["nombres_sin_resolver"] = len(sin_resolver)
     resumen["top_sin_resolver"] = sin_resolver.most_common(15)
     resumen["cobertura"] = dict(
