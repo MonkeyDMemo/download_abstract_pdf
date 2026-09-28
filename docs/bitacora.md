@@ -8,6 +8,41 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 25 de septiembre de 2026 (mañana) — entra CDBProm por archivo local
+
+El volcado real de CDBProm
+(`Pseudomonas_aeruginosa_GCF_000006765.1_ASM676v1_upstream.txt`, bajado del
+sitio del IIMAS el 18-sep) llevaba una semana en Descargas sin ingerirse,
+mientras el guion de la reunión decía que lo tenía el asesor. Se corrió
+`extraer --fuente cdbprom --archivo`, `curar` y `exportar`.
+
+| | antes (24-sep) | después (25-sep) |
+|---|---|---|
+| descargas crudas | 5 | 6 |
+| filas en bronze | 3 873 | 5 823 (cdbprom 1 950) |
+| unidades de transcripción (silver) | 3 742 | 3 742 |
+| con `promotor_cdbprom` | — | 1 350 |
+| para revisar | 89 | 89 |
+
+Del archivo: 1 972 líneas de datos, 1 950 aceptadas (una por locus tag, todas
+en `genes_pao1.tsv`); 22 descartadas por sufijo de letra (`PA0103a`…
+`PA5440a`), que la regex propuesta en la decisión 1 aceptaría: la regex vive
+también en `grn_operones/fuentes.py:72`, un quinto sitio. Cadena D/R aunque el
+encabezado diga F/R; rango de 80 pb y secuencia de 60 nt; ningún score bajo
+0,5. Silver no cambió de tamaño: CDBProm marca, no crea.
+
+**Decisión pendiente:** la clave de silver son los genes, así que dos unidades
+con los mismos genes y distinto inicio colapsan y el promotor no dice a cuál
+pertenece (`curar.py`, «limitación conocida»). Si el asesor quiere
+distinguirlas, el inicio de transcripción entra en la clave. Queda como
+decisión 4 en `docs/reunion-asesor-25sep.md`.
+
+Materiales de la reunión en `salidas/reunion_25sep/` (figuras, presentación,
+formulario de estudio y notas); la presentación y el formulario también como
+artefactos en claude.ai.
+
+---
+
 ## 17 de septiembre de 2026 (noche) — `virulence` se parte en tres, corrida 4
 
 `virulence` juntaba cosas que se comportan distinto y medirla entera escondía

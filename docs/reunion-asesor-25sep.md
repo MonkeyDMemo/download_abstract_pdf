@@ -9,14 +9,18 @@ Verificado el 24 de septiembre por la noche: `git status` limpio en
 `python -m unittest discover` → 541 OK (1 omitida) y
 `python -m unittest discover etapa2` → 524 OK (3 omitidas).
 
+Actualizado el 25 de septiembre por la mañana: se ingirió el volcado real de
+CDBProm (`extraer --fuente cdbprom --archivo`, `curar`, `exportar`). Las cifras
+de la base de operones de este guion son las de esa corrida.
+
 ---
 
 ## 1. El estado en una frase
 
 El bronce v1 con operones está cerrado en `main` desde el 17 de septiembre;
-la base de operones está construida, probada y curada con dos de las cuatro
-fuentes (ODB y BioCyc), y lo que sigue depende de siete decisiones del asesor
-y de dos archivos que sólo una persona puede conseguir.
+la base de operones está construida, probada y curada con tres de las cuatro
+fuentes (ODB, BioCyc y CDBProm), y lo que sigue depende de siete decisiones del
+asesor y de un archivo que sólo una persona puede conseguir.
 
 ---
 
@@ -48,17 +52,18 @@ evidencia). Cinco tablas en la misma base SQLite, con clave natural y
 `ON CONFLICT`. CLI: `python -m grn_operones.cli extraer | reparsear | curar |
 exportar | estado`.
 
-**Qué hay dentro** (`estado`, 24-sep 22:40):
+**Qué hay dentro** (`estado`, 25-sep, tras ingerir CDBProm):
 
 ```
-descargas crudas registradas   5      biocyc 2, odb 3
-filas en bronce                3 873  biocyc 3 774, odb 99
+descargas crudas registradas   6      biocyc 2, cdbprom 1, odb 3
+filas en bronce                5 823  biocyc 3 774, cdbprom 1 950, odb 99
 operones curados               3 742
 para revisar                   89
-Sin datos todavía: pgd, cdbprom
+Sin datos todavía: pgd
 ```
 
-**La cifra de cabecera** (`salidas/operones_20260924_silver.csv`, 3 742 filas):
+**La cifra de cabecera** (`salidas/operones_20260925_silver.csv`, 3 742 filas;
+idénticas a las del 24 salvo la columna de promotor):
 
 | | |
 |---|---|
@@ -68,8 +73,10 @@ Sin datos todavía: pgd, cdbprom
 | nivel `conocido` / `curado` / `predicho` | **63 / 5 / 3 674** |
 | con dos o más fuentes | 17 |
 | con PMID | 90 |
+| con promotor CDBProm aguas arriba del primer gen | **1 350** |
 
-Y los 89 para revisar (`operones_20260924_conflictos.csv`): 39 con genes no
+Y los 89 para revisar (`operones_20260925_conflictos.csv`, sin cambio tras
+CDBProm): 39 con genes no
 consecutivos en el genoma, 16 `pendiente_revision`, 16 `comp_con_cita`,
 14 sin evidencia, 10 con un nombre que no llegó a locus tag, 9
 `locus_sufijo_excluido`, 6 con gen huérfano.
@@ -88,6 +95,14 @@ salían 4 idénticos y 12 ausentes)*
   código nunca las ve. 3 774 TUs, con sus `<pubmed-id>` y códigos de
   evidencia. Dos extracciones anteriores quedaron incompletas y `curar` las
   ignora por diseño.
+- *CDBProm (IIMAS)*: el sitio permite bajar el archivo por organismo
+  (`Pseudomonas_aeruginosa_GCF_000006765.1_ASM676v1_upstream.txt`, bajado el
+  18-sep e ingerido el 25-sep con `extraer --fuente cdbprom --archivo`). De
+  1 972 líneas de datos, 1 950 promotores aceptados, uno por locus tag y todos
+  en `genes_pao1.tsv`; 22 descartados por sufijo de letra (`PA0103a`,
+  `PA0951a`…). Cadena D/R como se había anotado; rango de 80 pb y secuencia de
+  60 nt; ningún score bajo 0,5. Marca `promotor_cdbprom` en 1 350 de las
+  3 742 unidades.
 - *Nivel de evidencia por TU*: `conocido` si trae código experimental,
   `curado` si trae cita curada, `predicho` para EV-COMP*. La ausencia de
   repetición de un PMID no es evidencia de lo contrario: los EV-COMP* son
@@ -102,9 +117,10 @@ salían 4 idénticos y 12 ausentes)*
 revista y tipo de artículo desde PubMed (5 peticiones: 16 de los 21 ya
 estaban en el corpus).
 
-**Parser de CDBProm e ingesta por archivo local**: listos (`extraer --archivo`),
-verificados con un volcado sintético que luego se borró. CDBProm no crea
-operones: marca `promotor_cdbprom` en el operón cuyo primer gen tiene promotor.
+**Parser de CDBProm e ingesta por archivo local**: corridos el 25-sep con el
+volcado real, después de verificarlos con uno sintético. CDBProm no crea
+operones: marca `promotor_cdbprom` en el operón cuyo primer gen tiene promotor
+(1 350 marcados). Silver no cambió de tamaño: 3 742 antes y después.
 
 ### C. La regex de locus tag — medida, planificada, esperando decisión
 
@@ -133,8 +149,12 @@ operones: marca `promotor_cdbprom` en el operón cuyo primer gen tiene promotor.
   peticiones automáticas y nadie ha localizado la liga del archivo bulk. La
   vía está lista (`PGD_OPERONES_URL` o `extraer --fuente pgd --archivo`);
   falta el archivo. No se raspa ni se evade el 403: es dependencia y es evasión.
-- **CDBProm**: 0 extracciones; el volcado real lo tiene el asesor. Sin él la
-  regla C5 (promotor aguas arriba) no se ha ejercitado con datos reales.
+- **CDBProm, ya ingerido, deja dos cosas abiertas.** La clave de silver son
+  los genes y nada más: dos unidades con los mismos genes y distinto sitio de
+  inicio colapsan en una fila, y `promotor_cdbprom` queda en sí o no sin decir
+  a cuál pertenece (`curar.py`, «limitación conocida»). Y la regex de locus
+  tag también vive en `grn_operones/fuentes.py:72`: descartó 22 promotores
+  con sufijo de letra, la misma familia de la decisión 1.
 - **Documentación**: la bitácora no tiene entrada del 18 al 24; PLAN.md,
   CLAUDE.md y README no mencionan `grn_operones`; la sección «Estado actual»
   de `CONTEXTO_OPERONES.md` describe un prototipo que ya no existe. El trabajo
@@ -172,10 +192,12 @@ operones: marca `promotor_cdbprom` en el operón cuyo primer gen tiene promotor.
 3. **Qué fuentes de operones incorpora la base curada del laboratorio.** Si
    `GRN_experimental` ya usó ODB o BioCyc, hay fuga hacia la validación. Con
    la respuesta se monta la lista de fuentes vetadas y su guarda.
-4. **El volcado de CDBProm.** El formato ya está soportado (10 líneas de
-   encabezado, 10 columnas, cadena D/R, score ≥ 0,5). Dos discrepancias del
-   perfil quedan anotadas: el encabezado dice F/R y el volcado escribe D/R;
-   las coordenadas abarcan 80 pb y la secuencia mide 60 nt.
+4. **CDBProm, ya ingerido: ¿se valida cómo entró?** 1 950 promotores, 1 350
+   operones marcados. Dos discrepancias confirmadas en el volcado real: el
+   encabezado dice F/R y los datos traen D/R; las coordenadas abarcan 80 pb y
+   la secuencia mide 60 nt. Y una pregunta: cuando dos unidades con los mismos
+   genes tienen promotores distintos, ¿se añade el inicio de transcripción a
+   la clave, o basta con marcar el bloque?
 5. **Pseudomonas Genome DB.** ¿Conoce la liga del bulk? Si no, ¿vale bajarlo a
    mano en el navegador e ingestarlo con `--archivo`?
 6. **Validar tres decisiones tomadas por cuenta propia**: el modelo
@@ -190,8 +212,8 @@ operones: marca `promotor_cdbprom` en el operón cuyo primer gen tiene promotor.
 
 ## 5. Qué decir y qué no
 
-- No «las cuatro fuentes están integradas». Sí: «dos de cuatro con datos
-  reales; las otras dos tienen la vía lista y esperan un archivo».
+- No «las cuatro fuentes están integradas». Sí: «tres de cuatro con datos
+  reales; PGD tiene la vía lista y espera un archivo».
 - No «3 742 operones curados» a secas. Sí: «3 742 unidades de transcripción,
   1 082 policistrónicas, 68 con evidencia experimental o de literatura; el
   98 % es predicción de BioCyc».
@@ -200,7 +222,9 @@ operones: marca `promotor_cdbprom` en el operón cuyo primer gen tiene promotor.
 - No «re-correr no vuelve a descargar»: cada `extraer` es una foto nueva por
   fecha, por diseño. Lo idempotente es silver (`ON CONFLICT(clave_genes)`) y
   `reparsear`, que no sale a la red.
-- No «el parser de CDBProm está probado»: sólo con datos sintéticos.
+- No «CDBProm está validado». Sí: «el parser corrió con el volcado real y
+  marcó 1 350 operones; falta decidir qué pasa cuando dos unidades con los
+  mismos genes tienen promotores distintos».
 - No «pseudomonas.com no tiene descarga». Sí: «responde 403 a peticiones
   automáticas y no hemos localizado la liga del bulk».
 - La verificación de hebra usa un GFF en cache no versionado: aquí se hizo;
@@ -224,7 +248,8 @@ operones: marca `promotor_cdbprom` en el operón cuyo primer gen tiene promotor.
    para lo curado a mano (autor, fecha, PMID).
 3. Guarda de contaminación por procedencia, con la lista de fuentes vetadas
    que salga de la decisión 3.
-4. PGD y CDBProm en cuanto lleguen los archivos: `extraer --archivo`, `curar`,
-   y volver a medir la compatibilidad.
+4. PGD en cuanto llegue el bulk: `extraer --archivo`, `curar`, y volver a
+   medir la compatibilidad. Si el asesor lo pide, el inicio de transcripción
+   entra en la clave de silver para que CDBProm distinga promotores.
 5. Documentación (bitácora, PLAN, CLAUDE, CONTEXTO) y fusión de
    `base-operones` a `main`.
