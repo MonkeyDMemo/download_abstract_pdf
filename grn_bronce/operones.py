@@ -139,6 +139,18 @@ def _leer_tsv(ruta):
     return filas
 
 
+def leer(ruta=RUTA_POR_OMISION):
+    """Las filas de la tabla, con los nombres en su escritura original.
+
+    `Catalogo` guarda las claves en minúsculas, que es lo que necesita para
+    emparejar. Quien necesita mostrar el nombre tal como lo escribe la tabla
+    (el catálogo maestro de `grn_operones`) lo lee aquí, con el mismo lector
+    y el mismo contrato de encabezado. Así no hay un segundo lector de este
+    archivo.
+    """
+    return _leer_tsv(ruta)
+
+
 class Catalogo(object):
     """`operones_pao1.tsv` cargado, con sus dos vistas.
 
