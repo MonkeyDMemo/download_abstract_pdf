@@ -192,6 +192,31 @@ def _numero(locus_tag):
     return int(m.group(1)) if m else None
 
 
+def primer_gen(locus_tags, hebra):
+    """El primer gen transcrito: el de número menor en `+`, el mayor en `-`.
+
+    No se toma `locus_tags[0]` porque cada fuente lista los miembros en su
+    propio sentido: BioCyc en orden descendente en las dos hebras, ODB en
+    orden ascendente. En el silver del 25-sep-2026, `locus_tags[0]` no era el
+    primer gen transcrito en 515 de los 1 082 operones multigénicos con hebra
+    conocida, y el promotor de CDBProm se buscaba aguas arriba de un gen
+    interno o del último.
+
+    Sin hebra, o con un locus que no se deja numerar, se devuelve el primero
+    de la lista, porque no hay otra cosa. Esa fila ya va marcada
+    `hebra_no_verificada` o `no_adyacente`.
+    """
+    if not locus_tags:
+        return None
+    claves = [LOCUS.match(l) for l in locus_tags]
+    if hebra not in ("+", "-") or not all(claves):
+        return locus_tags[0]
+    # El sufijo `.N` cuenta: `PA0668.1` va después de `PA0668` en el genoma.
+    orden = sorted(zip(((int(m.group(1)), int(m.group(2) or 0))
+                        for m in claves), locus_tags))
+    return orden[0][1] if hebra == "+" else orden[-1][1]
+
+
 def es_adyacente(locus_tags):
     """Si los locus tags son consecutivos, en cualquiera de los dos sentidos.
 
@@ -589,10 +614,11 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
             "adyacente": adyacente,
             "es_alternativa": clave in alternativas,
             "monocistronico": mono,
-            # 5. Aguas arriba del PRIMER gen, no de cualquiera: un promotor
-            # interno no inicia la unidad. El primero es el primero en orden
-            # de transcripcion, que es el que `locus_tags` conserva.
-            "promotor_cdbprom": bool(locus and locus[0] in promotores),
+            # 5. Aguas arriba del PRIMER gen transcrito, no de cualquiera: un
+            # promotor interno no inicia la unidad. El primero lo decide la
+            # hebra y no la posición en `locus_tags`, que cada fuente escribe
+            # en su propio sentido (ver `primer_gen`).
+            "promotor_cdbprom": primer_gen(locus, hebra) in promotores,
             "revisar": ";".join(revisar) or None,
         }, [(f["fuente"], f["id_fuente"]) for f in filas])
         n += 1

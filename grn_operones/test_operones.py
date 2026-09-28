@@ -796,6 +796,73 @@ class PruebasPromotorEnLaCuracion(unittest.TestCase):
         self.assertFalse(por_clave["PA2493|PA2494"]["promotor_cdbprom"])
 
 
+class PruebasPrimerGen(unittest.TestCase):
+    """El primer gen transcrito lo decide la hebra, no el orden de la fuente.
+
+    Cada fuente lista los miembros en su propio sentido: BioCyc en orden
+    descendente en las dos hebras y ODB en orden ascendente. Tomar el primero
+    de la lista ponía el gen equivocado en 515 de 1 082 operones multigénicos
+    del silver del 25-sep-2026.
+    """
+
+    def test_en_mas_es_el_de_numero_menor(self):
+        self.assertEqual(
+            C.primer_gen(["PA0427", "PA0426", "PA0425"], "+"), "PA0425")
+
+    def test_en_menos_es_el_de_numero_mayor(self):
+        self.assertEqual(C.primer_gen(["PA2493", "PA2494"], "-"), "PA2494")
+
+    def test_el_sufijo_punto_cuenta_en_el_orden(self):
+        """`PA0668.1` va después de `PA0668` en el genoma."""
+        self.assertEqual(C.primer_gen(["PA0668.1", "PA0668"], "+"), "PA0668")
+        self.assertEqual(C.primer_gen(["PA0668", "PA0668.1"], "-"), "PA0668.1")
+
+    def test_sin_hebra_se_queda_con_el_primero_de_la_lista(self):
+        self.assertEqual(C.primer_gen(["PA2493", "PA2494"], None), "PA2493")
+
+    def test_la_curacion_marca_por_hebra_y_no_por_posicion(self):
+        """ODB escribe ascendente un operón de la hebra menos, y BioCyc
+        descendente uno de la hebra más: en los dos, el promotor del primer
+        gen transcrito está en el ÚLTIMO de la lista."""
+        con = _con()
+        self.addCleanup(con.close)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        ruta = os.path.join(tmp.name, "genes.tsv")
+        with io.open(ruta, "w", encoding="utf-8", newline="") as f:
+            f.write(GENES_TSV)
+        _bronce(con, [
+            _fila("odb", "menos", "PA2493|PA2494"),
+            _fila("biocyc", "mas", "PA0427|PA0426|PA0425"),
+            _fila("cdbprom", "PA2494", "PA2494"),
+            _fila("cdbprom", "PA0425", "PA0425")])
+
+        C.curar(con, diccionario=C.cargar_diccionario(ruta),
+                hebras={"PA2493": "-", "PA2494": "-", "PA0425": "+",
+                        "PA0426": "+", "PA0427": "+"})
+        por_clave = dict((f["clave_genes"], f) for f in D.silver_de(con))
+
+        self.assertTrue(por_clave["PA2493|PA2494"]["promotor_cdbprom"])
+        self.assertTrue(por_clave["PA0425|PA0426|PA0427"]["promotor_cdbprom"])
+
+    def test_un_promotor_sobre_el_ultimo_transcrito_no_marca(self):
+        con = _con()
+        self.addCleanup(con.close)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        ruta = os.path.join(tmp.name, "genes.tsv")
+        with io.open(ruta, "w", encoding="utf-8", newline="") as f:
+            f.write(GENES_TSV)
+        # En la hebra menos, PA2493 es el ÚLTIMO en transcribirse.
+        _bronce(con, [_fila("odb", "menos", "PA2493|PA2494"),
+                      _fila("cdbprom", "PA2493", "PA2493")])
+
+        C.curar(con, diccionario=C.cargar_diccionario(ruta),
+                hebras={"PA2493": "-", "PA2494": "-"})
+
+        self.assertFalse(D.silver_de(con)[0]["promotor_cdbprom"])
+
+
 class PruebasNivelDeEvidencia(unittest.TestCase):
     """La regla 4, por unidad y no por fuente.
 
