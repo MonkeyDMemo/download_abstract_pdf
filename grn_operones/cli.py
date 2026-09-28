@@ -2,8 +2,10 @@
 """grn-operones: la linea de comandos de la base de operones.
 
     python -m grn_operones.cli extraer [--fuente odb|biocyc|pgd|cdbprom|todo]
+    python -m grn_operones.cli reparsear [--fuente ...]
     python -m grn_operones.cli curar
     python -m grn_operones.cli exportar
+    python -m grn_operones.cli catalogo     # el catálogo maestro, para leer
     python -m grn_operones.cli estado
 
 Parsea, llama a la orquestacion y formatea. Sin logica de negocio y sin SQL:
@@ -19,6 +21,7 @@ import sys
 _RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _RAIZ)
 
+from grn_bronce import operones as _operones_paso1              # noqa: E402
 from grn_bronce import rutas                                    # noqa: E402
 from grn_etl import credenciales                                # noqa: E402
 from grn_operones import curar as _curar                        # noqa: E402
@@ -271,6 +274,61 @@ def cmd_exportar(args):
     return 0
 
 
+def _paso1():
+    """{clave_genes: nombre} del catálogo del paso 1, o None si no está.
+
+    El paso 1 no cambia: solo se lee su catálogo para decir, operón por
+    operón, si también está ahí. El conjunto de genes sale de su expansión
+    única (`Catalogo.locus_tags`), no de una segunda lectura por nuestra
+    cuenta.
+    """
+    ruta = _operones_paso1.RUTA_POR_OMISION
+    if not os.path.exists(ruta):
+        return None
+    catalogo = _operones_paso1.Catalogo.cargar(ruta)
+    return exportar.claves_paso1(_operones_paso1.leer(ruta),
+                                 catalogo.locus_tags)
+
+
+def cmd_catalogo(args):
+    con = _conectar(args)
+    try:
+        paso1 = _paso1()
+        catalogo = exportar.filas_catalogo(
+            con, db, exportar.cargar_anotacion(_curar.RUTA_GENES), paso1)
+        fuentes_filas = exportar.filas_fuentes_catalogo(
+            con, db, fuentes.FUENTES, fuentes.URL_PGD)
+    finally:
+        con.close()
+    if not catalogo:
+        sys.exit("La capa curada está vacía. Corre `extraer` y `curar` "
+                 "primero.")
+    leame = exportar.lineas_leame(catalogo, fuentes_filas, paso1)
+
+    dia = datetime.date.today().strftime("%Y%m%d")
+    base = os.path.join("salidas", "operones_%s_catalogo" % dia)
+    log("Escribiendo el catálogo maestro (los CSV son el producto canónico):")
+    exportar.escribir_csv(base + ".csv", exportar.COLUMNAS_CATALOGO,
+                          catalogo, log,
+                          encabezados=exportar.ENCABEZADOS_CATALOGO, bom=True)
+    exportar.escribir_csv(base + "_fuentes.csv",
+                          exportar.COLUMNAS_FUENTES_CATALOGO, fuentes_filas,
+                          log,
+                          encabezados=exportar.ENCABEZADOS_FUENTES_CATALOGO,
+                          bom=True)
+    exportar.escribir_texto(base + "_leame.txt", leame, log)
+    exportar.escribir_xlsx_catalogo(base + ".xlsx", catalogo, fuentes_filas,
+                                    leame, log)
+    log("")
+    for linea in leame:
+        log("  %s" % linea if linea else "")
+    avisos = [f for f in fuentes_filas if f.get("estado", "") not in ("",
+                                                                       "vigente")]
+    for f in avisos:
+        log("  AVISO %s: %s" % (f["fuente"], f["estado"]))
+    return 0
+
+
 def cmd_estado(args):
     con = _conectar(args)
     try:
@@ -344,6 +402,12 @@ def main():
                      help="Dejar fuera las unidades de un solo gen. Apagado "
                           "por omision: se conservan marcadas.")
     ex2.set_defaults(func=cmd_exportar)
+
+    ca = sub.add_parser(
+        "catalogo",
+        help="El catálogo maestro para leer: una fila por operón, con sus "
+             "fuentes, IDs, evidencia y promotor. CSV, léame y .xlsx.")
+    ca.set_defaults(func=cmd_catalogo)
 
     es = sub.add_parser("estado", help="Que hay descargado, en bronce y curado.")
     es.set_defaults(func=cmd_estado)

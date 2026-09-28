@@ -8,6 +8,60 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 27 de septiembre de 2026 (tarde) — el catálogo maestro de operones
+
+Con las cuatro fuentes dentro, se pidió un solo catálogo maestro. Se decidió
+que fuera **un archivo de referencia** para el asesor y el laboratorio, **sin
+tocar el paso 1**: `operones_pao1.tsv` sigue siendo el catálogo del bronce y
+las métricas no se mueven.
+
+`python -m grn_operones.cli catalogo` escribe en `salidas/`:
+- `operones_<día>_catalogo.csv`;
+- `operones_<día>_catalogo_fuentes.csv`;
+- `operones_<día>_catalogo_leame.txt`;
+- `operones_<día>_catalogo.xlsx`, con las hojas Catálogo, Fuentes y Léame.
+
+Cada operón curado trae:
+- sus genes en orden de transcripción;
+- la evidencia de cada fuente;
+- el ID y el nombre en ODB, BioCyc, PGD-DOOR y PGD-PseudoCAP;
+- el promotor de CDBProm, con el gen y el score;
+- si también está en el catálogo del paso 1.
+
+**CDBProm va en columnas propias y no cuenta como fuente**, decidido hoy:
+marca operones pero no los crea ni los confirma. openpyxl queda aprobado en
+`grn_operones/`, solo para el `.xlsx` (CLAUDE.md).
+
+| | |
+|---|---|
+| operones en el catálogo | 4 250 (1 576 de más de un gen) |
+| conocidos / curados / predichos | 145 / 3 / 4 102 (96.5 % predicción) |
+| sin nombre (solo BioCyc) | 2 992 |
+| con solo el nombre sintético de DOOR | 1 131 |
+| con promotor CDBProm | 1 574 |
+| iguales en genes a una fila de `operones_pao1.tsv` | 325 de 3 030 |
+
+**Hallazgo para la decisión 7 (punto 34).** Los mayores de los 103 operones
+del corpus que faltan en el catálogo del paso 1 no son operones. exoSTY
+(PA3841, PA0044, PA2191), rsmZY, phzMS, lasRI y cyaAB son genes separados en
+el genoma que el texto abrevia juntos. De los 103, solo 3 tienen su conjunto
+exacto en la base curada. Completar el catálogo con ellos metería uniones que
+no se cotranscriben.
+
+`MOTIVOS` ganó texto para las seis marcas que salían como código crudo
+(`comp_con_cita`, `pendiente_revision`…). Eso también cambia la prosa de la
+columna `motivo` en `operones_<día>_conflictos.csv`.
+
+**Pendientes:**
+
+1. **Preguntar al asesor la decisión 3: ¿`GRN_experimental` usó ODB o
+   BioCyc?** Si sí, esas fuentes no pueden alimentar el paso 1 sin una
+   guarda de contaminación. El catálogo como referencia no se ve afectado.
+2. CLAUDE.md dice que las dependencias se declaran en `pyproject.toml`, y
+   ese archivo no existe.
+
+---
+
 ## 27 de septiembre de 2026 — entran los operones de PGD, y dos correcciones
 
 El asesor pidió los operones de PAO1 tal como los muestra pseudomonas.com

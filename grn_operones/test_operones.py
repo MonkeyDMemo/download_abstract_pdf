@@ -16,6 +16,7 @@ import sys
 import tempfile
 import unittest
 import urllib.error
+from unittest import mock
 
 _RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _RAIZ)
@@ -1058,6 +1059,17 @@ class PruebasPrimerGen(unittest.TestCase):
     def test_sin_hebra_se_queda_con_el_primero_de_la_lista(self):
         self.assertEqual(C.primer_gen(["PA2493", "PA2494"], None), "PA2493")
 
+    def test_el_orden_de_transcripcion_es_la_misma_regla(self):
+        """`primer_gen` y el catálogo salen de `orden_transcripcion`, para
+        que el primer gen que muestra el catálogo sea el del promotor."""
+        self.assertEqual(C.orden_transcripcion([], "+"), [])
+        self.assertEqual(
+            C.orden_transcripcion(["PA0668.1", "PA0668", "PA0668.2"], "-"),
+            ["PA0668.2", "PA0668.1", "PA0668"])
+        self.assertEqual(
+            C.orden_transcripcion(["PA2494", "PA2493"], None),
+            ["PA2494", "PA2493"], "sin hebra no se reordena")
+
     def test_la_curacion_marca_por_hebra_y_no_por_posicion(self):
         """ODB escribe ascendente un operón de la hebra menos, y BioCyc
         descendente uno de la hebra más: en los dos, el promotor del primer
@@ -1379,6 +1391,193 @@ class PruebasVistaPgd(unittest.TestCase):
         with io.open(ruta, encoding="utf-8") as f:
             primera = f.readline().strip()
         self.assertTrue(primera.startswith(u"ID del operón,Operón,Locus tag"))
+
+
+class PruebasCatalogo(unittest.TestCase):
+    """El catálogo maestro: una fila por operón, trazable a cada fuente.
+
+    El caso de `mexAB-oprM` es el real: lo tienen ODB, BioCyc y PGD, y PGD
+    dos veces, como predicción de DOOR con nombre sintético y como
+    literatura de PseudoCAP con un ID por artículo.
+    """
+
+    PASO1 = (u"operon\tmiembros\tlocus_tags\tfuente\n"
+             u"mexAB-oprM\tmexA|mexB|oprM\tPA0425|PA0426|PA0427\t"
+             u"refseq_adyacencia\n")
+
+    def setUp(self):
+        self.con = _con()
+        self.addCleanup(self.con.close)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        ruta = os.path.join(self.tmp.name, "genes.tsv")
+        with io.open(ruta, "w", encoding="utf-8", newline="") as f:
+            f.write(GENES_TSV)
+        self.dicc = C.cargar_diccionario(ruta)
+        self.anotacion = E.cargar_anotacion(ruta)
+        self.hebras = {"PA0425": "+", "PA0426": "+", "PA0427": "+",
+                       "PA2493": "-", "PA2494": "-"}
+        _bronce(self.con, [
+            _fila("odb", "op1", "PA0425|PA0426|PA0427", pmid="123",
+                  tipo_evidencia="literatura",
+                  registro_raw={"name": "mexAB-oprM"}),
+            _fila("biocyc", "TU-1", "PA0427|PA0426|PA0425",
+                  tipo_evidencia="EV-EXP-IDA"),
+            _fila("biocyc", "TU-2", "PA2493|PA2494"),
+            _fila("pgd", "operon-89", "PA0425|PA0426|PA0427",
+                  tipo_evidencia="DOOR",
+                  registro_raw={"name": "mexA-mexB-oprM",
+                                "source_database": "DOOR"}),
+            # Dos IDs de PseudoCAP con el mismo nombre: uno por artículo. El
+            # orden textual pondría 41728 antes que 5000.
+            _fila("pgd", "operon-41728", "PA0425|PA0426|PA0427",
+                  tipo_evidencia="PseudoCAP", pmid="10648542",
+                  registro_raw={"name": "mexAB-oprM",
+                                "source_database": "PseudoCAP"}),
+            _fila("pgd", "operon-5000", "PA0425|PA0426|PA0427",
+                  tipo_evidencia="PseudoCAP", pmid="11053384",
+                  registro_raw={"name": "mexAB-oprM",
+                                "source_database": "PseudoCAP"}),
+            _fila("cdbprom", "PA0425", "PA0425",
+                  registro_raw={"score": "0.91"}),
+            _fila("cdbprom", "PA2494", "PA2494",
+                  registro_raw={"score": "0.87"}),
+        ])
+        self.paso1 = {"PA0425|PA0426|PA0427": "mexAB-oprM"}
+
+    def _catalogo(self, hebras=None, paso1="omision"):
+        C.curar(self.con, diccionario=self.dicc,
+                hebras=self.hebras if hebras is None else hebras)
+        filas = E.filas_catalogo(self.con, D, self.anotacion,
+                                 self.paso1 if paso1 == "omision" else paso1)
+        return dict((f["clave_genes"], f) for f in filas)
+
+    def test_una_fila_por_operon_curado(self):
+        self.assertEqual(sorted(self._catalogo()),
+                         ["PA0425|PA0426|PA0427", "PA2493|PA2494"])
+
+    def test_cada_fuente_con_su_id_y_su_nombre(self):
+        mex = self._catalogo()["PA0425|PA0426|PA0427"]
+
+        self.assertEqual(mex["id_odb"], "op1")
+        self.assertEqual(mex["nombre_odb"], "mexAB-oprM")
+        self.assertEqual(mex["id_biocyc"], "TU-1")
+        self.assertEqual(mex["id_door"], "operon-89")
+        self.assertEqual(mex["nombre_door"], "mexA-mexB-oprM")
+
+    def test_pseudocap_separado_de_door_en_orden_numerico_y_sin_repetir(self):
+        mex = self._catalogo()["PA0425|PA0426|PA0427"]
+
+        self.assertEqual(mex["id_pseudocap"], "operon-5000;operon-41728")
+        self.assertEqual(mex["nombre_pseudocap"], "mexAB-oprM")
+
+    def test_cdbprom_tiene_columnas_propias_y_no_cuenta_como_fuente(self):
+        """Decidido el 27-sep: CDBProm marca operones, no los crea ni los
+        confirma. Contarlo inflaría «con dos o más fuentes»."""
+        mex = self._catalogo()["PA0425|PA0426|PA0427"]
+
+        self.assertEqual(mex["fuentes"], "biocyc;odb;pgd")
+        self.assertEqual(mex["n_fuentes"], 3)
+        self.assertEqual((mex["promotor_cdbprom"], mex["gen_con_promotor"],
+                          mex["score_cdbprom"]), ("sí", "PA0425", "0.91"))
+
+    def test_en_la_hebra_menos_el_orden_y_el_promotor_se_invierten(self):
+        mexef = self._catalogo()["PA2493|PA2494"]
+
+        self.assertEqual(mexef["locus_tags"], "PA2494|PA2493")
+        self.assertEqual(mexef["genes"], "mexF mexE")
+        self.assertEqual(mexef["orden_verificado"], "sí")
+        self.assertEqual((mexef["gen_con_promotor"], mexef["score_cdbprom"]),
+                         ("PA2494", "0.87"))
+
+    def test_sin_hebra_el_orden_es_el_de_la_fuente_y_se_dice(self):
+        mexef = self._catalogo(hebras={})["PA2493|PA2494"]
+
+        self.assertEqual(mexef["orden_verificado"], "no")
+        self.assertEqual(mexef["locus_tags"], "PA2493|PA2494")
+
+    def test_el_catalogo_del_paso_1_en_sus_tres_casos(self):
+        filas = self._catalogo()
+        self.assertEqual(filas["PA0425|PA0426|PA0427"]["en_catalogo_paso1"],
+                         "sí")
+        self.assertEqual(
+            filas["PA0425|PA0426|PA0427"]["nombre_catalogo_paso1"],
+            "mexAB-oprM")
+        self.assertEqual(filas["PA2493|PA2494"]["en_catalogo_paso1"], "no")
+
+        sin_tsv = self._catalogo(paso1=None)["PA2493|PA2494"]
+
+        self.assertEqual(sin_tsv["en_catalogo_paso1"], "",
+                         "sin el TSV no se comprobó: un «no» mentiría")
+
+    def test_claves_paso1_usa_la_expansion_del_paso_1(self):
+        from grn_bronce import operones as P
+        ruta = os.path.join(self.tmp.name, "operones.tsv")
+        with io.open(ruta, "w", encoding="utf-8", newline="") as f:
+            f.write(self.PASO1)
+
+        claves = E.claves_paso1(P.leer(ruta),
+                                P.Catalogo.cargar(ruta).locus_tags)
+
+        self.assertEqual(claves, self.paso1)
+
+    def test_la_hoja_de_fuentes_no_publica_rutas_locales(self):
+        self._catalogo()
+        filas = E.filas_fuentes_catalogo(self.con, D, F.FUENTES, F.URL_PGD)
+
+        self.assertTrue(all("ruta" not in f for f in filas))
+        self.assertNotIn("r", [f.get("origen") for f in filas],
+                         "`r` es la ruta del fixture; el origen es `u`")
+        cdb = [f for f in filas if f["fuente"] == "cdbprom"][0]
+        self.assertEqual(cdb["aporta"], "marca promotores")
+        self.assertEqual(cdb["unidades"], 2)
+
+    def test_el_leame_trae_las_cifras_de_la_corrida(self):
+        catalogo = list(self._catalogo().values())
+        fuentes = E.filas_fuentes_catalogo(self.con, D, F.FUENTES, F.URL_PGD)
+
+        texto = "\n".join(E.lineas_leame(catalogo, fuentes, self.paso1))
+
+        self.assertIn("2 unidades", texto)
+        self.assertIn("marca 2 operones", texto)
+        self.assertIn("1 unidades coinciden", texto)
+
+    def test_encabezados_y_columnas_van_parejos(self):
+        self.assertEqual(len(E.COLUMNAS_CATALOGO),
+                         len(E.ENCABEZADOS_CATALOGO))
+        self.assertEqual(len(E.COLUMNAS_FUENTES_CATALOGO),
+                         len(E.ENCABEZADOS_FUENTES_CATALOGO))
+
+    def test_sin_openpyxl_se_dice_y_se_sigue(self):
+        with mock.patch.dict(sys.modules, {"openpyxl": None}):
+            ok = E.escribir_xlsx_catalogo(
+                os.path.join(self.tmp.name, "c.xlsx"), [], [], ["x"])
+
+        self.assertFalse(ok)
+
+    def test_el_xlsx_tiene_tres_hojas_y_no_ejecuta_formulas(self):
+        try:
+            import openpyxl
+        except ImportError:
+            self.skipTest("openpyxl no está instalado")
+        catalogo = list(self._catalogo().values())
+        catalogo[0]["nombre"] = "=HYPERLINK(\"x\")"
+        catalogo[0]["motivo"] = "con\x01control"
+        fuentes = E.filas_fuentes_catalogo(self.con, D, F.FUENTES, F.URL_PGD)
+        ruta = os.path.join(self.tmp.name, "c.xlsx")
+
+        self.assertTrue(E.escribir_xlsx_catalogo(ruta, catalogo, fuentes,
+                                                 ["uno", "dos"]))
+
+        libro = openpyxl.load_workbook(ruta)
+        self.assertEqual(libro.sheetnames, [u"Catálogo", "Fuentes", u"Léame"])
+        hoja = libro[u"Catálogo"]
+        self.assertEqual(hoja.max_row, 3)
+        col = E.COLUMNAS_CATALOGO.index("nombre") + 1
+        self.assertEqual(hoja.cell(row=2, column=col).data_type, "s")
+        self.assertIsInstance(
+            hoja.cell(row=2, column=E.COLUMNAS_CATALOGO.index(
+                "score_cdbprom") + 1).value, float)
 
 
 class PruebasCoberturaDeMapeo(unittest.TestCase):

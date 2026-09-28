@@ -87,6 +87,10 @@ cualquier particion en la que detecte esa contaminacion. El panorama esta en
 - **`grn_bronce/` puede usar terceros** declarados en `pyproject.toml` como
   extra `[bronce]`, e instalados solo dentro del venv del proyecto. Aprobados
   hoy: **openpyxl** y **PyMuPDF**. Cualquier otro se aprueba antes de usarse.
+- **`grn_operones/` puede usar openpyxl y nada más**, solo para el `.xlsx`
+  opcional del catálogo maestro (aprobado el 27 de septiembre de 2026). Se
+  importa dentro de la función, y sin openpyxl el catálogo sale igual en CSV.
+  (Ojo: `pyproject.toml` todavía no existe en el repositorio.)
 
 La excepcion no es una puerta abierta: lo que se apoya en un tercero deja de
 correr donde no se puede instalar. Los CSV son el producto canonico de toda
@@ -186,6 +190,8 @@ grn_bronce/            paso 1, en construccion
   texto.py               segmentacion en oraciones y offsets absolutos
   operones.py            el catalogo y la UNICA expansion operon -> genes
   secciones.tsv          etiqueta h2 -> clase de seccion
+grn_operones/          la base de operones desde ODB, BioCyc, PGD y CDBProm;
+                       `cli.py catalogo` da el catálogo maestro para leer
 grn_comun/             lo que usan los tres pasos
   procedencia.py         huella por contenido de cada eslabon de la cadena
 pruebas/               las del paso 0; falsos.py deja urlopen inutilizable
@@ -244,7 +250,11 @@ Seis reglas que no se rompen:
 Dependencia en una sola direccion: `cli -> orquestacion -> db / clientes`.
 Ningun modulo salta capas. `grn_comun/` es la excepcion prevista: lo que usan
 los tres pasos por igual (hoy `procedencia.py`) vive ahi para que ninguno
-tenga que importar de lado.
+tenga que importar de lado. `grn_operones/` sí importa de lado desde
+`grn_bronce/`: `rutas` y, solo en su `cli.py`, el lector del catálogo del
+paso 1 (`operones.leer` y `Catalogo`). Si algún día `grn_bronce` consume la
+base de operones, esa dirección se invierte y hay que mover lo compartido a
+`grn_comun/` para no crear un ciclo.
 
 Esta separacion es lo que permitio montar el tablero sin tocar la logica, y lo
 que permitiria montar FastAPI manana. Si una propuesta obliga a cruzar estas

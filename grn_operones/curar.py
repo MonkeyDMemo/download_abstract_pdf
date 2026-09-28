@@ -218,13 +218,28 @@ def primer_gen(locus_tags, hebra):
     """
     if not locus_tags:
         return None
+    return orden_transcripcion(locus_tags, hebra)[0]
+
+
+def orden_transcripcion(locus_tags, hebra):
+    """Los locus tags en el orden en que se transcriben.
+
+    Ascendente por número en `+` y descendente en `-`. El sufijo `.N` cuenta:
+    `PA0668.1` va después de `PA0668` en el genoma. Es la única regla de
+    orden: `primer_gen` sale de aquí, y el catálogo también, para que el gen
+    que muestra primero sea el mismo sobre el que se buscó el promotor.
+
+    Sin hebra, o con un locus que no se deja numerar, la lista se devuelve
+    como vino, porque no hay con qué ordenarla.
+    """
+    locus_tags = list(locus_tags)
     claves = [LOCUS.match(l) for l in locus_tags]
-    if hebra not in ("+", "-") or not all(claves):
-        return locus_tags[0]
-    # El sufijo `.N` cuenta: `PA0668.1` va después de `PA0668` en el genoma.
+    if hebra not in ("+", "-") or not locus_tags or not all(claves):
+        return locus_tags
     orden = sorted(zip(((int(m.group(1)), int(m.group(2) or 0))
                         for m in claves), locus_tags))
-    return orden[0][1] if hebra == "+" else orden[-1][1]
+    salida = [l for _clave, l in orden]
+    return salida if hebra == "+" else salida[::-1]
 
 
 def es_adyacente(locus_tags):

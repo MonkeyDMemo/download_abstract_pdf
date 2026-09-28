@@ -45,5 +45,7 @@ LIMITACIONES CONOCIDAS, ANTES DE CONFIAR EN LA SALIDA
    `curar` reporta la cobertura de mapeo por fuente: hay que mirarla antes de
    dar la curacion por buena.
 
-Solo biblioteca estandar.
+Solo biblioteca estándar, con una excepción acotada: el `.xlsx` opcional del
+catálogo maestro usa openpyxl si está instalado (`exportar.py`). Sin él, el
+catálogo sale igual en CSV.
 """
