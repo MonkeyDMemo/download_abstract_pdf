@@ -266,6 +266,33 @@ los 738 salen en `export --pendientes`.
 De los 2263, siete no traen abstract: son registros donde PubMed no lo publica
 (erratas, comentarios editoriales).
 
+## Base de operones
+
+`grn_operones/` arma una base de operones de PAO1 desde las cuatro fuentes que
+pidió el asesor, con dos papeles distintos:
+
+| fuente | aporta | cómo entra |
+|---|---|---|
+| ODB v4 | operones de literatura | volcado del propio sitio |
+| BioCyc / PseudoCyc | unidades de transcripción | API oficial; exige `BIOCYC_EMAIL` y `BIOCYC_PASSWORD` |
+| Pseudomonas Genome DB | operones de DOOR y de PseudoCAP | exportación de su curador, fijada a un commit (el sitio no ofrece descarga) |
+| CDBProm | promotores predichos | volcado local con `--archivo`; marca operones, no los crea |
+
+```bash
+python3 -m grn_operones.cli extraer --fuente pgd     # o odb, biocyc; cdbprom con --archivo
+python3 -m grn_operones.cli curar                    # normaliza, valida y deduplica
+python3 -m grn_operones.cli catalogo                 # el catálogo maestro para leer
+python3 -m grn_operones.cli estado
+```
+
+`catalogo` escribe en `salidas/` el **catálogo maestro**, que es el archivo de
+referencia: un `.csv`, su hoja de fuentes, un léame y un `.xlsx` si openpyxl
+está instalado. Trae una fila por operón con sus genes, su evidencia, el ID que
+le da cada fuente y el promotor. Antes de citar cifras, lee su léame: la
+mayor parte del catálogo es predicción. `exportar` da la versión técnica
+(silver, conflictos y la vista de PGD). Por qué está hecho así:
+`docs/CONTEXTO_OPERONES.md` y las secciones de operones de `docs/decisiones.md`.
+
 ## Pruebas
 
 ```bash
@@ -292,6 +319,7 @@ grn_etl/
   etl.py               orquestación; no imprime, reporta por callback
   pubmed.py            clientes de E-utilities, PMC y Unpaywall
   trabajos.py          corre un trabajo en segundo plano, uno a la vez
+grn_operones/          la base de operones y el catálogo maestro
 pruebas/               349 pruebas; ninguna toca la red
 datos/grn.db           la base (fuera del repositorio)
 datos/fulltext/        XML, texto derivado y PDF (fuera del repositorio)
@@ -307,6 +335,7 @@ salidas/               exportaciones CSV y JSONL (fuera del repositorio)
 | `PLAN.md` | los cuatro pasos, sus capas y el contrato de cada uno |
 | `docs/hallazgos.md` | los hechos medidos, con su medición y la fecha |
 | `docs/decisiones.md` | las decisiones de diseño y por qué se tomaron así |
+| `docs/CONTEXTO_OPERONES.md` | el encargo de la base de operones: fuentes, restricciones y reglas de curación |
 | `docs/traspaso-maquina-nueva.md` | **cómo levantar el proyecto en otra computadora**: qué copiar, qué instalar y cómo comprobarlo |
 | `docs/traspaso-etapa-2.md` | qué formato tienen los datos que esta etapa entrega |
 | `docs/ficha-modelo-bert.md` | el modelo de clasificación heredado, auditado |
