@@ -257,15 +257,252 @@ class PruebasParserBioCyc(unittest.TestCase):
         self.assertIsNone(tu2["genes_raw"],
                           "los frameid no son nombres de gen")
 
-    def test_los_parsers_que_faltan_fallan_diciendo_que_llego(self):
-        """Un parser a ciegas devolveria cero filas y pareceria correcto.
 
-        PGD y CDBProm siguen sin formato conocido; ODB ya no, porque su
-        volcado real se vio el 18-sep-2026."""
+# Filas reales de la tabla de operones de PGD (datos públicos, BSD-3), en su
+# formato: entrecomillado salvo los números. Cubren los casos que el archivo
+# real trae:
+# - operon-2, en la hebra menos;
+# - operon-6, cuyas filas no van juntas;
+# - rsmY, con locus tag `PA####.N`;
+# - operon-714, el de la captura de la página;
+# - carA-PA4757-carB, de PseudoCAP, que repite cada gen una vez por artículo.
+PGD_CSV = u"""\
+"operon-id","operon_name","locus_tag","start","end","strand","gene_name","source_database","pmid"
+"operon-2","PA0006-lptA","PA0005",7018,7791,-1,"lptA","DOOR",18988623
+"operon-2","PA0006-lptA","PA0006",7803,8339,-1,"","DOOR",18988623
+"operon-6","hemF-aroE","PA0024",25736,26653,1,"hemF","DOOR",18988623
+"operon-41798","rsmY","PA0527.1",586867,586990,1,"rsmY","PseudoCAP",19602144
+"operon-6","hemF-aroE","PA0025",26711,27535,1,"aroE","DOOR",18988623
+"operon-714","metG-PA3483","PA3482",3895324,3897357,1,"metG","DOOR",18988623
+"operon-714","metG-PA3483","PA3483",3897391,3898191,1,"","DOOR",18988623
+"operon-41779","carA-PA4757-carB operon","PA4756",5339864,5343085,-1,"carB","PseudoCAP",9286981
+"operon-41779","carA-PA4757-carB operon","PA4756",5339864,5343085,-1,"carB","PseudoCAP",8169201
+"operon-41779","carA-PA4757-carB operon","PA4757",5343105,5343755,-1,"","PseudoCAP",9286981
+"operon-41779","carA-PA4757-carB operon","PA4757",5343105,5343755,-1,"","PseudoCAP",8169201
+"operon-41779","carA-PA4757-carB operon","PA4758",5343767,5344903,-1,"carA","PseudoCAP",9286981
+"operon-41779","carA-PA4757-carB operon","PA4758",5343767,5344903,-1,"carA","PseudoCAP",8169201
+"""
+
+
+class PruebasParserPgd(unittest.TestCase):
+    """La tabla de operones de PGD: una fila por gen, un operón por id."""
+
+    def _por_id(self, texto=None):
+        filas = F.parsear_pgd((texto or PGD_CSV).encode("utf-8"))
+        return dict((f["id_fuente"], f) for f in filas)
+
+    def test_un_operon_por_id_aunque_sus_filas_no_vayan_juntas(self):
+        """103 de 1 290 operones reales tienen las filas separadas."""
+        por_id = self._por_id()
+
+        self.assertEqual(sorted(por_id), ["operon-2", "operon-41779",
+                                          "operon-41798", "operon-6",
+                                          "operon-714"])
+        self.assertEqual(por_id["operon-6"]["locus_tags"], "PA0024|PA0025")
+
+    def test_en_la_hebra_menos_va_en_orden_de_transcripcion(self):
+        """El archivo va ascendente por coordenada en las dos hebras; en la
+        menos eso es al revés. El nombre lo delata: `PA0006-lptA`."""
+        por_id = self._por_id()
+
+        self.assertEqual(por_id["operon-2"]["locus_tags"], "PA0006|PA0005")
+        self.assertEqual(por_id["operon-2"]["cadena"], "-")
+        self.assertEqual(por_id["operon-714"]["locus_tags"], "PA3482|PA3483")
+        self.assertEqual(por_id["operon-714"]["cadena"], "+")
+
+    def test_un_gen_repetido_por_articulo_cuenta_una_vez(self):
+        """Sin esto, `oprE` saldría `PA0291|PA0291`."""
+        car = self._por_id()["operon-41779"]
+
+        self.assertEqual(car["locus_tags"], "PA4758|PA4757|PA4756")
+        self.assertEqual(len(car["registro_raw"]["genes"]), 3)
+
+    def test_door_no_pone_la_cita_del_metodo_como_pmid(self):
+        """18988623 es el artículo de DOOR, no una demostración del operón:
+        en `pmid` la curación lo leería como literatura."""
+        metg = self._por_id()["operon-714"]
+
+        self.assertIsNone(metg["pmid"])
+        self.assertEqual(metg["tipo_evidencia"], "DOOR")
+        self.assertEqual(metg["registro_raw"]["referencia_metodo"], "18988623")
+
+    def test_pseudocap_trae_sus_pmids_unidos_y_ordenados(self):
+        car = self._por_id()["operon-41779"]
+
+        self.assertEqual(car["tipo_evidencia"], "PseudoCAP")
+        self.assertEqual(car["pmid"], "8169201;9286981")
+        self.assertNotIn("referencia_metodo", car["registro_raw"])
+
+    def test_un_locus_con_sufijo_punto_llega_entero(self):
+        """`findall` lo habría recortado a `PA0527`, que es otro gen."""
+        self.assertEqual(self._por_id()["operon-41798"]["locus_tags"],
+                         "PA0527.1")
+
+    def test_el_nombre_y_los_genes_de_la_pagina_quedan_en_el_crudo(self):
+        crudo = self._por_id()["operon-714"]["registro_raw"]
+
+        self.assertEqual(crudo["name"], "metG-PA3483")
+        self.assertEqual(crudo["genes"][0], {
+            "locus_tag": "PA3482", "gene_name": "metG", "start": 3895324,
+            "end": 3897357, "hebra": "+"})
+
+    def test_un_nombre_con_coma_no_corre_las_columnas(self):
+        """Dos nombres reales llevan coma (`fabAB operon, long transcript`)."""
+        texto = PGD_CSV.replace('"metG-PA3483"', '"metG operon, corto"')
+
+        self.assertEqual(self._por_id(texto)["operon-714"]["registro_raw"]
+                         ["name"], "metG operon, corto")
+
+    def test_un_bom_al_frente_no_rompe_el_encabezado(self):
+        """Un archivo guardado desde Excel trae BOM."""
+        filas = F.parsear_pgd(b"\xef\xbb\xbf" + PGD_CSV.encode("utf-8"))
+
+        self.assertEqual(len(filas), 5)
+
+    def test_un_encabezado_distinto_falla(self):
+        with self.assertRaises(F.FormatoDesconocido):
+            F.parsear_pgd(PGD_CSV.replace('"pmid"', '"pubmed"')
+                          .encode("utf-8"))
+
+    def test_la_pagina_del_desafio_falla_diciendo_que_llego(self):
+        """Lo que devuelve pseudomonas.com a cualquier cliente sin navegador."""
+        html = (b"<!DOCTYPE html><html lang=\"en-US\"><head><title>Just a "
+                b"moment...</title></head><body></body></html>")
+
         with self.assertRaises(F.FormatoDesconocido) as ctx:
-            F.parsear_tabular(b"no hay locus tags aqui", "pgd")
+            F.parsear_pgd(html)
 
-        self.assertIn("pgd", str(ctx.exception).lower())
+        self.assertIn("html", str(ctx.exception))
+
+    def test_un_cuerpo_vacio_falla(self):
+        with self.assertRaises(F.FormatoDesconocido):
+            F.parsear_pgd(b"")
+
+    def test_un_cuerpo_que_no_es_csv_falla_con_el_error_del_contrato(self):
+        """`csv.Error` no lo atrapa nadie: tiene que salir como
+        FormatoDesconocido para que la descarga se conserve."""
+        with self.assertRaises(F.FormatoDesconocido):
+            F.parsear_pgd(b'"' + b"a" * 200000)
+
+    def test_una_hebra_desconocida_falla_en_vez_de_adivinar(self):
+        malo = PGD_CSV.replace("3897357,1,", "3897357,+,")
+
+        with self.assertRaises(F.FormatoDesconocido) as ctx:
+            F.parsear_pgd(malo.encode("utf-8"))
+
+        self.assertIn("hebra", str(ctx.exception))
+
+    def test_un_origen_desconocido_falla(self):
+        """Un origen nuevo obliga a decidir si es predicción o literatura."""
+        malo = PGD_CSV.replace('"metG","DOOR"', '"metG","OperonMapper"')
+
+        with self.assertRaises(F.FormatoDesconocido):
+            F.parsear_pgd(malo.encode("utf-8"))
+
+    def test_un_locus_que_no_es_de_pao1_falla(self):
+        malo = PGD_CSV.replace('"PA3482"', '"PA14_12345"')
+
+        with self.assertRaises(F.FormatoDesconocido):
+            F.parsear_pgd(malo.encode("utf-8"))
+
+
+class PruebasExtraerPgd(unittest.TestCase):
+    """`extraer --fuente pgd` sin red: la sesión se falsea."""
+
+    def setUp(self):
+        self.con = _con()
+        self.addCleanup(self.con.close)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        previo = os.environ.pop(F.VAR_PGD, None)
+        if previo is not None:
+            self.addCleanup(os.environ.__setitem__, F.VAR_PGD, previo)
+        self.pedidas = []
+
+    def _sesion(self, cuerpo=None):
+        s = R.Sesion("alguien@unam.mx", pausa=0)
+
+        def falso(url, datos=None, timeout=None):
+            self.pedidas.append(url)
+            return cuerpo if cuerpo is not None else PGD_CSV.encode("utf-8")
+        s._abrir = falso
+        return s
+
+    def _extraer(self, url=None, cuerpo=None, archivo=None):
+        return F.extraer(self.con, "pgd", self._sesion(cuerpo),
+                         flag_datos=self.tmp.name, url=url, archivo=archivo)
+
+    def test_sin_url_pide_la_tabla_fijada_y_la_parsea(self):
+        informe = self._extraer()
+
+        self.assertEqual(self.pedidas, [F.URL_PGD])
+        self.assertEqual(informe["filas"], 5)
+        self.assertTrue(informe["completa"])
+
+    def test_una_segunda_corrida_no_vuelve_a_pedir(self):
+        """La URL va fijada a un commit: sus bytes no pueden cambiar."""
+        self._extraer()
+        informe = self._extraer()
+
+        self.assertEqual(self.pedidas, [F.URL_PGD])
+        self.assertTrue(informe["ya_estaba"])
+        self.assertEqual(len(D.extracciones_de(self.con, "pgd")), 1,
+                         "una extracción abierta sin cerrar contaría como "
+                         "corrida fallida")
+        self.assertEqual(len(D.bronze_vigente(self.con)), 5)
+
+    def test_otra_url_si_se_pide(self):
+        """Una URL que no está fijada puede cambiar, y se vuelve a bajar."""
+        self._extraer()
+        self._extraer(url="https://otro.example/pao1_operones.csv")
+
+        self.assertEqual(self.pedidas, [
+            F.URL_PGD, "https://otro.example/pao1_operones.csv"])
+
+    def test_pedir_la_tabla_fijada_a_proposito_si_la_baja(self):
+        """`--url` explícito es una orden, no una sugerencia."""
+        self._extraer()
+        self._extraer(url=F.URL_PGD)
+
+        self.assertEqual(self.pedidas, [F.URL_PGD, F.URL_PGD])
+
+    def test_una_tabla_mas_nueva_no_se_revierte_a_la_fijada(self):
+        """Con la tabla nueva vigente, bajar la de 2021 la reemplazaría y
+        daría por retirados los operones que solo trae la nueva."""
+        self._extraer()
+        nueva = os.path.join(self.tmp.name, "pgd_nueva.csv")
+        with io.open(nueva, "w", encoding="utf-8", newline="") as f:
+            f.write(PGD_CSV + u'"operon-9","dnaA-dnaN","PA0001",483,2027,1,'
+                              u'"dnaA","DOOR",18988623\n')
+        self._extraer(archivo=nueva)
+
+        informe = self._extraer()
+
+        self.assertTrue(informe["ya_estaba"])
+        self.assertEqual(self.pedidas, [F.URL_PGD])
+        self.assertEqual(len(D.bronze_vigente(self.con)), 6)
+        self.assertEqual(D.retirados(self.con), {})
+
+    def test_una_foto_que_no_se_pudo_leer_se_rehace(self):
+        """Un parseo fallido también cierra la extracción como completa. Si
+        contara como «ya está», PGD se quedaría vacía para siempre."""
+        self._extraer(cuerpo=b"<html><body>Blocked</body></html>")
+        self.assertEqual(D.bronze_vigente(self.con), [])
+
+        informe = self._extraer()
+
+        self.assertEqual(self.pedidas, [F.URL_PGD, F.URL_PGD])
+        self.assertEqual(informe["filas"], 5)
+
+    def test_sin_el_crudo_en_disco_se_vuelve_a_bajar(self):
+        """`reparsear` pide volver a extraer si falta el crudo; si `extraer`
+        contestara «ya está», cada comando mandaría al otro."""
+        self._extraer()
+        os.remove(D.descargas_de(self.con, "pgd")[0]["ruta"])
+
+        self._extraer()
+
+        self.assertEqual(self.pedidas, [F.URL_PGD, F.URL_PGD])
 
 
 class PruebasIdempotencia(unittest.TestCase):
@@ -578,16 +815,17 @@ class PruebasCuracion(unittest.TestCase):
         self.assertEqual(niveles["PA2493|PA2494"], "curado")
         self.assertEqual(niveles["PA0426|PA0427"], "predicho")
 
-    def test_biocyc_y_pgd_juntas_cuentan_como_una_fuente(self):
-        """Comparten el motor de prediccion de Pathway Tools: coincidir no es
-        confirmacion independiente."""
+    def test_biocyc_y_pgd_cuentan_como_dos_fuentes(self):
+        """PGD predice con DOOR y BioCyc con Pathway Tools: son motores
+        distintos. Hasta el 27-sep-2026 contaban como una sola fuente por una
+        premisa falsa, la de que PGD también usaba Pathway Tools."""
         _bronce(self.con, [
             _fila("biocyc", "TU-1", "PA0425|PA0426"),
-            _fila("pgd", "op1", "PA0425|PA0426")])
+            _fila("pgd", "op1", "PA0425|PA0426", tipo_evidencia="DOOR")])
 
         self._curar()
 
-        self.assertEqual(D.silver_de(self.con)[0]["n_fuentes"], 1)
+        self.assertEqual(D.silver_de(self.con)[0]["n_fuentes"], 2)
 
     def test_un_operon_no_adyacente_queda_marcado_para_revisar(self):
         _bronce(self.con, [_fila("odb", "raro", "PA0425|PA2494")])
@@ -931,6 +1169,21 @@ class PruebasNivelDeEvidencia(unittest.TestCase):
 
         self.assertEqual(nivel, "conocido")
 
+    def test_pgd_pseudocap_con_pmid_es_conocido(self):
+        """PseudoCAP es literatura curada; sus PMIDs, aunque sean varios, lo
+        hacen conocido."""
+        nivel, marcas = C.nivel_de_fila(
+            self._fila("PseudoCAP", "8169201;9286981"), "pgd")
+
+        self.assertEqual((nivel, marcas), ("conocido", []))
+
+    def test_pgd_door_es_predicho_sin_marca(self):
+        """El parser deja la cita del método fuera de `pmid`, así que DOOR no
+        llega aquí con PMID y no hay `comp_con_cita` que marcar."""
+        nivel, marcas = C.nivel_de_fila(self._fila("DOOR"), "pgd")
+
+        self.assertEqual((nivel, marcas), ("predicho", []))
+
     def test_el_grupo_se_queda_con_el_mejor_nivel(self):
         """Si ODB lo documenta y BioCyc lo predice, el operon esta
         documentado; y la marca de la prediccion se conserva."""
@@ -1064,6 +1317,68 @@ class PruebasExportacion(unittest.TestCase):
 
         self.assertTrue(os.path.exists(ruta))
         self.assertFalse(os.path.exists(ruta + ".tmp"))
+
+
+class PruebasVistaPgd(unittest.TestCase):
+    """El CSV con las columnas de la página de operones de pseudomonas.com."""
+
+    ANOTACION = (u"locus_tag\tsimbolo\talias\ttipo\tproducto\tes_tf\t"
+                 u"fuente_tf\tfuente\tsensible_mayusculas\n"
+                 u"PA3482\tmetG\tPA3482\tprotein_coding\t"
+                 u"methionine--tRNA ligase\tfalse\t\trefseq\tfalse\n")
+
+    def setUp(self):
+        self.con = _con()
+        self.addCleanup(self.con.close)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        _bronce(self.con, F.parsear_pgd(PGD_CSV.encode("utf-8")))
+        ruta = os.path.join(self.tmp.name, "genes.tsv")
+        with io.open(ruta, "w", encoding="utf-8", newline="") as f:
+            f.write(self.ANOTACION)
+        self.filas = E.filas_pgd(self.con, D, E.cargar_anotacion(ruta))
+
+    def test_una_fila_por_gen_sin_repetidos(self):
+        """13 renglones en el archivo, 10 genes distintos por operón."""
+        self.assertEqual(len(self.filas), 10)
+
+    def test_los_operones_van_en_orden_numerico(self):
+        """`operon-10` después de `operon-2`: el orden textual los invierte."""
+        ids = []
+        for f in self.filas:
+            if f["operon_id"] not in ids:
+                ids.append(f["operon_id"])
+
+        self.assertEqual(ids, ["operon-2", "operon-6", "operon-714",
+                               "operon-41779", "operon-41798"])
+
+    def test_la_fila_de_metg_es_la_de_la_pagina(self):
+        """La captura de `feature/show/?id=109783&view=operons`."""
+        metg = [f for f in self.filas if f["locus_tag"] == "PA3482"][0]
+
+        self.assertEqual(metg["operon"], "metG-PA3483")
+        self.assertEqual(metg["gen"], "metG")
+        self.assertEqual((metg["inicio"], metg["fin"], metg["hebra"]),
+                         (3895324, 3897357, "+"))
+        self.assertEqual(metg["evidencia"], "Computationally-predicted (DOOR)")
+        self.assertEqual(metg["pmid"], "18988623",
+                         "la página muestra la cita del método")
+        self.assertEqual(metg["descripcion"], "methionine--tRNA ligase")
+
+    def test_un_locus_sin_anotacion_queda_en_blanco(self):
+        pa3483 = [f for f in self.filas if f["locus_tag"] == "PA3483"][0]
+
+        self.assertEqual((pa3483["descripcion"], pa3483["tipo"]), ("", ""))
+
+    def test_el_encabezado_es_para_humanos_y_las_claves_no(self):
+        ruta = os.path.join(self.tmp.name, "pgd.csv")
+
+        E.escribir_csv(ruta, E.COLUMNAS_PGD, self.filas,
+                       encabezados=E.ENCABEZADOS_PGD)
+
+        with io.open(ruta, encoding="utf-8") as f:
+            primera = f.readline().strip()
+        self.assertTrue(primera.startswith(u"ID del operón,Operón,Locus tag"))
 
 
 class PruebasCoberturaDeMapeo(unittest.TestCase):

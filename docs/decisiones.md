@@ -920,3 +920,195 @@ Tres de las cinco: la bandera de disputadas cuyo único control es que la
 justificación no esté vacía, los umbrales que no quedan registrados, y el
 manifiesto del caché que escribe el mismo programa que descarga. Las tres
 siguen documentadas arriba con el ataque que las demuestra.
+
+## Los operones de PGD salen de la exportación de su curador, no de la página
+
+El 27 de septiembre de 2026 el asesor pidió, sin alternativa, los operones de
+PAO1 tal como los muestra Pseudomonas Genome DB en la vista de cada gen
+(`feature/show/?id=109783&view=operons`). Esa vista muestra cuatro cosas:
+- el nombre del operón;
+- la tabla de genes (locus tag, nombre, descripción, inicio, fin, hebra, tipo);
+- la evidencia;
+- la referencia.
+
+Esta sección cuenta cómo se consiguió, por qué por esa vía y qué se comprobó
+en cada paso. Los números están en la bitácora del 27-sep, y la medición del
+sitio en `hallazgos.md`.
+
+### Por qué no se raspa la página
+
+Es el mismo caso que PMC: se ve bien en el navegador, así que parece fácil
+bajarla. Aquí hay tres razones en contra, y cualquiera basta:
+
+- **El sitio entero está detrás de un desafío administrado de Cloudflare.**
+  Se hizo una petición por URL con `urllib` y 2 s entre peticiones, sin
+  cabeceras de navegador, a nueve rutas: `robots.txt`, la página de
+  descargas, los archivos estáticos de `/downloads/`, el export CSV de
+  `feature/list` y la vista de operones. Todas contestaron 403 con
+  `Cf-Mitigated: challenge`. Pasar eso exige un navegador que resuelva el
+  desafío, y CLAUDE.md lo prohíbe: es dependencia y es evasión.
+- **El `robots.txt` prohíbe la recolección automatizada** sin permiso escrito
+  del operador (copia de Wayback, agosto de 2025).
+- **No hay archivo que bajar.** La página de descargas del release 22.1
+  (Wayback, febrero de 2025) ofrece FASTA, anotación y ortólogos por cepa, y
+  ningún archivo de operones. Los operones solo existen como HTML, un gen a la
+  vez, y 5 700 páginas raspadas sería justo lo que el sitio pide no hacer.
+
+Un detalle de método que evita una conclusión falsa: una ruta inventada bajo
+`/downloads/` también contesta 403. Con el desafío delante, el 403 no dice si
+una URL existe. Lo que existe se supo por las capturas de Wayback, no por
+sondear el sitio.
+
+### Cómo se encontró la vía que sí funciona
+
+El sitio no daba los datos, así que se buscó quién los hubiera recibido del
+curador. Tres pistas, cada una confirmada en su fuente primaria:
+
+1. **Qué muestra la vista.** Una captura de Wayback de la página de operones
+   de `oprM` enseña dos orígenes: predicciones de **DOOR** (Mao et al. 2009,
+   PMID 18988623) y operones curados de **PseudoCAP**, con su artículo.
+2. **Quién tiene esos datos en bloque.** Lee et al. 2023 (*mSystems*,
+   doi:10.1128/msystems.00342-22) dice en Métodos que «the operon data were
+   provided by Geoff Winsor», el curador de PGD, «and include computationally
+   predicted annotations from DOOR as well as curated annotations from
+   PseudoCAP».
+3. **Dónde quedó.** El laboratorio Greene publicó esa tabla con licencia BSD-3
+   en `greenelab/core-accessory-interactome`,
+   `data/metadata/PAO1-operons-2021-07-19.csv`.
+
+La URL se fija a un commit (`25539b82…`, en `fuentes.URL_PGD`). Una rama se
+mueve y un commit no, así que los bytes que se bajen dentro de un año son los
+mismos que se revisaron hoy.
+
+### Cómo se comprobó que es la misma información
+
+No bastaba con que la tabla viniera del curador: tenía que ser lo que muestra
+la página. Se comparó contra la captura que mandó el usuario de la página de
+`metG`. La tabla trae `operon-714`, `metG-PA3483`, PA3482 en 3895324–3897357
+(+) y PA3483 en 3897391–3898191 (+), DOOR y PMID 18988623. Coincide campo por
+campo.
+
+Lo que la tabla no trae es la descripción ni el tipo de cada gen. Salen de
+RefSeq (`genes_pao1.tsv`), y el encabezado del CSV lo dice, porque PGD redacta
+distinto: «methionyl-tRNA synthetase» frente a «methionine--tRNA ligase».
+
+El límite queda escrito donde se usa: es una foto del 19 de julio de 2021, y
+el release vigente es del 6 de octubre de 2023. Una versión nueva se pide a
+pseudocap-mail@sfu.ca, que es como la consiguió el laboratorio Greene.
+
+### Lo que el parser hace porque el archivo lo obliga
+
+`parsear_pgd` se escribió después de perfilar el archivo real completo
+(3 816 filas), no a partir de la cabecera. Cada regla responde a algo medido:
+
+- **Agrupa por `operon-id`, no por filas seguidas.** En 103 de los 1 290
+  operones las filas no van juntas.
+- **Quita los genes repetidos.** Tres operones de PseudoCAP repiten cada gen
+  una vez por artículo; sin esto, `oprE` saldría `PA0291|PA0291`.
+- **Entrega los genes en orden de transcripción.** El archivo va ascendente
+  por coordenada en las dos hebras, y en la hebra menos eso es al revés. El
+  nombre lo delata: `PA0006-lptA` son PA0006 y luego PA0005.
+- **La cita de DOOR no va a `pmid`.** Las 3 517 filas de DOOR citan el
+  artículo del método, no una demostración del operón. En `pmid`, ese
+  artículo aparecería en la columna `pmids` de 1 165 operones como si fuera su
+  evidencia, y cada uno quedaría marcado `comp_con_cita` para revisión a mano
+  sin motivo. Va en `registro_raw["referencia_metodo"]`, y el CSV de la vista
+  la muestra porque la página también.
+- **Exige su contrato y falla fuerte.** Encabezado exacto, hebra 1/-1, origen
+  DOOR o PseudoCAP, coordenadas enteras. Cualquier otra cosa lanza
+  `FormatoDesconocido`, igual que ODB y CDBProm. El locus tag se valida con
+  `LOCUS.fullmatch` y nunca se extrae con `findall`: `findall` convierte
+  `PA4726.11` en `PA4726`, que es otro gen.
+
+### No volver a bajar lo que no cambia, sin quedar atascado
+
+Como la URL está fijada, bajarla dos veces solo repite 1 290 filas. Por eso
+`extraer --fuente pgd` no la pide si ya hay una foto que sirve. La primera
+versión de esa regla («si la última extracción trajo esta URL, ya está») tenía
+dos fallas, y las dos se reprodujeron antes de corregirse:
+
+- **Revertía tablas nuevas.** Si alguien metía una tabla más nueva con
+  `--archivo`, el siguiente `extraer` sin argumentos bajaba la de 2021 encima
+  y daba por «retirados por la fuente» los operones que solo traía la nueva.
+- **Se atascaba.** Un parseo fallido también cierra la extracción como
+  completa, con 0 filas. Si eso contaba como «ya está», PGD quedaba vacía
+  para siempre. Y si faltaba el crudo, `reparsear` pedía volver a extraer
+  mientras `extraer` contestaba «ya está, usa reparsear».
+
+La regla que quedó (`fuentes.foto_sana`): sin URL explícita, no se baja nada
+mientras la foto vigente tenga filas y su crudo siga en disco con la huella
+registrada, venga de donde venga. `--url` explícito siempre baja, incluso con
+la URL fijada, porque una orden no es una sugerencia.
+
+### Lo que la integración destapó
+
+Meter una cuarta fuente sacó a la luz dos errores que ya estaban en el código
+y que se le habían presentado al asesor el 25-sep:
+
+- **El promotor se buscaba sobre el gen equivocado.** `curar` tomaba como
+  primer gen transcrito el primero de la lista, pero BioCyc lista los genes
+  en orden descendente en las dos hebras y ODB en orden ascendente. En 515 de
+  1 082 operones multigénicos con hebra conocida ese no era el primer gen.
+  Ahora lo decide la hebra (`curar.primer_gen`). Los operones con promotor
+  CDBProm pasan de 1 350 a 1 390 sin PGD: se ganan 139 y se pierden 99. Se
+  corrigió antes de meter PGD, para que el efecto de cada cambio se pudiera
+  medir por separado.
+- **PGD y BioCyc se contaban como una sola fuente por una premisa falsa.** El
+  repositorio decía que PGD también predecía con Pathway Tools, y no es así:
+  predice con DOOR (Winsor et al. 2011, doi:10.1093/nar/gkq869). Se quitó
+  `FUENTES_NO_INDEPENDIENTES`.
+  - Lo que sí es dependiente es la literatura: ODB, BioCyc y PseudoCAP pueden
+    citar el mismo artículo.
+  - Contar por PMID único quedó como decisión del asesor, no del código.
+
+### Cómo se revisó antes de darlo por bueno
+
+El trabajo tuvo tres barreras, y cada una encontró algo que la anterior no vio:
+
+1. **Revisión del plan contra el código, antes de escribir nada.** Encontró
+   seis defectos del diseño:
+   - el orden inverso en la hebra menos;
+   - los genes repetidos;
+   - una sexta regex de locus tag que no hacía falta;
+   - la columna PMID de DOOR, que habría hecho fallar la comparación con la
+     captura;
+   - una prueba que escribía en la carpeta de datos real;
+   - el error del primer gen.
+2. **Pruebas que reproducen el archivo real.** El fixture son filas
+   verdaderas de la tabla, que es pública: `metG`, un operón de la hebra menos,
+   uno con filas separadas, `rsmY` con sufijo `.1` y el de PseudoCAP con genes
+   repetidos. También cubren la página de desafío de Cloudflare como cuerpo
+   que se tiene que rechazar.
+3. **Revisión adversarial del código terminado.** Tres revisores
+   independientes (parser y extracción; curación y exportación; reglas y
+   documentación) y un escéptico por hallazgo, encargado de refutarlo.
+   Confirmaron 14 hallazgos, que se reducen a 8 defectos distintos, y
+   refutaron 2. Entre los confirmados:
+   - las dos fallas de «ya está»;
+   - un `csv.Error` que se escapaba del contrato;
+   - dos cifras mal atribuidas en la bitácora.
+
+   Cada defecto de código quedó con una prueba que reproduce su escenario.
+
+Al cerrar pasaban 576 pruebas en la raíz (35 nuevas) y 524 en `etapa2`.
+
+### Cómo reproducirlo
+
+```bash
+python -m grn_operones.cli extraer --fuente pgd    # una petición a GitHub
+python -m grn_operones.cli curar
+python -m grn_operones.cli exportar                # ..._pgd.csv: la vista de la página
+```
+
+Correr `extraer` otra vez dice «ya está» y no pide nada. `reparsear --fuente
+pgd` vuelve a leer el crudo desde disco, sin red y comprobando la huella.
+
+### Lo que queda abierto
+
+- Contar la literatura por PMID único, para que dos fuentes que citan el mismo
+  artículo no cuenten como dos respaldos.
+- Pedir a PGD la tabla del release vigente, con permiso escrito.
+- `es_adyacente` ignora el sufijo `.N`: 10 clusters de ARN salen como no
+  adyacentes aunque lo sean.
+- Un `--archivo` con una página de desafío guardada deja a PGD sin operones
+  hasta el siguiente `extraer --fuente pgd`, que la rehace.

@@ -34,6 +34,12 @@ def _conectar(args):
 
 
 def cmd_extraer(args):
+    # Un archivo o una URL son de UNA fuente. Con `todo`, `--archivo` entraría
+    # como si fuera de las cuatro y `--url` como si fuera de pgd y de cdbprom.
+    if args.fuente == "todo" and (args.archivo or args.url):
+        sys.exit("--archivo y --url son de una sola fuente: con --fuente todo "
+                 "el mismo archivo entraría como si fuera de cada una. Indica "
+                 "cuál, por ejemplo --fuente pgd o --fuente cdbprom.")
     # El correo sale del entorno o de `.correo`, nunca de un flag: lo que se
     # teclea en la linea de comandos queda en el historial del shell. Es el
     # mismo criterio que aplica a BIOCYC_EMAIL y BIOCYC_PASSWORD, y la
@@ -83,7 +89,9 @@ def _informe_extraccion(informes):
     for i in informes:
         log("")
         log("  %s" % i["fuente"])
-        if not i["descargas"]:
+        if i.get("ya_estaba"):
+            log("    ya estaba: no se pidió nada")
+        elif not i["descargas"]:
             log("    no se bajo nada")
         for d in i["descargas"]:
             partes = ["%s, %d bytes" % (d.get("tipo", "?"), d.get("bytes", 0))]
@@ -221,9 +229,10 @@ def cmd_curar(args):
                 % (", ".join(c["ambiguos"][:10]),
                    " ..." if len(c["ambiguos"]) > 10 else ""))
     log("")
-    log("  `n_fuentes` cuenta fuentes distintas, y BioCyc con Pseudomonas.com")
-    log("  valen por una: comparten el motor de prediccion de Pathway Tools,")
-    log("  asi que coincidir no es confirmacion independiente.")
+    log("  `n_fuentes` cuenta fuentes distintas, no confirmaciones")
+    log("  independientes. PGD (DOOR) y BioCyc (Pathway Tools) son motores")
+    log("  distintos, pero parten de la misma distancia intergénica; y ODB,")
+    log("  BioCyc y PseudoCAP pueden citar el mismo artículo.")
     return 0
 
 
@@ -232,6 +241,8 @@ def cmd_exportar(args):
     try:
         silver = exportar.filas_silver(con, db, args.sin_monocistronicos)
         conflictos = exportar.filas_conflictos(con, db)
+        pgd = exportar.filas_pgd(
+            con, db, exportar.cargar_anotacion(_curar.RUTA_GENES))
     finally:
         con.close()
     if not silver:
@@ -244,11 +255,19 @@ def cmd_exportar(args):
                           silver, log)
     exportar.escribir_csv(base + "_conflictos.csv",
                           exportar.COLUMNAS_CONFLICTOS, conflictos, log)
+    if pgd:
+        exportar.escribir_csv(base + "_pgd.csv", exportar.COLUMNAS_PGD, pgd,
+                              log, encabezados=exportar.ENCABEZADOS_PGD)
     log("")
     log("  %d operones curados, %d para revisar a mano." % (len(silver),
                                                             len(conflictos)))
     if args.sin_monocistronicos:
         log("  (--sin-monocistronicos: las unidades de un gen se dejaron fuera)")
+    if pgd:
+        log("  %d genes en la vista de operones de PGD (%d operones), tal como"
+            % (len(pgd), len(set(f["operon_id"] for f in pgd))))
+        log("  los da PGD y antes de curar. La descripción y el tipo son de")
+        log("  RefSeq: la tabla de PGD no los trae.")
     return 0
 
 
@@ -295,11 +314,15 @@ def main():
     ex = sub.add_parser("extraer", help="Descargar y parsear una fuente.")
     ex.add_argument("--fuente", default="todo",
                     choices=list(fuentes.FUENTES) + ["todo"])
-    ex.add_argument("--url", help="URL del archivo, para pgd y cdbprom.")
+    ex.add_argument("--url",
+                    help="URL del archivo de pgd o cdbprom (exige --fuente). "
+                         "En pgd gana sobre PGD_OPERONES_URL y sobre la tabla "
+                         "fijada en el código.")
     ex.add_argument("--archivo",
-                    help="Ingestar un archivo local en vez de descargar. Gana "
-                         "sobre la via de red de la fuente. Para el volcado de "
-                         "CDBProm y como respaldo de PGD si responde 403.")
+                    help="Ingestar un archivo local en vez de descargar (exige "
+                         "--fuente). Gana sobre la vía de red de la fuente. "
+                         "Para el volcado de CDBProm o una tabla de PGD que "
+                         "llegue por otra vía.")
     ex.add_argument("--pausa", type=float, default=red.PAUSA,
                     help="Segundos entre peticiones (minimo del encargo: 2).")
     ex.add_argument("--max-paginas", type=int, default=500,

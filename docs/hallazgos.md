@@ -98,3 +98,48 @@ versiones y fechas, esta en `grn_bronce/recursos/PROCEDENCIA.md`.
 diccionario desde Pseudomonas Genome DB" esta pidiendo algo que ya se probo dos
 veces y no funciona. No es un pendiente: es una via cerrada con alternativa en
 produccion.
+
+### Tercera medición, 27 de septiembre de 2026: el sitio entero, y los operones
+
+Se volvió a medir porque el asesor pidió los operones tal como los muestra la
+página (`feature/show/?id=…&view=operons`). Se hizo una petición por URL con
+`urllib`, dos segundos entre cada una y sin nada que imite un navegador.
+
+- **Todo el host está detrás de un desafío administrado de Cloudflare.** Las
+  nueve URLs probadas contestaron igual: 403, `Server: cloudflare`,
+  `Cf-Mitigated: challenge` y una página «Just a moment...». La lista incluye
+  `robots.txt`, `/strain/download`, los archivos estáticos de `/downloads/`
+  (el CSV, el GFF y los ortólogos de PAO1), el export CSV de `feature/list` y
+  la vista de operones. Una ruta inventada contesta lo mismo, así que el 403
+  no dice si una URL existe.
+- **El `robots.txt`** (Wayback, agosto de 2025) prohíbe la recolección
+  automatizada sin permiso escrito del operador.
+- **No hay archivo bulk de operones.** La página de descargas del release
+  22.1 (Wayback, febrero de 2025) ofrece por cepa FASTA, anotación en
+  CSV/GFF/GBK/GTF y ortólogos, y nada con operones. Solo existen en la vista
+  HTML de cada gen, y rasparlos exigiría pasar el desafío: sigue cerrado.
+- **Los operones de PGD son DOOR más PseudoCAP, no Pathway Tools.** Lo dicen
+  Winsor et al. 2011 (doi:10.1093/nar/gkq869: «precise operon predictions
+  based on the Database of Prokaryotic Operons (DOOR)») y Lee et al. 2023
+  (doi:10.1128/msystems.00342-22, Métodos). `CONTEXTO_OPERONES.md` y
+  `grn_operones/curar.py` decían Pathway Tools y trataban a PGD y BioCyc como
+  una sola fuente. Se corrigió.
+
+**La vía que sí funciona.** Geoff Winsor, curador de PGD, entregó la tabla de
+operones de PAO1 al laboratorio Greene para Lee et al. 2023, y ellos la
+publicaron con licencia BSD-3: `greenelab/core-accessory-interactome`, commit
+`25539b82`, `data/metadata/PAO1-operons-2021-07-19.csv`.
+
+- Responde 200 a `urllib`.
+- Trae 1 290 operones en 3 816 filas: 1 165 de DOOR y 125 de PseudoCAP con
+  75 PMIDs.
+- Coincide campo por campo con la vista de la página, comprobado con
+  `metG-PA3483`.
+- Es la fuente `pgd` de `grn_operones` (`fuentes.URL_PGD`).
+- Límite: es una foto del 19 de julio de 2021, y el release vigente (22.1) es
+  del 6 de octubre de 2023. Una versión nueva se pide a pseudocap-mail@sfu.ca,
+  que es como la consiguió el laboratorio Greene.
+
+**Regla derivada.** Los operones de PGD entran por esa exportación, con
+procedencia y huella. El diccionario sigue sin PGD: su anotación está tras el
+mismo desafío.

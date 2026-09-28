@@ -33,11 +33,14 @@ genoma de referencia NC_002516.2, locus tags `PA0001`-`PA5570`.
 |---|---|---|---|
 | ODB v4 | Operones conocidos, paginados | Literatura, con referencia | Paginacion HTTP de `/known?species=208964&p=N`; el sitio tambien ofrece descarga masiva |
 | BioCyc | Unidades transcripcionales (TU) | Curada + prediccion Pathway Tools, con evidence codes | API oficial (`websvc.biocyc.org`, consultas BioVelo), requiere cuenta |
-| Pseudomonas.com | Operones por gen | Prediccion DOOR | Archivo bulk por cepa (`pseudomonas.com/strain/download`) |
+| Pseudomonas.com | Operones por gen | Predicción DOOR + literatura PseudoCAP | El sitio no tiene bulk de operones y está tras Cloudflare. Entra la exportación de su curador, publicada por el laboratorio Greene (`fuentes.URL_PGD`, foto 2021-07-19) |
 | CDBProm | Promotores predichos (XGBoost) | Prediccion | Volcado solicitado al asesor |
 
-Nota metodologica: Pseudomonas.com (historicamente) y BioCyc usan
-predicciones de Pathway Tools; se tratan como evidencia no independiente.
+Nota metodológica, corregida el 27-sep-2026: PGD predice con DOOR y BioCyc
+con Pathway Tools. Son motores distintos y cuentan como fuentes separadas.
+Antes se decía que los dos usaban Pathway Tools, y era falso (ver
+`docs/hallazgos.md`). La dependencia que sí existe está en la literatura:
+ODB, BioCyc y PseudoCAP pueden citar el mismo artículo.
 
 ## Restricciones
 
@@ -65,7 +68,9 @@ Existe un prototipo standalone: `operones_extraccion.py`.
   de clase sin verificar; el acceso a PAER208964 puede requerir
   suscripcion.
 - `pgd`, `cdbprom`: descarga generica desde URL en variable de entorno
-  (`PGD_OPERONES_URL`, `CDBPROM_URL`). Sin parser.
+  (`PGD_OPERONES_URL`, `CDBPROM_URL`). Sin parser. (Histórico: `cdbprom`
+  tiene parser desde el 24-sep-2026 y `pgd` desde el 27-sep-2026; `pgd` baja
+  `fuentes.URL_PGD` si no se indica otra cosa.)
 
 Salida cruda en `datos/bronze/operones/<fuente>/<fecha>/`.
 
@@ -74,6 +79,8 @@ Salida cruda en `datos/bronze/operones/<fuente>/<fecha>/`.
 1. Verificar cada fuente con una corrida real y reportar lo que devuelve
    (formato, volumen, errores de acceso).
 2. Localizar la URL del archivo de operones de PAO1 en Pseudomonas.com.
+   (Cerrada el 27-sep-2026: el sitio no tiene uno. Se usa la exportación de
+   su curador; ver `docs/hallazgos.md`.)
 3. Escribir los parsers de ODB y PGD a partir del formato real.
 4. Integrar el prototipo como `grn_etl/operones/` con un loader por
    fuente y comandos en `cli.py`: `operones extraer|curar|exportar`.

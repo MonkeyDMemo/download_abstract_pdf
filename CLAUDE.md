@@ -543,7 +543,9 @@ liga, para pedirlo por biblioteca.
 
 **Pseudomonas Genome DB es una via cerrada.** El diccionario PAO1 se construye
 desde RefSeq, KEGG y UniProt; su procedencia esta en
-`grn_bronce/recursos/PROCEDENCIA.md`. Ver `docs/hallazgos.md`.
+`grn_bronce/recursos/PROCEDENCIA.md`. Ver `docs/hallazgos.md`. Todo el sitio
+está tras un desafío de Cloudflare y no se raspa. Sus operones sí entran, por
+la exportación de su curador (`grn_operones/fuentes.py::URL_PGD`).
 
 ## Dominio
 

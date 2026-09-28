@@ -6,6 +6,10 @@ hay que mirar a mano va a `operones_conflictos.csv`. Separarlos es lo que hace
 que el segundo sea util: una lista de revision mezclada con 3 000 filas
 correctas no la revisa nadie.
 
+Cuando hay datos de PGD sale un tercero, `operones_pgd.csv`: la vista de
+operones de pseudomonas.com para todos sus operones, una fila por gen, tal
+como la dio PGD y antes de curar.
+
 Los CSV son el producto canonico y salen siempre con biblioteca estandar.
 
 No imprime: recibe un callable `log`.
@@ -13,7 +17,9 @@ No imprime: recibe un callable `log`.
 
 import csv
 import io
+import json
 import os
+import re
 
 COLUMNAS_SILVER = [
     "clave_genes", "nombre", "locus_tags", "n_genes", "monocistronico",
@@ -36,6 +42,87 @@ MOTIVOS = {
     "genes_sin_resolver": "algun nombre no se pudo llevar a locus tag",
     "hebra_no_verificada": "sin GFF en cache, la hebra no se comprobo",
 }
+
+
+# La vista de operones de pseudomonas.com (`feature/show/?id=…&view=operons`),
+# una fila por gen miembro. Las claves son identificadores; los encabezados
+# son texto para quien abre el CSV.
+COLUMNAS_PGD = [
+    "operon_id", "operon", "locus_tag", "gen", "descripcion", "inicio",
+    "fin", "hebra", "tipo", "evidencia", "pmid",
+]
+ENCABEZADOS_PGD = [
+    "ID del operón", "Operón", "Locus tag", "Gen", "Descripción (RefSeq)",
+    "Inicio", "Fin", "Hebra", "Tipo (RefSeq)", "Evidencia", "PMID",
+]
+
+# Como lo dice la página. PseudoCAP escribe la evidencia de cada operón en
+# prosa, y esa prosa no viene en la tabla.
+EVIDENCIA_PGD = {
+    "DOOR": "Computationally-predicted (DOOR)",
+    "PseudoCAP": "Literatura (PseudoCAP)",
+}
+
+
+def cargar_anotacion(ruta):
+    """{locus_tag: (producto, tipo)} de `genes_pao1.tsv`.
+
+    La tabla de operones de PGD no trae la descripción de cada gen, y la
+    anotación de PGD está detrás del mismo desafío de Cloudflare que el resto
+    del sitio. Se usa la de RefSeq, que ya está en el repositorio, y el
+    encabezado lo dice, porque PGD la redacta distinto: `methionyl-tRNA
+    synthetase` contra `methionine--tRNA ligase`.
+    """
+    salida = {}
+    with io.open(ruta, encoding="utf-8", newline="") as f:
+        for d in csv.DictReader(f, delimiter="\t", quoting=csv.QUOTE_NONE):
+            lt = (d.get("locus_tag") or "").strip()
+            if lt:
+                salida[lt] = ((d.get("producto") or "").strip(),
+                              (d.get("tipo") or "").strip())
+    return salida
+
+
+def _orden_operon(id_fuente):
+    """`operon-10` después de `operon-2`: el orden textual los invierte."""
+    m = re.search(r"(\d+)$", id_fuente or "")
+    return (int(m.group(1)) if m else float("inf"), id_fuente or "")
+
+
+def filas_pgd(con, db, anotacion):
+    """La vista de operones de PGD, una fila por gen, para todos sus operones.
+
+    Sale del bronce vigente y no de silver, a propósito: es lo que dijo PGD,
+    antes de normalizar, deduplicar o mezclar con otras fuentes. Los genes van
+    en el orden del archivo, que es el de la página.
+
+    El PMID de un operón de DOOR es el del método (Mao et al. 2009): el parser
+    lo saca de `pmid` para que la curación no lo lea como literatura, y aquí
+    vuelve a su columna porque la página lo muestra.
+    """
+    operones = [f for f in db.bronze_vigente(con) if f["fuente"] == "pgd"]
+    operones.sort(key=lambda f: _orden_operon(f["id_fuente"]))
+    filas = []
+    for f in operones:
+        crudo = json.loads(f["registro_raw"]) if f["registro_raw"] else {}
+        base = crudo.get("source_database") or f["tipo_evidencia"] or ""
+        pmid = f["pmid"] or crudo.get("referencia_metodo") or ""
+        for g in crudo.get("genes") or []:
+            producto, tipo = anotacion.get(g["locus_tag"], ("", ""))
+            filas.append({
+                "operon_id": f["id_fuente"],
+                "operon": crudo.get("name") or "",
+                "locus_tag": g["locus_tag"],
+                "gen": g.get("gene_name") or "",
+                "descripcion": producto,
+                "inicio": g.get("start", ""),
+                "fin": g.get("end", ""),
+                "hebra": g.get("hebra") or f["cadena"] or "",
+                "tipo": tipo,
+                "evidencia": EVIDENCIA_PGD.get(base, base),
+                "pmid": pmid,
+            })
+    return filas
 
 
 def _fuentes(fila_id, mapa):
@@ -97,14 +184,22 @@ def filas_conflictos(con, db):
     return filas
 
 
-def escribir_csv(ruta, columnas, filas, log=lambda m: None):
+def escribir_csv(ruta, columnas, filas, log=lambda m: None, encabezados=None):
+    """`encabezados` reemplaza la fila de encabezado sin tocar las claves.
+
+    Así el CSV puede decir «Descripción (RefSeq)» mientras las claves de cada
+    fila siguen siendo identificadores ASCII.
+    """
     tmp = ruta + ".tmp"
     d = os.path.dirname(ruta)
     if d:
         os.makedirs(d, exist_ok=True)
     with io.open(tmp, "w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=columnas, extrasaction="ignore")
-        w.writeheader()
+        if encabezados:
+            csv.writer(f).writerow(encabezados)
+        else:
+            w.writeheader()
         for fila in filas:
             w.writerow(fila)
     os.replace(tmp, ruta)

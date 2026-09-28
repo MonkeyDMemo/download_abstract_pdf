@@ -5,8 +5,9 @@ Las seis reglas del encargo, y las dos desviaciones que hubo que hacer:
 
 1. **Normalizar a locus tag PAO1.** El encargo propone usar la anotacion de
    Pseudomonas.com como diccionario nombre -> locus tag. **No se usa**, y no
-   por pereza: `pseudomonas.com` devuelve 403 a `urllib.request` y esta
-   registrada como via cerrada en `docs/hallazgos.md`. En su lugar se usa
+   por pereza: todo `pseudomonas.com` está detrás de un desafío de Cloudflare
+   que devuelve 403 a `urllib.request`, `/downloads/` incluido (medido otra
+   vez el 27-sep-2026, `docs/hallazgos.md`). En su lugar se usa
    `grn_bronce/recursos/genes_pao1.tsv`, que cubre lo mismo --5 642 genes con
    simbolo y alias-- y ademas viene de tres fuentes con procedencia declarada
    (RefSeq, KEGG, UniProt) en vez de una sola.
@@ -19,18 +20,29 @@ Las seis reglas del encargo, y las dos desviaciones que hubo que hacer:
    solapamientos **no se fusionan**: se conservan como unidades alternativas
    marcadas, porque un operon puede transcribirse entero o en parte y las dos
    cosas estan documentadas.
-4. **Nivel de evidencia**: `conocido` (tiene PMID) > `curado` (BioCyc con
-   evidence code de curacion) > `predicho`. Se cuenta cuantas fuentes lo
-   respaldan.
+4. **Nivel de evidencia**: `conocido` (tiene PMID) > `curado` (respaldo
+   experimental o de literatura sin PMID: BioCyc con evidence code de
+   curación, ODB o PseudoCAP sin cita) > `predicho`. Se cuenta cuántas
+   fuentes lo respaldan.
 5. **Promotor CDBProm** aguas arriba del primer gen, si hay datos de CDBProm.
 6. Los conflictos salen a CSV; los produce `exportar.py`.
 
 LA TRAMPA DE CONTAR FUENTES
 ===========================
-`n_fuentes` cuenta fuentes **distintas**, no registros, y aun asi hay que
-leerlo con cuidado: Pseudomonas.com y BioCyc usan predicciones de Pathway
-Tools, asi que coincidir no es confirmacion independiente. `FUENTES_NO_
-INDEPENDIENTES` lo deja escrito y `nivel_evidencia` no sube por esa via.
+`n_fuentes` cuenta fuentes **distintas**, no registros, y aun así no equivale
+a confirmaciones independientes:
+
+- Entre los predictores, PGD usa DOOR (Mao et al. 2009) y BioCyc el predictor
+  de Pathway Tools (Romero y Karp 2004). Son motores distintos, y por eso
+  cuentan por separado. Pero los dos parten de la distancia intergénica sobre
+  el mismo genoma, así que su coincidencia es evidencia correlacionada, no
+  dos observaciones. Hasta el 27-sep-2026 este módulo las contaba como una
+  sola fuente, sobre una premisa falsa: que PGD también usaba Pathway Tools.
+  La procedencia verificada está en `docs/hallazgos.md`.
+- La dependencia real está en la literatura. ODB, BioCyc y PseudoCAP pueden
+  citar el mismo artículo, y dos fuentes que repiten un PMID no son dos
+  confirmaciones. Contar por PMID único queda como decisión pendiente del
+  asesor.
 
 Solo biblioteca estandar.
 """
@@ -68,10 +80,6 @@ RUTAS_GFF = (
                  "construir_diccionario", "diccionario_independiente", "cache",
                  "refseq.gff.gz"),
 )
-
-# Las dos que comparten motor de prediccion. Coincidir entre ellas no es
-# confirmacion independiente y no sube el nivel de evidencia.
-FUENTES_NO_INDEPENDIENTES = frozenset(["pgd", "biocyc"])
 
 NIVELES = ("conocido", "curado", "predicho")
 
@@ -157,9 +165,11 @@ def cargar_paralogos(diccionario):
 def normalizar(nombres, diccionario, paralogos=None):
     """([locus_tags], [sin_resolver], [(nombre, [candidatos])]).
 
-    El orden de entrada se preserva y no se ordena: el orden de los miembros
-    es el de transcripcion, y es lo que distingue `mexCD-oprJ` de `oprJ-mexDC`,
-    que es el mismo operon leido al reves y un nombre que no existe.
+    El orden de entrada se preserva y no se ordena: es el de la fuente, y es
+    lo que distingue `mexCD-oprJ` de `oprJ-mexDC`, que es el mismo operon
+    leido al reves y un nombre que no existe. Que ese orden sea o no el de
+    transcripción depende de la fuente; el primer gen transcrito lo decide
+    `primer_gen` con la hebra.
 
     **Un nombre ambiguo no se resuelve, se reporta.** `phzA` puede ser
     `phzA1` (PA4210) o `phzA2` (PA1899), y elegir uno por orden alfabetico o
@@ -220,9 +230,13 @@ def primer_gen(locus_tags, hebra):
 def es_adyacente(locus_tags):
     """Si los locus tags son consecutivos, en cualquiera de los dos sentidos.
 
-    Ascendente o descendente: un operon en la hebra menos se escribe en orden
-    de transcripcion, que por locus tag va hacia abajo. Exigir solo ascendente
-    marcaria como no adyacente a la mitad del genoma.
+    Ascendente o descendente: cada fuente escribe los miembros en su propio
+    sentido (BioCyc descendente en las dos hebras, ODB ascendente, PGD en
+    orden de transcripción), y exigir uno solo marcaría como no adyacente a
+    media fuente.
+
+    Limitación conocida: `_numero` ignora el sufijo `.N`, así que
+    `PA0668.1|PA0668.2` da paso 0 y sale como no adyacente aunque lo sea.
     """
     nums = [_numero(l) for l in locus_tags]
     if len(nums) < 2 or any(n is None for n in nums):
@@ -307,7 +321,14 @@ def nivel_de_fila(fila, fuente):
         # ODB es literatura por construccion: cada fila cita su articulo.
         return ("conocido" if tiene_pmid else "curado"), []
 
-    # PGD y CDBProm son predictores. Si alguna trajera PMID se marcaria igual.
+    if fuente == "pgd" and "PseudoCAP" in codigos:
+        # PGD mezcla dos orígenes y el código los separa. PseudoCAP es
+        # literatura curada con sus propias citas, igual que ODB. DOOR es
+        # predicción, y el parser deja su cita (la del método) fuera de
+        # `pmid`, así que cae abajo sin marca.
+        return ("conocido" if tiene_pmid else "curado"), []
+
+    # Cualquier otra fila es predicción. Si trajera PMID se marcaría igual.
     return "predicho", (["comp_con_cita"] if tiene_pmid else [])
 
 
@@ -352,8 +373,10 @@ def clave_de(locus_tags):
 
     **El orden es del nombre, no de la identidad.** Que `mexCD-oprJ` se escriba
     asi y no `oprJ-mexDC` importa para nombrarlo, y por eso `locus_tags`
-    conserva el orden de transcripcion que dio la fuente. Lo que identifica al
-    operon es QUE genes lo componen.
+    conserva el orden en que lo dio la fuente de la primera fila del grupo.
+    Ese orden no es siempre el de transcripción (BioCyc escribe descendente en
+    las dos hebras); el primer gen transcrito lo da `primer_gen`. Lo que
+    identifica al operón es QUÉ genes lo componen.
 
     LIMITACION CONOCIDA, Y HAY QUE LEERLA ANTES DE USAR CDBPROM
     ===========================================================
@@ -563,7 +586,6 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
         filas = [g[0] for g in grupo]
         locus = grupo[0][1]
         fuentes = set(f["fuente"] for f in filas)
-        independientes = fuentes - FUENTES_NO_INDEPENDIENTES
         mono = len(locus) == 1
         # Con un solo gen la adyacencia es vacuamente cierta: no hay pares
         # que comparar. Marcar 3 774 unidades monocistronicas de BioCyc como
@@ -599,17 +621,16 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
         _db.guardar_silver(con, {
             "clave_genes": clave,
             # El nombre que la fuente le da al operon, si alguna lo da.
-            # ODB lo trae en `name` (`mmsAB`); BioCyc no.
+            # ODB y PGD lo traen en `name` (`mmsAB`, `metG-PA3483`); BioCyc no.
             "nombre": _nombre_de(filas),
             "locus_tags": "|".join(locus),
             "n_genes": len(locus),
             "cadena": hebra,
             "nivel_evidencia": nivel,
             "evidencia_codigos": ";".join(codigos) or None,
-            # Cuenta fuentes distintas, y las dos que comparten motor de
-            # prediccion valen por una: coincidir no es confirmacion.
-            "n_fuentes": len(independientes) + (1 if len(
-                fuentes & FUENTES_NO_INDEPENDIENTES) else 0),
+            # Fuentes distintas, no confirmaciones independientes: ver «La
+            # trampa de contar fuentes» en el docstring del módulo.
+            "n_fuentes": len(fuentes),
             "pmids": ";".join(pmids) or None,
             "adyacente": adyacente,
             "es_alternativa": clave in alternativas,

@@ -166,9 +166,10 @@ CREATE TABLE IF NOT EXISTS operones_silver (
     UNIQUE (clave_genes)
 );
 
--- Que fuentes respaldan cada operon curado. N a N, y es lo que permite decir
--- "tres fuentes independientes" sin recontar la misma prediccion dos veces.
--- Es ademas donde se apoyaria una guarda de contaminacion por procedencia.
+-- Qué fuentes respaldan cada operón curado. N a N: es lo que permite decir
+-- qué fuentes lo respaldan sin contar dos veces un mismo registro. Fuentes
+-- distintas no son confirmaciones independientes (ver `curar.py`).
+-- Es además donde se apoyaría una guarda de contaminación por procedencia.
 CREATE TABLE IF NOT EXISTS operones_silver_fuente (
     silver_id  INTEGER NOT NULL REFERENCES operones_silver(id),
     fuente     TEXT NOT NULL,
@@ -551,6 +552,18 @@ def descargas_de_extraccion(con, extraccion_id):
     return con.execute(
         """SELECT * FROM operones_descargas WHERE extraccion_id = ?
             ORDER BY id""", (extraccion_id,)).fetchall()
+
+
+def filas_bronze_de_extraccion(con, extraccion_id):
+    """Cuántas filas de bronce dejó una extracción.
+
+    Una extracción cuyo parseo falló también se cierra completa, así que
+    "completa" no dice si dejó algo que curar. Esto sí.
+    """
+    return con.execute(
+        """SELECT COUNT(*) FROM operones_bronze b
+             JOIN operones_descargas d ON d.id = b.descarga_id
+            WHERE d.extraccion_id = ?""", (extraccion_id,)).fetchone()[0]
 
 
 def borrar_bronze_de_extraccion(con, extraccion_id):

@@ -7,23 +7,24 @@ veces como haga falta sobre los mismos bytes. Si las dos estuvieran juntas,
 corregir un parser costaria una descarga contra bases academicas pequenas que
 no tienen por que pagar nuestros errores.
 
-LOS PARSERS QUE FALTAN, Y POR QUE NO SE INVENTAN
-================================================
-De las cuatro fuentes solo se conoce con certeza el formato de BioCyc, que
-devuelve el XML de BioVelo. ODB entrega HTML que puede venir renderizado por
-JavaScript; el archivo de Pseudomonas.com y el volcado de CDBProm no se han
-visto todavia.
-
-Escribir esos parsers a ciegas produciria codigo que parece funcionar y
-devuelve cero filas, que es la peor forma de fallar: silenciosa y con pinta de
-correcta. En vez de eso, `inspeccionar()` dice **que llego de verdad** --tipo,
-tamano, si trae tablas, si trae JSON-- y los parsers que faltan levantan
-`FormatoDesconocido` con esa descripcion en el mensaje. Es la tarea 1 del
-encargo: verificar cada fuente con una corrida real y reportar lo que devuelve.
+LOS PARSERS SE ESCRIBEN CONTRA EL ARCHIVO REAL, NO A CIEGAS
+===========================================================
+Cada parser se escribió después de ver el archivo real de su fuente: el XML
+de BioVelo, el volcado de ODB, el de CDBProm y la tabla de operones de PGD.
+Un parser escrito a ciegas produce código que parece funcionar y devuelve
+cero filas, que es la peor forma de fallar: silenciosa y con pinta de
+correcta. Por eso los de ODB, CDBProm y PGD exigen su contrato (encabezado,
+columnas, valores de hebra) y, si no se cumple, lanzan `FormatoDesconocido`
+en vez de leer columnas corridas. El de BioCyc todavía no lo hace: un XML sin
+TUs da cero filas y un cuerpo que no es XML lanza `ET.ParseError`.
+`inspeccionar()` dice **qué llegó de verdad** --tipo,
+tamaño, si trae tablas, si trae JSON--, que es lo que hace falta cuando una
+fuente cambia de formato o devuelve una página en lugar de datos.
 
 Solo biblioteca estandar.
 """
 
+import csv
 import io
 import json
 import os
@@ -64,8 +65,33 @@ URL_ODB_TABLA = "https://operondb.jp/known"
 URL_BIOCYC_LOGIN = "https://websvc.biocyc.org/credentials/login/"
 URL_BIOCYC_QUERY = "https://websvc.biocyc.org/xmlquery"
 
-# Las dos fuentes cuyo archivo no tiene URL estable publica. La del asesor
-# llega como volcado; la de Pseudomonas.com hay que localizarla (tarea 2).
+# La tabla de operones de Pseudomonas Genome DB (PGD) para PAO1, tal como la
+# exportó su curador. **No sale de pseudomonas.com**, por dos razones medidas
+# el 27 de septiembre de 2026 (`docs/hallazgos.md`):
+#
+# - Todo ese host está detrás de un desafío administrado de Cloudflare (403
+#   con `Cf-Mitigated: challenge`), `/downloads/` y `robots.txt` incluidos, y
+#   su `robots.txt` prohíbe la recolección automatizada sin permiso escrito.
+# - El sitio no ofrece un archivo bulk de operones. Solo existe la vista HTML
+#   de cada gen, y rasparla exigiría pasar el desafío. Eso es evasión y no se
+#   hace.
+#
+# Esta es la tabla que alimenta esa vista: Geoff Winsor, curador de PGD, se la
+# entregó al laboratorio Greene (Lee et al. 2023, mSystems,
+# doi:10.1128/msystems.00342-22), que la publicó con licencia BSD-3. Contiene
+# predicciones de DOOR y operones de PseudoCAP, en una foto del 2021-07-19.
+# La URL va fijada a un commit, así que sus bytes no pueden cambiar, y por eso
+# `extraer` no la vuelve a pedir si ya la tiene. Una versión más nueva se pide
+# a pseudocap-mail@sfu.ca y entra con `--url`, `PGD_OPERONES_URL` o
+# `--archivo`.
+URL_PGD = ("https://raw.githubusercontent.com/greenelab/"
+           "core-accessory-interactome/"
+           "25539b82d51aa088c9e2f241a71ea1cc996fddae/"
+           "data/metadata/PAO1-operons-2021-07-19.csv")
+
+# Las variables de entorno que apuntan a otro archivo. La de CDBProm es la
+# única vía de esa fuente además de `--archivo`; la de PGD gana sobre
+# `URL_PGD`.
 VAR_PGD = "PGD_OPERONES_URL"
 VAR_CDBPROM = "CDBPROM_URL"
 
@@ -529,16 +555,161 @@ def _largo(d):
     except (TypeError, ValueError):
         return None
 
-# ------------------------------------------------------------ PGD y CDBProm
+# --------------------------------------------------------------------- PGD
+
+# Las nueve columnas de la tabla de PGD, comprobadas contra el archivo real el
+# 27-sep-2026: 3 816 filas, 1 290 operones.
+COLUMNAS_PGD = ["operon-id", "operon_name", "locus_tag", "start", "end",
+                "strand", "gene_name", "source_database", "pmid"]
+
+# Solo 1 y -1. Otro valor se RECHAZA en vez de adivinarse, por la misma razón
+# que en CDBProm: una hebra mal leída invierte el orden de transcripción.
+HEBRA_PGD = {"1": "+", "-1": "-"}
+
+# Los dos orígenes que mezcla PGD. DOOR es predicción, y su única cita es la
+# del método. PseudoCAP es literatura curada: cada operón cita los artículos
+# que lo describen (tres de los 125 citan dos).
+BASES_PGD = ("DOOR", "PseudoCAP")
+
+
+def parsear_pgd(cuerpo):
+    """Los operones de PAO1 de la tabla de PGD: una fila por `operon-id`.
+
+    El archivo trae una fila por GEN y no por operón. De ahí salen tres cosas
+    que no son obvias, las tres medidas sobre el archivo real:
+
+    - Las filas de un operón **no siempre van juntas** (103 de 1 290), así que
+      se agrupa por `operon-id` y no por filas contiguas.
+    - Tres operones de PseudoCAP repiten cada gen una vez por artículo. Sin
+      quitar la repetición, `oprE` saldría `PA0291|PA0291`.
+    - Las filas van ascendentes por coordenada en las dos hebras, y en la
+      hebra menos ese es el orden inverso al de transcripción: `PA0006-lptA`
+      son PA0006 y luego PA0005. `locus_tags` se entrega en orden de
+      transcripción, ordenando por coordenada e invirtiendo en `-`.
+
+    DOOR cita en todas sus filas el artículo del MÉTODO (Mao et al. 2009,
+    PMID 18988623), no una demostración del operón. Por eso va a
+    `registro_raw["referencia_metodo"]` y no a `pmid`, donde la capa curada lo
+    leería como literatura.
+
+    Un locus tag que no pasa `LOCUS.fullmatch` detiene el parseo en vez de
+    recortarse: `findall` convertiría `PA4726.11` en `PA4726`, que es otro gen
+    (`cbrB`). Todos los tags del archivo real pasan.
+    """
+    # `utf-8-sig`: un archivo guardado desde Excel trae BOM y, sin quitarlo,
+    # el encabezado no coincidiría con el contrato por un carácter invisible.
+    texto = cuerpo.decode("utf-8-sig", "replace")
+    try:
+        renglones = [r for r in csv.reader(io.StringIO(texto, newline=""))
+                     if r]
+    except csv.Error as e:
+        # Un cuerpo que no es CSV (un campo gigante, un salto de línea suelto
+        # dentro de comillas) tiene que salir como FormatoDesconocido: es el
+        # contrato del que dependen `extraer` y `reparsear` para conservar la
+        # descarga y decir que no se pudo leer.
+        raise FormatoDesconocido(
+            "pgd: el cuerpo no se deja leer como CSV (%s). Lo que llegó: %s"
+            % (e, json.dumps(inspeccionar(cuerpo), ensure_ascii=False,
+                             sort_keys=True)))
+    if not renglones or renglones[0] != COLUMNAS_PGD:
+        raise FormatoDesconocido(
+            "pgd: el encabezado no es el del contrato %r. El formato cambió o "
+            "no llegó la tabla. Lo que llegó: %s"
+            % (COLUMNAS_PGD, json.dumps(inspeccionar(cuerpo),
+                                        ensure_ascii=False, sort_keys=True)))
+
+    operones = {}
+    for n, partes in enumerate(renglones[1:], start=2):
+        if len(partes) != len(COLUMNAS_PGD):
+            raise FormatoDesconocido(
+                "pgd: el renglón %d tiene %d columnas y el contrato pide %d"
+                % (n, len(partes), len(COLUMNAS_PGD)))
+        d = dict(zip(COLUMNAS_PGD, (p.strip() for p in partes)))
+        if not LOCUS.fullmatch(d["locus_tag"]):
+            raise FormatoDesconocido(
+                "pgd: locus tag %r en el renglón %d. Se rechaza en vez de "
+                "recortarse a otro gen." % (d["locus_tag"], n))
+        if d["strand"] not in HEBRA_PGD:
+            raise FormatoDesconocido(
+                "pgd: hebra %r en el renglón %d. Solo se aceptan 1 y -1."
+                % (d["strand"], n))
+        if d["source_database"] not in BASES_PGD:
+            raise FormatoDesconocido(
+                "pgd: origen %r en el renglón %d. Solo se conocen %s, y un "
+                "origen nuevo necesita decidir si es predicción o literatura."
+                % (d["source_database"], n, ", ".join(BASES_PGD)))
+        try:
+            d["start"], d["end"] = int(d["start"]), int(d["end"])
+        except ValueError:
+            raise FormatoDesconocido(
+                "pgd: coordenadas %r..%r en el renglón %d no son enteros"
+                % (d["start"], d["end"], n))
+        operones.setdefault(d["operon-id"], []).append(d)
+
+    filas = []
+    for oid, renglones_op in operones.items():
+        bases = set(d["source_database"] for d in renglones_op)
+        if len(bases) > 1:
+            raise FormatoDesconocido(
+                "pgd: el operón %s mezcla %s. Cada operón viene de un solo "
+                "origen y el nivel de evidencia depende de cuál."
+                % (oid, ", ".join(sorted(bases))))
+        base = bases.pop()
+
+        genes, vistos = [], set()
+        for d in renglones_op:
+            if d["locus_tag"] not in vistos:
+                vistos.add(d["locus_tag"])
+                genes.append(d)
+        hebras = set(HEBRA_PGD[d["strand"]] for d in genes)
+        cadena = hebras.pop() if len(hebras) == 1 else None
+        por_coordenada = [d["locus_tag"]
+                          for d in sorted(genes, key=lambda d: d["start"])]
+        if cadena == "-":
+            por_coordenada.reverse()
+        pmids = sorted(set(d["pmid"] for d in renglones_op if d["pmid"]),
+                       key=lambda p: (len(p), p))
+
+        crudo = {
+            "name": renglones_op[0]["operon_name"],
+            "source_database": base,
+            # En el orden del archivo: es lo que dijo la fuente, y la vista
+            # de la página se reconstruye de aquí.
+            "genes": [{"locus_tag": d["locus_tag"],
+                       "gene_name": d["gene_name"],
+                       "start": d["start"], "end": d["end"],
+                       "hebra": HEBRA_PGD[d["strand"]]} for d in genes],
+        }
+        if base == "DOOR":
+            crudo["referencia_metodo"] = ";".join(pmids) or None
+        filas.append({
+            "fuente": "pgd",
+            "id_fuente": oid,
+            # Vacío, como en ODB y BioCyc: el locus tag ya viene resuelto y
+            # los nombres faltan en 1 983 de 3 816 filas, así que no hay nada
+            # que mapear. Los nombres van en `registro_raw["genes"]`.
+            "genes_raw": None,
+            "locus_tags": "|".join(por_coordenada),
+            "cadena": cadena,
+            "tipo_evidencia": base,
+            "pmid": (";".join(pmids) or None) if base == "PseudoCAP" else None,
+            "registro_raw": crudo,
+        })
+    if not filas:
+        raise FormatoDesconocido("pgd: la tabla trae el encabezado y ningún "
+                                 "operón")
+    return filas
+
+
+# ------------------------------------------------------- archivo por URL
 
 def traer_archivo(sesion, fuente, var_entorno, carpeta, url=None,
                   log=lambda m: None):
-    """Baja un archivo cuya URL llega por flag o por entorno.
+    """Baja un archivo cuya URL llega por flag, por entorno o fijada.
 
-    Pseudomonas.com y CDBProm no tienen una URL estable que se pueda fijar en
-    el codigo: la primera hay que localizarla (tarea 2) y la segunda es un
-    volcado que entrega el asesor. Mientras no las haya, la fuente se omite
-    con un aviso en vez de fallar la corrida entera.
+    CDBProm no tiene URL pública: su volcado lo entrega el asesor, así que sin
+    `--url` ni `CDBPROM_URL` la fuente se omite con un aviso en vez de fallar
+    la corrida entera. PGD llega aquí con `URL_PGD` como último recurso.
     """
     url = url or os.environ.get(var_entorno)
     if not url:
@@ -555,25 +726,30 @@ def traer_archivo(sesion, fuente, var_entorno, carpeta, url=None,
     return [(url, ruta, cuerpo)]
 
 
-def parsear_tabular(cuerpo, fuente):
-    """Parser generico para un volcado tabular con locus tags.
+def foto_sana(con, fuente):
+    """De dónde salió la foto vigente de `fuente`, si sirve; si no, `None`.
 
-    Sirve para PGD y CDBProm mientras no se vea el formato real: reconoce
-    separador por tabulador o coma, busca la columna que trae locus tags de
-    PAO1 y levanta con una descripcion si no la encuentra. No adivina cual es
-    el identificador del operon, porque inventarlo produciria ids que no
-    corresponden a nada en la fuente.
+    Sirve cuando la última extracción completa dejó filas en el bronce y sus
+    archivos siguen en disco con la huella registrada. Que la extracción
+    figure como completa no basta, por dos casos que ya se reprodujeron:
+
+    - Un parseo fallido también cierra la extracción como completa, con 0
+      filas. Si eso contara como «ya está», PGD se quedaría vacía para
+      siempre.
+    - Si falta el crudo, `reparsear` pide volver a extraer. Si `extraer`
+      contestara «ya está, usa reparsear», cada comando mandaría al otro.
     """
-    d = inspeccionar(cuerpo)
-    if not d.get("locus_tags_visibles"):
-        raise FormatoDesconocido(
-            "%s no trae locus tags PA#### reconocibles. Lo que llego: %s"
-            % (fuente, json.dumps(d, ensure_ascii=False, sort_keys=True)))
-    raise FormatoDesconocido(
-        "%s trae %d locus tags distintos en %s, pero el mapeo de columnas no "
-        "esta escrito: hace falta ver el archivo real para saber cual es el "
-        "identificador del operon y cual la lista de genes."
-        % (fuente, d.get("locus_tags_visibles", 0), d.get("tipo")))
+    eid = _db.ultima_extraccion_completa(con).get(fuente)
+    if not eid or not _db.filas_bronze_de_extraccion(con, eid):
+        return None
+    descargas = _db.descargas_de_extraccion(con, eid)
+    for d in descargas:
+        if not os.path.exists(d["ruta"]):
+            return None
+        with io.open(d["ruta"], "rb") as f:
+            if _db.huella(f.read()) != d["sha256"]:
+                return None
+    return descargas[0]["url"] if descargas else None
 
 
 # ------------------------------------------------------------- orquestacion
@@ -587,6 +763,26 @@ def extraer(con, fuente, sesion, flag_datos=None, url=None, max_paginas=500,
     sola --es lo que permite escribir el parser-- y perderla porque no se sabe
     leerla seria tirar la unica parte que si se consiguio.
     """
+    if fuente == "pgd" and not archivo:
+        explicita = url or os.environ.get(VAR_PGD)
+        # `URL_PGD` solo se usa para la primera carga, o para rehacer una foto
+        # que no sirve. Con una foto sana ya no aporta nada: si la foto salió
+        # de ella, sus bytes, fijados a un commit, no pueden haber cambiado;
+        # si salió de una tabla más nueva (`--archivo`, `--url`), bajarla
+        # devolvería la de 2021 y daría por retirados los operones nuevos.
+        # Se comprueba antes de abrir la extracción, porque una abierta y sin
+        # cerrar contaría como corrida fallida en `edad_de_la_foto`.
+        origen = None if explicita else foto_sana(con, "pgd")
+        if origen:
+            log("  [pgd] ya está: la foto vigente salió de %s y sigue entera "
+                "en disco. Para reemplazarla, pasa --url o --archivo (--url "
+                "con la tabla fijada vuelve a la de 2021). Para volver a "
+                "leerla sin red: `reparsear --fuente pgd`." % origen)
+            return {"fuente": fuente, "extraccion_id": None,
+                    "descargas": [], "filas": 0, "error": None,
+                    "completa": True, "ya_estaba": True}
+        url = explicita or URL_PGD
+
     carpeta = carpeta_cruda(fuente, flag_datos)
     # Identifica esta corrida y agrupa sus archivos. Se marca completa al
     # final y solo si no hubo error: una extraccion a medias no la mira la
@@ -667,7 +863,9 @@ def _parsear(fuente, bajadas):
         return filas
     if fuente == "cdbprom":
         return parsear_cdbprom(bajadas[0][2])
-    return parsear_tabular(bajadas[0][2], fuente)
+    if fuente == "pgd":
+        return parsear_pgd(bajadas[0][2])
+    raise FormatoDesconocido("%s: no hay parser para esta fuente" % fuente)
 
 
 def reparsear(con, fuente, log=lambda m: None):
@@ -729,9 +927,9 @@ def traer_archivo_local(ruta_archivo, fuente, carpeta, log=lambda m: None):
     se borra, y entonces `reparsear` deja de funcionar y la huella registrada
     apunta a nada.
 
-    Sirve para dos cosas: el volcado de CDBProm, que llega por correo y no
-    tiene URL, y como respaldo de Pseudomonas.com si su descarga directa
-    responde 403, que es lo que ese sitio lleva haciendo desde agosto.
+    Sirve para el volcado de CDBProm, que llega por correo y no tiene URL, y
+    para una tabla de PGD que llegue por otra vía, por ejemplo una versión
+    más nueva que mande su curador.
     """
     if not os.path.exists(ruta_archivo):
         raise FormatoDesconocido("no existe el archivo %s" % ruta_archivo)

@@ -8,6 +8,87 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 27 de septiembre de 2026 — entran los operones de PGD, y dos correcciones
+
+El asesor pidió los operones de PAO1 tal como los muestra pseudomonas.com
+(`feature/show/?id=109783&view=operons`).
+
+**Del sitio no se pueden sacar.** Todo el host está detrás de un desafío
+administrado de Cloudflare, incluidos `/downloads/` y `robots.txt`; su
+`robots.txt` prohíbe la recolección automatizada sin permiso escrito; y no
+existe un archivo bulk de operones, solo la vista HTML de cada gen. El detalle
+está en `hallazgos.md`, tercera medición.
+
+**Lo que sí entró.** La misma tabla que alimenta esa vista: la exportación
+que el curador de PGD entregó al laboratorio Greene (Lee et al. 2023),
+publicada con licencia BSD-3 en GitHub y fijada a un commit (`URL_PGD`).
+`extraer --fuente pgd` la baja con una sola petición. Mientras la foto vigente
+sirva (tiene filas y su crudo sigue en disco con su huella), no vuelve a
+pedirla ni la cambia por otra: una tabla más nueva que entre por `--archivo`
+o `--url` no se revierte a la de 2021 sin que alguien lo pida. La fila `metG-PA3483` coincide con la captura de la página campo
+por campo.
+
+**Corrección 1: el primer gen de cada operón.** `curar` marcaba
+`promotor_cdbprom` sobre `locus_tags[0]`, pero BioCyc lista los genes en orden
+descendente en las dos hebras y ODB en orden ascendente. En el silver del
+25-sep, `locus_tags[0]` no era el primer gen transcrito en 515 de 1 082
+operones multigénicos con hebra conocida. Ahora el primer gen lo decide la
+hebra (`curar.primer_gen`). Con las mismas claves que el 25-sep, los operones
+con promotor pasan de **1 350 a 1 390**: se ganan 139 y se pierden 99, entre
+ellos PA0001–PA0004. **La cifra de 1 350 presentada en la reunión del 25-sep
+era incorrecta.**
+
+**Corrección 2: PGD y BioCyc son fuentes distintas.** PGD predice con DOOR
+(Winsor 2011), no con Pathway Tools. `FUENTES_NO_INDEPENDIENTES` se eliminó, y
+`n_fuentes` cuenta fuentes distintas. El guion del 25-sep («PGD y BioCyc
+comparten el motor de Pathway Tools») decía algo falso.
+
+| | 25-sep | paso 0 (primer gen) | con PGD |
+|---|---|---|---|
+| bronce | 5 823 | 5 823 | 7 113 (pgd 1 290) |
+| unidades en silver | 3 742 | 3 742 | 4 250 (508 solo de PGD) |
+| conocido / curado / predicho | 63 / 5 / 3 674 | igual | 145 / 3 / 4 102 |
+| con dos o más fuentes | 17 | 17 | 738 (717 biocyc+pgd) |
+| alternativas | 126 | 126 | 1 072 |
+| con promotor CDBProm | 1 350 | 1 390 | 1 574 |
+| no adyacentes | 39 | 39 | 55 |
+| para revisar | 89 | 89 | 117 |
+
+Qué explica los saltos:
+
+- **Alternativas.** 946 de las 1 072 son nuevas. 942 son unidades solo de
+  BioCyc (662 de un gen); 914 de ellas quedan dentro de un operón de PGD (902
+  de DOOR), y 101 ya eran alternativas el 25-sep.
+- **Curados.** Dos (PA0287 y PA0287|PA0288) suben a conocido por el PMID de
+  PseudoCAP.
+- **No adyacentes.** De los 16 nuevos:
+  - 10 son clusters `PA####.N` (`PA4277.3|PA4277.2|PA4277.1`), porque
+    `es_adyacente` ignora el sufijo y los ve con paso 0;
+  - 4 tienen un locus que falta en `genes_pao1.tsv`;
+  - 2 saltan un gen porque PGD lo deja fuera: `serC-pheA-hisC2-cmk` (DOOR,
+    sin el pseudogén PA3164) y `dadAX` (PseudoCAP, sin PA5303).
+- **Locus sin resolver.** Dieciséis locus de PGD no están en `genes_pao1.tsv`
+  (PA0632, PA0822, PA2245…); la cobertura de mapeo de PGD es 99.6 %.
+
+`exportar` produce además `operones_<día>_pgd.csv`: la vista de la página para
+los 1 290 operones, 3 808 filas, una por gen. La descripción y el tipo son de
+RefSeq, porque la tabla de PGD no los trae.
+
+**Decisiones pendientes:**
+
+1. Contar la literatura por PMID único. ODB, BioCyc y PseudoCAP pueden citar
+   el mismo artículo, y hoy cuentan como fuentes distintas.
+2. Pedir a PGD (pseudocap-mail@sfu.ca) la tabla del release 22.1, que es de
+   2023, con permiso escrito. La que entró es de 2021.
+3. `es_adyacente` con sufijo `.N`: hoy marca como no adyacentes clusters de
+   ncRNA que sí lo son.
+4. Riesgo conocido: `extraer --archivo` con una página de desafío guardada
+   cerraría la extracción como completa con 0 filas y dejaría a PGD sin
+   operones hasta el siguiente `extraer --fuente pgd`, que al ver una foto
+   sin filas la rehace.
+
+---
+
 ## 25 de septiembre de 2026 (mañana) — entra CDBProm por archivo local
 
 El volcado real de CDBProm
