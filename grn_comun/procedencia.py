@@ -53,6 +53,21 @@ def huella(ruta):
     return h.hexdigest()[:LARGO]
 
 
+def huella_texto(ruta):
+    """La huella de un archivo de texto, con `\\r\\n` contado como `\\n`.
+
+    `huella()` mide bytes, y es lo correcto para lo que genera el pipeline.
+    Para un recurso versionado no lo es: `.gitattributes` fija LF, pero un
+    checkout viejo en Windows puede tener CRLF, y el mismo recurso daría dos
+    huellas. Comparar corridas con eso avisaría de cambios que no existen.
+    """
+    if not ruta or not os.path.exists(ruta):
+        return None
+    with open(ruta, "rb") as f:
+        contenido = f.read().replace(b"\r\n", b"\n")
+    return hashlib.sha256(contenido).hexdigest()[:LARGO]
+
+
 def sellar(rutas):
     """{nombre: {ruta, huella, bytes}} para dejarlo escrito en un informe.
 

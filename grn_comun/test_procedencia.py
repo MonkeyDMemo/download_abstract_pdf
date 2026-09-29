@@ -74,6 +74,38 @@ class PruebasHuella(unittest.TestCase):
                          hashlib.sha256(cuerpo).hexdigest()[:P.LARGO])
 
 
+class PruebasHuellaTexto(unittest.TestCase):
+    """La huella de un recurso versionado no depende del salto de línea."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp(prefix="proc_")
+        self.addCleanup(shutil.rmtree, self.d, True)
+
+    def _bytes(self, nombre, cuerpo):
+        ruta = os.path.join(self.d, nombre)
+        with open(ruta, "wb") as f:
+            f.write(cuerpo)
+        return ruta
+
+    def test_crlf_y_lf_dan_la_misma_huella(self):
+        """Un checkout viejo de Windows con CRLF y uno con LF del mismo
+        recurso no pueden parecer dos versiones distintas."""
+        lf = self._bytes("lf.tsv", b"a\tb\nc\td\n")
+        crlf = self._bytes("crlf.tsv", b"a\tb\r\nc\td\r\n")
+
+        self.assertEqual(P.huella_texto(lf), P.huella_texto(crlf))
+        self.assertNotEqual(P.huella(lf), P.huella(crlf),
+                            "huella() sigue midiendo bytes")
+
+    def test_un_cambio_de_contenido_si_cambia_la_huella(self):
+        a = self._bytes("a.tsv", b"a\tb\n")
+        b = self._bytes("b.tsv", b"a\tc\n")
+        self.assertNotEqual(P.huella_texto(a), P.huella_texto(b))
+
+    def test_un_archivo_que_no_existe_no_tiene_huella(self):
+        self.assertIsNone(P.huella_texto(os.path.join(self.d, "no.tsv")))
+
+
 class PruebasSello(unittest.TestCase):
 
     def setUp(self):
