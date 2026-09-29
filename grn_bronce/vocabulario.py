@@ -22,6 +22,17 @@ import re
 AQUI = os.path.dirname(os.path.abspath(__file__))
 RECURSOS = os.path.join(AQUI, "recursos")
 
+# Los cuatro vocabularios versionados, en el orden en que los recibe
+# `Vocabulario`, con las columnas que se leen de cada uno. Es la única lista:
+# `cargar` la recorre y `identificar.recursos_de_la_identificacion` la usa para
+# sellar su huella en cada corrida.
+VOCABULARIOS = (
+    ("disparadores.csv", ("palabra", "signo_sugerido")),
+    ("funciones_semilla.csv", ("termino", "categoria")),
+    ("evidencia_experimental.csv", ("termino", "tecnica")),
+    ("contexto_regulatorio.csv", ("termino", "categoria")),
+)
+
 # Un termino solo cuenta si esta rodeado de algo que no sea letra, digito o
 # guion. Sin esta guarda "induces" casaria dentro de "reinduces" y "chip"
 # dentro de "chipping".
@@ -155,12 +166,8 @@ class Vocabulario(object):
 
     @classmethod
     def cargar(cls):
-        return cls(
-            _leer_csv("disparadores.csv", ("palabra", "signo_sugerido")),
-            _leer_csv("funciones_semilla.csv", ("termino", "categoria")),
-            _leer_csv("evidencia_experimental.csv", ("termino", "tecnica")),
-            _leer_csv("contexto_regulatorio.csv", ("termino", "categoria")),
-        )
+        return cls(*[_leer_csv(nombre, columnas)
+                     for nombre, columnas in VOCABULARIOS])
 
     def _buscar(self, patron, mapa, oracion):
         if patron is None:

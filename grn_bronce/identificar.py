@@ -39,6 +39,7 @@ sys.path.insert(0, os.path.join(_RAIZ, "etapa2"))
 from grn_bronce import db as _db                  # noqa: E402
 from grn_bronce import texto as _texto            # noqa: E402
 from grn_bronce import vocabulario as _vocab      # noqa: E402
+from grn_comun import procedencia as _procedencia # noqa: E402
 
 # Sube cada vez que una fila del bronce pasa a decir algo distinto del mismo
 # texto. No es "la misma corrida otra vez": son versiones del metodo, y quedan
@@ -74,12 +75,54 @@ MAX_MENCIONES = 8
 SECCIONES_FUERA = frozenset(["excluir"])
 
 
+def recursos_de_la_identificacion():
+    """{nombre: ruta} de todo lo que la identificación lee del disco.
+
+    Es la lista que se sella en `parametros` de cada corrida. Sin ella, una
+    corrida no podía decir con qué diccionario, vocabularios o secciones se
+    hizo, y cambiar uno de ellos sin subir `VERSION` pasaba inadvertido: la
+    corrida vieja seguía contando como hecha con los recursos de hoy (PLAN,
+    punto 5).
+    """
+    rec = os.path.join(AQUI, "recursos")
+    rutas = {"genes_pao1.tsv": os.path.join(rec, "genes_pao1.tsv"),
+             "operones_pao1.tsv": os.path.join(rec, "operones_pao1.tsv"),
+             "secciones.tsv": _texto.RUTA_SECCIONES}
+    for nombre, _columnas in _vocab.VOCABULARIOS:
+        rutas[nombre] = os.path.join(_vocab.RECURSOS, nombre)
+    return rutas
+
+
+def huellas_de_recursos():
+    """{nombre: huella} de los recursos, con los saltos de línea normalizados:
+    un checkout con CRLF y otro con LF del mismo archivo dan la misma."""
+    return dict((n, _procedencia.huella_texto(r))
+                for n, r in sorted(recursos_de_la_identificacion().items()))
+
+
+def recursos_cambiados(anteriores, actuales):
+    """Los recursos cuya huella cambió entre dos corridas, ordenados.
+
+    `None` si la corrida anterior no registró huellas: es anterior al sellado
+    y no se puede saber, que es distinto de «no cambió nada».
+    """
+    if not anteriores:
+        return None
+    return sorted(n for n in set(anteriores) | set(actuales)
+                  if anteriores.get(n) != actuales.get(n))
+
+
+def etiquetas_excluidas():
+    """Cuántas etiquetas de `secciones.tsv` caen en `SECCIONES_FUERA`."""
+    return sum(1 for clase in _texto.cargar_clases().values()
+               if clase in SECCIONES_FUERA)
+
+
 def cargar_lexico():
     """El diccionario PAO1, desde los recursos versionados del bronce."""
     from lexico import Lexico
-    rec = os.path.join(AQUI, "recursos")
-    return Lexico.cargar(os.path.join(rec, "genes_pao1.tsv"),
-                         os.path.join(rec, "operones_pao1.tsv"))
+    rutas = recursos_de_la_identificacion()
+    return Lexico.cargar(rutas["genes_pao1.tsv"], rutas["operones_pao1.tsv"])
 
 
 def cargar_locus_tags():

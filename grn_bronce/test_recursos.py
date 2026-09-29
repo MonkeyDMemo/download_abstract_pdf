@@ -322,5 +322,41 @@ class PruebasContextoRegulatorio(unittest.TestCase):
         self.assertEqual([m[2] for m in v.funciones_en(texto)], ["pyocyanin"])
 
 
+class PruebasSelloDeRecursos(unittest.TestCase):
+    """Cada corrida guarda la huella de lo que leyó (PLAN, punto 5).
+
+    Sin eso, cambiar un vocabulario o `secciones.tsv` sin subir VERSION pasaba
+    inadvertido: la corrida vieja seguía contando como hecha con los recursos
+    de hoy.
+    """
+
+    def test_el_cargador_lee_los_vocabularios_del_contrato(self):
+        self.assertEqual(V.VOCABULARIOS, VOCABULARIOS)
+
+    def test_se_sella_todo_lo_que_lee_la_identificacion(self):
+        from grn_bronce import identificar as I
+        rutas = I.recursos_de_la_identificacion()
+
+        self.assertEqual(
+            sorted(rutas),
+            sorted(["genes_pao1.tsv", "operones_pao1.tsv", "secciones.tsv"]
+                   + [n for n, _c in VOCABULARIOS]))
+        for nombre, ruta in rutas.items():
+            self.assertTrue(os.path.exists(ruta), nombre)
+        self.assertTrue(all(I.huellas_de_recursos().values()))
+
+    def test_recursos_cambiados_distingue_los_tres_casos(self):
+        from grn_bronce import identificar as I
+        hoy = {"genes_pao1.tsv": "a", "secciones.tsv": "b"}
+
+        self.assertIsNone(I.recursos_cambiados(None, hoy),
+                          "sin huellas registradas no se sabe; no es «nada»")
+        self.assertEqual(I.recursos_cambiados(dict(hoy), hoy), [])
+        self.assertEqual(
+            I.recursos_cambiados({"genes_pao1.tsv": "a",
+                                  "secciones.tsv": "z"}, hoy),
+            ["secciones.tsv"])
+
+
 if __name__ == "__main__":
     unittest.main()

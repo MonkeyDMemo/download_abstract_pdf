@@ -88,6 +88,7 @@ def _exportar(con, args, t0):
                      "cifra reportada contra el no es reproducible."
                      % args.corpus)
 
+    huellas = identificar.huellas_de_recursos()
     previa = db.corrida_previa(con, identificar.METODO, identificar.VERSION,
                                corpus_id)
     if previa is not None and not args.rehacer:
@@ -98,6 +99,19 @@ def _exportar(con, args, t0):
         log("Es idempotente por (metodo, version). Usa --rehacer para forzar, "
             "o --corrida %d para volver a volcarla sin identificar."
             % previa["id"])
+        # La idempotencia es por (metodo, version): si un recurso cambió sin
+        # subir VERSION, la corrida vieja seguiría contando como hecha con los
+        # recursos de hoy. Se avisa en vez de callar.
+        cambiados = identificar.recursos_cambiados(
+            json.loads(previa["parametros"] or "{}").get("recursos"), huellas)
+        if cambiados is None:
+            log("AVISO: la corrida %d no registró la huella de sus recursos "
+                "(es anterior al sellado): no se puede saber si se hizo con "
+                "los de hoy." % previa["id"])
+        elif cambiados:
+            log("AVISO: desde la corrida %d cambiaron %s. Esa corrida no "
+                "refleja los recursos de hoy: sube VERSION en identificar.py, "
+                "o usa --rehacer." % (previa["id"], ", ".join(cambiados)))
         return 0
     if previa is not None:
         log("Rehaciendo: se borran las filas de la corrida %d." % previa["id"])
@@ -126,7 +140,12 @@ def _exportar(con, args, t0):
                   "max_oracion": identificar.MAX_ORACION,
                   "max_menciones": identificar.MAX_MENCIONES,
                   "fuentes": "abstract+xml", "pdf": False, "ocr": False,
-                  "datos": rutas.de_donde(args.datos)}
+                  "datos": rutas.de_donde(args.datos),
+                  # Con qué se identificó: la huella de cada recurso y qué
+                  # secciones quedaron fuera (PLAN, punto 5).
+                  "recursos": huellas,
+                  "secciones_fuera": sorted(identificar.SECCIONES_FUERA),
+                  "etiquetas_excluidas": identificar.etiquetas_excluidas()}
     corrida_id = db.abrir_corrida(con, "1", identificar.METODO,
                                   identificar.VERSION, parametros, corpus_id)
     log("")
@@ -315,6 +334,15 @@ def _armar_resumen(c, cuenta, corpus, fila_corrida, segundos, faltan,
         ("Duracion de la corrida",
          _duracion(segundos) if segundos is not None else ND),
     ]
+    # Con qué se identificó esta corrida, según su propia fila: en una
+    # reexportación, lo que importa es lo que usó entonces, no lo de hoy.
+    registrados = json.loads(fila_corrida["parametros"] or "{}").get(
+        "recursos")
+    filas.append((
+        "Recursos con que se identificó (huellas)",
+        "; ".join("%s %s" % (n, h) for n, h in sorted(registrados.items()))
+        if registrados else
+        "no registrados: corrida anterior al sellado del 28-sep-2026"))
     for concepto, ruta, filas_recurso, unidad in recursos:
         if filas_recurso is None:
             valor = ("recurso ausente (%s): operones_en_oracion solo trae los "
