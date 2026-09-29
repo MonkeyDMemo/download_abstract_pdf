@@ -510,7 +510,8 @@ def lineas_leame(catalogo, fuentes, paso1=None):
         "independientes. PGD (DOOR) y BioCyc (Pathway Tools) son predictores "
         "distintos pero parten de la misma distancia intergénica, y ODB, "
         "BioCyc y PseudoCAP pueden citar el mismo artículo.",
-        "- Nombres: %d unidades no tienen nombre (BioCyc no nombra), y %d "
+        "- Nombres: %d unidades no tienen nombre (las de BioCyc: su parser no "
+        "toma el `common-name`, que traen 94 TUs), y %d "
         "solo tienen el de DOOR, que une los nombres de cada gen "
         "(PA0006-lptA) y no es un nombre de la literatura." % (
             sin_nombre, solo_door),
@@ -540,6 +541,55 @@ def lineas_leame(catalogo, fuentes, paso1=None):
         "La hoja de fuentes dice de dónde sale cada foto, con su huella.",
     ]
     return lineas
+
+
+def filas_recurso_paso1(catalogo, columnas):
+    """Las filas del catálogo, en la forma del recurso que lee el paso 1.
+
+    `columnas` llega de fuera --es `grn_bronce.operones.COLUMNAS_BASE`, que
+    `cli` importa-- para que el contrato viva en un solo sitio y este módulo
+    no importe `grn_bronce`. Los valores se pasan a ASCII (`si`/`no`) porque
+    el recurso es un archivo de datos que otro paquete compara por igualdad,
+    no un texto para leer. El orden por clave, sin fechas ni nada que cambie
+    entre corridas, hace que dos versiones se comparen con un diff y que la
+    huella solo cambie cuando cambian los operones.
+    """
+    ascii_ = {"sí": "si", "no": "no"}
+    filas = []
+    for f in sorted(catalogo, key=lambda x: x["clave_genes"]):
+        fila = {}
+        for c in columnas:
+            valor = f.get(c, "")
+            fila[c] = ascii_.get(valor, valor) if isinstance(valor, str) \
+                else valor
+        filas.append(fila)
+    return filas
+
+
+def escribir_tsv(ruta, columnas, filas, log=lambda m: None):
+    """Un TSV estricto: tabulador, `\\n`, UTF-8 sin BOM, escritura atómica.
+
+    Lo lee `grn_bronce` partiendo por tabulador, sin comillas, así que un
+    campo con tabulador o salto de línea correría las columnas en silencio.
+    Se rechaza antes de escribir en vez de escaparlo: el lector no sabría
+    desescaparlo. Sin BOM y con `\\n` porque la huella del recurso
+    (`grn_comun.procedencia.huella`) se toma sobre los bytes.
+    """
+    lineas = ["\t".join(columnas)]
+    for fila in filas:
+        valores = []
+        for c in columnas:
+            v = "" if fila.get(c) is None else str(fila.get(c))
+            if "\t" in v or "\n" in v or "\r" in v:
+                raise ValueError(
+                    "%s: el campo %r de la fila %r lleva tabulador o salto de "
+                    "línea, y el lector parte por tabulador."
+                    % (ruta, c, fila.get(columnas[0])))
+            valores.append(v)
+        lineas.append("\t".join(valores))
+    escribir_texto(ruta, lineas)
+    log("  %s  (%d filas)" % (ruta, len(filas)))
+    return len(filas)
 
 
 def escribir_texto(ruta, lineas, log=lambda m: None):

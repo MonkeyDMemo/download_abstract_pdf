@@ -2,6 +2,7 @@
 """grn-bronce: la linea de comandos del paso 1.
 
     python -m grn_bronce.cli exportar [--corpus v0-agosto] [--datos RUTA]
+    python -m grn_bronce.cli exportar --corrida N   # volcar sin identificar
     python -m grn_bronce.cli pares    [--corrida N]
     python -m grn_bronce.cli operones [--corrida N] [--solo-faltantes]
 
@@ -12,6 +13,7 @@ del paquete que imprime.
 
 import argparse
 import datetime
+import json
 import os
 import random
 import sys
@@ -22,6 +24,11 @@ sys.path.insert(0, _RAIZ)
 
 from grn_bronce import (db, exportar, identificar, operones, rutas,  # noqa: E402
                         vocabulario)
+from grn_comun import procedencia                                  # noqa: E402
+
+# Lo que dice el resumen de un conteo que solo existe al identificar, cuando
+# se reexporta una corrida. Un cero ahí se leería como resultado.
+ND = "n/d: solo se cuenta al identificar"
 
 # Semilla fija: las diez filas de muestra tienen que ser las mismas si alguien
 # repite el comando para comprobar lo que se reporto.
@@ -29,7 +36,7 @@ SEMILLA = 20260904
 
 # La referencia de evaluacion del proyecto, por su tamano y no por su nombre.
 # El nombre del archivo NO puede aparecer en el codigo de este paquete: el
-# guardian de `etapa2/test_contaminacion.py` lo prohibe en los tres paquetes
+# guardian de `etapa2/test_contaminacion.py` lo prohibe en los paquetes
 # del pipeline, y partir la cadena para colarla seria evadir la propia guarda.
 # Que el bronce no pueda ni nombrar la referencia con la que luego se evalua es
 # el punto de la regla, no un efecto colateral.
@@ -65,6 +72,11 @@ def cmd_exportar(args):
 def _exportar(con, args, t0):
     from grn_etl import db as db0
 
+    # `is not None` y no la verdad del valor: `--corrida 0` tiene que salir
+    # como «no existe la corrida 0», no caer en identificar el corpus entero.
+    if args.corrida is not None:
+        return _reexportar(con, args)
+
     corpus_id, corpus_nombre = None, "(todos los documentos)"
     if args.corpus:
         fila = db0.obtener_corpus(con, args.corpus)
@@ -83,7 +95,9 @@ def _exportar(con, args, t0):
         log("Ya hay una corrida terminada con metodo=%s version=%s sobre este "
             "corpus (id %d, %s)." % (identificar.METODO, identificar.VERSION,
                                      previa["id"], previa["iniciada_en"]))
-        log("Es idempotente por (metodo, version). Usa --rehacer para forzar.")
+        log("Es idempotente por (metodo, version). Usa --rehacer para forzar, "
+            "o --corrida %d para volver a volcarla sin identificar."
+            % previa["id"])
         return 0
     if previa is not None:
         log("Rehaciendo: se borran las filas de la corrida %d." % previa["id"])
@@ -125,18 +139,102 @@ def _exportar(con, args, t0):
         db.cerrar_corrida(con, corrida_id, "error", str(e))
         raise
 
+    resumen, candidatas, conteos, hubo_xlsx = _volcar(
+        con, db.corrida(con, corrida_id), corpus_nombre, cuenta,
+        time.time() - t0, faltan)
+    db.cerrar_corrida(con, corrida_id, "ok", None, len(documentos),
+                      len(candidatas))
+    _mostrar(resumen, candidatas, cuenta, conteos, hubo_xlsx, faltan)
+    return 0
+
+
+def _reexportar(con, args, carpeta="salidas"):
+    """Vuelve a volcar una corrida existente, sin identificar de nuevo.
+
+    Existe para anotar una corrida ya hecha con lo que cambió después --hoy,
+    a qué operones pertenecen los genes de cada oración-- sin tocar lo que
+    detectó. Por eso **nunca** cierra la corrida: `cerrar_corrida` le
+    reescribiría la hora de término y los conteos, y la fila dejaría de decir
+    cuándo y con qué se identificó. Método, versión y corpus salen de la fila
+    de la corrida, no de las constantes de hoy.
+    """
+    from grn_etl import db as db0
+
+    if args.rehacer:
+        sys.exit("--rehacer no va con --corrida: reexportar no toca la base, "
+                 "y rehacer borraría las filas de la corrida que se quiere "
+                 "volcar.")
+    fila = db.corrida(con, args.corrida)
+    if fila is None:
+        sys.exit("No existe la corrida %d." % args.corrida)
+    if fila["paso"] != "1" or fila["estatus"] != "ok":
+        sys.exit("La corrida %d no es del paso 1 terminada bien (paso %s, "
+                 "estatus %s)." % (args.corrida, fila["paso"], fila["estatus"]))
+
+    parametros = json.loads(fila["parametros"] or "{}")
+    corpus_nombre = parametros.get("corpus") or "(desconocido)"
+    if fila["corpus_id"] is not None:
+        corpus = db0.obtener_corpus(con, corpus_nombre)
+        if corpus is None or corpus["id"] != fila["corpus_id"]:
+            sys.exit("No se encuentra el corpus '%s' de la corrida %d."
+                     % (corpus_nombre, args.corrida))
+        if not db0.verificar_corpus(con, fila["corpus_id"]):
+            sys.exit("El corpus '%s' ya no coincide con su huella: cualquier "
+                     "cifra reportada contra el no es reproducible."
+                     % corpus_nombre)
+
+    log("Reexportando la corrida %d (%s / %s, corpus %s) sin volver a "
+        "identificar." % (fila["id"], fila["metodo"], fila["version"],
+                          corpus_nombre))
+    log("--corpus se ignora: el corpus es el de la corrida.")
+    resumen, candidatas, conteos, hubo_xlsx = _volcar(
+        con, fila, corpus_nombre, None, _segundos_de(fila), [], carpeta)
+    _mostrar(resumen, candidatas, None, conteos, hubo_xlsx, [])
+    return 0
+
+
+def _segundos_de(fila):
+    """La duración de una corrida, desde sus fechas. None si no se sabe."""
+    try:
+        ini = datetime.datetime.fromisoformat(fila["iniciada_en"])
+        fin = datetime.datetime.fromisoformat(fila["terminada_en"])
+    except (TypeError, ValueError):
+        return None
+    return (fin - ini).total_seconds()
+
+
+def _volcar(con, fila, corpus_nombre, cuenta, segundos, faltan,
+            carpeta="salidas"):
+    """Arma las hojas de una corrida y las escribe. No toca la corrida.
+
+    Lo usan las dos vías: la corrida recién identificada, con su `cuenta`, y
+    la reexportación, sin ella (`cuenta = None`).
+    """
+    corrida_id = fila["id"]
     log("")
     log("Consultando las tablas para exportar...")
     catalogo = operones.Catalogo.cargar(operones.RUTA_POR_OMISION)
-    candidatas = exportar.filas_candidatas(con, db, corrida_id, catalogo)
+    base_op = operones.BaseOperones.cargar(operones.RUTA_BASE)
+    candidatas = exportar.filas_candidatas(con, db, corrida_id, catalogo,
+                                           base_op)
     menciones = exportar.filas_menciones(con, db, corrida_id)
     filas_operones = exportar.filas_operones(con, db, corrida_id, catalogo)
     conteos = db.conteos_de(con, corrida_id)
-    resumen = _armar_resumen(conteos, cuenta, corpus_nombre, corrida_id,
-                             time.time() - t0, faltan, filas_operones)
+    recursos = [
+        ("Catalogo de operones del paso 1", operones.RUTA_POR_OMISION,
+         len(catalogo), "operones"),
+        ("Base de operones (pertenencia)", operones.RUTA_BASE,
+         len(base_op) if base_op.presente else None, "unidades"),
+    ]
+    resumen = _armar_resumen(conteos, cuenta, corpus_nombre, fila, segundos,
+                             faltan, filas_operones, candidatas, recursos)
 
+    # La corrida va en el nombre, no solo el día: dos volcados del mismo día
+    # --una corrida y la reexportación de otra-- se pisaban, y así se perdieron
+    # los archivos de la corrida 3.
     dia = datetime.date.today().strftime("%Y%m%d")
-    base = os.path.join("salidas", "bronce_identificacion_%s" % dia)
+    base = os.path.join(carpeta, "bronce_identificacion_corrida%d_%s"
+                        % (corrida_id, dia))
     log("")
     log("Escribiendo (los CSV son el producto canonico):")
     exportar.escribir_csv(base + "_oraciones_candidatas.csv",
@@ -148,22 +246,26 @@ def _exportar(con, args, t0):
     exportar.escribir_resumen_csv(base + "_resumen.csv", resumen, log)
     hubo_xlsx = exportar.escribir_xlsx(base + ".xlsx", candidatas, menciones,
                                        resumen, filas_operones, log)
-
-    db.cerrar_corrida(con, corrida_id, "ok", None, len(documentos),
-                      len(candidatas))
-    _mostrar(resumen, candidatas, cuenta, conteos, hubo_xlsx, faltan)
-    return 0
+    return resumen, candidatas, conteos, hubo_xlsx
 
 
-def _armar_resumen(c, cuenta, corpus, corrida_id, segundos, faltan,
-                   filas_operones=()):
-    """Los numeros salen de `conteos_de()`, o sea de la base, no de memoria."""
+def _armar_resumen(c, cuenta, corpus, fila_corrida, segundos, faltan,
+                   filas_operones=(), candidatas=(), recursos=()):
+    """Los numeros salen de `conteos_de()`, o sea de la base, no de memoria.
+
+    `cuenta` solo existe al identificar: es un conteo en memoria que no se
+    guarda. En una reexportación llega `None` y sus filas dicen «n/d» en vez
+    de un cero que parecería un resultado.
+    """
+    def n(clave):
+        return cuenta[clave] if cuenta is not None else ND
+
     t = c["por_tipo"]
     filas = [
         ("Corpus", corpus),
-        ("Corrida", corrida_id),
-        ("Metodo y version", "%s / %s" % (identificar.METODO,
-                                          identificar.VERSION)),
+        ("Corrida", fila_corrida["id"]),
+        ("Metodo y version", "%s / %s" % (fila_corrida["metodo"],
+                                          fila_corrida["version"])),
         ("Documentos procesados", c["documentos"]),
         ("Documentos con texto completo (xml estatus ok)",
          c["documentos_con_fulltext"]),
@@ -173,18 +275,18 @@ def _armar_resumen(c, cuenta, corpus, corrida_id, segundos, faltan,
          c["unidades"]),
         ("  que cruzan un encabezado borrado (span no contiguo)",
          c["unidades_no_contiguas"]),
-        ("  examinadas para candidata", cuenta["oraciones_examinadas"]),
+        ("  examinadas para candidata", n("oraciones_examinadas")),
         ("  descartadas por cortas (menos de %d caracteres)"
-         % identificar.MIN_ORACION, cuenta["oraciones_cortas"]),
+         % identificar.MIN_ORACION, n("oraciones_cortas")),
         ("  descartadas por largas (mas de %d)" % identificar.MAX_ORACION,
-         cuenta["oraciones_largas"]),
-        ("  descartadas por seccion excluida", cuenta["oraciones_en_seccion_excluida"]),
+         n("oraciones_largas")),
+        ("  descartadas por seccion excluida", n("oraciones_en_seccion_excluida")),
         ("Oraciones candidatas", c["candidatas"]),
         ("  con disparador", c["con_disparador"]),
         ("  con regulador y blanco asignados", c["con_regulador"]),
-        ("  sin dos genes distintos", cuenta["oraciones_sin_par"]),
+        ("  sin dos genes distintos", n("oraciones_sin_par")),
         ("  con mas de %d genes distintos" % identificar.MAX_MENCIONES,
-         cuenta["oraciones_con_demasiados_genes"]),
+         n("oraciones_con_demasiados_genes")),
         ("Menciones totales", c["menciones"]),
     ]
     for tipo in ("gen", "proteina", "operon", "disparador", "funcion",
@@ -199,25 +301,38 @@ def _armar_resumen(c, cuenta, corpus, corrida_id, segundos, faltan,
         ("  que NO estan: huecos del catalogo", len(sin_catalogo)),
         ("  menciones que sostienen esos huecos",
          sum(f["n_menciones"] for f in sin_catalogo)),
-        ("Oraciones candidatas con al menos un operon",
+        ("Oraciones candidatas con operón (nombrado o por pertenencia de "
+         "sus genes; hay_operon = si)",
+         sum(1 for f in candidatas if f.get("hay_operon") == "si")),
+        ("  de ellas, que nombran un operón en el texto",
          c.get("candidatas_con_operon", 0)),
         ("Genes distintos (superficies)", c["genes_distintos"]),
         ("Tasa de normalizacion a locus tag",
          _tasa(c["genes_normalizados"], c["genes_totales"])),
         ("Documentos sin ninguna mencion",
-         cuenta["documentos_sin_ninguna_mencion"]),
-        ("Documentos con error", cuenta["documentos_con_error"]),
-        ("Duracion de la corrida", _duracion(segundos)),
+         n("documentos_sin_ninguna_mencion")),
+        ("Documentos con error", n("documentos_con_error")),
+        ("Duracion de la corrida",
+         _duracion(segundos) if segundos is not None else ND),
     ]
+    for concepto, ruta, filas_recurso, unidad in recursos:
+        if filas_recurso is None:
+            valor = ("recurso ausente (%s): operones_en_oracion solo trae los "
+                     "operones nombrados" % os.path.basename(ruta))
+        else:
+            valor = "%s, huella %s, %d %s" % (
+                os.path.basename(ruta), procedencia.huella(ruta),
+                filas_recurso, unidad)
+        filas.append((concepto, valor))
     filas += [
         ("Por que quedan vacios regulador y blanco: dos o mas TF",
-         cuenta["dos_o_mas_tf"]),
+         n("dos_o_mas_tf")),
         ("Por que quedan vacios regulador y blanco: ningun TF",
-         cuenta["sin_tf"]),
+         n("sin_tf")),
         ("Por que quedan vacios regulador y blanco: sin disparador",
-         cuenta["sin_disparador"]),
+         n("sin_disparador")),
         ("Por que queda vacio el blanco: mas de un candidato",
-         cuenta["sin_blanco_unico"]),
+         n("sin_blanco_unico")),
     ]
     filas += [
         ("NOTA score", "ordena, no es umbral; sin calibrar"),
@@ -234,8 +349,14 @@ def _armar_resumen(c, cuenta, corpus, corrida_id, segundos, faltan,
         ("Sobre el 31.7 % citado en el plan",
          "no salio de esa referencia sino de muestreo estratificado de la red "
          "del paso 2; es precision de ARISTAS del estrato A, no de esta capa"),
-        ("Diccionario", "genes_pao1.tsv, RefSeq+KEGG+UniProt. "
-                        "Pseudomonas Genome DB responde 403"),
+        ("Diccionario", "genes_pao1.tsv, RefSeq+KEGG+UniProt. Pseudomonas "
+                        "Genome DB no: su sitio esta tras un desafio de "
+                        "Cloudflare"),
+        ("NOTA operones_en_oracion",
+         "la pertenencia sale de la base de operones (ODB, BioCyc, PGD) y no "
+         "cambia lo que se detectó. Pendiente de la decisión 3: no usarla "
+         "como rasgo del paso 2 hasta saber si la base curada del laboratorio "
+         "usó esas fuentes"),
         ("Fuentes de texto", "resumen y XML de PMC con estatus ok"),
         ("PDF", "fuera de esta corrida; queda para despues, con PyMuPDF"),
         ("OCR", "no implementado"),
@@ -286,12 +407,19 @@ def _mostrar(resumen, candidatas, cuenta, conteos, hubo_xlsx, faltan):
     if faltan:
         p.append("Vocabularios vacios (%s): sus columnas salen en blanco."
                  % ", ".join(faltan))
-    if cuenta["documentos_con_error"]:
-        p.append("%d documentos fallaron al procesarse."
-                 % cuenta["documentos_con_error"])
-    if cuenta["ruta_de_fulltext_no_existe"]:
-        p.append("%d filas de descargas dicen 'ok' pero su archivo no esta."
-                 % cuenta["ruta_de_fulltext_no_existe"])
+    if cuenta is None:
+        # Reexportación: esos conteos se hacen al identificar y no se guardan.
+        # Decir «0 documentos con error» sería afirmar algo que no se midió.
+        p.append("Reexportación sin identificar: los conteos que solo existen "
+                 "al identificar (oraciones examinadas, descartes, documentos "
+                 "con error) salen n/d en el resumen.")
+    else:
+        if cuenta["documentos_con_error"]:
+            p.append("%d documentos fallaron al procesarse."
+                     % cuenta["documentos_con_error"])
+        if cuenta["ruta_de_fulltext_no_existe"]:
+            p.append("%d filas de descargas dicen 'ok' pero su archivo no esta."
+                     % cuenta["ruta_de_fulltext_no_existe"])
     if conteos["unidades_no_contiguas"]:
         p.append("%d oraciones cruzan un encabezado borrado: su span incluye "
                  "el titulo que se quito. Van marcadas contiguo=0."
@@ -445,6 +573,11 @@ def main():
     ex.add_argument("--datos", help="Raiz de datos; gana sobre GRN_DATOS.")
     ex.add_argument("--rehacer", action="store_true",
                     help="Rehacer aunque ya exista una corrida igual.")
+    ex.add_argument("--corrida", type=int, default=None,
+                    help="Volcar esa corrida sin volver a identificar: sirve "
+                         "para anotarla con recursos nuevos (la pertenencia "
+                         "a operones) sin tocar lo que detecto. No la cierra "
+                         "ni la modifica.")
     ex.set_defaults(func=cmd_exportar)
 
     pa = sub.add_parser("pares", help="Pares dirigidos de una corrida, a CSV.")

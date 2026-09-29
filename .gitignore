@@ -26,6 +26,13 @@ summarize_sweep.py
 etapa2/para_colab/
 datos_etapa2/
 
+# La base de operones para el bronce. Lleva unidades de transcripcion de
+# BioCyc/PseudoCyc, bajadas con cuenta, cuya licencia restringe redistribuir los
+# datos, y este repositorio es publico. Cada maquina la genera con
+# `python -m grn_operones.cli catalogo --paso1`; el resumen del bronce guarda su
+# huella, asi que una salida sigue diciendo con que version se anoto.
+grn_bronce/recursos/operones_base.tsv
+
 # El checkpoint de la configuracion 22, 415 MB. Se reproduce desde Colab con
 # etapa2/barrido.py; lo que sí va al repositorio es barrido_resumen.csv.
 modelo_limpio_run22/

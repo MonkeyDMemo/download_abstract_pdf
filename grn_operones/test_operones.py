@@ -1580,6 +1580,92 @@ class PruebasCatalogo(unittest.TestCase):
                 "score_cdbprom") + 1).value, float)
 
 
+class PruebasRecursoPaso1(unittest.TestCase):
+    """`operones_base.tsv`: lo que el bronce lee para la pertenencia."""
+
+    def _base(self, orden):
+        """Una base curada con las mismas filas insertadas en otro orden."""
+        con = _con()
+        self.addCleanup(con.close)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        ruta = os.path.join(tmp.name, "genes.tsv")
+        with io.open(ruta, "w", encoding="utf-8", newline="") as f:
+            f.write(GENES_TSV)
+        # `op2` le da dos fuentes a PA2493-5, así que silver (que ordena por
+        # `n_fuentes` descendente) la pone antes que PA0425-7: el orden de
+        # silver y el de la clave difieren, y el recurso tiene que salir por
+        # clave.
+        filas = [
+            _fila("odb", "op1", "PA0425|PA0426|PA0427", pmid="123",
+                  tipo_evidencia="literatura",
+                  registro_raw={"name": "mexAB-oprM"}),
+            _fila("odb", "op2", "PA2493|PA2494|PA2495", pmid="456",
+                  tipo_evidencia="literatura"),
+            _fila("biocyc", "TU-2", "PA2493|PA2494"),
+            _fila("biocyc", "TU-3", "PA2493|PA2494|PA2495"),
+        ]
+        _bronce(con, filas if orden == "directo" else filas[::-1])
+        C.curar(con, diccionario=C.cargar_diccionario(ruta),
+                hebras={"PA0425": "+", "PA0426": "+", "PA0427": "+",
+                        "PA2493": "-", "PA2494": "-", "PA2495": "-"})
+        from grn_bronce import operones as P
+        return E.filas_recurso_paso1(
+            E.filas_catalogo(con, D, E.cargar_anotacion(ruta)),
+            P.COLUMNAS_BASE)
+
+    def test_sale_igual_aunque_el_bronce_entre_en_otro_orden(self):
+        """La huella del recurso tiene que cambiar cuando cambian los
+        operones, no cuando cambia el orden en que se insertó el bronce."""
+        self.assertEqual(self._base("directo"), self._base("inverso"))
+
+    def test_sale_ordenado_por_clave_y_no_por_el_orden_de_silver(self):
+        """Lo que hace determinista al recurso es el orden por clave. Aquí
+        silver pone primero la unidad con dos fuentes, y el recurso no."""
+        claves = [f["clave_genes"] for f in self._base("directo")]
+
+        self.assertEqual(claves, sorted(claves))
+        self.assertEqual(claves[0], "PA0425|PA0426|PA0427")
+
+    def test_valores_ascii_y_columnas_del_contrato(self):
+        from grn_bronce import operones as P
+        filas = self._base("directo")
+
+        self.assertEqual(sorted(filas[0]), sorted(P.COLUMNAS_BASE))
+        self.assertEqual(set(f["es_alternativa"] for f in filas),
+                         {"si", "no"})
+        mexef = [f for f in filas if f["clave_genes"] == "PA2493|PA2494"][0]
+        self.assertEqual(mexef["es_alternativa"], "si")
+        self.assertEqual(mexef["locus_tags"], "PA2494|PA2493",
+                         "hebra menos: orden de transcripción")
+
+    def test_escribir_tsv_rechaza_tabulador_y_salto_de_linea(self):
+        """El lector parte por tabulador y sin comillas: un campo así
+        correría las columnas en silencio."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        ruta = os.path.join(tmp.name, "r.tsv")
+        for malo in ("con\ttab", "con\nsalto"):
+            with self.assertRaises(ValueError):
+                E.escribir_tsv(ruta, ["a", "b"], [{"a": "x", "b": malo}])
+
+    def test_el_tsv_es_lf_sin_bom_y_lo_lee_el_bronce(self):
+        from grn_bronce import operones as P
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        ruta = os.path.join(tmp.name, "base.tsv")
+
+        E.escribir_tsv(ruta, P.COLUMNAS_BASE, self._base("directo"))
+
+        with io.open(ruta, "rb") as f:
+            crudo = f.read()
+        self.assertFalse(crudo.startswith(b"\xef\xbb\xbf"))
+        self.assertNotIn(b"\r\n", crudo)
+        base = P.BaseOperones.cargar(ruta)
+        self.assertEqual([base.etiqueta(u) for u in base.de_genes(["PA0425"])],
+                         ["mexAB-oprM"])
+
+
 class PruebasCoberturaDeMapeo(unittest.TestCase):
     """Cuanto del vocabulario real de ODB sabe resolver el diccionario.
 

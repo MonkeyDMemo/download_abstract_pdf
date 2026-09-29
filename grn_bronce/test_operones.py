@@ -15,7 +15,9 @@ nadie lo haya escrito en ningun recurso, y un operon inventado desde el texto
 --`lasRIAB`, que `etapa2/lexico.py` acuna solo-- se convertiria en tres genes
 que el corpus nunca nombro.
 
-Fixtures locales y minimas: ningun recurso real, ninguna base real.
+Fixtures locales y minimas para el catalogo y la base de operones, y ninguna
+base de datos real. Los vocabularios (disparadores, funciones) si se leen de
+`recursos/`, porque `identificar` no sabe trabajar sin ellos.
 
     python -m unittest discover .
 """
@@ -56,6 +58,21 @@ PA0997\tpqsB\t\tcds\tqs\tfalse\t\trefseq\tfalse
 PA0998\tpqsC\t\tcds\tqs\tfalse\t\trefseq\tfalse
 PA0999\tpqsD\t\tcds\tqs\tfalse\t\trefseq\tfalse
 PA1000\tpqsE\t\tcds\tqs\tfalse\t\trefseq\tfalse
+"""
+
+
+# La base de operones, en el formato que escribe `grn_operones`. Cubre cada
+# regla de pertenencia: una principal con nombre, una sin nombre (BioCyc), una
+# alternativa predicha (fuera), una alternativa conocida (dentro), una de un
+# solo gen (fuera) y dos unidades con el mismo nombre.
+FIXTURE_BASE = u"""clave_genes\tnombre\tlocus_tags\tgenes\tnivel_evidencia\tes_alternativa\tmonocistronico
+PA0425|PA0426|PA0427\tmexAB-oprM\tPA0425|PA0426|PA0427\tmexA mexB oprM\tconocido\tno\tno
+PA2493|PA2494|PA2495\t\tPA2493|PA2494|PA2495\tmexE mexF oprN\tpredicho\tno\tno
+PA2493|PA2494\tmexEF\tPA2493|PA2494\tmexE mexF\tpredicho\tsi\tno
+PA0996|PA0997\tpqsAB\tPA0996|PA0997\tpqsA pqsB\tconocido\tsi\tno
+PA2492\tmexT\tPA2492\tmexT\tpredicho\tno\tsi
+PA3362|PA3363\tamidase\tPA3363|PA3362\tamiE amiB\tpredicho\tno\tno
+PA3364|PA3365\tamidase\tPA3365|PA3364\tamiC amiR\tpredicho\tno\tno
 """
 
 
@@ -248,8 +265,15 @@ class PruebasSalida(unittest.TestCase):
     """Las dos capas en la salida, sobre una base de memoria."""
 
     def setUp(self):
+        from unittest import mock
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
+        # Sin base de operones: estas pruebas miran las columnas de siempre, y
+        # el recurso real de recursos/ no tiene por qué entrar en ellas.
+        p = mock.patch.object(OP, "RUTA_BASE",
+                              os.path.join(self.tmp.name, "no_hay_base.tsv"))
+        p.start()
+        self.addCleanup(p.stop)
         self.cat = OP.Catalogo.cargar(
             _escribir(self.tmp.name, "operones.tsv", FIXTURE_OPERONES))
         self.con = bdb.conectar(":memory:")
@@ -452,11 +476,277 @@ class PruebasSalida(unittest.TestCase):
         self.assertEqual(c["candidatas_con_operon"], 1)
 
 
+class PruebasBaseOperones(unittest.TestCase):
+    """A qué operones pertenece cada gen: la regla de qué unidades cuentan."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.base = OP.BaseOperones.cargar(
+            _escribir(self.tmp.name, "base.tsv", FIXTURE_BASE))
+
+    def _etiquetas(self, locus):
+        return [self.base.etiqueta(u) for u in self.base.de_genes(locus)]
+
+    def test_sin_archivo_queda_vacia_y_lo_dice(self):
+        """`presente` separa «no hay recurso» de «ningún gen pertenece a un
+        operón»: en la salida se verían igual."""
+        vacia = OP.BaseOperones.cargar(os.path.join(self.tmp.name, "no.tsv"))
+
+        self.assertFalse(vacia.presente)
+        self.assertEqual(len(vacia), 0)
+        self.assertEqual(vacia.de_genes(["PA0425"]), [])
+        self.assertTrue(self.base.presente)
+
+    def test_un_encabezado_distinto_falla(self):
+        malo = _escribir(self.tmp.name, "malo.tsv",
+                         FIXTURE_BASE.replace("clave_genes", "clave"))
+
+        with self.assertRaises(ValueError):
+            OP.BaseOperones.cargar(malo)
+
+    def test_un_gen_da_su_operon(self):
+        self.assertEqual(self._etiquetas(["PA0425"]), ["mexAB-oprM"])
+
+    def test_una_unidad_sin_nombre_sale_con_sus_genes_entre_llaves(self):
+        """Y la alternativa predicha `mexEF` (subconjunto) no aparece."""
+        self.assertEqual(self._etiquetas(["PA2493"]), ["{mexE mexF oprN}"])
+
+    def test_una_alternativa_conocida_si_cuenta(self):
+        """Sin esto quedaban ocultas 32 unidades con evidencia (31 conocidas;
+        11 de ODB, el resto de BioCyc o PseudoCAP), 20 de ellas dentro de
+        unidades solo predichas."""
+        self.assertEqual(self._etiquetas(["PA0996"]), ["pqsAB"])
+
+    def test_una_unidad_de_un_solo_gen_no_es_un_operon_del_gen(self):
+        self.assertEqual(self._etiquetas(["PA2492"]), [])
+
+    def test_un_nombre_repetido_lleva_su_clave(self):
+        self.assertEqual(
+            self._etiquetas(["PA3362", "PA3364"]),
+            ["amidase (PA3362|PA3363)", "amidase (PA3364|PA3365)"])
+
+    def test_varios_genes_del_mismo_operon_dan_uno_solo(self):
+        self.assertEqual(self._etiquetas(["PA0425", "PA0426", "PA0427"]),
+                         ["mexAB-oprM"])
+
+
+class PruebasOperonesEnOracion(unittest.TestCase):
+    """`hay_operon` y `operones_en_oracion` en la salida, en una base de
+    memoria: los nombrados y los de sus genes, sin repetir."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.cat = OP.Catalogo.cargar(
+            _escribir(self.tmp.name, "operones.tsv", FIXTURE_OPERONES))
+        self.base = OP.BaseOperones.cargar(
+            _escribir(self.tmp.name, "base.tsv", FIXTURE_BASE))
+        self.con = bdb.conectar(":memory:")
+        self.addCleanup(self.con.close)
+        self.con.execute(
+            """INSERT INTO documentos (pmid, titulo, anio, extraido_en)
+               VALUES ('1', 'Un titulo', '2020', ?)""", (bdb.ahora(),))
+        self.corrida = bdb.abrir_corrida(self.con, "1", "m", "1")
+        self.n = 0
+
+    def _oracion(self, texto, menciones):
+        unidad = bdb.guardar_unidad(self.con, self.corrida, {
+            "pmid": "1", "fuente_texto": "abstract", "seccion": "abstract",
+            "num_oracion": self.n, "texto": texto, "offset_ini": 0,
+            "offset_fin": len(texto), "contiguo": True})
+        ids = bdb.guardar_menciones(self.con, self.corrida, "m", unidad, [
+            {"tipo": t, "texto": s, "id_normalizado": i, "offset_ini": 0,
+             "offset_fin": len(s)} for t, s, i in menciones])
+        bdb.guardar_candidata(self.con, self.corrida, "m", unidad, {
+            "disparador": "", "signo_sugerido": "", "regulador_candidato": "",
+            "blanco_candidato": "", "score": 0.0}, ids)
+        self.con.commit()
+        self.n += 1
+        filas = exportar.filas_candidatas(self.con, bdb, self.corrida,
+                                          self.cat, self.base)
+        return [f for f in filas if f["num_oracion"] == self.n - 1][0]
+
+    def test_un_gen_dice_su_operon(self):
+        f = self._oracion("MexA is required.",
+                          [("proteina", "MexA", "PA0425")])
+
+        self.assertEqual((f["hay_operon"], f["operones_en_oracion"]),
+                         ("si", "mexAB-oprM"))
+
+    def test_nombrado_y_por_sus_genes_sale_una_vez(self):
+        """La oración nombra `mexAB-oprM` y también dice `mexA`: es el mismo
+        operón y sale una sola vez, con el nombre que usó el texto."""
+        f = self._oracion("MexA and MexAB-OprM.", [
+            ("proteina", "MexA", "PA0425"),
+            ("operon", "MexAB-OprM", "mexAB-oprM")])
+
+        self.assertEqual(f["operones_en_oracion"], "mexAB-oprM")
+
+    def test_nombrados_y_por_pertenencia_se_juntan(self):
+        f = self._oracion("MexT activates pqsABCDE and mexE.", [
+            ("proteina", "MexT", "PA2492"),
+            ("operon", "pqsABCDE", "pqsABCDE"),
+            ("gen", "mexE", "PA2493")])
+
+        self.assertEqual(f["operones_en_oracion"],
+                         "pqsABCDE;{mexE mexF oprN}")
+
+    def test_nombrado_fuera_del_catalogo_pero_en_la_base_sale_una_vez(self):
+        """`pqsAB` no está en el catálogo del paso 1 pero sí en la base, como
+        `exsCBA` o `dadAX` en el corpus real: sin comparar por nombre salía
+        dos veces (`exsCBA;exsCBA`, 6 filas de la corrida 4)."""
+        self.assertNotIn("\npqsAB\t", FIXTURE_OPERONES)
+        f = self._oracion("The pqsAB genes and PqsA.", [
+            ("operon", "pqsAB", "pqsAB"),
+            ("proteina", "PqsA", "PA0996")])
+
+        self.assertEqual(f["operones_en_oracion"], "pqsAB")
+
+    def test_sin_operones_sale_no_y_vacio(self):
+        f = self._oracion("MexT is a regulator.",
+                          [("proteina", "MexT", "PA2492")])
+
+        self.assertEqual((f["hay_operon"], f["operones_en_oracion"]),
+                         ("no", ""))
+
+    def test_sin_la_base_quedan_solo_los_nombrados(self):
+        """Si el recurso no está, la columna no inventa: trae lo nombrado."""
+        vacia = OP.BaseOperones.cargar(os.path.join(self.tmp.name, "no.tsv"))
+        self._oracion("MexA and pqsABCDE.", [
+            ("proteina", "MexA", "PA0425"),
+            ("operon", "pqsABCDE", "pqsABCDE")])
+
+        f = exportar.filas_candidatas(self.con, bdb, self.corrida, self.cat,
+                                      vacia)[0]
+
+        self.assertEqual(f["operones_en_oracion"], "pqsABCDE")
+
+    def test_la_deteccion_no_cambia(self):
+        """Las columnas de siempre no se tocan: la pertenencia es anotación."""
+        f = self._oracion("MexA is required.",
+                          [("proteina", "MexA", "PA0425")])
+
+        self.assertEqual(f["operones"], "")
+        self.assertEqual(f["genes_expandidos"], "")
+        self.assertEqual(f["genes_locus_tag"], "PA0425")
+
+
+class PruebasReexportar(unittest.TestCase):
+    """`exportar --corrida N` vuelca sin identificar y no toca la corrida."""
+
+    def setUp(self):
+        from unittest import mock
+        from grn_bronce import cli
+        self.cli = cli
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        silencio = mock.patch.object(cli, "log", lambda m: None)
+        silencio.start()
+        self.addCleanup(silencio.stop)
+        # El catálogo y la base de fixtures, no los de recursos/: la prueba no
+        # puede depender de lo que diga el recurso real en su versión de hoy.
+        for nombre, ruta in (
+                ("RUTA_POR_OMISION", _escribir(self.tmp.name, "operones.tsv",
+                                               FIXTURE_OPERONES)),
+                ("RUTA_BASE", _escribir(self.tmp.name, "base.tsv",
+                                        FIXTURE_BASE))):
+            p = mock.patch.object(OP, nombre, ruta)
+            p.start()
+            self.addCleanup(p.stop)
+        self.salida = os.path.join(self.tmp.name, "salida")
+        self.con = bdb.conectar(":memory:")
+        self.addCleanup(self.con.close)
+        self.con.execute(
+            """INSERT INTO documentos (pmid, titulo, anio, extraido_en)
+               VALUES ('1', 'Un titulo', '2020', ?)""", (bdb.ahora(),))
+        self.corrida = bdb.abrir_corrida(
+            self.con, "1", "baseline-deterministico", "4",
+            {"corpus": "(todos los documentos)"})
+        unidad = bdb.guardar_unidad(self.con, self.corrida, {
+            "pmid": "1", "fuente_texto": "abstract", "seccion": "abstract",
+            "num_oracion": 0, "texto": "MexA is required.", "offset_ini": 0,
+            "offset_fin": 17, "contiguo": True})
+        ids = bdb.guardar_menciones(self.con, self.corrida, "m", unidad, [
+            {"tipo": "proteina", "texto": "MexA", "id_normalizado": "PA0425",
+             "offset_ini": 0, "offset_fin": 4}])
+        bdb.guardar_candidata(self.con, self.corrida, "m", unidad, {
+            "disparador": "", "signo_sugerido": "", "regulador_candidato": "",
+            "blanco_candidato": "", "score": 0.0}, ids)
+        bdb.cerrar_corrida(self.con, self.corrida, "ok", None, 1, 1)
+
+    def _args(self, **kw):
+        import argparse
+        base = {"corrida": self.corrida, "rehacer": False,
+                "corpus": "v0-agosto"}
+        base.update(kw)
+        return argparse.Namespace(**base)
+
+    def test_no_crea_corrida_ni_toca_la_que_vuelca(self):
+        antes = dict(bdb.corrida(self.con, self.corrida))
+
+        self.cli._reexportar(self.con, self._args(), carpeta=self.salida)
+
+        self.assertEqual(dict(bdb.corrida(self.con, self.corrida)), antes)
+        self.assertEqual(len(bdb.listar_corridas(self.con)), 1)
+
+    def test_los_archivos_llevan_la_corrida_en_el_nombre(self):
+        self.cli._reexportar(self.con, self._args(), carpeta=self.salida)
+
+        nombres = os.listdir(self.salida)
+        self.assertTrue(nombres)
+        self.assertTrue(all(n.startswith(
+            "bronce_identificacion_corrida%d_" % self.corrida)
+            for n in nombres), nombres)
+
+    def test_lo_que_solo_se_cuenta_al_identificar_sale_nd(self):
+        """Un cero ahí se leería como resultado."""
+        self.cli._reexportar(self.con, self._args(), carpeta=self.salida)
+        ruta = [n for n in os.listdir(self.salida)
+                if n.endswith("_resumen.csv")][0]
+
+        with io.open(os.path.join(self.salida, ruta),
+                     encoding="utf-8") as f:
+            texto = f.read()
+        self.assertIn(self.cli.ND, texto)
+        self.assertIn("baseline-deterministico / 4", texto)
+
+    def test_corrida_cero_no_cae_en_identificar(self):
+        """`--corrida 0` es un id que no existe, no «sin --corrida»: con una
+        prueba de verdad del valor, el 0 caía en identificar el corpus."""
+        with self.assertRaises(SystemExit) as ctx:
+            self.cli._exportar(self.con, self._args(corrida=0), 0)
+
+        self.assertIn("No existe la corrida 0", str(ctx.exception))
+
+    def test_rehacer_con_corrida_se_rechaza(self):
+        with self.assertRaises(SystemExit):
+            self.cli._reexportar(self.con, self._args(rehacer=True),
+                                 carpeta=self.salida)
+
+    def test_una_corrida_que_no_termino_bien_no_se_vuelca(self):
+        otra = bdb.abrir_corrida(self.con, "1", "m", "9")
+
+        with self.assertRaises(SystemExit):
+            self.cli._reexportar(self.con, self._args(corrida=otra),
+                                 carpeta=self.salida)
+
+
 class PruebasColumnas(unittest.TestCase):
 
     def test_las_dos_columnas_nuevas_estan_en_el_contrato(self):
         for col in ("operones", "genes_expandidos"):
             self.assertIn(col, exportar.COLUMNAS_CANDIDATAS)
+
+    def test_las_columnas_de_pertenencia_van_despues_de_la_expansion(self):
+        """Junto a las otras dos columnas de operón. Ningún lector indexa por
+        posición (los evaluadores y `pares` leen la base), pero el orden queda
+        fijado aquí para que moverlo sea una decisión y no un accidente."""
+        c = exportar.COLUMNAS_CANDIDATAS
+
+        self.assertEqual(c[13:17], ["operones", "genes_expandidos",
+                                    "hay_operon", "operones_en_oracion"])
+        self.assertEqual(c[17:19], ["regulador_candidato", "blanco_candidato"])
 
     def test_las_columnas_viejas_no_se_movieron_de_sitio(self):
         """Las dos nuevas van DESPUES de `proteinas`. Otro sitio correria las

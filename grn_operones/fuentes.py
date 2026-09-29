@@ -250,7 +250,8 @@ def traer_odb(sesion, carpeta, max_paginas=None, log=lambda m: None):
 
 
 # Las seis columnas del volcado, comprobadas contra el archivo real del
-# 18-sep-2026: 9 480 filas, 33 de ellas del taxid de PAO1.
+# 18-sep-2026: 9 480 líneas (encabezado y 9 479 filas de datos), 33 de ellas
+# del taxid de PAO1.
 COLUMNAS_ODB = ["koid", "org", "name", "op", "definition", "source"]
 
 
@@ -388,10 +389,14 @@ def parsear_biocyc(xml_tus, xml_genes):
                 sin_mapear.append(fid)
         if not locus:
             continue
-        # El PMID vive en `<citation><Publication><pubmed-id>`, no en los
-        # `<dblink>`. Mirar solo los dblink daba cero PMIDs para toda la
-        # fuente y dejaba la regla de nivel de evidencia sin su primera rama:
-        # de las 3 774 TUs, 64 traen cita y suman 77 PMIDs distintos.
+        # Los PMIDs salen de TODO el subárbol de la TU (`iter`), no de los
+        # `<dblink>`: mirar solo los dblink daba cero PMIDs para toda la
+        # fuente. Ojo con el alcance, medido el 27-sep-2026: de las 64 TUs con
+        # PMID, solo 41 lo traen en su `citation`; 16 lo traen únicamente por
+        # su `component/Promoter`, que es evidencia del promotor y no de la
+        # unidad. Lo mismo pasa con `Evidence-Code`. Restringirlo cambiaría
+        # el conjunto de «conocidos» y es una decisión pendiente, no un arreglo
+        # de paso (`docs/catalogo-operones.md`).
         pmids = sorted(set(p.text.strip() for p in tu.iter("pubmed-id")
                            if (p.text or "").strip()))
         frameids = [c.get("frameid") or ""
@@ -454,7 +459,8 @@ def parsear_cdbprom(cuerpo):
     es la regla 5 del encargo. Meterlos como operones habria fabricado 1 972
     unidades monocistronicas que nadie ha observado transcribirse.
 
-    El formato, comprobado contra el volcado del asesor:
+    El formato, comprobado contra el archivo bajado del sitio del IIMAS
+    (descarga por organismo, 18-sep-2026):
 
     - Diez lineas de encabezado descriptivo antes de los datos. No es una fila
       de cabecera con nombres de columna: es prosa, y por eso se saltan por
@@ -707,7 +713,8 @@ def traer_archivo(sesion, fuente, var_entorno, carpeta, url=None,
                   log=lambda m: None):
     """Baja un archivo cuya URL llega por flag, por entorno o fijada.
 
-    CDBProm no tiene URL pública: su volcado lo entrega el asesor, así que sin
+    CDBProm no tiene URL pública: su archivo se baja a mano del sitio del
+    IIMAS (descarga por organismo) y entra con `--archivo`, así que sin
     `--url` ni `CDBPROM_URL` la fuente se omite con un aviso en vez de fallar
     la corrida entera. PGD llega aquí con `URL_PGD` como último recurso.
     """
@@ -927,7 +934,8 @@ def traer_archivo_local(ruta_archivo, fuente, carpeta, log=lambda m: None):
     se borra, y entonces `reparsear` deja de funcionar y la huella registrada
     apunta a nada.
 
-    Sirve para el volcado de CDBProm, que llega por correo y no tiene URL, y
+    Sirve para el archivo de CDBProm, que se baja a mano del sitio del IIMAS
+    y no tiene URL que se pueda pedir, y
     para una tabla de PGD que llegue por otra vía, por ejemplo una versión
     más nueva que mande su curador.
     """

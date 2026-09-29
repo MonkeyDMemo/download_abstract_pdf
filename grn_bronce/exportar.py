@@ -24,7 +24,7 @@ COLUMNAS_CANDIDATAS = [
     "pmid", "doi", "titulo", "anio", "revista", "fecha_ingesta",
     "fuente_texto", "seccion", "num_oracion", "oracion",
     "genes", "genes_locus_tag", "proteinas",
-    "operones", "genes_expandidos",
+    "operones", "genes_expandidos", "hay_operon", "operones_en_oracion",
     "regulador_candidato", "blanco_candidato",
     "disparador", "signo_sugerido",
     "funciones_biologicas", "contexto_regulatorio",
@@ -50,6 +50,8 @@ AVISOS = {
     "signo_sugerido": "signo_sugerido (NO VERIFICADO)",
     "score": "score: ordena, no es umbral; sin calibrar",
     "genes_expandidos": "genes_expandidos (expansion del catalogo, no del texto)",
+    "operones_en_oracion": ("operones_en_oracion (nombrados + por pertenencia "
+                            "de sus genes a la base de operones)"),
 }
 
 
@@ -82,7 +84,48 @@ def _catalogo_o_el_de_recursos(catalogo):
     return catalogo
 
 
-def filas_candidatas(con, db, corrida_id, catalogo=None):
+def _base_o_la_de_recursos(base):
+    """La base que pasaron, o la de `recursos/`. `is None` por lo mismo que
+    `_catalogo_o_el_de_recursos`: `BaseOperones` define `__len__` y una
+    vacía es falsy."""
+    if base is None:
+        return _operones.BaseOperones.cargar(_operones.RUTA_BASE)
+    return base
+
+
+def operones_de_oracion(nombrados, locus_tags, catalogo, base):
+    """Los operones de una oración: los que nombra y a los que pertenecen sus
+    genes, sin repetir.
+
+    Un operón nombrado cuyo conjunto de genes es el de una unidad de la base
+    sale una sola vez, con el nombre que usó el texto (su forma canónica).
+    `mexAB-oprM` nombrado y `mexA` mencionado en la misma oración no dan dos
+    operones: son el mismo.
+
+    La comparación es por conjunto de genes cuando el catálogo del paso 1
+    conoce el operón nombrado, y por nombre cuando no lo conoce: `exsCBA` o
+    `dadAX` no están en `operones_pao1.tsv` pero sí en la base, y sin la
+    comparación por nombre salían dos veces (`exsCBA;exsCBA`, 6 filas de la
+    corrida 4).
+    """
+    salida, claves = [], set()
+    nombres = set(_operones.clave(op) for op in nombrados)
+    for op in sorted(nombrados):
+        salida.append(op)
+        genes = catalogo.locus_tags(op)
+        if genes:
+            claves.add("|".join(sorted(genes)))
+    for unidad in base.de_genes(locus_tags):
+        if unidad["clave_genes"] in claves:
+            continue
+        if unidad.get("nombre") and _operones.clave(unidad["nombre"]) in nombres:
+            continue
+        claves.add(unidad["clave_genes"])
+        salida.append(base.etiqueta(unidad))
+    return salida
+
+
+def filas_candidatas(con, db, corrida_id, catalogo=None, base=None):
     """La hoja 1, armada desde las tablas.
 
     Las columnas agregadas --`genes`, `proteinas`, `funciones_biologicas`...--
@@ -96,8 +139,14 @@ def filas_candidatas(con, db, corrida_id, catalogo=None):
     `mexEF-oprN` no se convierte en tres filas ni pierde el nombre que uso el
     autor. Si el catalogo no conoce el operon, `genes_expandidos` sale vacio:
     eso es el hueco del catalogo, visible, y no una expansion inventada.
+
+    `hay_operon` y `operones_en_oracion` responden si la oración tiene
+    operones y cuáles: los que nombra más aquellos a los que pertenecen sus
+    genes según la base de operones (`operones_de_oracion`). La pertenencia no
+    cambia qué se detectó; es una anotación al exportar.
     """
     catalogo = _catalogo_o_el_de_recursos(catalogo)
+    base = _base_o_la_de_recursos(base)
     por_unidad = db.menciones_por_unidad_candidata(con, corrida_id)
     filas = []
     for c in db.candidatas_de(con, corrida_id):
@@ -112,6 +161,10 @@ def filas_candidatas(con, db, corrida_id, catalogo=None):
         # Por nombre canonico, no por superficie: `mexAB-oprM` y `MexAB-OprM`
         # son el mismo operon y expanden a los mismos genes.
         ops = sorted(set(m[2] for m in mens if m[0] == "operon" and m[2]))
+        locus = sorted(set(
+            m[2] for m in mens
+            if m[0] in TIPOS_DE_GEN and str(m[2] or "").startswith("PA")))
+        en_oracion = operones_de_oracion(ops, locus, catalogo, base)
         filas.append({
             "pmid": c["pmid"], "doi": c["doi"] or "",
             "titulo": c["titulo"] or "", "anio": c["anio"] or "",
@@ -120,10 +173,7 @@ def filas_candidatas(con, db, corrida_id, catalogo=None):
             "fuente_texto": c["fuente_texto"], "seccion": c["seccion"] or "",
             "num_oracion": c["num_oracion"], "oracion": c["oracion"],
             "genes": ";".join(genes),
-            "genes_locus_tag": ";".join(sorted(set(
-                m[2] for m in mens
-                if m[0] in TIPOS_DE_GEN
-                and str(m[2] or "").startswith("PA")))),
+            "genes_locus_tag": ";".join(locus),
             "proteinas": ";".join(sorted(set(
                 m[1] for m in mens if m[0] == "proteina"))),
             # La superficie tal como la escribio el articulo, no el nombre
@@ -131,6 +181,8 @@ def filas_candidatas(con, db, corrida_id, catalogo=None):
             "operones": ";".join(sorted(set(
                 m[1] for m in mens if m[0] == "operon"))),
             "genes_expandidos": ";".join(catalogo.expandir_varios(ops)),
+            "hay_operon": "si" if en_oracion else "no",
+            "operones_en_oracion": ";".join(en_oracion),
             "regulador_candidato": c["regulador_candidato"] or "",
             "blanco_candidato": c["blanco_candidato"] or "",
             "disparador": c["disparador"] or "",
@@ -267,6 +319,7 @@ def escribir_xlsx(ruta, candidatas, menciones, resumen, operones=None,
     ANCHOS = {
         "pmid": 11, "titulo": 46, "oracion": 90, "genes": 26,
         "genes_locus_tag": 22, "operones": 24, "genes_expandidos": 30,
+        "hay_operon": 11, "operones_en_oracion": 34,
         "texto": 22, "id_normalizado": 18, "superficies": 28, "operon": 18,
     }
 

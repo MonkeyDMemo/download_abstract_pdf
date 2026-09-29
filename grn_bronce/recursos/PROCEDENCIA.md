@@ -148,6 +148,58 @@ Por eso una mencion de operon se guarda con `menciones.tipo = 'operon'` y su
 nombre como `id_normalizado`, y **una oracion sobre un operon de cinco genes
 sigue siendo una fila y no cinco**.
 
+## `operones_base.tsv` — 4 250 unidades de la base de operones
+
+Columnas: `clave_genes`, `nombre`, `locus_tags`, `genes`, `nivel_evidencia`,
+`es_alternativa`, `monocistronico`. Sirve para una sola cosa: decir **a qué
+operones pertenecen los genes de una oración**, en las columnas `hay_operon` y
+`operones_en_oracion` de las candidatas.
+
+### De dónde sale
+
+**No se copia: se genera.** Es la base curada de `grn_operones`, que junta
+ODB v4, BioCyc/PseudoCyc y la exportación del curador de Pseudomonas Genome
+DB, y la escribe `python -m grn_operones.cli catalogo --paso1`. El detalle de
+cada fuente, qué se tomó y qué no, está en `docs/catalogo-operones.md`. Sale
+ordenada por clave y sin fechas, así que la huella solo cambia cuando cambian
+los operones. El contrato (ruta y encabezado) vive en `grn_bronce/operones.py`,
+que es quien lo lee. Primera versión: 27 de septiembre de 2026, huella
+`f399bd89da7d558d`.
+
+**No está en git, a diferencia del resto de esta carpeta.** Lleva unidades de
+transcripción de BioCyc/PseudoCyc, bajadas con cuenta, y la licencia de BioCyc
+restringe redistribuir sus datos; el repositorio es público. Cada máquina lo
+genera con el comando de arriba (necesita la base de operones curada, y para
+BioCyc, `BIOCYC_EMAIL` y `BIOCYC_PASSWORD`). Si falta, el bronce corre igual:
+`operones_en_oracion` trae solo los operones nombrados y el resumen dice
+«recurso ausente».
+
+### Lo que no hace
+
+- **No detecta nada en el texto** ni cambia lo que `operones_pao1.tsv`
+  expande. Meter esta base en la detección se midió y no sirve: resuelve 1 o 2
+  de los 103 operones faltantes y agrega cientos de menciones falsas (ver
+  `docs/decisiones.md`).
+- **La pertenencia no es evidencia de una relación.** Que `mexA` esté en
+  `mexAB-oprM` no dice nada sobre quién regula a quién.
+- **El 97 % de las unidades es predicción** (DOOR, Pathway Tools), no
+  operones demostrados.
+
+### Qué unidades cuentan
+
+Las de más de un gen, principales, y las alternativas cuyo nivel no es solo
+predicción. Una alternativa es cualquier subconjunto de otra unidad, sea cual
+sea su evidencia. Excluirlas todas ocultaba 32 unidades con evidencia (31
+conocidas y 1 curada; 11 respaldadas por ODB y las demás por BioCyc o
+PseudoCAP), 20 de ellas dentro de unidades solo predichas. Por ejemplo,
+`rnc-era-recO`, `tolQR` y `bphOP`.
+
+### Pendiente de la decisión 3
+
+Sus fuentes (ODB, BioCyc) podrían estar también en la base curada del
+laboratorio. Hasta que el asesor lo responda, la pertenencia se usa para
+anotar, **no como rasgo del paso 2 evaluado contra esa base**.
+
 ## `palabras_comunes.txt` — 41 entradas
 
 Las superficies que colisionan con palabras inglesas comunes. Alimenta la

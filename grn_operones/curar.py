@@ -13,9 +13,11 @@ Las seis reglas del encargo, y las dos desviaciones que hubo que hacer:
    (RefSeq, KEGG, UniProt) en vez de una sola.
 2. **Validar adyacencia.** Los locus tags de PAO1 son consecutivos por
    construccion, asi que la adyacencia se comprueba sobre su numeracion. La
-   **hebra** solo se comprueba si el GFF de RefSeq esta en el cache local: no
-   esta versionado, asi que en un clon limpio no existe. Cuando falta, la
-   fila queda marcada `hebra_no_verificada` en vez de darse por buena.
+   **hebra** sale del GFF de RefSeq: primero el caché local (ignorado por
+   git) y, si falta, la copia versionada en
+   `construir_diccionario/diccionario_independiente/cache/`. Solo si faltan
+   las dos la fila queda marcada `hebra_no_verificada` en vez de darse por
+   buena.
 3. **Deduplicar** por conjunto ordenado de locus tags. Los subconjuntos y los
    solapamientos **no se fusionan**: se conservan como unidades alternativas
    marcadas, porque un operon puede transcribirse entero o en parte y las dos
@@ -71,8 +73,10 @@ RUTA_GENES = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "grn_bronce", "recursos", "genes_pao1.tsv")
 
-# El GFF vive en el cache del constructor del diccionario y NO esta
-# versionado: en un clon limpio no existe, y por eso la hebra es opcional.
+# El GFF de RefSeq, en orden de preferencia: el caché local del constructor
+# del diccionario (ignorado por git) y la copia versionada del diccionario
+# independiente, que sí viene en un clon limpio. La hebra sigue siendo
+# opcional para el caso de que falten las dos.
 RUTAS_GFF = (
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                  "datos_etapa2", "cache_diccionario", "refseq_gff.gz"),
@@ -297,7 +301,7 @@ def nivel_de_fila(fila, fuente):
     | algun `EV-EXP*`    | si   | conocido |                 |    32 |
     | algun `EV-EXP*`    | no   | curado   |                 |     7 |
     | solo `EV-COMP*`    | si   | predicho | `comp_con_cita` |    16 |
-    | solo `EV-COMP*`    | no   | predicho |                 | 3 702 |
+    | solo `EV-COMP*`    | no   | predicho |                 | 3 689 |
     | ninguno            | -    | predicho | `sin_evidencia` |    30 |
 
     **Un `EV-COMP*` con cita no asciende a conocido**, y esa es la decision
@@ -636,7 +640,8 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
         _db.guardar_silver(con, {
             "clave_genes": clave,
             # El nombre que la fuente le da al operon, si alguna lo da.
-            # ODB y PGD lo traen en `name` (`mmsAB`, `metG-PA3483`); BioCyc no.
+            # ODB y PGD lo traen en `name` (`mmsAB`, `metG-PA3483`). BioCyc
+            # tiene `common-name` en 94 TUs, pero su parser no lo toma.
             "nombre": _nombre_de(filas),
             "locus_tags": "|".join(locus),
             "n_genes": len(locus),

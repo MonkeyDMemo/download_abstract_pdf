@@ -167,6 +167,13 @@ def ultima_corrida(con, paso="1"):
     return fila["id"] if fila else None
 
 
+def corrida(con, corrida_id):
+    """La fila de una corrida por su id, o None. Para reexportarla sin
+    volver a identificar."""
+    return con.execute("SELECT * FROM corridas WHERE id = ?",
+                       (corrida_id,)).fetchone()
+
+
 def listar_corridas(con, limite=20):
     return con.execute(
         "SELECT * FROM corridas ORDER BY id DESC LIMIT ?", (limite,)).fetchall()

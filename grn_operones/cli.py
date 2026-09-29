@@ -5,7 +5,9 @@
     python -m grn_operones.cli reparsear [--fuente ...]
     python -m grn_operones.cli curar
     python -m grn_operones.cli exportar
-    python -m grn_operones.cli catalogo     # el catálogo maestro, para leer
+    python -m grn_operones.cli catalogo [--paso1]   # catálogo maestro; con
+                                                    # --paso1, también el
+                                                    # recurso del bronce
     python -m grn_operones.cli estado
 
 Parsea, llama a la orquestacion y formatea. Sin logica de negocio y sin SQL:
@@ -319,6 +321,17 @@ def cmd_catalogo(args):
     exportar.escribir_texto(base + "_leame.txt", leame, log)
     exportar.escribir_xlsx_catalogo(base + ".xlsx", catalogo, fuentes_filas,
                                     leame, log)
+    if args.paso1:
+        # El recurso que lee el paso 1 para decir a qué operones pertenecen
+        # los genes de cada oración. Ruta y encabezado son de `grn_bronce`,
+        # que es quien lo consume; aquí solo se escribe.
+        log("")
+        log("Recurso del paso 1 (no va a git: lleva datos de BioCyc, cuya "
+            "licencia restringe redistribuirlos):")
+        exportar.escribir_tsv(
+            _operones_paso1.RUTA_BASE, _operones_paso1.COLUMNAS_BASE,
+            exportar.filas_recurso_paso1(catalogo,
+                                         _operones_paso1.COLUMNAS_BASE), log)
     log("")
     for linea in leame:
         log("  %s" % linea if linea else "")
@@ -407,6 +420,11 @@ def main():
         "catalogo",
         help="El catálogo maestro para leer: una fila por operón, con sus "
              "fuentes, IDs, evidencia y promotor. CSV, léame y .xlsx.")
+    ca.add_argument("--paso1", action="store_true",
+                    help="Escribir además grn_bronce/recursos/"
+                         "operones_base.tsv, el recurso con el que el bronce "
+                         "dice a qué operones pertenecen los genes de cada "
+                         "oración.")
     ca.set_defaults(func=cmd_catalogo)
 
     es = sub.add_parser("estado", help="Que hay descargado, en bronce y curado.")
