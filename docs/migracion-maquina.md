@@ -101,8 +101,17 @@ instalación muere con `WinError 206: el nombre del archivo o la extensión es
 demasiado largo`. Un venv dentro del proyecto deja la ruta en 79 caracteres y
 entra sin problema, **sin permisos de administrador**.
 
-**Las 867 pruebas tienen que pasar antes de tocar nada.** Ninguna necesita
+**Las pruebas tienen que pasar antes de tocar nada.** Ninguna necesita
 `torch` ni red: si alguna falla, el problema es de la copia, no del código.
+
+> **Dos excepciones conocidas (28-sep-2026), puntos 36 y 37 del PLAN.** Con
+> torch y transformers instalados en el venv, como pide este documento, fallan
+> dos pruebas de `test_clasificar` por un defecto de la prueba, no de la
+> copia. Y si `etapa2/para_colab/` no trae los `entity_marked_*.jsonl` del
+> asesor, `test_extraer_pares` da un error de `setUpClass` (sus cinco pruebas
+> no corren), dos errores y una falla, y `etapa2` corre 519 y no 524. Las
+> cuentas de arriba (349 y 518) son de cuando se escribió; al 28-sep son 633
+> y 524.
 
 ### Versiones
 

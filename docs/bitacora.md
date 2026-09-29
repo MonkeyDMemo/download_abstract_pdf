@@ -8,6 +8,140 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 28 de septiembre de 2026 — lo crítico del paso 1: dependencias, idempotencia y huellas
+
+Se cerraron los puntos 3, 4 y 5 de la tabla «Crítico» del PLAN. El punto 1
+resultó ya resuelto en código.
+
+- **Punto 3, `pyproject.toml`.** Declara los extras `[bronce]` (openpyxl,
+  PyMuPDF) y `[operones]` (openpyxl). El núcleo sigue sin dependencias. Una
+  instalación en seco sin red, sin resolver dependencias, lo valida. Pide
+  setuptools 64 o más, la primera con el `pip install -e` de PEP 660. PyMuPDF
+  está aprobado pero no instalado en ningún entorno, porque el bronce no
+  procesa PDF; sin red, `.[bronce]` no se instala hasta que haya de dónde
+  bajarlo.
+- **Punto 4, CLAUDE.md.** Decía que toda corrida «procesa solo las unidades
+  sin resultado», y el bronce no lo hace. Es idempotente por corrida: si hay
+  una corrida `ok` con el mismo método, versión y corpus no hace nada, y si
+  no, reprocesa todo. Ahora lo dice así, y la regla por unidad queda como meta
+  (punto 21).
+- **Punto 5, huellas en `parametros`.** Cada corrida nueva guarda la huella de
+  los siete recursos que lee la identificación:
+  - `genes_pao1.tsv` y `operones_pao1.tsv`;
+  - los cuatro vocabularios;
+  - `secciones.tsv`.
+
+  También guarda las clases de sección que quedan fuera y cuántas etiquetas
+  caen en ellas (61); cuáles son lo fija la huella de `secciones.tsv`. La
+  huella normaliza CRLF a LF (`procedencia.huella_texto`), para que un
+  checkout viejo de Windows no parezca otra versión.
+- **El aviso.** Si hay una corrida `ok` y los recursos cambiaron sin subir
+  `VERSION`, `exportar` lo dice. Con la corrida 4, que es anterior al sellado,
+  dice que no registró huellas y que no se puede saber.
+- **Punto 1, la guarda.** Ya protegía la base curada y su carpeta, sin
+  distinguir mayúsculas y entrando en subcarpetas. Para comandos rige la
+  regla de CLAUDE.md.
+
+**Lo que encontraron tres revisiones adversariales del cambio**, y ya está
+corregido. Los dos primeros defectos venían de antes, pero el aviso nuevo los
+volvía peligrosos, porque recomienda justo `--rehacer`:
+
+- **`--rehacer` borraba la corrida anterior antes de identificar.** Si la
+  nueva se cortaba, la vieja quedaba `ok` y vacía, y el siguiente `exportar`
+  la daba por hecha. Ahora se borra solo cuando la nueva termina bien, y queda
+  marcada `'rehecha'`, así que `exportar --corrida N` ya no la vuelca vacía.
+- **Terminar bien no bastaba.** `identificar` atrapa el error de cada
+  documento y sigue, así que una corrida con todos sus documentos en error
+  también cierra `ok`, y `--rehacer` cambiaba una corrida completa por una
+  vacía. Ahora, si algún documento falló, la anterior se conserva entera y
+  `exportar` lo avisa; la nueva es la vigente, como cualquier corrida. La
+  primera `--rehacer` que termina limpia borra todas las anteriores del mismo
+  método, versión y corpus, no solo la inmediata: con un documento que falla
+  siempre, cada intento sumaba una copia entera del corpus que nada volvía a
+  ver.
+- **Con `--corpus ""` (todos los documentos), cualquier corrida contaba como
+  hecha.** `corrida_previa` omitía el filtro de corpus cuando era `None`, y
+  `--rehacer` podía borrar la de otro corpus. El `exportar` sin flag usa
+  `v0-agosto` y no estaba afectado. Ahora compara con `IS`, y «todos los
+  documentos» es un corpus más.
+- El resumen mostraba dos huellas distintas del mismo `operones_pao1.tsv` en
+  un checkout con CRLF. Ahora las dos filas usan `huella_texto`.
+- `setuptools>=61` admitía versiones sin el `pip install -e` de PEP 660.
+- El comodín `recursos/*.tsv` de `pyproject.toml` habría metido
+  `operones_base.tsv`, con datos de BioCyc, en cualquier wheel construido
+  donde existe. Ahora se excluye por nombre.
+
+Las pruebas nuevas están en `grn_bronce/test_corridas.py`. Con el código
+anterior fallan nueve de las diez; la décima es una guarda del caso simétrico,
+que ya funcionaba porque el `corpus_id = ?` viejo nunca empataba con NULL.
+Además se comprobó con tres mutantes: si se quita la guarda de documentos
+fallidos, si el borrado se mueve antes del volcado, o si solo se borra la
+inmediata anterior, falla al menos una.
+
+Queda un hueco anterior, sin tocar: `pares --corrida N` y `operones --corrida
+N` no miran si la corrida existe ni su estatus. Con un id que no existe, o con
+una corrida rehecha, escriben un CSV vacío sin avisar de la causa: `pares` da
+el resumen en ceros y `operones` lo atribuye a una corrida de la versión 1. Y
+`--corrida 0` cae en la última corrida `ok`, porque leen `args.corrida or` en
+vez de `is not None`, como ya hace `exportar`.
+
+**Pendiente, sin tocar: dos fallas de `etapa2` que no son de esta ronda**
+(puntos 36 y 37 del PLAN). `etapa2` no tiene cambios; las dos se reproducen en
+una copia limpia de HEAD.
+
+- **Punto 36. Con torch importable, dos pruebas de `test_clasificar` fallan.**
+  Son `test_el_orden_de_las_etiquetas_se_imprime_antes_de_correr` y
+  `test_reanudar_adopta_una_salida_ya_completa`, de `PruebasMainSinTorch`,
+  con `ValueError: Couldn't instantiate the backend tokenizer`. Ocurre en el
+  `.venv` (torch 2.13 CPU, transformers 5.16.1).
+  - Las dos esperan que `main()` muera en `import torch` y solo aceptan
+    `ImportError` o `SystemExit`. Donde torch sí se importa, `main()` sigue
+    hasta `cargar_modelo` con el checkpoint falso de la prueba: un
+    `config.json` sin `model_type`, un `tokenizer_config.json` sin
+    `tokenizer_class` y pesos vacíos.
+  - Transformers 5 cae entonces a un tokenizador genérico que no lee
+    `vocab.txt`. Con cualquier versión fallaría, a más tardar al cargar los
+    pesos vacíos: no es una regresión de versión. Las pruebas nunca pudieron
+    pasar donde torch se importa, y fallan desde que existe el `.venv`
+    (27-ago); la bitácora del 11-sep ya las llamaba «los 2 errores de
+    siempre».
+  - Con el Python del sistema pasan porque ahí torch está roto: es la
+    instalación que murió por `WinError 206` el 27-ago
+    (`migracion-maquina.md`), sin `torchgen` y sin metadatos (`pip list`
+    dice `torch None`).
+  - **No afecta la clasificación real.** Un checkpoint guardado con
+    `save_pretrained` trae `model_type`, y `modelo_limpio_run22`, el que se
+    reentrenó en Colab sobre la partición limpia, carga con esas mismas
+    versiones (`migracion-maquina.md`).
+  - Arreglo recomendado, de prueba y por lo tanto permitido en `etapa2`
+    congelada: envolver `C.main()` de `correr()` en
+    `mock.patch.dict(sys.modules, {"torch": None, "transformers": None})`.
+    Se probó en una copia: las 95 pruebas del módulo pasan con los dos
+    Pythons. Saltarlas con `skipIf` las perdería justo donde torch existe.
+- **Punto 37. En un clon limpio, `test_extraer_pares` falla.** Lee los
+  `entity_marked_*.jsonl` del asesor en `etapa2/para_colab/`, que está en
+  `.gitignore`, y no se salta si faltan: 1 error de `setUpClass` (sus cinco
+  pruebas no corren, y `etapa2` cuenta 519 en vez de 524), 2 errores y 1
+  falla, con cualquier Python.
+- **Las guías de máquina dicen lo contrario.** `traspaso-maquina-nueva.md`
+  instala torch y transformers, pone los `.jsonl` solo en la raíz (donde los
+  lee `particionar.py`, no donde los busca la prueba) y pide parar si una
+  prueba falla; `migracion-maquina.md` dice que si alguna falla «el
+  problema es de la copia». Hoy las dos frenarían una máquina sana. Ahora
+  llevan una nota que apunta a estos dos puntos.
+
+Suites al cerrar: raíz, 633 OK (1 omitida) con los dos Pythons; `etapa2`, 524
+OK (3 omitidas) con el del sistema y 2 errores, los del punto 36, con el del
+`.venv`.
+
+Del bloque crítico quedan el punto 2, la nomenclatura de las dos referencias
+en los documentos, y los puntos 36 y 37 de `etapa2`, descritos arriba.
+
+Siguiente: la versión 5 del bronce, con el disparador dominante (punto 18) y
+la bandera de autorregulación (punto 16), en una sola corrida nueva.
+
+---
+
 ## 27 de septiembre de 2026 (noche) — el bronce dice qué operones tiene cada oración
 
 Se pidió integrar la base de operones al pipeline para ver qué operones tiene

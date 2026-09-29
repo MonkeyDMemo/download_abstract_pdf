@@ -1,6 +1,6 @@
 # PLAN — Pipeline GRN · *Pseudomonas aeruginosa*
 
-Actualizado: 11-sep-2026. Documento guía del repositorio.
+Actualizado: 11-sep-2026; la tabla 3.1 (crítico), al 28-sep-2026. Documento guía del repositorio.
 Tres registros separados a propósito: lo **acordado** con el asesor es la fuente de verdad; lo **construido** es lo que el repositorio demuestra hoy; lo **pendiente** es la resta de los dos primeros. Nada se mueve de registro sin evidencia.
 
 Numeración: paso 0 extracción · paso 1 identificación (bronce) · paso 2 verificación · paso 3 consolidación.
@@ -116,13 +116,15 @@ La regla b) mide si el paso 1 recupera la evidencia citada; la a) mide lo que el
 
 ### 3.1 Crítico — integridad y reproducibilidad
 
-| # | Qué | Por qué |
-|---|---|---|
-| 1 | Extender la lista blanca de `test_contaminacion.py` a `GRN_experimental` y `datos/validacion` | La regla de confidencialidad frena las herramientas de Claude, no los scripts. `test_contaminacion` protege `oro_pseudomonas` y `auditoria_signo` y vigila `etapa2`, `grn_bronce` y `grn_comun`; falta cubrir `GRN_experimental` y `datos/validacion`, y tiene dos límites: distingue mayúsculas y no revisa subcarpetas. Ampliar también a comandos: un `grep` sobre la raíz recorre `datos/validacion`. Negar `Bash(grep *)` sobre rutas de datos o exigir `--exclude-dir=datos` |
-| 2 | Nomenclatura de las dos referencias en repositorio y documentos | Toda cifra debe declarar contra cuál se midió |
-| 3 | Crear `pyproject.toml` con el extra `[bronce]` | Un clon limpio no reproduce la exportación a Excel; openpyxl está instalado a mano |
-| 4 | Alinear `CLAUDE.md` con la realidad del bronce (dice idempotente; `identificar.py` es todo-o-nada) | Documento que gobierna afirmando algo falso |
-| 5 | Registrar en `corridas` las secciones excluidas y la huella de `secciones.tsv` | Si el archivo cambia, la corrida no puede decir con qué regla se hizo |
+| # | Qué | Por qué | Estado |
+|---|---|---|---|
+| 1 | Extender la lista blanca de `test_contaminacion.py` a `GRN_experimental` y `datos/validacion` | La regla de confidencialidad frena las herramientas de Claude, no los scripts. `test_contaminacion` protege `oro_pseudomonas` y `auditoria_signo` y vigila `etapa2`, `grn_bronce` y `grn_comun`; falta cubrir `GRN_experimental` y `datos/validacion`, y tiene dos límites: distingue mayúsculas y no revisa subcarpetas. Ampliar también a comandos: un `grep` sobre la raíz recorre `datos/validacion`. Negar `Bash(grep *)` sobre rutas de datos o exigir `--exclude-dir=datos` | **Hecho en código** (verificado el 28-sep): protege los cuatro nombres, sin distinguir mayúsculas, entra en subcarpetas y vigila también `grn_operones`. Para comandos rige la regla de CLAUDE.md (herramienta `Grep`, no `grep -r`) |
+| 2 | Nomenclatura de las dos referencias en repositorio y documentos | Toda cifra debe declarar contra cuál se midió | Pendiente |
+| 3 | Crear `pyproject.toml` con el extra `[bronce]` | Un clon limpio no reproduce la exportación a Excel; openpyxl está instalado a mano | **Hecho** el 28-sep: extras `[bronce]` (openpyxl, PyMuPDF) y `[operones]` (openpyxl); el núcleo sin dependencias |
+| 4 | Alinear `CLAUDE.md` con la realidad del bronce (dice idempotente; `identificar.py` es todo-o-nada) | Documento que gobierna afirmando algo falso | **Hecho** el 28-sep: CLAUDE.md dice ahora que el bronce es idempotente por corrida, no por unidad, y deja la regla por unidad como meta (punto 21) |
+| 5 | Registrar en `corridas` las secciones excluidas y la huella de `secciones.tsv` | Si el archivo cambia, la corrida no puede decir con qué regla se hizo | **Hecho** el 28-sep: `parametros` guarda la huella de los siete recursos que lee la identificación (diccionario, catálogo de operones, cuatro vocabularios, `secciones.tsv`), las clases fuera y cuántas etiquetas caen en ellas (61; cuáles son lo fija la huella de `secciones.tsv`, que está versionado). Si un recurso cambia sin subir VERSION, `exportar` avisa |
+| 36 | `etapa2/test_clasificar.py`: dos pruebas de `PruebasMainSinTorch` fallan donde torch se importa | Suponen que `import torch` falla y no lo fuerzan: en el `.venv` `main()` sigue hasta cargar un checkpoint falso (sin `model_type`, pesos vacíos) y da `ValueError` del tokenizador. Pasan con el Python del sistema solo porque ahí torch está roto. No afecta la clasificación real. Arreglo de prueba, permitido en `etapa2` congelada: `mock.patch.dict(sys.modules, {"torch": None, "transformers": None})` alrededor de `C.main()` en `correr()`; probado en una copia | Pendiente (diagnosticado el 28-sep; ver bitácora) |
+| 37 | `etapa2/test_extraer_pares.py` falla en un clon limpio | Lee los `entity_marked_*.jsonl` del asesor en `etapa2/para_colab/`, que están en `.gitignore`, y no se salta si faltan (1 error de `setUpClass`, 2 errores, 1 falla). `traspaso-maquina-nueva.md` y `migracion-maquina.md` piden parar si una prueba falla, así que hoy frenan una máquina sana. Arreglo: `skipUnless` con el motivo, y que la guía de traspaso copie los `.jsonl` también a `etapa2/para_colab/` (la comprobación 4 los sigue leyendo de la raíz) | Pendiente (28-sep) |
 
 ### 3.2 Lo que pidió el asesor
 

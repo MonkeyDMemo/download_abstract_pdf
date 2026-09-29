@@ -90,7 +90,8 @@ cualquier particion en la que detecte esa contaminacion. El panorama esta en
 - **`grn_operones/` puede usar openpyxl y nada más**, solo para el `.xlsx`
   opcional del catálogo maestro (aprobado el 27 de septiembre de 2026). Se
   importa dentro de la función, y sin openpyxl el catálogo sale igual en CSV.
-  (Ojo: `pyproject.toml` todavía no existe en el repositorio.)
+  Va en el extra `[operones]`. Se instala con `pip install -e ".[bronce]"` o
+  `".[operones]"` dentro del venv; el núcleo no tiene dependencias.
 
 La excepcion no es una puerta abierta: lo que se apoya en un tercero deja de
 correr donde no se puede instalar. Los CSV son el producto canonico de toda
@@ -366,11 +367,38 @@ Un corpus congelado no cambia: `crear_corpus()` lanza `ValueError` si el mismo
 nombre apunta a otro conjunto.
 
 **Toda corrida de procesamiento registra una fila en `corridas`** (`paso`,
-`metodo`, `version`, `parametros`, `fecha`, `corpus_id`) **antes** de procesar,
-y **procesa solo las unidades sin resultado para su par `(metodo, version)`**.
-Re-ejecutar es seguro.
+`metodo`, `version`, `parametros`, `iniciada_en`, `corpus_id`) **antes** de
+procesar. Lo que varía es a qué nivel es idempotente, y hay que saber cuál
+tiene cada paso:
 
-Dos detalles que ya costaron caro una vez cada uno:
+- **El paso 1 (bronce) es idempotente por corrida, no por unidad.** Si ya hay
+  una corrida `ok` con el mismo `(metodo, version, corpus)`, `exportar` no hace
+  nada. Si no la hay, identifica el corpus entero con una corrida nueva. «Todos
+  los documentos» (`--corpus ""`) es un corpus más: no empata con una corrida
+  sobre un corpus congelado, ni al revés.
+  - Una corrida cortada queda `'corriendo'` con sus filas a medias. Nadie las
+    mezcla, porque todo se lee por `corrida_id`, y la siguiente empieza de
+    cero.
+  - `--rehacer` identifica con una corrida nueva y, **solo si esa termina
+    bien y sin documentos con error**, borra las filas de todas las
+    anteriores `ok` del mismo `(metodo, version, corpus)` y las marca
+    `'rehecha'`. Si la nueva se corta o falla, las anteriores quedan
+    intactas y la última sigue contando como hecha. Si terminó con documentos
+    en error no se borra ninguna y la vigente es la nueva: cada `--rehacer`
+    así suma una copia entera del corpus, hasta el primero que termine
+    limpio.
+    `--corrida N` vuelve a volcar una corrida sin identificar.
+  - Cada corrida guarda en `parametros` la huella de los recursos que leyó
+    (diccionario, catálogo de operones, vocabularios, `secciones.tsv`). Si
+    cambian sin subir `VERSION`, `exportar` lo avisa, porque la corrida vieja
+    ya no refleja los recursos de hoy.
+  - Procesar solo lo pendiente, unidad por unidad, es el punto 21 del PLAN,
+    diferido.
+- **La meta, y la regla para todo paso que procese por unidad:** procesar
+  solo las unidades sin resultado para su par `(metodo, version)`, de modo que
+  re-ejecutar sea seguro.
+
+Dos detalles de esa regla que ya costaron caro una vez cada uno:
 
 - El filtro `(metodo, version)` va en el `ON` del `LEFT JOIN`, **nunca en el
   `WHERE`**: al `WHERE`, las filas caen fuera del join y vuelven a quedar
@@ -452,6 +480,13 @@ python3 -m unittest discover etapa2    # etapa2 no tiene __init__.py
 Son dos comandos, no uno: `etapa2/` no es un paquete, asi que el `discover` de
 la raiz no lo recoge. Los paquetes nuevos si lo son y por eso caen en el
 primero.
+
+Dos fallas de `etapa2` son conocidas y no vienen del codigo que se prueba
+(puntos 36 y 37 del PLAN): con torch importable, como en el `.venv`, fallan dos
+pruebas de `test_clasificar`; y en un clon sin los `entity_marked_*.jsonl` del
+asesor en `etapa2/para_colab/`, `test_extraer_pares` da un error de
+`setUpClass` (sus cinco pruebas no corren, y el total baja de 524 a 519), dos
+errores y una falla. Antes de buscar otra causa, descartar esas dos.
 
 Ninguna prueba toca la red: se inyecta `pruebas.falsos.ClienteFalso`, que
 devuelve XML o JSON fijo y registra cada llamada. Ademas `PruebaSinRed` deja

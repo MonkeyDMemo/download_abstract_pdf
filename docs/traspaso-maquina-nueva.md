@@ -96,6 +96,19 @@ cuenta que decide si vale la pena la GPU.
 
 Cuatro comprobaciones, en orden. Si alguna falla, no sigas.
 
+> **Dos excepciones conocidas (28-sep-2026), puntos 36 y 37 del PLAN.** Con
+> torch instalado, `etapa2` no da `skipped=3`: corre esas tres y **falla en
+> dos pruebas de `test_clasificar`**, por un defecto de la prueba, no de la
+> máquina. Y los `entity_marked_*.jsonl` hacen falta en dos lugares: en la
+> raíz, donde los deja el `tar` y los lee la comprobación 4 (`particionar.py`
+> usa `--entrada .` por omisión), y también en `etapa2/para_colab/`, que el
+> `tar` no trae y es donde los busca `test_extraer_pares`:
+> `mkdir -p etapa2/para_colab && cp entity_marked_*.jsonl etapa2/para_colab/`.
+> Sin esa segunda copia, `test_extraer_pares` da un error de `setUpClass` (sus
+> cinco pruebas no corren), dos errores y una falla, y `etapa2` corre 519 y no
+> 524. Fuera de esos seis renglones de falla, lo de «no sigas» vale igual. Las
+> cuentas de abajo son del 21-ago; al 28-sep son 633 y 524.
+
 ```bash
 # 1. El código está sano: 831 pruebas, menos de 10 segundos
 python -m unittest discover           # → Ran 349 tests, OK
