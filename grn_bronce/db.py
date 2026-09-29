@@ -135,22 +135,43 @@ def cerrar_corrida(con, corrida_id, estatus, error=None,
 
 
 def corrida_previa(con, metodo, version, corpus_id=None):
-    """La ultima corrida terminada bien con ese par, o None.
+    """La ultima corrida terminada bien con ese `(metodo, version, corpus)`, o
+    None.
 
-    Es la base de la idempotencia por `(metodo, version)`: si ya existe, no
-    hay nada nuevo que calcular salvo que se pida rehacer.
+    Es la base de la idempotencia por `(metodo, version, corpus)`: si ya
+    existe, no hay nada nuevo que calcular salvo que se pida rehacer.
 
     **Solo mira corridas con estatus 'ok'.** Una cortada con Ctrl-C queda en
     'corriendo' para siempre y nadie la limpia; contarla como hecha convertiria
     una corrida zombi en un resultado.
+
+    El corpus entra siempre en la comparacion, con `IS` para que `None`
+    (todos los documentos) solo empate con corridas sin corpus. Con `=` y el
+    filtro omitido para `None`, una corrida sobre cualquier corpus contaba
+    como hecha para «todos los documentos», y `--rehacer` borraba la ajena.
     """
-    sql = ("""SELECT * FROM corridas
-               WHERE metodo = ? AND version = ? AND estatus = 'ok'""")
-    params = [metodo, version]
-    if corpus_id is not None:
-        sql += " AND corpus_id = ?"
-        params.append(corpus_id)
-    return con.execute(sql + " ORDER BY id DESC LIMIT 1", params).fetchone()
+    return con.execute(
+        """SELECT * FROM corridas
+            WHERE metodo = ? AND version = ? AND estatus = 'ok'
+              AND corpus_id IS ?
+            ORDER BY id DESC LIMIT 1""",
+        (metodo, version, corpus_id)).fetchone()
+
+
+def corridas_superadas(con, metodo, version, corpus_id, antes_de):
+    """Los ids de las corridas 'ok' con ese `(metodo, version, corpus)`
+    anteriores a `antes_de`.
+
+    No solo la previa: las que `--rehacer` conservo por documentos fallidos
+    tambien estan aqui. `corrida_previa` ya no las devuelve y nada mas las
+    ve, asi que sin esto se quedaban 'ok' para siempre, con todas sus filas.
+    """
+    return [f["id"] for f in con.execute(
+        """SELECT id FROM corridas
+            WHERE metodo = ? AND version = ? AND estatus = 'ok'
+              AND corpus_id IS ? AND id < ?
+            ORDER BY id""",
+        (metodo, version, corpus_id, antes_de))]
 
 
 def ultima_corrida(con, paso="1"):
@@ -249,16 +270,21 @@ def guardar_candidata(con, corrida_id, metodo, unidad_id, c, ids_menciones):
 
 
 def borrar_corrida(con, corrida_id):
-    """Borra las filas del bronce de una corrida, para poder rehacerla.
+    """Borra las filas del bronce de una corrida ya rehecha, y la marca
+    'rehecha'.
 
     En orden inverso a las llaves foraneas, y en una transaccion: quedarse a
-    la mitad dejaria menciones apuntando a unidades que ya no estan.
+    la mitad dejaria menciones apuntando a unidades que ya no estan. La marca
+    va en la misma transaccion porque una corrida 'ok' sin filas se sigue
+    viendo terminada: `--corrida N` la volcaria vacia sin decir nada.
     """
     with con:
         con.execute("DELETE FROM oraciones_candidatas WHERE corrida_id = ?",
                     (corrida_id,))
         con.execute("DELETE FROM menciones WHERE corrida_id = ?", (corrida_id,))
         con.execute("DELETE FROM texto_unidades WHERE corrida_id = ?",
+                    (corrida_id,))
+        con.execute("UPDATE corridas SET estatus = 'rehecha' WHERE id = ?",
                     (corrida_id,))
 
 

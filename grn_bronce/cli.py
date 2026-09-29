@@ -96,12 +96,12 @@ def _exportar(con, args, t0):
         log("Ya hay una corrida terminada con metodo=%s version=%s sobre este "
             "corpus (id %d, %s)." % (identificar.METODO, identificar.VERSION,
                                      previa["id"], previa["iniciada_en"]))
-        log("Es idempotente por (metodo, version). Usa --rehacer para forzar, "
-            "o --corrida %d para volver a volcarla sin identificar."
+        log("Es idempotente por (metodo, version, corpus). Usa --rehacer para "
+            "forzar, o --corrida %d para volver a volcarla sin identificar."
             % previa["id"])
-        # La idempotencia es por (metodo, version): si un recurso cambió sin
-        # subir VERSION, la corrida vieja seguiría contando como hecha con los
-        # recursos de hoy. Se avisa en vez de callar.
+        # La idempotencia es por (metodo, version, corpus): si un recurso
+        # cambió sin subir VERSION, la corrida vieja seguiría contando como
+        # hecha con los recursos de hoy. Se avisa en vez de callar.
         cambiados = identificar.recursos_cambiados(
             json.loads(previa["parametros"] or "{}").get("recursos"), huellas)
         if cambiados is None:
@@ -113,9 +113,13 @@ def _exportar(con, args, t0):
                 "refleja los recursos de hoy: sube VERSION en identificar.py, "
                 "o usa --rehacer." % (previa["id"], ", ".join(cambiados)))
         return 0
+    # Rehacer borra la corrida anterior solo cuando la nueva terminó bien.
+    # Borrarla antes dejaba, si la nueva se cortaba, una corrida 'ok' vacía
+    # que el siguiente `exportar` daba por hecha. Las dos conviven sin
+    # estorbarse: todo se lee por corrida_id.
     if previa is not None:
-        log("Rehaciendo: se borran las filas de la corrida %d." % previa["id"])
-        db.borrar_corrida(con, previa["id"])
+        log("Rehaciendo: la corrida %d se conserva hasta que esta termine "
+            "bien." % previa["id"])
 
     log("Cargando el diccionario y los vocabularios...")
     lex = identificar.cargar_lexico()
@@ -163,6 +167,23 @@ def _exportar(con, args, t0):
         time.time() - t0, faltan)
     db.cerrar_corrida(con, corrida_id, "ok", None, len(documentos),
                       len(candidatas))
+    # Terminar 'ok' no basta: `identificar` atrapa el error de cada documento
+    # y sigue, así que una corrida con todos sus documentos en error también
+    # cierra 'ok'. Con algún documento fallido la anterior se conserva entera,
+    # para compararlas; la nueva es la vigente, como cualquier corrida.
+    if previa is not None and cuenta["documentos_con_error"]:
+        log("AVISO: %d documentos fallaron en la corrida %d; la corrida %d se "
+            "conserva entera para compararlas."
+            % (cuenta["documentos_con_error"], corrida_id, previa["id"]))
+    elif previa is not None:
+        # Todas las anteriores con la misma clave, no solo la previa: las que
+        # se conservaron por documentos fallidos también quedan superadas.
+        for vieja in db.corridas_superadas(con, identificar.METODO,
+                                           identificar.VERSION, corpus_id,
+                                           corrida_id):
+            db.borrar_corrida(con, vieja)
+            log("Corrida %d rehecha por la %d: se borraron sus filas."
+                % (vieja, corrida_id))
     _mostrar(resumen, candidatas, cuenta, conteos, hubo_xlsx, faltan)
     return 0
 
@@ -348,8 +369,11 @@ def _armar_resumen(c, cuenta, corpus, fila_corrida, segundos, faltan,
             valor = ("recurso ausente (%s): operones_en_oracion solo trae los "
                      "operones nombrados" % os.path.basename(ruta))
         else:
+            # `huella_texto`, la misma que la fila de recursos registrados:
+            # con `huella` a secas, un checkout con CRLF mostraba dos huellas
+            # distintas del mismo archivo en la misma hoja.
             valor = "%s, huella %s, %d %s" % (
-                os.path.basename(ruta), procedencia.huella(ruta),
+                os.path.basename(ruta), procedencia.huella_texto(ruta),
                 filas_recurso, unidad)
         filas.append((concepto, valor))
     filas += [
@@ -600,7 +624,10 @@ def main():
                     help="Corpus congelado. Cadena vacia = todos.")
     ex.add_argument("--datos", help="Raiz de datos; gana sobre GRN_DATOS.")
     ex.add_argument("--rehacer", action="store_true",
-                    help="Rehacer aunque ya exista una corrida igual.")
+                    help="Rehacer aunque ya exista una corrida igual. Las "
+                         "anteriores del mismo corpus se borran solo si la "
+                         "nueva termina bien y sin documentos con error; si "
+                         "no, se conservan todas.")
     ex.add_argument("--corrida", type=int, default=None,
                     help="Volcar esa corrida sin volver a identificar: sirve "
                          "para anotarla con recursos nuevos (la pertenencia "
