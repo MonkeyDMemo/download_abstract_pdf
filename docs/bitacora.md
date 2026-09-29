@@ -134,6 +134,9 @@ Suites al cerrar: raíz, 633 OK (1 omitida) con los dos Pythons; `etapa2`, 524
 OK (3 omitidas) con el del sistema y 2 errores, los del punto 36, con el del
 `.venv`.
 
+Todos los pendientes del proyecto quedaron juntos, con su fuente y comprobados
+contra el código, en [`pendientes.md`](pendientes.md): 95 en nueve secciones.
+
 Del bloque crítico quedan el punto 2, la nomenclatura de las dos referencias
 en los documentos, y los puntos 36 y 37 de `etapa2`, descritos arriba.
 

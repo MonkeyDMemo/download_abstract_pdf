@@ -114,6 +114,9 @@ La regla b) mide si el paso 1 recupera la evidencia citada; la a) mide lo que el
 
 ## 3. Lo que falta hacer
 
+Lo que está abierto en todo el proyecto, no solo en estas tablas, está junto y
+con sus fuentes en [`docs/pendientes.md`](docs/pendientes.md), al 28-sep-2026.
+
 ### 3.1 Crítico — integridad y reproducibilidad
 
 | # | Qué | Por qué | Estado |
