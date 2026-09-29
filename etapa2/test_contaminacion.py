@@ -58,7 +58,17 @@ RAIZ = os.path.dirname(DIRECTORIO)
 # `grn_bronce/` la prueba dejaria de verlos, y el guardian se debilitaria sin
 # que nada avisara: exactamente el modo de fallo que vino a impedir. Cualquier
 # paquete nuevo que produzca filas del pipeline se agrega aqui.
-VIGILADOS = ("etapa2", "grn_bronce", "grn_comun")
+# `grn_operones` entra el 27-sep-2026: escribe `operones_base.tsv`, que el
+# bronce lee para decir a que operones pertenecen los genes de cada oracion.
+VIGILADOS = ("etapa2", "grn_bronce", "grn_comun", "grn_operones")
+
+# Donde viven los scripts de DEL_PIPELINE, que es un subconjunto de VIGILADOS
+# a proposito. `grn_operones` se escanea igual que los demas, pero no aloja
+# scripts del pipeline, y tiene un `red.py` propio (su cliente HTTP): si
+# `_ruta_de` lo buscara ahi, un `etapa2/red.py` renombrado o movido se daria
+# por encontrado con el archivo equivocado, y la prueba dejaria de vigilarlo
+# sin avisar.
+DONDE_VIVE_EL_PIPELINE = ("etapa2", "grn_bronce", "grn_comun")
 
 # Los nombres que no se pueden teclear, cada uno con la expresion que lo
 # atrapa. Sin distinguir mayusculas: `ORO_PSEUDOMONAS` como constante o
@@ -126,9 +136,9 @@ def _ruta_de(nombre):
 
     Los modulos se estan mudando de `etapa2/` a `grn_bronce/`; esta prueba no
     tiene por que enterarse de cada paso de esa mudanza, solo de que el archivo
-    siga existiendo en alguno de los paquetes vigilados.
+    siga existiendo en alguno de los paquetes donde vive el pipeline.
     """
-    for paquete in VIGILADOS:
+    for paquete in DONDE_VIVE_EL_PIPELINE:
         ruta = os.path.join(RAIZ, paquete, nombre)
         if os.path.exists(ruta):
             return ruta
