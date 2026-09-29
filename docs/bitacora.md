@@ -8,6 +8,70 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 27 de septiembre de 2026 (noche) — el bronce dice qué operones tiene cada oración
+
+Se pidió integrar la base de operones al pipeline para ver qué operones tiene
+cada oración. **Antes se midió meterla al detector del paso 1, y no sirve**:
+- sumar los operones de literatura resuelve 1 de los 103 faltantes y agrega
+  208 menciones casi todas falsas;
+- sumar todo lo que tiene nombre se come 343 menciones de genes y proteínas;
+- reemplazar el catálogo pierde hasta 4 554 menciones.
+
+La tabla completa está en `decisiones.md`, «La base de operones anota el
+bronce, no lo detecta».
+
+Lo que se hizo es **anotar sin tocar la detección**. Las candidatas ganan
+`hay_operon` y `operones_en_oracion`: los operones nombrados más aquellos a
+los que pertenecen sus genes, según `grn_bronce/recursos/operones_base.tsv`.
+Ese recurso nuevo lo escribe `python -m grn_operones.cli catalogo --paso1`.
+**No va a git**, decidido el 28-sep: lleva unidades de BioCyc, cuya licencia
+restringe redistribuir los datos, y el repositorio es público. Cada máquina lo
+genera, y el resumen del bronce guarda su huella.
+
+`python -m grn_bronce.cli exportar --corrida 4` reexporta la corrida 4 **sin
+volver a identificar**:
+
+| | corrida 4 (17-sep) | reexportación (27-sep) |
+|---|---|---|
+| candidatas | 29 659 | 29 659 |
+| 28 columnas originales | — | idénticas en todas las filas |
+| menciones / de operón | 495 382 / 7 136 | igual |
+| normalización a locus tag | 95.1 % | 95.1 % |
+| candidatas con algún operón | 3 603 (nombrado) | **23 445** (nombrado o por pertenencia) |
+
+La fila de la corrida 4 no cambió y no se creó corrida. `VERSION` no sube,
+porque ninguna fila de la base cambió. El resumen guarda la huella de
+`operones_base.tsv` (`f399bd89da7d558d`). Las 12 filas que solo existen al
+identificar dicen «n/d»; la duración sale de las fechas de la corrida.
+
+Los archivos del bronce ahora llevan la corrida en el nombre
+(`bronce_identificacion_corrida4_20260927_*`). Así se perdió la corrida 3: dos
+volcados del mismo día se pisaron.
+
+`grn_operones` entra a la guarda de contaminación (`VIGILADOS`), como pide su
+regla para todo paquete que produce filas del pipeline.
+
+Documentación nueva: **`docs/catalogo-operones.md`**, que cuenta cómo se hizo
+el catálogo fuente por fuente (pseudomonas.com a detalle), qué se tomó y qué
+no, el modelo y el diccionario de datos.
+
+Al escribirla salieron textos que había que corregir:
+- «BioCyc no nombra» era falso: 94 TUs traen `common-name` y el parser no lo
+  toma (queda pendiente);
+- ODB son 9 479 filas de datos, no 9 480;
+- el archivo de CDBProm se bajó del sitio del IIMAS, no lo entregó el asesor.
+
+**Pendientes:**
+1. Decisión 3: la pertenencia no se usa como rasgo del paso 2 evaluado contra
+   la base curada hasta saber si esta usó ODB o BioCyc.
+2. Tomar el `common-name` de BioCyc.
+3. El plan de scispaCy se analizó y no se implementa: tiene seis bloqueantes.
+   Entre ellos, métricas imposibles, un DDL que rompe `borrar_corrida`, y que
+   scispaCy 0.5.4 no instala en Python 3.12. El análisis quedó en la
+   conversación del 27-sep.
+
+---
+
 ## 27 de septiembre de 2026 (tarde) — el catálogo maestro de operones
 
 Con las cuatro fuentes dentro, se pidió un solo catálogo maestro. Se decidió

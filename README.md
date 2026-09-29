@@ -281,7 +281,7 @@ pidió el asesor, con dos papeles distintos:
 ```bash
 python3 -m grn_operones.cli extraer --fuente pgd     # o odb, biocyc; cdbprom con --archivo
 python3 -m grn_operones.cli curar                    # normaliza, valida y deduplica
-python3 -m grn_operones.cli catalogo                 # el catálogo maestro para leer
+python3 -m grn_operones.cli catalogo [--paso1]       # el catálogo maestro para leer
 python3 -m grn_operones.cli estado
 ```
 
@@ -290,8 +290,23 @@ referencia: un `.csv`, su hoja de fuentes, un léame y un `.xlsx` si openpyxl
 está instalado. Trae una fila por operón con sus genes, su evidencia, el ID que
 le da cada fuente y el promotor. Antes de citar cifras, lee su léame: la
 mayor parte del catálogo es predicción. `exportar` da la versión técnica
-(silver, conflictos y la vista de PGD). Por qué está hecho así:
-`docs/CONTEXTO_OPERONES.md` y las secciones de operones de `docs/decisiones.md`.
+(silver, conflictos y la vista de PGD).
+
+Con `--paso1` escribe además `grn_bronce/recursos/operones_base.tsv`. Con ese
+archivo, las oraciones candidatas del bronce dicen **si tienen operones y
+cuáles**: los que nombran más aquellos a los que pertenecen sus genes
+(columnas `hay_operon` y `operones_en_oracion`). No cambia lo que el bronce
+detecta. El archivo no va a git, porque lleva datos de BioCyc: cada máquina
+lo genera. Para volcar una corrida ya hecha con esas columnas, sin volver a
+identificar:
+
+```bash
+python3 -m grn_bronce.cli exportar --corrida 4
+```
+
+Cómo se hizo el catálogo, fuente por fuente, con su diccionario de datos:
+`docs/catalogo-operones.md`. Por qué está hecho así: las secciones de operones
+de `docs/decisiones.md`.
 
 ## Pruebas
 
@@ -336,6 +351,7 @@ salidas/               exportaciones CSV y JSONL (fuera del repositorio)
 | `docs/hallazgos.md` | los hechos medidos, con su medición y la fecha |
 | `docs/decisiones.md` | las decisiones de diseño y por qué se tomaron así |
 | `docs/CONTEXTO_OPERONES.md` | el encargo de la base de operones: fuentes, restricciones y reglas de curación |
+| `docs/catalogo-operones.md` | **cómo se hizo el catálogo de operones**: cada fuente, qué se tomó y qué no, el modelo y el diccionario de datos |
 | `docs/traspaso-maquina-nueva.md` | **cómo levantar el proyecto en otra computadora**: qué copiar, qué instalar y cómo comprobarlo |
 | `docs/traspaso-etapa-2.md` | qué formato tienen los datos que esta etapa entrega |
 | `docs/ficha-modelo-bert.md` | el modelo de clasificación heredado, auditado |

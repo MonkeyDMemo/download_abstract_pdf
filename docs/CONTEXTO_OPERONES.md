@@ -1,5 +1,9 @@
 # Contexto: Base de operones de P. aeruginosa PAO1
 
+> Este es el encargo original. Cómo se hizo finalmente cada fuente, qué se
+> tomó y qué no, y el diccionario de datos están en
+> [`catalogo-operones.md`](catalogo-operones.md).
+
 ## Proyecto
 
 Pipeline de inferencia de una red de regulacion genica (GRN) para
@@ -34,7 +38,7 @@ genoma de referencia NC_002516.2, locus tags `PA0001`-`PA5570`.
 | ODB v4 | Operones conocidos, paginados | Literatura, con referencia | Paginacion HTTP de `/known?species=208964&p=N`; el sitio tambien ofrece descarga masiva |
 | BioCyc | Unidades transcripcionales (TU) | Curada + prediccion Pathway Tools, con evidence codes | API oficial (`websvc.biocyc.org`, consultas BioVelo), requiere cuenta |
 | Pseudomonas.com | Operones por gen | Predicción DOOR + literatura PseudoCAP | El sitio no tiene bulk de operones y está tras Cloudflare. Entra la exportación de su curador, publicada por el laboratorio Greene (`fuentes.URL_PGD`, foto 2021-07-19) |
-| CDBProm | Promotores predichos (XGBoost) | Prediccion | Volcado solicitado al asesor |
+| CDBProm | Promotores predichos (XGBoost) | Prediccion | Descarga por organismo en el sitio del IIMAS, bajada a mano el 18-sep e ingerida con `--archivo` (se pensaba pedir al asesor) |
 
 Nota metodológica, corregida el 27-sep-2026: PGD predice con DOOR y BioCyc
 con Pathway Tools. Son motores distintos y cuentan como fuentes separadas.

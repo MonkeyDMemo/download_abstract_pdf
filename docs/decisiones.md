@@ -1108,7 +1108,69 @@ pgd` vuelve a leer el crudo desde disco, sin red y comprobando la huella.
 - Contar la literatura por PMID único, para que dos fuentes que citan el mismo
   artículo no cuenten como dos respaldos.
 - Pedir a PGD la tabla del release vigente, con permiso escrito.
-- `es_adyacente` ignora el sufijo `.N`: 10 clusters de ARN salen como no
-  adyacentes aunque lo sean.
+- `es_adyacente` ignora el sufijo `.N`, así que `PA0668.1|PA0668.2` cuenta
+  como paso 0 y sale no adyacente. 38 de los 55 operones marcados como no
+  adyacentes tienen algún locus `.N`; cuántos son falsos positivos no se ha
+  revisado uno por uno.
 - Un `--archivo` con una página de desafío guardada deja a PGD sin operones
   hasta el siguiente `extraer --fuente pgd`, que la rehace.
+
+## La base de operones anota el bronce, no lo detecta
+
+Con ODB, BioCyc y PGD dentro de `grn_operones`, lo natural parecía meterla
+al paso 1 y volver a correr el bronce. Se midió antes de hacerlo (27-sep-2026),
+simulando cada variante contra las 7 136 menciones de operón de la corrida 4,
+con el `lexico` real cargado en memoria:
+
+| variante | faltantes resueltos (de 103) | efecto en el corpus |
+|---|---|---|
+| sumar los 71 operones con nombre de literatura | 1 (`exsCBA`, 7 menciones) | +208 menciones nuevas, casi todas falsas: `psl` (el polisacárido Psl) 155, `amidase` (sustantivo común) 22, `ars` («ARs») 8 |
+| sumar las 1 200 unidades con nombre | 2 | +356 menciones que **se comen 343 menciones de genes y proteínas**: «CbrA-CbrB» pasa a ser un operón y el paso 2 pierde regulador y blanco |
+| reemplazar `operones_pao1.tsv` | 1-2 | se pierden entre 3 251 y 4 554 de las 6 689 menciones que hoy se resuelven (MexXY, CbrAB, AmgRS…) |
+
+Hay dos razones de fondo:
+- **Los faltantes casi no son operones.** Los mayores de los 103 (exoSTY,
+  rsmZY, phzMS, lasRI, cyaAB) son genes separados en el genoma que el texto
+  abrevia juntos. Solo 3 de los 103 tienen su conjunto exacto en la base.
+- **Los nombres de la base no están en el texto.** O ya están en el catálogo
+  del paso 1, o son uniones sintéticas de DOOR (`PA0006-lptA`) que nadie
+  escribe.
+
+Además el detector está atado por tres cosas:
+- la regla §6.3 del contrato, que solo autoriza expandir con la tabla
+  derivada del diccionario;
+- la copia congelada de `etapa2/operones_pao1.tsv`;
+- 41 nombres de la base iguales al nombre de un gen (`exoT`, `mexR`), que
+  convertirían todas sus menciones en «operón».
+
+**Lo que se hizo en su lugar: anotar al exportar, sin tocar la detección.**
+Cada oración candidata dice si tiene operones y cuáles:
+- **`hay_operon`** (si/no);
+- **`operones_en_oracion`**: los que nombra más aquellos a los que pertenecen
+  sus genes según la base (`grn_bronce/recursos/operones_base.tsv`), sin
+  repetir. Si la oración nombra `mexAB-oprM` y además dice `mexA`, el operón
+  sale una sola vez.
+
+Cuentan las unidades de más de un gen, principales, más las alternativas que
+no son solo predicción. Excluir todas las alternativas ocultaba 32 unidades
+con evidencia (31 conocidas y 1 curada; 11 respaldadas por ODB, las demás por
+BioCyc o PseudoCAP), 20 de ellas dentro de unidades solo predichas. Por
+ejemplo, `rnc-era-recO` (ODB), `tolQR` (PseudoCAP) y `bphOP` (BioCyc y
+PGD).
+
+`python -m grn_bronce.cli exportar --corrida 4` volvió a volcar la corrida 4
+**sin identificar de nuevo**:
+- no creó corrida y la fila de la 4 quedó intacta;
+- las 28 columnas originales de las 29 659 candidatas salieron idénticas a
+  las del 17-sep, así que la detección no se movió;
+- 23 445 candidatas tienen al menos un operón, nombrado o por pertenencia;
+- `VERSION` no subió, porque ninguna fila de la base cambió. La huella del
+  recurso queda en el resumen.
+
+`grn_bronce` no importa `grn_operones`: lee un archivo generado cuyo
+contrato vive en `grn_bronce/operones.py`. La dirección de las dependencias
+no cambia.
+
+**Pendiente de la decisión 3:** la pertenencia sale de ODB y BioCyc, que
+podrían estar también en la base curada del laboratorio. Hasta saberlo, se
+usa para anotar y no como rasgo del paso 2 evaluado contra esa base.

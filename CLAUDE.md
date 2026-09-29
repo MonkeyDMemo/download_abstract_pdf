@@ -191,7 +191,9 @@ grn_bronce/            paso 1, en construccion
   operones.py            el catalogo y la UNICA expansion operon -> genes
   secciones.tsv          etiqueta h2 -> clase de seccion
 grn_operones/          la base de operones desde ODB, BioCyc, PGD y CDBProm;
-                       `cli.py catalogo` da el catálogo maestro para leer
+                       `cli.py catalogo` da el catálogo maestro para leer, y
+                       con `--paso1` escribe `grn_bronce/recursos/
+                       operones_base.tsv`. Ver docs/catalogo-operones.md
 grn_comun/             lo que usan los tres pasos
   procedencia.py         huella por contenido de cada eslabon de la cadena
 pruebas/               las del paso 0; falsos.py deja urlopen inutilizable
@@ -252,8 +254,12 @@ Ningun modulo salta capas. `grn_comun/` es la excepcion prevista: lo que usan
 los tres pasos por igual (hoy `procedencia.py`) vive ahi para que ninguno
 tenga que importar de lado. `grn_operones/` sí importa de lado desde
 `grn_bronce/`: `rutas` y, solo en su `cli.py`, el lector del catálogo del
-paso 1 (`operones.leer` y `Catalogo`). Si algún día `grn_bronce` consume la
-base de operones, esa dirección se invierte y hay que mover lo compartido a
+paso 1 (`operones.leer` y `Catalogo`) y el contrato de `operones_base.tsv`
+(`RUTA_BASE`, `COLUMNAS_BASE`). El bronce consume la base de operones **por
+archivo, sin importar `grn_operones`**: lee `operones_base.tsv`, que se
+genera en cada máquina y **no va a git** (lleva datos de BioCyc, cuya licencia
+restringe redistribuirlos). Si algún día necesitara importar código de
+`grn_operones`, la dirección se invertiría y habría que mover lo compartido a
 `grn_comun/` para no crear un ciclo.
 
 Esta separacion es lo que permitio montar el tablero sin tocar la logica, y lo
@@ -462,7 +468,8 @@ Las pruebas que no pueden faltar:
   con las oraciones auditadas es por igualdad de texto, sin identificador
   estable, y su guardian solo salta por debajo de 80 de 93 uniones.
 - **La frontera de la contaminacion**
-  (`etapa2/test_contaminacion.py`). Vigila los tres paquetes, subcarpetas
+  (`etapa2/test_contaminacion.py`). Vigila los cuatro paquetes (`etapa2`,
+  `grn_bronce`, `grn_comun` y, desde el 27-sep-2026, `grn_operones`), subcarpetas
   incluidas y sin distinguir mayusculas, y protege cuatro nombres: el patron
   de oro, la auditoria de signo, la base curada (`GRN_experimental`) y su
   carpeta (`datos/validacion`). Si una referencia entra al diccionario, al
