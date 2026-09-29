@@ -15,6 +15,9 @@ __pycache__/
 *.py[cod]
 venv/
 .venv/
+# Lo que deja `pip install -e ".[bronce]"` al leer pyproject.toml
+*.egg-info/
+build/
 
 # Etapa 2: datos y scripts que vienen del servidor del asesor. Son trabajo de
 # otra persona y este repositorio tiene remoto publico; ver etapa2/README.md.

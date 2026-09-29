@@ -29,13 +29,19 @@ a internet, incluso a quienes no estaban usando nada.
 ## Requisitos
 
 - Python 3.8 o superior. Nada más.
-- **Cero dependencias.** No hay `pip install`, no hay entorno virtual
-  obligatorio, no hay `requirements.txt`. Todo sale de la biblioteca estándar
+- **Cero dependencias en el núcleo.** El ETL y el tablero no piden
+  `pip install`, ni entorno virtual, ni `requirements.txt`. Todo sale de la biblioteca estándar
   (`urllib.request`, `sqlite3`, `xml.etree.ElementTree`, `http.server`). Es a
   propósito: el código corre en máquinas del laboratorio con Windows y Linux,
   sin permisos de administrador y a veces sin salida a PyPI.
 - Conexión a internet para `run` y `fulltext`. Los comandos de consulta
   (`estado`, `log`, `export`) y el tablero funcionan sin red.
+- **Opcional, solo para las etapas que lo usan:** el `.xlsx` del bronce y del
+  catálogo de operones necesita openpyxl. Va declarado como extra en
+  `pyproject.toml`: `pip install -e ".[operones]"` dentro del venv del
+  proyecto instala solo openpyxl y basta para los dos `.xlsx`; `".[bronce]"`
+  agrega PyMuPDF, aprobado pero todavía sin uso.
+  Sin él, todo corre igual y los CSV (el producto canónico) salen completos.
 
 En los ejemplos se escribe `python3`, que es lo normal en Linux. En Windows
 casi siempre es `python`.

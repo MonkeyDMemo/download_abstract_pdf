@@ -1,0 +1,48 @@
+# Metadatos y dependencias opcionales del proyecto.
+#
+# El núcleo no tiene dependencias: `grn_etl/`, `servidor.py`, `trabajos.py` y
+# `etapa2/` corren con la biblioteca estándar de Python 3.8+, en máquinas del
+# laboratorio sin permisos de administrador y a veces sin salida a PyPI
+# (CLAUDE.md, «Restricciones duras»). Lo que sí usa terceros va en extras, y
+# cada uno se aprueba antes de agregarse:
+#
+#   pip install -e ".[bronce]"     # dentro del venv del proyecto
+#   pip install -e ".[operones]"
+#
+# `etapa2/clasificar.py` (torch, transformers) no está aquí a propósito: se
+# invoca por subprocess y su entorno se arma aparte (ver etapa2/README.md).
+
+[build-system]
+# 64 y no 61: es la primera con el gancho de PEP 660 que usa `pip install -e`
+# cuando no hay setup.py, que es el caso.
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "grn-pseudomonas"
+version = "0.1.0"
+description = "ETL de PubMed y pipeline de red de regulación génica de Pseudomonas aeruginosa"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = []
+
+[project.optional-dependencies]
+# grn_bronce/: el .xlsx de la exportación (openpyxl) y el texto de los PDF
+# (PyMuPDF, aprobado y todavía sin uso: el bronce no procesa PDF).
+bronce = ["openpyxl>=3.1", "PyMuPDF>=1.23"]
+# grn_operones/: solo el .xlsx opcional del catálogo maestro.
+operones = ["openpyxl>=3.1"]
+
+[tool.setuptools]
+packages = ["grn_etl", "grn_bronce", "grn_comun", "grn_operones"]
+
+[tool.setuptools.package-data]
+grn_bronce = ["secciones.tsv", "recursos/*.tsv", "recursos/*.csv",
+              "recursos/*.txt", "recursos/*.md"]
+
+# `operones_base.tsv` se genera en cada máquina y lleva datos de BioCyc, cuya
+# licencia restringe redistribuirlos (ver .gitignore). El comodín `*.tsv` mira
+# el disco, no .gitignore: sin esta exclusión, un wheel construido donde el
+# archivo existe lo empaquetaría.
+[tool.setuptools.exclude-package-data]
+grn_bronce = ["recursos/operones_base.tsv"]
