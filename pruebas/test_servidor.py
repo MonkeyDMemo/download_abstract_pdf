@@ -9,17 +9,22 @@ como se prueba cualquier otra funcion.
 Dos invariantes se revisan en CADA peticion, dentro del ayudante pedir():
 que la respuesta sobreviva a json.dumps (un sqlite3.Row olvidado en un
 listado tumba el endpoint en produccion y aqui no) y que nunca se
-devuelva un archivo del disco fuera de la ruta '/'.
+devuelva un archivo del disco fuera de los tres lugares que se sirven:
+web/, la salida del fulltext y la raíz del flujo.
 """
 
+import io
 import json
 import os
+import re
 import tempfile
 import unittest.mock
 import threading
 from pathlib import Path
 
+import flujo
 import servidor
+from grn_bronce import db as bdb
 from grn_etl import credenciales, db, pubmed, trabajos
 
 from .falsos import ClienteFalso, PruebaSinRed, jats_xml
@@ -46,9 +51,15 @@ class BasePruebaServidor(PruebaSinRed):
         self.addCleanup(tmp.cleanup)
         self.salida = tmp.name
 
+        # La raíz del flujo también va a un temporal: ninguna prueba debe
+        # leer ni escribir en el salidas/flujo de verdad de quien la corre.
+        tmp_flujo = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp_flujo.cleanup)
+        self.flujo_raiz = tmp_flujo.name
+
         self.cliente = ClienteFalso()
         self.ctx = servidor.Contexto(self.con, self.gestor, self.cliente,
-                                     self.salida)
+                                     self.salida, flujo_raiz=self.flujo_raiz)
         self.sembrar()
 
     # ------------------------------------------------------------ semilla
@@ -97,16 +108,21 @@ class BasePruebaServidor(PruebaSinRed):
     # ----------------------------------------------------------- ayudantes
 
     def pedir(self, metodo, ruta, params=None, cuerpo=None, ctx=None):
+        usado = ctx or self.ctx
         codigo, objeto = servidor.manejar(
-            metodo, ruta, params or {}, cuerpo, ctx or self.ctx)
+            metodo, ruta, params or {}, cuerpo, usado)
         if isinstance(objeto, servidor.Archivo):
-            # Un archivo que salga de manejar() solo puede vivir en dos
-            # lugares: web/, que es el tablero y su escudo, o la carpeta de
-            # salida del fulltext. Cualquier otro es una fuga del
-            # directorio del proyecto, donde estan .key, la base y el
-            # codigo. Corre en cada peticion de la suite a proposito.
+            # Un archivo que salga de manejar() solo puede vivir en tres
+            # lugares: web/, que es el tablero y su escudo; la carpeta de
+            # salida del fulltext; y la raíz del flujo, cuyas salidas (los
+            # CSV, los JSON de resumen, flujo.log) se bajan desde la pestaña
+            # Pipeline. Las dos últimas salen de la línea de comandos y
+            # nunca de la petición. Cualquier otro lugar es una fuga del
+            # directorio del proyecto, donde están .key, la base y el
+            # código. Corre en cada petición de la suite a propósito.
             permitidas = [servidor.RUTA_PAGINA.parent,
-                          Path(self.ctx.salida).resolve()]
+                          Path(usado.salida).resolve(),
+                          Path(usado.flujo_raiz).resolve()]
             real = objeto.ruta.resolve()
             self.assertTrue(
                 any(r == real or r in real.parents for r in permitidas),
@@ -653,6 +669,11 @@ class PruebasPagina(BasePruebaServidor):
             ("PUT", "/api/consultas/abc", {"activa": 1}),
             ("POST", "/api/consultas", {"nombre": "x"}),
             ("POST", "/api/trabajo", {"tipo": "epub"}),
+            ("POST", "/api/trabajo", {"tipo": "flujo", "pasos": ["magia"]}),
+            ("POST", "/api/trabajo", {"tipo": "flujo", "pasos": []}),
+            ("POST", "/api/trabajo/cancelar", {}),
+            ("GET", "/api/flujo/no_existe", None),
+            ("GET", "/api/flujo/no_existe/archivos/red.tsv", None),
         ]
         for metodo, ruta, cuerpo in casos:
             _, objeto = self.pedir(metodo, ruta, cuerpo=cuerpo)
@@ -1148,3 +1169,711 @@ class PruebasConfiguracion(BasePruebaServidor):
         for metodo in ("POST", "DELETE"):
             codigo, _ = servidor.manejar(metodo, "/api/config", {}, {}, self.ctx)
             self.assertEqual(codigo, 404, metodo)
+
+
+# ============================================== el flujo: lanzar y cancelar
+
+class PruebasLanzarFlujo(BasePruebaServidor):
+    """POST /api/trabajo con tipo 'flujo'.
+
+    Nada corre de verdad: gestor.lanzar se reemplaza por uno que solo anota
+    lo que se le pidió. Lo que se prueba es que llega a flujo.correr, y con
+    qué argumentos; el flujo tiene sus propias pruebas.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.lanzados = []
+
+        def anotar(tipo, funcion, cancelable=False, **kw):
+            self.lanzados.append({"tipo": tipo, "funcion": funcion,
+                                  "cancelable": cancelable, "kw": kw})
+
+        parche = unittest.mock.patch.object(self.gestor, "lanzar",
+                                            side_effect=anotar)
+        parche.start()
+        self.addCleanup(parche.stop)
+
+    def lanzar(self, cuerpo, ctx=None):
+        codigo, objeto = self.pedir("POST", "/api/trabajo", cuerpo=cuerpo,
+                                    ctx=ctx)
+        self.assertEqual(codigo, 202, objeto)
+        self.assertTrue(objeto["ok"])
+        return self.lanzados[-1]
+
+    def test_el_flujo_se_lanza_sin_correo_de_ncbi(self):
+        """El flujo es todo local: pedirle el correo de NCBI era bloquear
+        el pipeline por una credencial que no usa."""
+        sin_correo = servidor.Contexto(self.con, self.gestor, None,
+                                       self.salida,
+                                       flujo_raiz=self.flujo_raiz)
+
+        lanzado = self.lanzar({"tipo": "flujo"}, ctx=sin_correo)
+
+        self.assertEqual(lanzado["tipo"], "flujo")
+        self.assertIs(lanzado["funcion"], flujo.correr)
+        self.assertTrue(lanzado["cancelable"])
+
+    def test_run_y_fulltext_siguen_pidiendo_el_correo(self):
+        sin_correo = servidor.Contexto(self.con, self.gestor, None,
+                                       self.salida,
+                                       flujo_raiz=self.flujo_raiz)
+        for cuerpo in ({"tipo": "run", "nombre": "pa"},
+                       {"tipo": "fulltext", "tipo_archivo": "xml"}):
+            codigo, objeto = self.pedir("POST", "/api/trabajo", cuerpo=cuerpo,
+                                        ctx=sin_correo)
+            self.assertEqual(codigo, 400, cuerpo)
+            self.assertIn("correo", objeto["error"])
+        self.assertEqual(self.lanzados, [])
+
+    def test_sin_mas_datos_corre_todo_con_lo_del_servidor(self):
+        lanzado = self.lanzar({"tipo": "flujo"})
+
+        self.assertEqual(lanzado["kw"], {
+            "corrida": None, "pasos": None, "forzar": None, "limite": None,
+            "sin_reusar": False, "salida": self.flujo_raiz, "datos": None})
+
+    def test_lo_que_manda_el_tablero_llega_validado(self):
+        lanzado = self.lanzar({
+            "tipo": "flujo", "corrida": 4, "pasos": ["red", "bronce", "red"],
+            "forzar": [], "limite": 200, "reusar": False})
+
+        kw = lanzado["kw"]
+        self.assertEqual(kw["corrida"], 4)
+        # En el orden del flujo y sin repetidos: es lo que se publica.
+        self.assertEqual(kw["pasos"], ["bronce", "red"])
+        self.assertIsNone(kw["forzar"])
+        self.assertEqual(kw["limite"], 200)
+        self.assertTrue(kw["sin_reusar"])
+
+    def test_rutas_y_programas_nunca_llegan_del_cuerpo(self):
+        """Dónde escribe, de dónde lee y con qué intérprete corre salen del
+        servidor. Un 'python_bert' que llegara por HTTP sería ejecutar el
+        programa que diga quien mande la petición."""
+        self.ctx.datos = os.path.join(self.salida, "datos")
+
+        lanzado = self.lanzar({
+            "tipo": "flujo", "salida": "C:/no/debe/usarse",
+            "datos": "C:/tampoco", "modelo": "C:/modelo_ajeno",
+            "python_bert": "C:/malo.exe", "python_nlp": "C:/malo.exe",
+            "reusar_de": ["C:/otra"], "rehacer_operones": True})
+
+        kw = lanzado["kw"]
+        self.assertEqual(kw["salida"], self.flujo_raiz)
+        self.assertEqual(kw["datos"], self.ctx.datos)
+        for clave in ("modelo", "python_bert", "python_nlp", "reusar_de",
+                      "rehacer_operones"):
+            self.assertNotIn(clave, kw)
+
+    def test_cuerpos_invalidos_son_400_y_no_lanzan_nada(self):
+        malos = [
+            {"pasos": "bronce"},                 # no es lista
+            {"pasos": ["bronce", "magia"]},      # paso que no existe
+            {"pasos": []},                       # vacía sería «todos»
+            {"pasos": [1, 2]},
+            {"forzar": ["nada"]},
+            {"forzar": "bronce"},
+            {"limite": 0},
+            {"limite": 100001},
+            {"limite": "muchos"},
+            {"corrida": 0},
+            {"corrida": "la buena"},
+            {"corrida": True},
+            {"reusar": "quiza"},
+        ]
+        for extra in malos:
+            cuerpo = dict({"tipo": "flujo"}, **extra)
+            objeto = self.falla("POST", "/api/trabajo", 400, cuerpo=cuerpo)
+            self.assertTrue(objeto["error"], extra)
+        self.assertEqual(self.lanzados, [])
+
+    def test_el_paso_que_no_existe_se_nombra_en_el_error(self):
+        objeto = self.falla("POST", "/api/trabajo", 400,
+                            cuerpo={"tipo": "flujo", "pasos": ["magia"]})
+
+        self.assertIn("magia", objeto["error"])
+        self.assertIn("bronce", objeto["error"])
+
+    def test_con_otro_trabajo_en_curso_es_409(self):
+        self.gestor.lanzar.side_effect = trabajos.TrabajoEnCurso(
+            "ya hay un trabajo 'run' en curso; espera a que termine")
+
+        objeto = self.falla("POST", "/api/trabajo", 409,
+                            cuerpo={"tipo": "flujo"})
+
+        self.assertIn("en curso", objeto["error"])
+
+
+class PruebasCancelarTrabajo(BasePruebaServidor):
+    """POST /api/trabajo/cancelar, con el gestor de verdad."""
+
+    def test_sin_trabajo_es_409(self):
+        objeto = self.falla("POST", "/api/trabajo/cancelar", 409, cuerpo={})
+
+        self.assertIn("cancelable", objeto["error"])
+
+    def test_sin_cuerpo_json_es_400(self):
+        """Un POST sin cuerpo lo puede mandar cualquier página abierta en el
+        mismo navegador, sin preflight. Exigir JSON lo deja fuera, igual que
+        en el resto de las rutas que cambian algo."""
+        self.falla("POST", "/api/trabajo/cancelar", 400, cuerpo=None)
+
+    def test_solo_por_POST(self):
+        for metodo in ("GET", "PUT", "DELETE"):
+            self.falla(metodo, "/api/trabajo/cancelar", 404, cuerpo={})
+
+    def test_un_run_en_curso_no_se_puede_cancelar(self):
+        arranco = threading.Event()
+        seguir = threading.Event()
+        self.addCleanup(seguir.set)
+
+        def bloqueado(log):
+            arranco.set()
+            seguir.wait(ESPERA)
+
+        self.gestor.lanzar("run", bloqueado)
+        self.assertTrue(arranco.wait(ESPERA), "el trabajo no arranco")
+
+        self.falla("POST", "/api/trabajo/cancelar", 409, cuerpo={})
+        self.assertTrue(self.ok("GET", "/api/trabajo")["activo"])
+
+        seguir.set()
+        self.assertTrue(self.gestor.esperar(ESPERA))
+
+    def test_un_flujo_en_curso_se_cancela(self):
+        arranco = threading.Event()
+
+        def flujo_falso(log, detener):
+            arranco.set()
+            if detener.wait(ESPERA):
+                raise RuntimeError("Cancelado a petición: paso de prueba")
+
+        self.gestor.lanzar("flujo", flujo_falso, cancelable=True)
+        self.assertTrue(arranco.wait(ESPERA), "el flujo no arranco")
+
+        r = self.ok("POST", "/api/trabajo/cancelar", cuerpo={})
+        self.assertTrue(r["ok"])
+        self.assertTrue(r["trabajo"]["cancelable"])
+
+        self.assertTrue(self.gestor.esperar(ESPERA))
+        estado = self.ok("GET", "/api/trabajo")
+        self.assertTrue(estado["cancelado"])
+        self.assertEqual(estado["error"], "Cancelado a petición")
+        self.assertNotIn("detener", estado["parametros"])
+        # Terminado, ya no hay nada que cancelar.
+        self.falla("POST", "/api/trabajo/cancelar", 409, cuerpo={})
+
+
+# ================================================= el flujo: lo que se lee
+
+class BasePruebaFlujo(BasePruebaServidor):
+    """Una raíz del flujo con una carpeta como la que deja flujo.py.
+
+    La raíz cuelga de un temporal propio para poner señuelos justo afuera:
+    si alguna ruta se saliera de la raíz, se llevaría uno, y las pruebas lo
+    detectan por su contenido y no por el código de respuesta.
+    """
+
+    CARPETA = "corrida4_run22"
+
+    def setUp(self):
+        super().setUp()
+        base = tempfile.TemporaryDirectory()
+        self.addCleanup(base.cleanup)
+        afuera = Path(base.name)
+        self.raiz = afuera / "flujo"
+        self.raiz.mkdir()
+        self.ctx.flujo_raiz = str(self.raiz)
+
+        (afuera / ".key").write_text("SECRETO-DEL-FLUJO", encoding="utf-8")
+        (afuera / "fuera.csv").write_text("SECRETO-DEL-FLUJO\n",
+                                          encoding="utf-8")
+
+        self.carpeta = self.raiz / self.CARPETA
+        self.carpeta.mkdir()
+        estado = {
+            "version": 1, "carpeta": self.CARPETA, "corrida_bronce": 4,
+            "modelo": "modelo_limpio_run22", "limite": None,
+            "actualizado": "2026-10-08T12:00:00Z",
+            "archivos": {"candidatas": "bronce_corrida4_candidatas.csv"},
+            "pasos": {
+                "operones": {"estatus": "omitido",
+                             "nombre": flujo.NOMBRES["operones"],
+                             "nota": "falta operones_base.tsv"},
+                "bronce": {"estatus": "ok", "nombre": flujo.NOMBRES["bronce"],
+                           "segundos": 12.5},
+                "pares": {"estatus": "error", "nombre": flujo.NOMBRES["pares"],
+                          "segundos": 3.1,
+                          "nota": "grn_verificacion.cli terminó con código 1."
+                                  "\nÚltimas líneas:\nTraceback (...)"},
+            },
+        }
+        (self.carpeta / "estado.json").write_text(
+            json.dumps(estado, ensure_ascii=False, indent=2), encoding="utf-8")
+        (self.carpeta / "red.tsv").write_text(
+            "regulador\tblanco\tsigno\nLasR\trhlR\tactivator\n",
+            encoding="utf-8")
+        (self.carpeta / "evaluacion.json").write_text(
+            json.dumps({"precision": 0.44, "n": 50}), encoding="utf-8")
+        (self.carpeta / "flujo.log").write_text(
+            "▶ Bronce: oraciones candidatas\n", encoding="utf-8")
+        # Lo que está en la carpeta pero no se lista: otra extensión y una
+        # subcarpeta.
+        (self.carpeta / "notas.md").write_text("SECRETO-DEL-FLUJO",
+                                               encoding="utf-8")
+        (self.carpeta / "sub").mkdir()
+        (self.carpeta / "sub" / "x.csv").write_text("SECRETO-DEL-FLUJO\n",
+                                                    encoding="utf-8")
+        # Un archivo suelto en la raíz no es una carpeta del flujo.
+        (self.raiz / "suelto.json").write_text("{}", encoding="utf-8")
+
+
+class PruebasEstadoDelFlujo(BasePruebaFlujo):
+
+    def test_con_la_raiz_vacia_contesta_y_serializa(self):
+        vacia = tempfile.TemporaryDirectory()
+        self.addCleanup(vacia.cleanup)
+        self.ctx.flujo_raiz = vacia.name
+
+        r = self.ok("GET", "/api/flujo")
+
+        self.assertEqual(r["pasos"], list(flujo.PASOS))
+        self.assertEqual(set(r["nombres"]), set(flujo.PASOS))
+        self.assertEqual(r["carpetas"], [])
+        # La base de la prueba es la del paso 0, sin tablas del bronce.
+        self.assertEqual(r["corridas_bronce"], [])
+        for clave in ("modelo", "nlp", "reuso", "operones_base"):
+            self.assertIsInstance(r["entornos"][clave], bool, clave)
+
+    def test_una_raiz_que_todavia_no_existe_no_es_error(self):
+        """Antes de la primera corrida del flujo no hay salidas/flujo."""
+        self.ctx.flujo_raiz = str(self.raiz / "todavia_no")
+
+        self.assertEqual(self.ok("GET", "/api/flujo")["carpetas"], [])
+
+    def test_lista_la_carpeta_con_el_estatus_de_cada_paso(self):
+        r = self.ok("GET", "/api/flujo")
+
+        self.assertEqual([c["nombre"] for c in r["carpetas"]], [self.CARPETA])
+        carpeta = r["carpetas"][0]
+        self.assertEqual(carpeta["corrida_bronce"], 4)
+        self.assertEqual(carpeta["pasos"]["bronce"], "ok")
+        self.assertEqual(carpeta["pasos"]["pares"], "error")
+        self.assertEqual(carpeta["pasos"]["red"], "pendiente")
+
+    def test_lista_solo_las_corridas_terminadas_del_bronce(self):
+        """Son las que el tablero ofrece para correr el flujo: una cortada
+        o de otro paso no tiene CSV de candidatas que volcar."""
+        con = bdb.conectar(":memory:")
+        self.addCleanup(con.close)
+        buena = bdb.abrir_corrida(con, "1", "identificacion", "2")
+        bdb.cerrar_corrida(con, buena, "ok", None, 10, 321)
+        bdb.abrir_corrida(con, "1", "identificacion", "2")   # cortada
+        otra = bdb.abrir_corrida(con, "2", "verificacion", "1")
+        bdb.cerrar_corrida(con, otra, "ok")
+        ctx = servidor.Contexto(con, self.gestor, self.cliente, self.salida,
+                                flujo_raiz=str(self.raiz))
+
+        codigo, r = self.pedir("GET", "/api/flujo", ctx=ctx)
+
+        self.assertEqual(codigo, 200, r)
+        self.assertEqual([c["id"] for c in r["corridas_bronce"]], [buena])
+        self.assertEqual(r["corridas_bronce"][0]["n_salida"], 321)
+
+
+class PruebasCarpetaDelFlujo(BasePruebaFlujo):
+
+    def test_trae_el_estado_y_los_archivos_listables(self):
+        r = self.ok("GET", "/api/flujo/" + self.CARPETA)
+
+        self.assertEqual(r["nombre"], self.CARPETA)
+        self.assertEqual(r["estado"]["pasos"]["bronce"]["estatus"], "ok")
+        self.assertEqual([a["nombre"] for a in r["archivos"]],
+                         ["estado.json", "evaluacion.json", "flujo.log",
+                          "red.tsv"])
+        for archivo in r["archivos"]:
+            self.assertIsInstance(archivo["bytes"], int)
+
+    def test_lo_que_no_es_carpeta_hija_de_la_raiz_es_404(self):
+        for mala in ("no_existe", "..", ".", "..%2f..", "%2e%2e",
+                     "..%2fflujo", "suelto.json", self.CARPETA + "%2fsub",
+                     "C:%2fWindows"):
+            objeto = self.falla("GET", "/api/flujo/" + mala, 404)
+            self.assertNotIn("SECRETO", json.dumps(objeto), mala)
+
+    def test_solo_por_GET(self):
+        for ruta in ("/api/flujo", "/api/flujo/" + self.CARPETA):
+            for metodo in ("POST", "PUT", "DELETE"):
+                self.falla(metodo, ruta, 404, cuerpo={})
+
+
+class PruebasArchivosDelFlujo(BasePruebaFlujo):
+    """GET /api/flujo/<carpeta>/archivos/<nombre>.
+
+    Como con el texto y el PDF de un documento, lo que hay que defender no
+    es que sirva el archivo correcto, sino que no exista forma de que sirva
+    otro.
+    """
+
+    def ruta(self, nombre, carpeta=None):
+        return "/api/flujo/%s/archivos/%s" % (carpeta or self.CARPETA, nombre)
+
+    def test_un_archivo_listado_sale_como_descarga_con_su_tipo(self):
+        codigo, objeto = self.pedir("GET", self.ruta("red.tsv"))
+
+        self.assertEqual(codigo, 200)
+        self.assertIsInstance(objeto, servidor.Archivo)
+        self.assertEqual(objeto.ruta.resolve(),
+                         (self.carpeta / "red.tsv").resolve())
+        self.assertEqual(objeto.tipo_mime,
+                         "text/tab-separated-values; charset=utf-8")
+        self.assertEqual(objeto.descarga_como, "red.tsv")
+
+    def test_cada_extension_que_se_lista_tiene_su_tipo(self):
+        """Si flujo.ARCHIVO_VALIDO aceptara una extensión sin tipo aquí, el
+        archivo se listaría en el tablero y su liga daría 404."""
+        extensiones = re.search(r"\(([a-z|]+)\)\$",
+                                flujo.ARCHIVO_VALIDO.pattern).group(1)
+        for ext in extensiones.split("|"):
+            self.assertIn(ext, servidor.TIPOS_FLUJO, ext)
+        for nombre, tipo in (("evaluacion.json", "application/json"),
+                             ("flujo.log", "text/plain")):
+            _, objeto = self.pedir("GET", self.ruta(nombre))
+            self.assertTrue(objeto.tipo_mime.startswith(tipo), nombre)
+
+    def test_ver_abre_el_json_y_el_log_en_vez_de_bajarlos(self):
+        """El tablero lee evaluacion.json para pintar las cifras, y
+        flujo.log guarda entera la salida que la consola recorta."""
+        for nombre in ("evaluacion.json", "flujo.log"):
+            _, objeto = self.pedir("GET", self.ruta(nombre), {"ver": "1"})
+            self.assertIsNone(objeto.descarga_como, nombre)
+            _, objeto = self.pedir("GET", self.ruta(nombre))
+            self.assertEqual(objeto.descarga_como, nombre)
+
+    def test_ver_no_cambia_nada_en_lo_que_no_se_lee_en_la_pestana(self):
+        _, objeto = self.pedir("GET", self.ruta("red.tsv"), {"ver": "1"})
+
+        self.assertEqual(objeto.descarga_como, "red.tsv")
+
+    def test_ver_con_valor_raro_es_400(self):
+        self.falla("GET", self.ruta("red.tsv"), 400, {"ver": "quiza"})
+
+    def test_ninguna_ruta_saca_un_archivo_de_fuera_de_la_carpeta(self):
+        """La prueba que no puede faltar: travesías, subcarpetas, nombres
+        sin listar, extensiones fuera de la lista y variantes de
+        mayúsculas, que en Windows abrirían el mismo archivo."""
+        intentos = [
+            self.ruta("..%2f.key"), self.ruta("..%2f..%2f.key"),
+            self.ruta("..%2ffuera.csv"), self.ruta("%2e%2e%2ffuera.csv"),
+            self.ruta("..%5cfuera.csv"), self.ruta("sub%2fx.csv"),
+            "/api/flujo/%s/archivos/sub/x.csv" % self.CARPETA,
+            self.ruta("x.csv", carpeta="sub"),
+            self.ruta("fuera.csv", carpeta=".."),
+            self.ruta("fuera.csv", carpeta="..%2f"),
+            self.ruta(".key", carpeta=".."),
+            self.ruta("no_listado.csv"), self.ruta("notas.md"),
+            self.ruta("RED.TSV"), self.ruta("Red.tsv"),
+            self.ruta("red.tsv%00.key"), self.ruta("red.tsv:secreto"),
+            self.ruta("estado.json", carpeta="no_existe"),
+            "/api/flujo/archivos/red.tsv",
+            "/api/flujo/%s/archivos" % self.CARPETA,
+            "/api/flujo/%s/otros/red.tsv" % self.CARPETA,
+        ]
+        for ruta in intentos:
+            codigo, objeto = self.pedir("GET", ruta)
+            self.assertEqual(codigo, 404, ruta)
+            self.assertNotIsInstance(objeto, servidor.Archivo, ruta)
+            self.assertNotIn("SECRETO", json.dumps(objeto, ensure_ascii=False),
+                             ruta)
+
+    def test_solo_por_GET(self):
+        for metodo in ("POST", "PUT", "DELETE"):
+            self.falla(metodo, self.ruta("red.tsv"), 404, cuerpo={})
+
+
+# ======================================== la entrega de archivos, en bytes
+
+class PruebasEntregaDeArchivos(PruebaSinRed):
+    """_responder_archivo sin socket: el manejador escribe en un BytesIO.
+
+    Es la única pieza del HTTP que tiene lógica propia: manda el archivo en
+    bloques, con el largo del archivo abierto y sin pasarse de él.
+    """
+
+    def setUp(self):
+        super().setUp()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+
+    def manejador(self, wfile=None):
+        h = servidor.ManejadorHTTP.__new__(servidor.ManejadorHTTP)
+        h.wfile = wfile if wfile is not None else io.BytesIO()
+        h.request_version = "HTTP/1.1"
+        h.command = "GET"
+        h.requestline = "GET /prueba HTTP/1.1"
+        h.client_address = ("127.0.0.1", 0)
+        h.close_connection = False
+        return h
+
+    def partir(self, crudo):
+        cabeza, cuerpo = crudo.split(b"\r\n\r\n", 1)
+        lineas = cabeza.decode("latin-1").split("\r\n")
+        encabezados = {}
+        for linea in lineas[1:]:
+            clave, valor = linea.split(":", 1)
+            encabezados[clave.strip().lower()] = valor.strip()
+        return lineas[0], encabezados, cuerpo
+
+    def test_un_archivo_grande_sale_completo_y_en_bloques(self):
+        datos = bytes(range(256)) * 2500           # 640 KB, más de dos bloques
+        self.assertGreater(len(datos), 2 * servidor.BLOQUE_ARCHIVO)
+        ruta = self.dir / "candidatas.csv"
+        ruta.write_bytes(datos)
+        h = self.manejador()
+
+        h._responder_archivo(200, servidor.Archivo(
+            ruta, "text/csv; charset=utf-8", descarga_como="candidatas.csv"))
+
+        estado, enc, cuerpo = self.partir(h.wfile.getvalue())
+        self.assertIn("200", estado)
+        self.assertEqual(enc["content-length"], str(len(datos)))
+        self.assertEqual(enc["content-disposition"],
+                         'attachment; filename="candidatas.csv"')
+        self.assertEqual(enc["x-content-type-options"], "nosniff")
+        self.assertEqual(cuerpo, datos)
+        self.assertFalse(h.close_connection)
+
+    def test_sin_nombre_de_descarga_se_abre_en_la_pestana(self):
+        """La página, el escudo y el PDF del lector no se bajan."""
+        ruta = self.dir / "a.pdf"
+        ruta.write_bytes(b"%PDF-1.7\n")
+        h = self.manejador()
+
+        h._responder_archivo(200, servidor.Archivo(ruta, "application/pdf"))
+
+        _, enc, cuerpo = self.partir(h.wfile.getvalue())
+        self.assertNotIn("content-disposition", enc)
+        self.assertEqual(cuerpo, b"%PDF-1.7\n")
+
+    def test_un_archivo_que_crece_no_manda_mas_de_lo_prometido(self):
+        """flujo.log crece mientras el flujo corre. Con HTTP/1.1 los bytes
+        de más se leerían como el principio de la siguiente respuesta."""
+        ruta = self.dir / "flujo.log"
+        original = b"una linea del flujo\n" * 30000      # ~600 KB
+        ruta.write_bytes(original)
+
+        class CreceAlEscribir(io.BytesIO):
+            def write(this, b):
+                with open(ruta, "ab") as f:
+                    f.write(b"otra linea\n" * 2000)
+                return io.BytesIO.write(this, b)
+
+        h = self.manejador(CreceAlEscribir())
+        h._responder_archivo(200, servidor.Archivo(
+            ruta, "text/plain; charset=utf-8"))
+
+        _, enc, cuerpo = self.partir(h.wfile.getvalue())
+        self.assertEqual(int(enc["content-length"]), len(original))
+        self.assertEqual(cuerpo, original)
+
+    def test_si_quien_descarga_corta_no_truena(self):
+        ruta = self.dir / "grande.csv"
+        ruta.write_bytes(b"x" * (3 * servidor.BLOQUE_ARCHIVO))
+
+        class Cortada(io.BytesIO):
+            escrituras = 0
+
+            def write(this, b):
+                this.escrituras += 1
+                if this.escrituras > 2:
+                    raise ConnectionAbortedError("el navegador cerró")
+                return io.BytesIO.write(this, b)
+
+        h = self.manejador(Cortada())
+        h._responder_archivo(200, servidor.Archivo(ruta, "text/csv"))
+
+        self.assertTrue(h.close_connection)
+
+    def test_un_archivo_que_ya_no_esta_es_404_en_json(self):
+        h = self.manejador()
+
+        h._responder_archivo(200, servidor.Archivo(
+            self.dir / "no_esta.csv", "text/csv", descarga_como="no_esta.csv"))
+
+        estado, enc, cuerpo = self.partir(h.wfile.getvalue())
+        self.assertIn("404", estado)
+        self.assertNotIn("content-disposition", enc)
+        self.assertIn("no_esta.csv",
+                      json.loads(cuerpo.decode("utf-8"))["error"])
+
+    def test_el_nombre_de_la_descarga_no_parte_la_cabecera(self):
+        ruta = self.dir / "a.csv"
+        ruta.write_bytes(b"a\n")
+        h = self.manejador()
+
+        h._responder_archivo(200, servidor.Archivo(
+            ruta, "text/csv", descarga_como='x"\r\nSet-Cookie: a=b.csv'))
+
+        _, enc, _ = self.partir(h.wfile.getvalue())
+        self.assertNotIn("set-cookie", enc)
+        self.assertEqual(enc["content-disposition"],
+                         'attachment; filename="x___Set-Cookie__a_b.csv"')
+
+
+# ================================================== el cierre del servidor
+
+class PruebasCierre(PruebaSinRed):
+    """Al cerrar el tablero, un trabajo cancelable se cancela y se espera:
+    los pasos del flujo son procesos aparte que sobrevivirían al servidor,
+    y su candado impediría la siguiente corrida."""
+
+    def setUp(self):
+        super().setUp()
+        self.gestor = trabajos.Gestor()
+        self.addCleanup(self.gestor.esperar, ESPERA)
+        self.mensajes = []
+
+    def test_sin_trabajo_no_hace_ni_dice_nada(self):
+        self.assertTrue(servidor.detener_al_cerrar(
+            self.gestor, log=self.mensajes.append))
+        self.assertEqual(self.mensajes, [])
+
+    def test_un_flujo_en_curso_se_cancela_y_se_espera(self):
+        arranco = threading.Event()
+
+        def largo(log, detener):
+            arranco.set()
+            detener.wait(ESPERA)
+
+        self.gestor.lanzar("flujo", largo, cancelable=True)
+        self.assertTrue(arranco.wait(ESPERA))
+
+        self.assertTrue(servidor.detener_al_cerrar(
+            self.gestor, espera=ESPERA, log=self.mensajes.append))
+
+        estado = self.gestor.estado()
+        self.assertFalse(estado["activo"])
+        self.assertTrue(estado["cancelado"])
+        self.assertIn("cancelarlo", self.mensajes[0])
+        self.assertIn("Se detuvo", self.mensajes[-1])
+
+    def test_si_no_se_detiene_a_tiempo_lo_dice(self):
+        arranco = threading.Event()
+        soltar = threading.Event()
+        self.addCleanup(soltar.set)
+
+        def terco(log, detener):
+            arranco.set()
+            soltar.wait(ESPERA)
+
+        self.gestor.lanzar("flujo", terco, cancelable=True)
+        self.assertTrue(arranco.wait(ESPERA))
+
+        self.assertFalse(servidor.detener_al_cerrar(
+            self.gestor, espera=0.05, log=self.mensajes.append))
+        self.assertIn(".flujo.lock", self.mensajes[-1])
+
+    def test_un_run_en_curso_solo_se_avisa(self):
+        arranco = threading.Event()
+        seguir = threading.Event()
+        self.addCleanup(seguir.set)
+
+        def bloqueado(log):
+            arranco.set()
+            seguir.wait(ESPERA)
+
+        self.gestor.lanzar("run", bloqueado)
+        self.assertTrue(arranco.wait(ESPERA))
+
+        self.assertFalse(servidor.detener_al_cerrar(
+            self.gestor, espera=ESPERA, log=self.mensajes.append))
+        self.assertIn("idempotente", self.mensajes[0])
+        self.assertTrue(self.gestor.estado()["activo"])
+
+
+# =================================================== rutas por omisión
+
+class PruebasRutasPorOmision(PruebaSinRed):
+    """Las rutas de datos siguen la precedencia de CLAUDE.md: flag, luego
+    GRN_DATOS, luego ./datos. La literal 'datos/fulltext' se quitó al tocar
+    el archivo, como pide la regla."""
+
+    def test_la_salida_del_fulltext_sigue_la_precedencia(self):
+        with unittest.mock.patch.dict(os.environ,
+                                      {"GRN_DATOS": "D:/lab/datos"}):
+            self.assertEqual(servidor.salida_por_omision(),
+                             os.path.join("D:/lab/datos", "fulltext"))
+            self.assertEqual(servidor.salida_por_omision("E:/flag"),
+                             os.path.join("E:/flag", "fulltext"))
+        with unittest.mock.patch.dict(os.environ, {}):
+            os.environ.pop("GRN_DATOS", None)
+            self.assertEqual(servidor.salida_por_omision(),
+                             os.path.join("datos", "fulltext"))
+
+    def test_el_contexto_sin_rutas_usa_las_de_omision(self):
+        con = db.conectar(":memory:")
+        self.addCleanup(con.close)
+
+        ctx = servidor.Contexto(con, trabajos.Gestor())
+
+        self.assertEqual(ctx.flujo_raiz, flujo.RAIZ_FLUJO)
+        self.assertIsNone(ctx.datos)
+
+
+class PruebasHostDelTablero(PruebaSinRed):
+    """Contra el DNS rebinding: la página hostil queda en el mismo origen
+    que el tablero, pero el navegador pone su dominio en Host."""
+
+    def test_solo_el_nombre_de_esta_maquina_con_cualquier_puerto(self):
+        """El puerto no protege del rebinding y rompía el túnel SSH a otro
+        puerto local (`ssh -L 8766:127.0.0.1:8765`)."""
+        for host in ("127.0.0.1:8765", "localhost:8765", "LOCALHOST:8765",
+                     " 127.0.0.1:8765 ", "localhost:8766", "127.0.0.1",
+                     "localhost"):
+            self.assertTrue(servidor.host_permitido(host), host)
+        for host in (None, "", "atacante.example:8765", "evil.com",
+                     "127.0.0.1.nip.io:8765", "localhost.evil.com:8765",
+                     "127.0.0.2:8765"):
+            self.assertFalse(servidor.host_permitido(host), host)
+
+    def test_el_manejador_responde_403_a_otro_host(self):
+        """Por `_atender` de verdad, sin socket: quitar la llamada dejaba la
+        suite en verde."""
+        h = servidor.ManejadorHTTP.__new__(servidor.ManejadorHTTP)
+        h.wfile = io.BytesIO()
+        h.request_version = "HTTP/1.1"
+        h.command = "GET"
+        h.requestline = "GET / HTTP/1.1"
+        h.client_address = ("127.0.0.1", 0)
+        h.close_connection = False
+        h.path = "/"
+        h.headers = {"Host": "evil.com:8765"}
+        h.server = unittest.mock.Mock(server_address=("127.0.0.1", 8765))
+        h._atender("GET")
+        self.assertTrue(h.wfile.getvalue().startswith(b"HTTP/1.1 403"))
+        self.assertTrue(h.close_connection)
+
+
+# ===================================================== reglas de la página
+
+class PruebasReglasDeLaPagina(BasePruebaServidor):
+
+    def setUp(self):
+        super().setUp()
+        self.pagina = servidor.RUTA_PAGINA.read_text(encoding="utf-8")
+
+    def test_la_pagina_nunca_asigna_html_crudo(self):
+        """La regla de oro del tablero: lo que llega del servidor (títulos
+        de PubMed, la nota de error de un paso, nombres de archivo) se pinta
+        con textContent. Con innerHTML, un '<' de un nombre de gen o de una
+        traza sería HTML corriendo en un origen que puede borrar documentos."""
+        self.assertEqual(
+            re.findall(r"\.(?:innerHTML|outerHTML)\s*\+?=(?!=)", self.pagina),
+            [])
+        self.assertNotRegex(self.pagina, r"insertAdjacentHTML\s*\(")
+        self.assertNotRegex(self.pagina, r"document\.write\s*\(")
+
+    def test_hay_pestana_pipeline_con_su_seccion(self):
+        self.assertIn('data-seccion="pipeline"', self.pagina)
+        self.assertIn('id="sec-pipeline"', self.pagina)

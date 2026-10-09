@@ -27,6 +27,7 @@ import os
 import sys
 from pathlib import Path
 
+from grn_bronce import rutas
 from grn_etl import credenciales, db, etl, pubmed
 
 
@@ -298,7 +299,10 @@ def main():
         description="ETL de PubMed para GRN.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    ap.add_argument("--db", default="datos/grn.db", help="Ruta de la base SQLite.")
+    ap.add_argument("--datos", default=None,
+                    help="Raíz de datos; gana sobre GRN_DATOS (por omisión, ./datos).")
+    ap.add_argument("--db", default=None,
+                    help="Ruta de la base SQLite (por omisión, <datos>/grn.db).")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     q = sub.add_parser("query", help="Administrar consultas.").add_subparsers(
@@ -331,7 +335,8 @@ def main():
     ft.add_argument("--limite", type=int, help="Procesar solo N (para probar).")
     ft.add_argument("--reintentar", action="store_true",
                     help="Reintentar los que quedaron en error.")
-    ft.add_argument("--salida", default="datos/fulltext")
+    ft.add_argument("--salida", default=None,
+                    help="Raíz del texto completo (por omisión, <datos>/fulltext).")
     ft.add_argument("--sin-unpaywall", action="store_true")
     ft.set_defaults(func=cmd_fulltext)
 
@@ -378,6 +383,14 @@ def main():
     ex.set_defaults(func=cmd_export)
 
     args = ap.parse_args()
+    # La misma precedencia que el tablero (flag, GRN_DATOS, ./datos). Con
+    # literales aquí y GRN_DATOS en el tablero, en la máquina del laboratorio
+    # cada frente abría su propia base: el tablero no veía lo que ingestaba
+    # el CLI y volvía a bajarlo todo de NCBI.
+    raiz = rutas.raiz_datos(args.datos)
+    args.db = args.db or os.path.join(raiz, "grn.db")
+    if args.cmd == "fulltext" and not args.salida:
+        args.salida = os.path.join(raiz, "fulltext")
     con = db.conectar(args.db)
     try:
         args.func(con, args)

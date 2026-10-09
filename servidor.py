@@ -22,7 +22,7 @@ respuesta. Por eso las pruebas cubren la API completa sin levantar un
 puerto ni depender de que el firewall de la maquina deje.
 
 Como el resto del proyecto: no tiene logica de negocio. Valida lo que
-llega, llama a db o a etl y formatea JSON. Cero SQL propio.
+llega, llama a db, a etl o al flujo, y formatea JSON. Cero SQL propio.
 """
 
 import argparse
@@ -36,6 +36,8 @@ import urllib.parse
 import webbrowser
 from pathlib import Path
 
+import flujo
+from grn_bronce import rutas
 from grn_etl import credenciales, db, etl, pubmed, trabajos
 
 # El tablero es un solo archivo, sin recursos externos. La ruta se resuelve
@@ -46,7 +48,23 @@ RUTA_LOGO = (Path(__file__).resolve().parent / "web"
              / "cropped-cropped-LogoUNAM_IIMAS_Color.png")
 
 PUERTO_POR_OMISION = 8765
-SALIDA_POR_OMISION = "datos/fulltext"
+
+# Cuánto espera el cierre del servidor a que un trabajo cancelable se
+# detenga. El vigía de cada paso del flujo mira el evento cada medio segundo
+# y matar el árbol de procesos tarda un par de segundos más en Windows.
+ESPERA_CIERRE = 20
+
+# De a cuánto se manda un archivo. El CSV de candidatas pesa ~90 MB; leerlo
+# entero a memoria por cada descarga era la forma de tumbar el tablero.
+BLOQUE_ARCHIVO = 256 * 1024
+
+
+def salida_por_omision(datos=None):
+    """`<datos>/fulltext`, con la raíz de datos resuelta por precedencia:
+    flag, luego `GRN_DATOS`, luego `./datos`. La resuelve `grn_bronce.rutas`
+    para que la regla esté escrita en un solo sitio."""
+    return os.path.join(rutas.raiz_datos(datos), "fulltext")
+
 
 ORDENES = ("relevance", "pub_date")
 TIPOS_ARCHIVO = ("xml", "pdf")
@@ -93,14 +111,25 @@ class Contexto:
     salida:  raiz donde el fulltext escribe. No se acepta por HTTP a
              proposito: una ruta que llega en un cuerpo JSON es permiso de
              escritura en cualquier parte del disco.
+    flujo_raiz: raíz de las carpetas del flujo (salidas/flujo). Mismo
+             criterio que 'salida': sale de --flujo al arrancar y jamás de
+             una petición, porque de ahí se leen las descargas y ahí
+             escribe el flujo.
+    datos:   raíz de datos que se le pasa al flujo, ya resuelta y absoluta,
+             o None para que el flujo la resuelva solo. Absoluta porque sus
+             pasos corren con el directorio de trabajo en la raíz del
+             repositorio, que no tiene por qué ser el del servidor.
     """
 
-    def __init__(self, con, gestor, cliente=None, salida=SALIDA_POR_OMISION,
-                 correo_explicito=None, al_cambiar_cliente=None):
+    def __init__(self, con, gestor, cliente=None, salida=None,
+                 correo_explicito=None, al_cambiar_cliente=None,
+                 flujo_raiz=None, datos=None):
         self.con = con
         self.gestor = gestor
         self.cliente = cliente
-        self.salida = salida
+        self.salida = salida or salida_por_omision()
+        self.flujo_raiz = flujo_raiz or flujo.RAIZ_FLUJO
+        self.datos = datos
         # El Contexto se arma de nuevo en cada peticion, asi que un cliente
         # nuevo tiene que subir a quien lo guarda entre peticiones o se
         # perderia al terminar esta. El callable lo pone la capa HTTP; en
@@ -133,11 +162,17 @@ class Archivo:
     manejar() no lee nada del disco: devuelve esta marca y quien la
     envuelve decide como entregarla. Eso la deja probable sin tocar el
     sistema de archivos.
+
+    descarga_como: si trae un nombre, el archivo se entrega como descarga
+    (Content-Disposition: attachment) con ese nombre, en vez de abrirse en
+    la pestaña. Es lo que piden las salidas del flujo: un CSV de 90 MB no
+    se lee en el navegador.
     """
 
-    def __init__(self, ruta, tipo_mime):
-        self.ruta = ruta
+    def __init__(self, ruta, tipo_mime, descarga_como=None):
+        self.ruta = Path(ruta)
         self.tipo_mime = tipo_mime
+        self.descarga_como = descarga_como
 
 
 PAGINA = Archivo(RUTA_PAGINA, "text/html; charset=utf-8")
@@ -594,14 +629,11 @@ def _ver_trabajo(ctx):
     return 200, ctx.gestor.estado()
 
 
-def _lanzar_trabajo(ctx, cuerpo):
-    cuerpo = _objeto(cuerpo)
-    tipo = _texto(cuerpo, "tipo", obligatorio=True)
-
+def _exigir_cliente(ctx):
+    """El tablero arranca sin correo para poder ver y editar; lo que no se
+    puede es salir a NCBI, que lo exige para identificar el tráfico. Solo
+    lo piden los trabajos que salen a la red: el flujo es todo local."""
     if ctx.cliente is None:
-        # El tablero arranca sin correo para poder ver y editar; lo que no
-        # se puede es salir a NCBI, que lo exige para identificar el
-        # trafico.
         raise ErrorPeticion(
             400,
             "Falta el correo de contacto de NCBI. Ponlo en «Credenciales "
@@ -609,7 +641,84 @@ def _lanzar_trabajo(ctx, cuerpo):
             "NCBI lo exige en cada petición: es la dirección a la que "
             "avisan antes de bloquear la IP del laboratorio.")
 
+
+# La prueba rápida del flujo existe para ver los pasos andar en minutos.
+# Arriba de esto ya no es prueba, y sin tope una cifra con un cero de más
+# llega intacta hasta los subprocesos.
+LIMITE_FLUJO_MAX = 100000
+
+
+def _pasos_del_cuerpo(cuerpo, clave, vacia_ok):
+    """Una lista de pasos del flujo validada, o None si no llegó.
+
+    Se devuelve en el orden de flujo.PASOS y sin repetidos: es lo que se
+    publica en el estado del trabajo.
+    """
+    valor = cuerpo.get(clave)
+    if valor is None:
+        return None
+    validos = ", ".join(flujo.PASOS)
+    if not isinstance(valor, list) or not all(isinstance(p, str)
+                                              for p in valor):
+        raise ErrorPeticion(
+            400, f"'{clave}' debe ser una lista de pasos: {validos}")
+    desconocidos = [p for p in valor if p not in flujo.PASOS]
+    if desconocidos:
+        raise ErrorPeticion(
+            400, f"'{clave}' trae pasos que no existen: "
+                 f"{', '.join(desconocidos)}. Los pasos son: {validos}")
+    if not valor and not vacia_ok:
+        # flujo.correr toma una lista vacía como «todos». Quien desmarcó
+        # todo no pidió eso.
+        raise ErrorPeticion(
+            400, f"'{clave}' no puede ir vacía; para correr todos los "
+                 f"pasos, no la mandes")
+    return [p for p in flujo.PASOS if p in valor]
+
+
+def _argumentos_flujo(ctx, cuerpo):
+    """Los kwargs de flujo.correr, sacados del cuerpo ya validados.
+
+    Del cuerpo solo se toma qué correr. Dónde escribe (salida), de dónde lee
+    (datos), el modelo y los intérpretes salen del servidor y nunca de la
+    petición: un 'python_bert' que llegara por HTTP sería ejecutar el
+    programa que diga quien mande la petición.
+    """
+    return {
+        "corrida": _entero(cuerpo.get("corrida"), "corrida", minimo=1),
+        "pasos": _pasos_del_cuerpo(cuerpo, "pasos", vacia_ok=False),
+        "forzar": _pasos_del_cuerpo(cuerpo, "forzar", vacia_ok=True) or None,
+        "limite": _entero(cuerpo.get("limite"), "limite", minimo=1,
+                          maximo=LIMITE_FLUJO_MAX),
+        "sin_reusar": not _booleano(cuerpo.get("reusar"), "reusar",
+                                    omision=True),
+        "salida": ctx.flujo_raiz,
+        "datos": ctx.datos,
+    }
+
+
+def _cancelar_trabajo(ctx, cuerpo):
+    # Se exige un cuerpo JSON aunque no traiga nada ({} basta). Un POST sin
+    # cuerpo es una petición simple: cualquier página abierta en el mismo
+    # navegador la puede mandar a 127.0.0.1 sin preflight, y cortaría el
+    # flujo de quien lo esté corriendo. Con cuerpo, _leer_cuerpo exige
+    # Content-Type JSON, que un formulario no sabe mandar.
+    _objeto(cuerpo)
+    if not ctx.gestor.cancelar():
+        raise ErrorPeticion(
+            409, "No hay un trabajo cancelable en curso. Solo el flujo se "
+                 "puede cancelar; una corrida de PubMed o una descarga "
+                 "terminan solas y retomarlas no repite lo hecho.")
+    return 200, {"ok": True, "trabajo": ctx.gestor.estado()}
+
+
+def _lanzar_trabajo(ctx, cuerpo):
+    cuerpo = _objeto(cuerpo)
+    tipo = _texto(cuerpo, "tipo", obligatorio=True)
+    cancelable = False
+
     if tipo == "run":
+        _exigir_cliente(ctx)
         nombre = _texto(cuerpo, "nombre", obligatorio=True)
         _consulta_por_nombre(ctx, nombre)          # 404 antes de lanzar nada
         orden = _texto(cuerpo, "orden") or "relevance"
@@ -626,6 +735,7 @@ def _lanzar_trabajo(ctx, cuerpo):
         funcion = etl.ingestar
 
     elif tipo == "fulltext":
+        _exigir_cliente(ctx)
         tipo_archivo = _texto(cuerpo, "tipo_archivo", obligatorio=True)
         if tipo_archivo not in TIPOS_ARCHIVO:
             raise ErrorPeticion(
@@ -645,14 +755,76 @@ def _lanzar_trabajo(ctx, cuerpo):
         }
         funcion = etl.descargar_fulltext
 
-    else:
-        raise ErrorPeticion(400, "'tipo' debe ser 'run' o 'fulltext'")
+    elif tipo == "flujo":
+        argumentos = _argumentos_flujo(ctx, cuerpo)
+        funcion = flujo.correr
+        # Cada paso es un proceso aparte que se puede matar; un run o un
+        # fulltext corren en el hilo y no.
+        cancelable = True
 
-    # El gestor inyecta 'con' (su propia conexion, abierta en su hilo) y
-    # 'log'. Si ya hay uno corriendo lanza TrabajoEnCurso, que arriba se
-    # traduce a 409.
-    ctx.gestor.lanzar(tipo, funcion, **argumentos)
+    else:
+        raise ErrorPeticion(
+            400, "'tipo' debe ser 'run', 'fulltext' o 'flujo'")
+
+    # El gestor inyecta 'con' (su propia conexión, abierta en su hilo),
+    # 'log' y, si es cancelable, 'detener'. Si ya hay uno corriendo lanza
+    # TrabajoEnCurso, que arriba se traduce a 409.
+    ctx.gestor.lanzar(tipo, funcion, cancelable=cancelable, **argumentos)
     return 202, {"ok": True, "trabajo": ctx.gestor.estado()}
+
+
+# ------------------------------------------------------------------ flujo
+
+# El tipo de cada extensión que flujo.ARCHIVO_VALIDO deja listar. Va
+# explícito y con charset, no adivinado por mimetypes: el registro de
+# Windows puede decir cualquier cosa de un .csv, y la cabecera nosniff hace
+# que el navegador crea lo que aquí se diga.
+TIPOS_FLUJO = {
+    "csv": "text/csv; charset=utf-8",
+    "tsv": "text/tab-separated-values; charset=utf-8",
+    "json": "application/json; charset=utf-8",
+    "jsonl": "application/x-ndjson; charset=utf-8",
+    "log": "text/plain; charset=utf-8",
+    "txt": "text/plain; charset=utf-8",
+    "xlsx": ("application/vnd.openxmlformats-officedocument."
+             "spreadsheetml.sheet"),
+}
+
+# Lo que con ?ver=1 se abre en la pestaña en vez de bajarse: los JSON de
+# resumen, que el tablero lee para pintar las cifras, y flujo.log, que guarda
+# entera la salida que la consola recorta a 400 líneas. Todo es texto que el
+# navegador pinta como texto (con nosniff), nunca como HTML.
+SE_PUEDEN_VER = ("json", "log", "txt")
+
+
+def _ver_flujo(ctx):
+    return 200, flujo.estado_general(ctx.con, ctx.flujo_raiz)
+
+
+def _ver_carpeta_flujo(ctx, carpeta):
+    datos = flujo.leer_carpeta(ctx.flujo_raiz, carpeta)
+    if datos is None:
+        raise ErrorPeticion(404, f"no existe la carpeta del flujo '{carpeta}'")
+    return 200, datos
+
+
+def _archivo_flujo(ctx, carpeta, nombre, params):
+    """Una salida del flujo, como Archivo para descargar.
+
+    La ruta la arma flujo.ruta_archivo: carpeta y nombre contra patrones
+    cerrados, el archivo tiene que estar listado y quedar hijo directo de su
+    carpeta. Aquí se comprueba otra vez que caiga dentro de la raíz del
+    flujo, por si mañana alguien afloja el patrón.
+    """
+    ver = _booleano(params.get("ver"), "ver")
+    ruta = flujo.ruta_archivo(ctx.flujo_raiz, carpeta, nombre)
+    extension = nombre.rsplit(".", 1)[-1]
+    if (ruta is None or extension not in TIPOS_FLUJO
+            or not _dentro_de(Path(ctx.flujo_raiz), Path(ruta))):
+        raise ErrorPeticion(
+            404, f"no hay un archivo '{nombre}' en la carpeta '{carpeta}'")
+    descarga = None if (ver and extension in SE_PUEDEN_VER) else nombre
+    return 200, Archivo(ruta, TIPOS_FLUJO[extension], descarga_como=descarga)
 
 
 # ------------------------------------------------------------------ ruteo
@@ -737,11 +909,25 @@ def _rutear(metodo, ruta, params, cuerpo, ctx):
     if recurso == "anios" and metodo == "GET" and not resto:
         return _anios(ctx)
 
-    if recurso == "trabajo" and not resto:
-        if metodo == "GET":
+    if recurso == "trabajo":
+        if not resto and metodo == "GET":
             return _ver_trabajo(ctx)
-        if metodo == "POST":
+        if not resto and metodo == "POST":
             return _lanzar_trabajo(ctx, cuerpo)
+        if resto == ["cancelar"] and metodo == "POST":
+            return _cancelar_trabajo(ctx, cuerpo)
+
+    # Tercera familia de rutas que entregan archivos, después del texto y el
+    # PDF de un documento. Igual que allá, el nombre que llega no se pega a
+    # una ruta sin más: 'archivos' se compara por igualdad, y carpeta y
+    # nombre los valida flujo.ruta_archivo contra patrones cerrados.
+    if recurso == "flujo" and metodo == "GET":
+        if not resto:
+            return _ver_flujo(ctx)
+        if len(resto) == 1:
+            return _ver_carpeta_flujo(ctx, resto[0])
+        if len(resto) == 3 and resto[1] == "archivos":
+            return _archivo_flujo(ctx, resto[0], resto[2], params)
 
     _no_encontrado(metodo, ruta)
 
@@ -774,6 +960,24 @@ def manejar(metodo, ruta, params, cuerpo, ctx):
 
 # ------------------------------------------------------------------- HTTP
 
+def host_permitido(host, puerto=None):
+    """Si la cabecera Host nombra a esta máquina: 127.0.0.1 o localhost, con
+    cualquier puerto o sin él.
+
+    Escuchar solo en 127.0.0.1 no basta contra el DNS rebinding: una página
+    hostil hace que su propio dominio resuelva a 127.0.0.1, queda en el mismo
+    origen que el tablero y le manda JSON sin preflight. Lo que la delata es
+    que el navegador sigue poniendo su dominio en Host. El puerto no ayuda y
+    estorba: un túnel SSH a otro puerto local (`ssh -L 8766:127.0.0.1:8765`)
+    o el reenvío de VS Code llegan con el puerto de la laptop, no con el del
+    servidor. `puerto` queda por compatibilidad y no se usa.
+    """
+    if not host:
+        return False
+    nombre = re.sub(r":\d{1,5}$", "", host.strip().lower())
+    return nombre in ("127.0.0.1", "localhost")
+
+
 class ManejadorHTTP(http.server.BaseHTTPRequestHandler):
     """Envoltura de manejar(). Aqui no se decide nada de negocio."""
 
@@ -803,6 +1007,14 @@ class ManejadorHTTP(http.server.BaseHTTPRequestHandler):
     # ---------------------------------------------------------- peticion
 
     def _atender(self, metodo):
+        if not host_permitido(self.headers.get("Host")):
+            # Antes de leer el cuerpo, y cerrando: lo que quede sin leer de
+            # esta petición no puede tomarse por el principio de la siguiente.
+            self.close_connection = True
+            self._responder_json(403, {
+                "error": "Host no permitido: el tablero solo atiende a "
+                         "127.0.0.1 y localhost."})
+            return
         url = urllib.parse.urlsplit(self.path)
         params = {k: v[-1] for k, v in
                   urllib.parse.parse_qs(url.query, keep_blank_values=True).items()}
@@ -829,7 +1041,9 @@ class ManejadorHTTP(http.server.BaseHTTPRequestHandler):
             ctx = Contexto(con, self.server.gestor, self.server.cliente,
                            self.server.salida,
                            correo_explicito=self.server.correo_explicito,
-                           al_cambiar_cliente=guardar_cliente)
+                           al_cambiar_cliente=guardar_cliente,
+                           flujo_raiz=self.server.flujo_raiz,
+                           datos=self.server.datos)
             codigo, objeto = manejar(metodo, url.path, params, cuerpo, ctx)
         except Exception:
             # El detalle va a la terminal y no a la respuesta: un traceback
@@ -885,7 +1099,7 @@ class ManejadorHTTP(http.server.BaseHTTPRequestHandler):
 
     def _responder_archivo(self, codigo, archivo):
         try:
-            datos = archivo.ruta.read_bytes()
+            f = open(archivo.ruta, "rb")
         except OSError:
             # 404 y no 500: que falte el archivo no es una falla del
             # servidor. Pasa de verdad cuando el ETL corrio desde otro
@@ -895,13 +1109,47 @@ class ManejadorHTTP(http.server.BaseHTTPRequestHandler):
                          "Si el ETL corrió desde otra carpeta, arranca el "
                          "tablero con --salida apuntando a donde escribió."})
             return
-        self._encabezados(codigo, archivo.tipo_mime, len(datos))
-        self.wfile.write(datos)
+        with f:
+            # El largo sale del archivo ya abierto, no de leerlo entero: el
+            # CSV de candidatas pesa ~90 MB y read_bytes() lo subía completo
+            # a memoria en cada descarga.
+            largo = os.fstat(f.fileno()).st_size
+            self._encabezados(codigo, archivo.tipo_mime, largo,
+                              descarga_como=archivo.descarga_como)
+            # Se manda exactamente 'largo' y no hasta el fin del archivo
+            # (que es lo que haría shutil.copyfileobj): flujo.log crece
+            # mientras el flujo corre, y con HTTP/1.1 los bytes de más se
+            # leerían como el principio de la siguiente respuesta.
+            restante = largo
+            try:
+                while restante > 0:
+                    bloque = f.read(min(BLOQUE_ARCHIVO, restante))
+                    if not bloque:
+                        break
+                    self.wfile.write(bloque)
+                    restante -= len(bloque)
+            except ConnectionError:
+                # Quien descargaba cerró la pestaña o canceló la descarga.
+                # No es una falla del servidor y no amerita un traceback.
+                self.close_connection = True
+                return
+            if restante:
+                # El archivo se encogió a media entrega: lo prometido en
+                # Content-Length ya no se puede cumplir. Cerrar es la única
+                # forma de que el navegador no espere bytes que no vienen.
+                self.close_connection = True
 
-    def _encabezados(self, codigo, tipo, largo):
+    def _encabezados(self, codigo, tipo, largo, descarga_como=None):
         self.send_response(codigo)
         self.send_header("Content-Type", tipo)
         self.send_header("Content-Length", str(largo))
+        if descarga_como:
+            # El nombre ya viene validado (flujo.ARCHIVO_VALIDO); se limpia
+            # otra vez porque va dentro de una cabecera, donde un salto de
+            # línea o unas comillas partirían la respuesta.
+            limpio = re.sub(r"[^A-Za-z0-9_.-]", "_", str(descarga_como))
+            self.send_header("Content-Disposition",
+                             f'attachment; filename="{limpio}"')
         # Sin esto el navegador se queda con un tablero viejo despues de
         # actualizar el archivo, y con cifras congeladas entre sondeos.
         self.send_header("Cache-Control", "no-store")
@@ -931,12 +1179,14 @@ class Servidor(http.server.ThreadingHTTPServer):
     allow_reuse_address = (sys.platform != "win32")
 
     def __init__(self, puerto, ruta_db, gestor, cliente, salida,
-                 correo_explicito=None):
+                 correo_explicito=None, flujo_raiz=None, datos=None):
         self.ruta_db = ruta_db
         self.gestor = gestor
         self.cliente = cliente
         self.salida = salida
         self.correo_explicito = correo_explicito
+        self.flujo_raiz = flujo_raiz
+        self.datos = datos
         # 127.0.0.1 y nada mas. Ver el docstring del modulo: sin
         # autenticacion, con capacidad de borrar y de gastar el limite de
         # NCBI de todo el laboratorio, atarlo a 0.0.0.0 seria abrirle eso a
@@ -946,21 +1196,82 @@ class Servidor(http.server.ThreadingHTTPServer):
 
 # ------------------------------------------------------------------- main
 
+def detener_al_cerrar(gestor, espera=ESPERA_CIERRE, log=lambda m: None):
+    """Al cerrar el tablero, deja en orden el trabajo que siga corriendo.
+
+    El hilo del trabajo es daemon y muere con el proceso, pero los pasos del
+    flujo son procesos aparte, nacidos en su propio grupo para que el Ctrl-C
+    de la terminal no los alcance. Si el tablero se cerrara sin más, el paso
+    en curso seguiría corriendo huérfano (con la GPU ocupada, si es BioBERT)
+    y el candado .flujo.lock de su carpeta impediría la siguiente corrida.
+    Cancelar mata el árbol, y el flujo alcanza a escribir estado.json y a
+    soltar el candado.
+
+    Devuelve True si al final no quedó nada corriendo.
+    """
+    estado = gestor.estado()
+    if not estado["activo"]:
+        return True
+    if not gestor.cancelar():
+        log("Había un trabajo en curso: se corta aquí. Su ejecución queda\n"
+            "marcada 'corriendo' en la bitácora; el ETL es idempotente,\n"
+            "así que volver a lanzarla retoma lo que falte.")
+        return False
+    log(f"Había un trabajo '{estado['tipo']}' en curso: se pidió cancelarlo "
+        f"y se espera hasta {espera} s a que se detenga.")
+    try:
+        termino = gestor.esperar(espera)
+    except KeyboardInterrupt:
+        termino = False
+    if termino:
+        log("Se detuvo. Lo hecho quedó guardado; volver a lanzarlo retoma "
+            "donde se quedó.")
+    else:
+        log("No se detuvo a tiempo y el tablero se cierra igual. Puede quedar\n"
+            "un proceso hijo vivo; si el flujo no vuelve a arrancar, borra el\n"
+            "archivo .flujo.lock de su carpeta.")
+    return termino
+
+
+# Cómo se dice en la terminal de dónde salió la raíz de datos.
+ORIGEN_DATOS = {"flag": "por --datos", "omision": "por omisión"}
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="Tablero local del ETL. Escucha solo en 127.0.0.1.")
-    ap.add_argument("--db", default="datos/grn.db", help="Ruta de la base SQLite.")
+    ap.add_argument("--datos", default=None,
+                    help="Raíz de datos; gana sobre GRN_DATOS "
+                         "(por omisión, ./datos).")
+    ap.add_argument("--db", default=None,
+                    help="Ruta de la base SQLite (por omisión, "
+                         "<datos>/grn.db).")
     ap.add_argument("--puerto", type=int, default=PUERTO_POR_OMISION)
     ap.add_argument("--email", help="Correo de contacto para NCBI.")
-    ap.add_argument("--salida", default=SALIDA_POR_OMISION,
-                    help="Raíz donde el fulltext escribe.")
+    ap.add_argument("--salida", default=None,
+                    help="Raíz donde el fulltext escribe (por omisión, "
+                         "<datos>/fulltext).")
+    ap.add_argument("--flujo", default=flujo.RAIZ_FLUJO,
+                    help="Raíz de las carpetas del flujo (por omisión, "
+                         "salidas/flujo del repositorio).")
     ap.add_argument("--abrir", action="store_true",
                     help="Abrir el navegador al arrancar.")
     args = ap.parse_args()
 
+    # La precedencia de siempre: flag, luego GRN_DATOS, luego ./datos. Un
+    # --db o un --salida explícitos ganan sobre la raíz para su archivo.
+    raiz_datos = rutas.raiz_datos(args.datos)
+    ruta_db = args.db or os.path.join(raiz_datos, "grn.db")
+    salida = args.salida or salida_por_omision(args.datos)
+    flujo_raiz = os.path.abspath(args.flujo)
+    # El flujo lee su base de <datos>/grn.db. Si --db apunta a otra, el
+    # tablero listaría corridas del bronce que el flujo no encuentra.
+    db_del_flujo = os.path.join(raiz_datos, "grn.db")
+    db_distinta = os.path.abspath(ruta_db) != os.path.abspath(db_del_flujo)
+
     # Crear el esquema una vez aqui evita que la primera peticion se
     # encuentre una base vacia a medio construir.
-    db.conectar(args.db).close()
+    db.conectar(ruta_db).close()
 
     # Lee el entorno y, si no hay nada ahi, los archivos de la raiz. Eso
     # es lo que evita tener que exportar la llave a mano en cada sesion.
@@ -974,29 +1285,38 @@ def main():
     # creerian cada una que va sola y entre las dos lo rebasarian; NCBI
     # bloquea por IP y el bloqueo lo pagaria todo el laboratorio.
     cliente = pubmed.Cliente(email, api_key) if email else None
-    gestor = trabajos.Gestor(args.db)
+    gestor = trabajos.Gestor(ruta_db)
 
     try:
-        servidor = Servidor(args.puerto, args.db, gestor, cliente,
-                            args.salida, correo_explicito=args.email)
+        servidor = Servidor(args.puerto, ruta_db, gestor, cliente, salida,
+                            correo_explicito=args.email,
+                            flujo_raiz=flujo_raiz,
+                            datos=os.path.abspath(raiz_datos))
     except OSError as e:
         sys.exit(f"No se pudo abrir el puerto {args.puerto}: {e}\n"
                  f"Si ya hay otro tablero corriendo, usa --puerto.")
 
+    origen = rutas.de_donde(args.datos)
     url = f"http://127.0.0.1:{args.puerto}/"
     banner = [
         f"Tablero en {url}",
-        f"Base   : {args.db}",
-        f"Salida : {args.salida}",
+        f"Datos  : {raiz_datos} "
+        f"({ORIGEN_DATOS.get(origen, origen.replace('entorno:', 'por '))})",
+        f"Base   : {ruta_db}",
+        f"Salida : {salida}",
+        f"Flujo  : {flujo_raiz}",
         # Se dice si hay API key, nunca cual.
         "API key: " + ("sí (10 peticiones/segundo)"
                        if api_key else "no (3 peticiones/segundo)"),
         f"Correo : {email}" if cliente else
         "Correo : sin configurar. Se puede ver y editar, pero no lanzar\n"
-        "         trabajos. Usa --email o la variable NCBI_EMAIL.",
+        "         trabajos que salen a PubMed. Usa --email o NCBI_EMAIL.",
         "Escucha solo en 127.0.0.1; nadie más de la red lo alcanza.",
         "Ctrl-C para salir.",
     ]
+    if db_distinta:
+        banner.insert(4, f"Ojo    : el flujo usa {db_del_flujo}, no --db. "
+                         f"Para que coincidan, usa --datos.")
     # flush porque el proceso no termina nunca: sin el, redirigir la salida
     # a un archivo deja el archivo vacio hasta que se llena el buffer.
     print("\n".join(banner), flush=True)
@@ -1010,10 +1330,7 @@ def main():
         print("\nCerrando.", flush=True)
     finally:
         servidor.server_close()
-        if gestor.estado()["activo"]:
-            print("Había un trabajo en curso: se corta aquí. Su ejecución queda\n"
-                  "marcada 'corriendo' en la bitácora; el ETL es idempotente,\n"
-                  "así que volver a lanzarla retoma lo que falte.", flush=True)
+        detener_al_cerrar(gestor, log=lambda m: print(m, flush=True))
 
 
 if __name__ == "__main__":
