@@ -16,9 +16,15 @@ El pipeline tiene cuatro pasos y tres capas. `PLAN.md` los define en detalle.
 | Paso | Nombre | Capa | Paquete | Estado |
 |---|---|---|---|---|
 | 0 | Extraccion | — | `grn_etl/` | cerrado |
-| 1 | Identificacion de elementos | bronce | `grn_bronce/` | foco actual |
-| 2 | Verificacion | silver | `grn_verificacion/` | futuro |
+| 1 | Identificacion de elementos | bronce | `grn_bronce/` | con metricas; sigue la v5 |
+| 2 | Verificacion | silver | `grn_verificacion/` | en construccion desde el 8-oct-2026 |
 | 3 | Consolidacion | gold | `grn_red/` | futuro |
+
+**El flujo de punta a punta es `python flujo.py`** (8-oct-2026): operones →
+bronce → pares → BioBERT → red → sintaxis → capa → evaluacion, cada paso con
+el CLI que ya tenia su paquete, en una carpeta por corrida del bronce y modelo
+(`salidas/flujo/corrida4_run22/`). Se salta lo que ya esta hecho por huella de
+entradas y salidas; ver el docstring de `flujo.py`.
 
 **Regla de capas: el bronce se construye solo desde el texto.** La data de
 validacion entra en el paso 2 (evaluacion y, con particion por PMID,
@@ -85,20 +91,34 @@ cualquier particion en la que detecte esa contaminacion. El panorama esta en
   `sqlite3` y `xml.etree.ElementTree`, y explicar la alternativa en un
   comentario.
 - **`grn_bronce/` puede usar terceros** declarados en `pyproject.toml` como
-  extra `[bronce]`, e instalados solo dentro del venv del proyecto. Aprobados
-  hoy: **openpyxl** y **PyMuPDF**. Cualquier otro se aprueba antes de usarse.
+  extra `[bronce]` (o `[bronce-nlp]`, solo para `sintaxis.py` y en `.venv-nlp`),
+  instalados solo dentro de un venv del proyecto. Aprobados: **openpyxl**,
+  **PyMuPDF** y, desde el 8-oct-2026, **spaCy 3.7.5 con `en_core_sci_md`**.
+  Cualquier otro se aprueba antes de usarse.
 - **`grn_operones/` puede usar openpyxl y nada más**, solo para el `.xlsx`
   opcional del catálogo maestro (aprobado el 27 de septiembre de 2026). Se
   importa dentro de la función, y sin openpyxl el catálogo sale igual en CSV.
   Va en el extra `[operones]`. Se instala con `pip install -e ".[bronce]"` o
   `".[operones]"` dentro del venv; el núcleo no tiene dependencias.
 
+- **`grn_verificacion/`, `flujo.py` y `grn_comun/` son solo estandar y
+  compatibles con 3.8**, como el nucleo: lo que necesita terceros corre en
+  otro proceso.
+- **`grn_bronce/sintaxis.py` es la unica pieza que importa spaCy** (aprobado el
+  8-oct-2026 con el modelo `en_core_sci_md` de scispaCy). Vive en un entorno
+  aparte, `.venv-nlp`, porque scispaCy exige numpy<2 y el `.venv` tiene el
+  numpy 2 de torch; se declara en el extra `[bronce-nlp]` y se invoca por
+  subproceso (`python -m grn_bronce.cli sintaxis`), como `clasificar.py`. Sin
+  ese entorno, el flujo marca el paso como omitido y sigue.
+
 La excepcion no es una puerta abierta: lo que se apoya en un tercero deja de
 correr donde no se puede instalar. Los CSV son el producto canonico de toda
 exportacion y se generan siempre con estandar; el `.xlsx` es comodidad encima.
 
 `etapa2/clasificar.py` es la unica pieza que importa `torch` y `transformers`,
-y por eso los demas scripts la invocan por subprocess.
+y por eso los demas scripts la invocan por subprocess. `grn_verificacion/puente.py`
+la importa solo por sus constantes (no carga torch al importarse) y la corre
+por subproceso.
 
 **Acentos: segun quien lo lea.** La regla depende de si el texto es para un
 humano o es un identificador.
@@ -172,6 +192,12 @@ barata de romper algo sin enterarse.
   proposito: son trabajo de otra persona y este repositorio tiene remoto
   publico.
 - `salidas/` tambien esta ignorado.
+- **Entrenar con la base curada** (8-oct-2026, PLAN.md:44): corre en el
+  servidor del asesor, donde vive el `.xlsx`, y lo corre el usuario.
+  `grn_verificacion/validacion.py` y `entrenamiento.py` reciben la ruta por
+  argumento, nunca la nombran, e imprimen solo conteos; sus derivados y el
+  modelo entrenado se quedan en el servidor. A una sesion de Claude solo
+  llegan metricas y conteos. Ver `docs/entrenamiento-curada.md`.
 
 ## Estructura
 
@@ -195,11 +221,22 @@ grn_operones/          la base de operones desde ODB, BioCyc, PGD y CDBProm;
                        `cli.py catalogo` da el catálogo maestro para leer, y
                        con `--paso1` escribe `grn_bronce/recursos/
                        operones_base.tsv`. Ver docs/catalogo-operones.md
+grn_verificacion/      paso 2, en construccion
+  puente.py              candidatas del bronce -> pares -> clasificar.py (BioBERT)
+  capa.py                oracion + funciones + operones + BioBERT, una fila por par
+  evaluar.py             el 44 % recalculado con el clasificador conectado
+  validacion.py          lector del .xlsx de la base curada (ruta por argumento)
+  entrenamiento.py       datos de entrenamiento por supervision distante
+flujo.py               el flujo de punta a punta; idempotente por huella
 grn_comun/             lo que usan los tres pasos
   procedencia.py         huella por contenido de cada eslabon de la cadena
-pruebas/               las del paso 0; falsos.py deja urlopen inutilizable
-etapa2/                congelada; migra a grn_verificacion/ cuando el paso 1
-                       reporte metricas. Ver etapa2/README.md
+  proceso.py             correr un CLI hijo, con su salida al log y cancelable
+  archivos.py            el os.replace de la escritura atomica, que en Windows
+                         aguanta a un lector (el tablero) unos segundos
+pruebas/               las del paso 0, del tablero y del flujo; falsos.py deja
+                       urlopen inutilizable
+etapa2/                congelada; la usa grn_verificacion/ y su mudanza sigue
+                       pendiente. Ver etapa2/README.md
 docs/
   bitacora.md            que se hizo, cuando y que decision quedo abierta
   hallazgos.md           los hechos medidos, con su medicion
@@ -223,7 +260,15 @@ servidor.py --> trabajos.py ----------/           --> pubmed.py
                      +--> db.py   (solo para abrir conexion y la hora)
 
 web/index.html --HTTP--> servidor.py
+
+servidor.py --> trabajos.py --> flujo.correr --> subprocesos de cada paso
 ```
+
+El flujo entra al tablero por la misma puerta que el ETL: `trabajos.Gestor`
+lo corre en su hilo y el HTTP solo sondea. Cada paso es un proceso aparte,
+así que `servidor.py` no importa ni `grn_verificacion` ni `etapa2`: importa
+`flujo` (para lanzarlo y leer sus carpetas) y `grn_bronce.rutas` (para la
+precedencia de `GRN_DATOS`).
 
 Seis reglas que no se rompen:
 
@@ -241,11 +286,13 @@ Seis reglas que no se rompen:
    acumulador de lineas, que es lo que el tablero sondea.
 4. **`cli.py` no tiene logica de negocio.** Parsea, llama a la orquestacion,
    formatea.
-5. **`servidor.py` tampoco.** Valida lo que llega, llama a `db`, `etl` o
-   `trabajos`, y formatea JSON. La pieza que importa es `manejar(metodo, ruta,
+5. **`servidor.py` tampoco.** Valida lo que llega, llama a `db`, `etl`,
+   `flujo` o `trabajos`, y formatea JSON. La pieza que importa es `manejar(metodo, ruta,
    params, cuerpo, ctx) -> (codigo, objeto)`: una funcion normal que no abre
-   sockets ni lee del disco, y por eso las pruebas cubren el API completo sin
-   levantar un puerto.
+   sockets. Los archivos que entrega los devuelve como `Archivo` y la capa
+   HTTP los manda; lo que lee (la base, el texto de un documento, el estado y
+   los listados del flujo) es local. Por eso las pruebas cubren el API
+   completo sin levantar un puerto.
 6. **`trabajos.py` no importa `etl`.** Recibe el callable a correr, asi que
    sirve igual para `ingestar()` que para `descargar_fulltext()` y las pruebas
    de concurrencia no arrastran el ETL.
@@ -293,10 +340,20 @@ administra unicamente sus tablas.
 **Paso 1 — `grn_bronce/db.py`:** `corridas`, `texto_unidades`, `menciones`,
 `oraciones_candidatas`.
 
-`menciones.tipo` toma siete valores: `gen`, `proteina`, **`operon`**,
-`disparador`, `funcion`, `evidencia` y `organismo`. El `operon` se anadio en la
-version 2 del metodo; antes esas menciones caian en `gen` o `proteina` segun su
-mayuscula inicial. **Toda consulta que filtre por los tipos del diccionario
+`menciones.tipo` toma ocho valores: `gen`, `proteina`, **`operon`**,
+`disparador`, `funcion`, `evidencia`, `organismo` y `contexto_regulatorio`
+(este desde la corrida 3). El `operon` se anadio en la version 2 del metodo;
+antes esas menciones caian en `gen` o `proteina` segun su mayuscula inicial.
+
+**Paso 2:** hoy no tiene tablas propias. Cada clasificacion con BioBERT deja su
+fila en `corridas` con `paso='2'` (metodo `biobert-run22`, y en `parametros` la
+huella de los pesos y del tokenizador, que es lo que distingue dos checkpoints
+de la misma receta) y sus resultados en archivos de la carpeta del flujo.
+**Excepcion temporal:** `grn_bronce.cli sintaxis` no deja fila en `corridas`
+hasta que tenga tabla propia; cada linea de su JSONL lleva el modelo de spaCy,
+su version y la `VERSION` de las reglas. Las tablas del paso 2 se proponen con su DDL
+cuando hagan falta, sin llave foranea hacia `texto_unidades`, `menciones` ni
+`oraciones_candidatas`: el `--rehacer` del bronce las borra. **Toda consulta que filtre por los tipos del diccionario
 PAO1 tiene que decir `tipo IN ('gen','proteina','operon')`**: dejar `operon`
 fuera resta 7 136 menciones y baja la cifra sin que el pipeline haya encontrado
 menos. El `id_normalizado` de un operon es su nombre (`mexEF-oprN`), no un
@@ -426,14 +483,51 @@ python3 cli.py export --pendientes      # los que faltan, para la biblioteca
 
 python3 cli.py corpus crear --nombre v1 --consulta <nombre>
 python3 cli.py corpus list | cobertura | verificar --nombre v1
+python3 cli.py --datos D estado         # --db y fulltext --salida salen de D
 
 python3 servidor.py --abrir             # tablero en http://127.0.0.1:8765
+python3 servidor.py --datos D --flujo salidas/flujo   # --db y --salida salen de D
+
+python3 flujo.py --corrida 4            # operones -> bronce -> BioBERT -> capa -> evaluacion
+python3 flujo.py --corrida 4 --limite 200   # prueba rapida en su propia carpeta
+python3 flujo.py --pasos capa,evaluar --forzar capa
 ```
 
 El tablero hace lo mismo que el CLI desde el navegador y ademas deja corregir
 a mano un titulo o un anio que llego mal. Escucha solo en 127.0.0.1 y corre un
 trabajo a la vez. `web/index.html` abierto con doble clic no sirve: la pagina
 pide sus datos a `/api/...`, que lo sirve `servidor.py`.
+
+La pestaña «Pipeline» corre `flujo.py` (8-oct-2026): elegir corrida y pasos,
+correr, cancelar, ver cada paso y bajar las salidas. Las rutas de datos siguen
+la precedencia de siempre (`--datos`, `GRN_DATOS`, `./datos`); `--db` y
+`--salida` explícitos ganan para su archivo, y si `--db` no es
+`<datos>/grn.db` el arranque lo avisa, porque el flujo lee esa otra. Del
+cuerpo de `POST /api/trabajo {tipo: "flujo"}` solo se toma **qué** correr
+(corrida, pasos, forzar, límite, reusar). Dónde escribe, de dónde lee, el
+modelo y los intérpretes salen del servidor y nunca de la petición: un
+`python_bert` que llegara por HTTP sería ejecutar lo que diga quien mande la
+petición. El flujo no pide el correo de NCBI, que solo exigen `run` y
+`fulltext`. **El paso BioBERT corre con el Python que arrancó el tablero**
+(o el de `GRN_PYTHON_BERT`): para la pestaña Pipeline se arranca con el del
+`.venv` (`.venv/Scripts/python servidor.py`; en Linux, `.venv/bin/python`).
+
+El tablero solo atiende peticiones cuyo `Host` nombre a `127.0.0.1` o
+`localhost`, con cualquier puerto (`servidor.host_permitido`). Escuchar en
+127.0.0.1 no basta contra el DNS rebinding: una página hostil hace que su
+dominio resuelva a 127.0.0.1 y queda en el mismo origen que el tablero, pero el
+navegador sigue poniendo su dominio en `Host`. El puerto no se exige: un túnel
+SSH a otro puerto local llega con el de la laptop.
+
+**Cancelar es cooperativo.** `POST /api/trabajo/cancelar` enciende el
+`threading.Event` que el gestor le pasó al trabajo en `detener` (solo a los
+lanzados `cancelable=True`, hoy solo el flujo), y el vigía de
+`grn_comun/proceso.py` mata el árbol del paso en curso; un hilo de Python no se
+puede matar. Pide un cuerpo JSON aunque sea `{}`: un POST sin cuerpo es una
+petición simple que cualquier página abierta en el navegador puede mandar a
+127.0.0.1 sin preflight, y cortaría la corrida de otro. Al cerrar el tablero,
+`detener_al_cerrar` cancela y espera hasta 20 s, para no dejar un paso
+huérfano con la GPU ocupada ni el `.flujo.lock` puesto.
 
 **El tablero no carga nada de internet, y eso no es negociable.** Todo el CSS
 y el JavaScript viven dentro de `web/index.html`. Una tipografia, un paquete
@@ -449,14 +543,25 @@ contra rutas fijas que salen de `__file__`, no por prefijo: en la raiz viven
 `.key`, la base y el codigo, y apuntar un manejador de archivos estatico ahi
 los expondria.
 
-Bajo `/api/` hay dos rutas que si entregan archivos del corpus:
-`/api/documentos/<pmid>/texto` y `/api/documentos/<pmid>/pdf`. La ruta de
-disco **se arma con el PMID y el PMCID validados** (`^\d{1,12}$` y
+Bajo `/api/` hay tres familias de rutas que si entregan archivos. Las dos del
+corpus son `/api/documentos/<pmid>/texto` y `/api/documentos/<pmid>/pdf`. La
+ruta de disco **se arma con el PMID y el PMCID validados** (`^\d{1,12}$` y
 `^PMC\d{1,12}$`) mas la convencion de nombres, nunca leyendo
 `descargas.ruta`, y se comprueba que quede dentro de la carpeta de salida.
 Ojo con el PMCID: esta en `db.COLUMNAS_EDITABLES`, o sea que se puede
 escribir desde el tablero, asi que venir de la base no lo hace de fiar. Ver
 `docs/decisiones.md`.
+
+La tercera son las salidas del flujo:
+`/api/flujo/<carpeta>/archivos/<nombre>`. La raíz sale de `--flujo` al
+arrancar, nunca de una petición. `flujo.ruta_archivo` valida la carpeta
+(`^[A-Za-z0-9_.-]{1,80}$`, hija directa de la raíz) y el nombre (patrón
+cerrado con extensión `csv`, `tsv`, `json`, `jsonl`, `log`, `txt` o `xlsx`, y
+además tiene que estar en el listado), y `servidor.py` comprueba otra vez con
+`_dentro_de`. Se entrega por bloques de 256 KB y exactamente
+`Content-Length` bytes: `flujo.log` crece mientras el flujo corre, y con
+HTTP/1.1 los bytes de más se leerían como el principio de la siguiente
+respuesta.
 
 El aspecto es el sistema Nocturne, cuya referencia esta en
 `web/UI mockups request/` (no se sirve ni se ejecuta: es un lienzo de diseno y
@@ -473,20 +578,22 @@ columnas. El XML alimenta al clasificador; el PDF es para lectura humana.
 ## Pruebas
 
 ```bash
-python3 -m unittest discover           # raiz: paso 0, grn_bronce y grn_comun
+python3 -m unittest discover           # raiz: paso 0, flujo, tablero y los paquetes grn_*
 python3 -m unittest discover etapa2    # etapa2 no tiene __init__.py
+.venv-nlp/Scripts/python -m unittest grn_bronce.test_sintaxis   # las de spaCy
 ```
 
-Son dos comandos, no uno: `etapa2/` no es un paquete, asi que el `discover` de
-la raiz no lo recoge. Los paquetes nuevos si lo son y por eso caen en el
-primero.
+Son tres comandos: `etapa2/` no es un paquete, asi que el `discover` de la
+raiz no lo recoge (los paquetes nuevos si lo son y por eso caen en el
+primero), y las pruebas de `sintaxis.py` que cargan el modelo de spaCy se
+saltan donde no está, el `.venv`: el tercer comando las corre en el
+`.venv-nlp` (en Linux, `.venv-nlp/bin/python`).
 
-Dos fallas de `etapa2` son conocidas y no vienen del codigo que se prueba
-(puntos 36 y 37 del PLAN): con torch importable, como en el `.venv`, fallan dos
-pruebas de `test_clasificar`; y en un clon sin los `entity_marked_*.jsonl` del
-asesor en `etapa2/para_colab/`, `test_extraer_pares` da un error de
-`setUpClass` (sus cinco pruebas no corren, y el total baja de 524 a 519), dos
-errores y una falla. Antes de buscar otra causa, descartar esas dos.
+Las dos fallas conocidas de `etapa2` (puntos 36 y 37 del PLAN) se arreglaron el
+8-oct-2026: `test_clasificar` fuerza «sin torch» con `mock.patch.dict(sys.modules,
+...)`, y las pruebas que leen los `entity_marked_*.jsonl` del asesor se saltan,
+diciendo por que, cuando esos archivos no estan. `etapa2` debe dar 528 en verde
+con el `.venv` y con el Python del sistema.
 
 Ninguna prueba toca la red: se inyecta `pruebas.falsos.ClienteFalso`, que
 devuelve XML o JSON fijo y registra cada llamada. Ademas `PruebaSinRed` deja
@@ -498,13 +605,19 @@ Las pruebas que no pueden faltar:
 - **Idempotencia del ETL**: correr la misma ingesta dos veces y verificar que
   la segunda no llama a `efetch`
   (`pruebas/test_idempotencia.py::PruebasSegundaCorrida`).
+- **Idempotencia del flujo y del paso 2**: la segunda corrida de `flujo.py` sale
+  toda «saltado» (`pruebas/test_flujo.py`), y la segunda clasificacion no llama
+  al modelo; la cache del BioBERT es por texto marcado, no por `id_par`, y
+  esta atada a la huella de los pesos: dos reentrenamientos de la misma receta
+  escriben el mismo `config.json` (`grn_verificacion/test_puente.py`).
 - **El corte de oracion no se mueve**
   (`grn_bronce/test_texto.py::PruebasGolden`). La union de `evaluar_signo.py`
   con las oraciones auditadas es por igualdad de texto, sin identificador
   estable, y su guardian solo salta por debajo de 80 de 93 uniones.
 - **La frontera de la contaminacion**
-  (`etapa2/test_contaminacion.py`). Vigila los cuatro paquetes (`etapa2`,
-  `grn_bronce`, `grn_comun` y, desde el 27-sep-2026, `grn_operones`), subcarpetas
+  (`etapa2/test_contaminacion.py`). Vigila los cinco paquetes (`etapa2`,
+  `grn_bronce`, `grn_comun`, desde el 27-sep-2026 `grn_operones` y desde el
+  8-oct-2026 `grn_verificacion`), subcarpetas
   incluidas y sin distinguir mayusculas, y protege cuatro nombres: el patron
   de oro, la auditoria de signo, la base curada (`GRN_experimental`) y su
   carpeta (`datos/validacion`). Si una referencia entra al diccionario, al
@@ -550,19 +663,29 @@ Las pruebas que no pueden faltar:
   Trabajo restringido a la carpeta propia y al repositorio; la base curada v2 y
   los parrafos etiquetados quedan fuera de toda sesion. Sesion con la cuenta
   personal, sin credenciales en perfiles de shell compartidos.
+- **El servidor del asesor** (GPU RTX 3070 de 8 GB) se usa con una **cuenta
+  compartida**: en su `home` hay carpetas de otras personas. Todo lo nuestro va
+  en una carpeta propia (`~/grn-guillermo`, clon por git) y `GRN_DATOS` fuera
+  del repositorio. No se tocan las carpetas ajenas, ni `~/pseudomonas-trn`, ni
+  el ambiente `pseudoRE` del asesor: se usan para correr, sin instalar nada en
+  ellos. Los comandos los corre el usuario por SSH; Claude prepara y prueba los
+  scripts. **El host y la cuenta no se escriben en el repositorio, que es
+  público**: los comandos de la guía usan el alias `asesor` del
+  `~/.ssh/config` de la laptop.
 
 ## Fuera de alcance
 
 - Modificar archivos fuera del repositorio o del venv del proyecto.
 - Usar `sudo`, cambiar configuracion del sistema o instalar paquetes globales.
 - Ejecutar Playwright u otros navegadores. Desactivado por omision.
-- **Crear `grn_verificacion/` o `grn_red/` antes de que el paso 1 reporte sus
-  metricas.** Los pasos 2 y 3 estan descritos como panorama en `PLAN.md`,
-  no como trabajo abierto.
+- **Crear `grn_red/`** (paso 3). `grn_verificacion/` se abrio el 8-oct-2026,
+  cuando el usuario dio por cumplida la compuerta: el paso 1 ya reporta
+  metricas.
 - **`etapa2/` se conserva congelada**: sin cambios funcionales, solo lo que
-  exija una mudanza de modulos o una correccion de error. Se migra a
-  `grn_verificacion/` cuando el paso 1 tenga metricas. Que ya exista codigo de
-  clasificacion ahi no reabre el paso 2.
+  exija una mudanza de modulos, una correccion de error o una prueba. El paso 2
+  la usa sin modificarla: `grn_verificacion` importa sus funciones y corre sus
+  scripts por subproceso. Su mudanza completa a `grn_verificacion/` sigue
+  pendiente.
 
 ## APIs externas
 
@@ -709,7 +832,12 @@ lista) y agrega la nota y la liga del ultimo intento. Ya no queda SQL fuera de
 **Corridas largas no caben en una peticion HTTP.** Lo resolvio
 `trabajos.Gestor`: `POST /api/trabajo` lanza la funcion en un hilo daemon,
 contesta 202 de inmediato y el tablero sondea `GET /api/trabajo` para ver las
-lineas de bitacora en vivo.
+lineas de bitacora en vivo. Desde el 8-oct-2026 el gestor también atrapa
+`SystemExit` (los CLI terminan con `sys.exit("mensaje")`, que no hereda de
+`Exception`: el hilo moría en silencio y el tablero decía «terminó bien»), y
+el tablero detecta el fin de un trabajo por su identidad (inicio y fin) y no
+por la transición activo → inactivo, que un flujo todo «ya hecho» termina
+antes del primer sondeo.
 
 Queda un limite y es deliberado: **un trabajo a la vez, por proceso.** El
 segundo recibe 409. Es lo que mantiene una sola instancia de `pubmed.Cliente`

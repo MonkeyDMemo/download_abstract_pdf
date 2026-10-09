@@ -47,9 +47,13 @@ comunes de cuatro letras con la misma silueta caen en el patron. Es un punto
 de partida aceptable para filtrar frases candidatas, **no** un sustituto de
 reconocimiento de entidades.
 
-Al escribir codigo que dependa de esto, dejarlo explicito en el docstring. La
-sustitucion prevista es un diccionario derivado de Pseudomonas Genome DB, o un
-modelo de reconocimiento de entidades biomedicas.
+Al escribir codigo que dependa de esto, dejarlo explicito en el docstring. El
+paso 1 ya no reconoce por silueta: usa el diccionario PAO1
+(`grn_bronce/recursos/genes_pao1.tsv`), construido desde RefSeq, KEGG y
+UniProt. **Pseudomonas Genome DB es via cerrada** para el diccionario: todo el
+sitio esta tras un desafio de Cloudflare (ver `docs/hallazgos.md`). El
+reconocimiento de entidades con un modelo (NER) es la fase 4 del plan de
+sintaxis, diferida hasta tener el mapeo PA14 -> PAO1.
 
 Esta limitacion es conocida en la literatura del area: la dependencia de
 diccionarios predefinidos es el cuello de botella de escalabilidad de estos

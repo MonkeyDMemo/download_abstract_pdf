@@ -28,6 +28,9 @@ sin que nadie lo notara. Una sola fuente por tema evita repetirlo.
   sesion no crece con la evidencia, pero la evidencia no se pierde.
 - **Las decisiones de diseno y su porque** estan en `docs/decisiones.md`.
 - **Que se hizo y cuando** esta en `docs/bitacora.md`.
+- **Lo que sigue abierto**, junto y con su fuente, esta en
+  `docs/pendientes.md`: es una foto con fecha; el estado vivo de cada punto
+  se lleva en `PLAN.md`.
 - **El contexto biologico** (nomenclatura de genes, estructura de las consultas
   de PubMed) esta en `dominio-grn.md`, que se carga por descripcion y no
   siempre: no hace falta para tocar el tablero.
