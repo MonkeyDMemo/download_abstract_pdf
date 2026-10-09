@@ -71,6 +71,30 @@ def fila(tf="MexT", blanco="mexEF-oprN", prediccion="activates", prob=0.9,
 UMBRALES = dict(R.UMBRALES_POR_OMISION)
 
 
+class PruebasArranqueComoScript(unittest.TestCase):
+    """`python etapa2/red.py` tiene que arrancar desde cualquier carpeta.
+
+    Del 3-sep al 8-oct no arrancaba: importaba `grn_bronce` antes de meter la
+    raiz del repositorio al path. Ninguna prueba lo vio, porque todas importan
+    el modulo con la raiz ya en el path que les pone `discover`. Esta lo corre
+    como lo corre el flujo: otro proceso, otra carpeta, sin PYTHONPATH.
+    """
+
+    def test_arranca_fuera_del_repositorio(self):
+        import subprocess
+        entorno = dict(os.environ)
+        entorno.pop("PYTHONPATH", None)
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "red.py")
+        with tempfile.TemporaryDirectory() as carpeta:
+            hecho = subprocess.run([sys.executable, "-B", script, "--help"],
+                                   cwd=carpeta, env=entorno,
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT)
+        self.assertEqual(hecho.returncode, 0,
+                         hecho.stdout.decode("utf-8", "replace")[-800:])
+
+
 class PruebasUmbral(unittest.TestCase):
     """Paso 2: fuera no_relation, y cada clase contra SU umbral."""
 

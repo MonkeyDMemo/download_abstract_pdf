@@ -54,6 +54,21 @@ from grn_bronce import texto as T
 AQUI = os.path.dirname(os.path.abspath(__file__))
 ENTRENAMIENTO = os.path.join(AQUI, "para_colab", "entity_marked_train.jsonl")
 
+# Los tres .jsonl son del asesor y estan en .gitignore a proposito: un clon
+# limpio no los trae. Sin ellos estas pruebas no prueban nada del codigo, y
+# fallar las hacia pasar por un defecto de la copia (punto 37 del PLAN): se
+# saltan, y el motivo dice que archivo falta y donde va.
+ARCHIVOS_DEL_ASESOR = [os.path.join(AQUI, "para_colab",
+                                    "entity_marked_%s.jsonl" % nombre)
+                       for nombre in ("train", "dev", "test")]
+MOTIVO_SIN_ARCHIVOS = ("faltan los entity_marked_*.jsonl del asesor en "
+                       "etapa2/para_colab/ (no van en git; ver "
+                       "docs/traspaso-maquina-nueva.md)")
+con_entrenamiento = unittest.skipUnless(os.path.isfile(ENTRENAMIENTO),
+                                        MOTIVO_SIN_ARCHIVOS)
+con_archivos_del_asesor = unittest.skipUnless(
+    all(os.path.isfile(r) for r in ARCHIVOS_DEL_ASESOR), MOTIVO_SIN_ARCHIVOS)
+
 COLUMNAS_GENES = "\t".join(L.COLUMNAS_GENES)
 COLUMNAS_OPERONES = "\t".join(L.COLUMNAS_OPERONES)
 
@@ -168,6 +183,7 @@ class Base(unittest.TestCase):
 class PruebasMarcado(Base):
     """El formato del texto marcado, contra el dato y no contra la memoria."""
 
+    @con_entrenamiento
     def test_marcar_reproduce_lineas_literales_del_entrenamiento(self):
         """Se toman lineas reales, se les quitan los marcadores y se vuelven a
         poner. Si `marcar()` cambia un solo espacio, esto falla.
@@ -185,6 +201,7 @@ class PruebasMarcado(Base):
             desnudo, e1, e2 = desmarcar(fila["text"])
             self.assertEqual(T.marcar(desnudo, e1, e2), fila["text"])
 
+    @con_entrenamiento
     def test_e1_es_un_rol_y_no_una_posicion(self):
         """El gen va antes que el TF en el 38.6 % de los casos y el marcado no
         se reordena. Si `marcar()` asignara e1/e2 por posicion, el par (A,B) y
@@ -199,6 +216,7 @@ class PruebasMarcado(Base):
             self.assertGreater(e1[0], e2[0])
             self.assertEqual(T.marcar(desnudo, e1, e2), fila["text"])
 
+    @con_entrenamiento
     def test_las_menciones_marcadas_son_las_que_dicen_los_campos(self):
         with io.open(ENTRENAMIENTO, encoding="utf-8") as f:
             filas = [json.loads(l) for l in f if l.strip()]
@@ -816,6 +834,7 @@ ARTEFACTOS_DEL_EXTRACTOR = [
 ]
 
 
+@con_archivos_del_asesor
 class PruebasIdempotenciaContraElEntrenamiento(unittest.TestCase):
     """`pretokenizar()` contra el texto que el modelo vio de verdad.
 

@@ -289,7 +289,7 @@ párrafo sin relación anotada. Es trabajo de anotación, no de código.
 **no se versionan aquí**: son trabajo de otra persona y este repositorio tiene
 remoto en GitHub. Están en el `.gitignore`.
 
-Para reproducir, cópialos de `/home/user/pseudomonas-trn` según la tabla de
+Para reproducir, cópialos de `~/pseudomonas-trn` según la tabla de
 rutas de la ficha. `datos_etapa2/` tampoco se versiona: lo regenera
 `particionar.py` de forma determinista con la semilla por omisión.
 

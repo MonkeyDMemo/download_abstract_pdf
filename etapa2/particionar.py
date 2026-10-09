@@ -390,8 +390,10 @@ def tabla_clases(partes, nombres, salida=print):
     # real es de cuantos articulos independientes vienen.
     salida("")
     problemas = []
-    for parte, nombre in zip(partes[1:], nombres[1:]):
-        if not parte:
+    # Toda parte que no es train: en --folds no hay train y fold_0 tambien es
+    # test de su pliegue; con partes[1:] su clase vacia no se avisaba.
+    for parte, nombre in zip(partes, nombres):
+        if nombre == "train" or not parte:
             continue
         for e in ETIQUETAS:
             filas = [r for r in parte if r["label"] == e]
@@ -401,9 +403,19 @@ def tabla_clases(partes, nombres, salida=print):
             arts = collections.Counter(str(r["pmid"]) for r in filas)
             mayor = max(arts.values())
             problemas.append((len(arts), len(filas), e, nombre, mayor))
-    peor = min(problemas)
-    if len(peor) == 5:
-        n_arts, n_ej, e, nombre, mayor = peor
+    # Una clase que falta en dev o test se dice aparte y siempre. Antes su
+    # tupla de 4 ganaba el min() y un `if len(peor) == 5` la callaba: no
+    # salia ni la celda mas flaca ni el AVISO, y el macro-F1 de test cambiaba
+    # de significado sin que nadie se enterara.
+    vacias = [p for p in problemas if len(p) == 4]
+    for _, _, e, nombre in vacias:
+        salida("  AVISO: %s no tiene ningun ejemplo de %s: el F1 de esa clase "
+               "ahi no se mide." % (nombre, e))
+    if vacias:
+        salida("  Reporta validacion cruzada (--folds 5).")
+    con_ejemplos = [p for p in problemas if len(p) == 5]
+    if con_ejemplos:
+        n_arts, n_ej, e, nombre, mayor = min(con_ejemplos)
         salida("  La celda mas flaca: %s en %s son %d ejemplos, pero de solo "
                "%d articulos" % (e, nombre, n_ej, n_arts))
         salida("  (y %d de ellos salen de uno solo)." % mayor)
