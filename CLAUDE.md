@@ -193,7 +193,9 @@ barata de romper algo sin enterarse.
   publico.
 - `salidas/` tambien esta ignorado.
 - **Entrenar con la base curada** (8-oct-2026, PLAN.md:44): corre en el
-  servidor del asesor, donde vive el `.xlsx`, y lo corre el usuario.
+  servidor del asesor, y lo corre el usuario. El `.xlsx` no estaba ahí: el
+  usuario lo sube una sola vez, directo a `GRN_DATOS` y fuera del clon, y de
+  ahí no sale.
   `grn_verificacion/validacion.py` y `entrenamiento.py` reciben la ruta por
   argumento, nunca la nombran, e imprimen solo conteos; sus derivados y el
   modelo entrenado se quedan en el servidor. A una sesion de Claude solo

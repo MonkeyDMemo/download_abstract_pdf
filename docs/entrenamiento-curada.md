@@ -11,7 +11,9 @@ métricas.
 ## Lo que no se negocia
 
 - **La base curada no se abre en una sesión de Claude**, ni en la laptop ni en
-  el servidor, y no se copia a ningún lado. El código la recibe por ruta
+  el servidor, y no se copia a ningún otro lado: si no está en el servidor, se
+  sube una sola vez, directo a `$GRN_DATOS/validacion/` (paso 2), y de ahí no
+  sale. El código la recibe por ruta
   (`--base`) y solo imprime conteos. Lo mismo vale para los
   `entity_marked_*.jsonl` que salen de ella: son oraciones etiquetadas con la
   base. Esta pista no necesita Claude en el servidor, son comandos; si algún día
@@ -95,12 +97,12 @@ Qué anotar:
 |---|---|---|
 | script de entrenamiento | `ls ~/pseudomonas-trn/04_modelling/bio_bert_re_finetune.py` (ruta de la ficha) | `--script` del paso 4 |
 | sus flags | `conda run -n pseudoRE python <script> --help` | ver abajo |
-| ruta del .xlsx de la base | te la da el asesor | `--base` del paso 3 |
+| ruta del .xlsx de la base | si ya está en el servidor, te la da el asesor; si no, la subes tú (paso 2) | `--base` del paso 3 |
 | BioBERT en la caché | la línea `models--dmis-lab--biobert-base-cased-v1.1` | si falta, se baja en el paso 4 |
 | `/home/datos` escribible | el `test -w` de arriba | dónde va `GRN_DATOS` |
 
-Si no tienes la ruta de la base, búscala solo por nombre y sin salir de la
-carpeta del asesor: `find ~/pseudomonas-trn -maxdepth 4 -iname '*.xlsx'
+Si el asesor dice que la base ya está en el servidor y no tienes la ruta,
+búscala solo por nombre y sin salir de su carpeta: `find ~/pseudomonas-trn -maxdepth 4 -iname '*.xlsx'
 2>/dev/null`. **Anota la ruta y nada más: no abras el archivo, no lo copies.**
 
 El `--help` del script tiene que listar `--train_jsonl`, `--dev_jsonl`,
@@ -125,6 +127,7 @@ dentro de tmux):
 ```bash
 cat > ~/grn-guillermo/entorno.sh <<'EOF'
 export GRN_DATOS=/home/datos/grn-guillermo      # si /home/datos no es escribible: $HOME/grn-guillermo/datos
+# si la subes tú (paso 2): /home/datos/grn-guillermo/validacion/<nombre>.xlsx
 export BASE_CURADA='<ruta ABSOLUTA del .xlsx>'   # entre comillas simples ni ~ ni $HOME se expanden
 export SCRIPT_ASESOR=$HOME/pseudomonas-trn/04_modelling/bio_bert_re_finetune.py
 EOF
@@ -151,7 +154,8 @@ Tiene que terminar en `OK`. Son pruebas con datos sintéticos y no leen la base.
 
 ## Paso 2. Llevar las entradas (desde la laptop)
 
-Dos archivos, ninguno confidencial:
+Dos archivos, ninguno confidencial, y la base curada si no está en el servidor
+(al final de este paso):
 
 - `salidas/flujo/corrida4_run22/pares.jsonl`: los pares marcados del corpus
   público, la salida del puente (`grn_verificacion.cli pares`).
@@ -182,6 +186,40 @@ silencio dejaría entrar justo lo que se quería apartar.
 ssh asesor 'mkdir -p ~/grn-guillermo/entrada'
 scp salidas/flujo/corrida4_run22/pares.jsonl salidas/flujo/reservas.tsv asesor:grn-guillermo/entrada/
 ```
+
+### La base curada, si no está en el servidor
+
+Es el único archivo confidencial que viaja, y viaja **una sola vez**: de la
+laptop directo a `$GRN_DATOS/validacion/`, fuera del clon. El repositorio es
+público, y un archivo dentro del clon se puede commitear por error. La copia
+la haces tú, no en una sesión de Claude. Primero la carpeta, ya cerrada:
+
+```bash
+ssh asesor 'mkdir -p /home/datos/grn-guillermo/validacion && chmod 700 /home/datos/grn-guillermo /home/datos/grn-guillermo/validacion'
+```
+
+En la laptop, desde PowerShell, la huella para comparar (imprime solo un
+hash, no el contenido) y la copia:
+
+```powershell
+Get-FileHash -Algorithm SHA256 "<ruta local del .xlsx>"
+scp "<ruta local del .xlsx>" asesor:/home/datos/grn-guillermo/validacion/
+```
+
+En el servidor, que solo tu cuenta lo pueda leer y que haya llegado entero:
+
+```bash
+chmod 600 /home/datos/grn-guillermo/validacion/<nombre>.xlsx
+sha256sum /home/datos/grn-guillermo/validacion/<nombre>.xlsx   # el mismo hash de Get-FileHash, en minúsculas
+```
+
+Esa es la ruta de `BASE_CURADA` en `entorno.sh`. Si tu `GRN_DATOS` quedó en
+`$HOME/grn-guillermo/datos` (paso 0), cambia `/home/datos/grn-guillermo` por
+esa ruta en los tres bloques.
+
+`chmod 700` y `600` la cierran a las otras cuentas de la máquina, no a quien
+entre con la misma cuenta compartida. Que la base viva ahí, y si se queda o
+se borra al terminar, lo decide el asesor.
 
 ## Paso 3. Construir los ejemplos y partirlos por PMID
 

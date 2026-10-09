@@ -1272,9 +1272,10 @@ Dos reglas mantienen la excepción acotada:
 
 ## El entrenamiento con la base curada es supervisión distante, y corre donde vive la base
 
-La base curada es confidencial y vive en el servidor del asesor como `.xlsx`.
-Por eso el entrenamiento se arma allá, y lo corre el usuario. A una sesión de
-Claude solo vuelven conteos y métricas.
+La base curada es confidencial. El entrenamiento se arma en el servidor del
+asesor, que tiene la GPU, y lo corre el usuario. El `.xlsx` no estaba ahí: se
+sube una sola vez, directo a `GRN_DATOS` y fuera del clon, y de ahí no sale. A
+una sesión de Claude solo vuelven conteos y métricas.
 
 `grn_verificacion/validacion.py` lee el `.xlsx` con `zipfile` y
 `ElementTree`, sin openpyxl, para correr con el Python que ya haya. La ruta
