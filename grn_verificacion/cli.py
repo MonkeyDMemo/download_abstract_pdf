@@ -133,9 +133,9 @@ def cmd_datos_entrenamiento(args):
 
 
 def cmd_reservas(args):
-    """El archivo de lo que no entra al entrenamiento: los PMIDs de la muestra
-    de 50 juicios (con ella se recalcula el 44 %) y, si se da, las oraciones del
-    conjunto ciego de la trampa del signo."""
+    """El archivo de lo que no entra al entrenamiento: los PMIDs y las
+    oraciones de la muestra de 50 juicios (con ella se recalcula el 44 %) y,
+    si se da, las oraciones del conjunto ciego de la trampa del signo."""
     import csv
     from grn_bronce.texto import normalizar_espacios
     from grn_verificacion import entrenamiento
@@ -150,14 +150,15 @@ def cmd_reservas(args):
                     oraciones.append(texto)
     os.makedirs(os.path.dirname(os.path.abspath(args.salida)), exist_ok=True)
     # Se reporta lo que quedó escrito, no lo leído: la muestra de 50 juicios
-    # trae 46 PMIDs distintos, y las 198 filas del conjunto ciego son 182
-    # oraciones distintas. Son las cifras que va a repetir `datos-entrenamiento`.
+    # trae 46 PMIDs distintos y 50 oraciones, y las 198 filas del conjunto
+    # ciego son 182 oraciones distintas. Son las cifras que va a repetir
+    # `datos-entrenamiento` (46 PMIDs; 232 oraciones).
     escritas = entrenamiento.escribir_reservas_de_juicios(
         args.salida, oraciones_extra=oraciones)
-    log("Reservas escritas en %s: %d PMIDs de la muestra de juicios y %d "
-        "oraciones distintas del conjunto ciego (%d filas)."
-        % (args.salida, escritas["pmids"], escritas["oraciones"],
-           len(oraciones)))
+    log("Reservas escritas en %s: %d PMIDs y %d oraciones distintas (las de "
+        "la muestra de juicios más %d distintas del conjunto ciego, de %d "
+        "filas)." % (args.salida, escritas["pmids"], escritas["oraciones"],
+                     len(set(oraciones)), len(oraciones)))
     return 0
 
 
@@ -226,7 +227,8 @@ def main(argv=None):
     rs.add_argument("--salida",
                     default=os.path.join("salidas", "flujo", "reservas.tsv"))
     rs.add_argument("--ciego", default=None,
-                    help="TSV con columna `oracion` (datos_etapa2/ciego_198.tsv).")
+                    help="TSV con columna `oracion`: el conjunto ciego de la "
+                         "trampa del signo, versionado en etapa2/.")
     rs.set_defaults(func=cmd_reservas)
 
     args = ap.parse_args(argv)
