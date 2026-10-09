@@ -15,6 +15,9 @@ __pycache__/
 *.py[cod]
 venv/
 .venv/
+# El entorno de spaCy va aparte: scispaCy exige numpy<2 y el .venv tiene el
+# numpy 2 de torch. Se rehace con las instrucciones de docs/plan-sintaxis-bronce.md.
+.venv-nlp/
 # Lo que deja `pip install -e ".[bronce]"` al leer pyproject.toml
 *.egg-info/
 build/

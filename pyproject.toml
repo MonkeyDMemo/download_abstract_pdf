@@ -32,9 +32,20 @@ dependencies = []
 bronce = ["openpyxl>=3.1", "PyMuPDF>=1.23"]
 # grn_operones/: solo el .xlsx opcional del catálogo maestro.
 operones = ["openpyxl>=3.1"]
+# grn_bronce/sintaxis.py (aprobado el 8-oct-2026): spaCy con el modelo
+# en_core_sci_md de scispaCy, sin el paquete scispacy, que no hace falta para
+# el parser. Va en su propio venv, `.venv-nlp`: spaCy 3.7 exige numpy<2 y el
+# `.venv` tiene el numpy 2 de torch. typer, click y weasel se fijan porque pip
+# elegía un typer que ya no instala click, y spaCy 3.7.5 lo importa al cargar.
+# En una máquina sin PyPI, el modelo se instala desde su .tar.gz con
+# `pip install --no-index`; ver docs/plan-sintaxis-bronce.md.
+bronce-nlp = ["spacy==3.7.5", "numpy>=1.26,<2", "typer>=0.9,<0.10",
+              "click>=8.0,<8.2", "weasel>=0.3,<0.4.2",
+              "en_core_sci_md @ https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/en_core_sci_md-0.5.4.tar.gz"]
 
 [tool.setuptools]
-packages = ["grn_etl", "grn_bronce", "grn_comun", "grn_operones"]
+packages = ["grn_etl", "grn_bronce", "grn_comun", "grn_operones",
+            "grn_verificacion"]
 
 [tool.setuptools.package-data]
 grn_bronce = ["secciones.tsv", "recursos/*.tsv", "recursos/*.csv",
