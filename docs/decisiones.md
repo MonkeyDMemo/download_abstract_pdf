@@ -1174,3 +1174,156 @@ no cambia.
 **Pendiente de la decisión 3:** la pertenencia sale de ODB y BioCyc, que
 podrían estar también en la base curada del laboratorio. Hasta saberlo, se
 usa para anotar y no como rasgo del paso 2 evaluado contra esa base.
+
+## El flujo corre cada paso como proceso aparte y se salta lo hecho por huella
+
+`flujo.py` (8-oct-2026) no importa los pasos: llama a los CLI que ya existían
+por subproceso, con `grn_comun/proceso.py`. Hay tres razones:
+- **Cada paso necesita un intérprete distinto.** El BioBERT pide torch, la
+  sintaxis pide spaCy con numpy < 2, y el resto es estándar. En un solo
+  proceso no caben.
+- **`etapa2` está congelada.** Llamar a `clasificar.py` y `red.py` tal como
+  están no obliga a tocarlos.
+- **Cancelar.** Un hilo de Python no se puede matar; un árbol de procesos sí.
+  `proceso.correr` lanza cada paso en su propio grupo, y un vigía mira el
+  evento `detener` cada medio segundo. Mata también al nieto, porque el paso
+  `biobert` lanza a su vez `clasificar.py`.
+
+Saltar lo hecho se decide **por huella de contenido, no por fecha de
+archivo**. Cada paso declara:
+- sus entradas, **incluido su propio código** (el CLI y los módulos que
+  lee);
+- sus parámetros;
+- sus salidas, que tienen que seguir existiendo con la huella que dejaron.
+
+La fecha falla en las dos direcciones: un `git checkout` toca archivos sin
+cambiarlos, y copiar una carpeta entre máquinas conserva fechas de archivos
+que sí cambiaron. Meter el código en la huella es lo que hace que un arreglo
+del bronce rehaga el bronce sin que nadie se acuerde de pedirlo.
+
+La consecuencia buena se vio en la corrida del 8-oct. El bronce se rehízo, pero
+`pares.jsonl` salió idéntico, y BioBERT y la red se saltaron solos: la cadena
+se corta donde el contenido deja de cambiar, no donde cambió algo arriba.
+
+El estado vive en `estado.json`, escrito de forma atómica después de cada paso.
+Cada carpeta lleva un candado `.flujo.lock` con `O_EXCL`: dos flujos sobre la
+misma carpeta se pisarían los archivos. Si el proceso muere de golpe, el
+candado queda y el mensaje dice cuál borrar; no se adivina si el dueño sigue
+vivo.
+
+## El puente al BioBERT reutiliza el marcado del entrenamiento, y la caché es por texto
+
+`grn_verificacion/puente.py` no escribe su propio marcado `<e1>`/`<e2>`: usa
+`etapa2/extraer_pares.candidatos_de_oracion` y su `verificar()`. Es la función
+que produjo los pares del 27-ago, y su marcado reproduce línea por línea el de
+los datos de entrenamiento (lo vigila
+`test_marcar_reproduce_lineas_literales_del_entrenamiento`). Un marcado
+distinto en inferencia es la forma más barata de medir otro modelo sin
+enterarse.
+
+Las predicciones del 27-ago se reutilizan, pero solo bajo tres condiciones:
+- el **texto marcado es idéntico**;
+- el **checkpoint es el mismo**: misma huella de los pesos y del tokenizador,
+  y mismo `config.json`, `id2label` y `max_length`;
+- la caché es **por texto, nunca por `id_par`**.
+
+La segunda condición se endureció el 8-oct, en la auditoría antes de
+publicar. Al principio solo se comparaba el `config.json`, y el de un BERT
+afinado no depende de los pesos: dos reentrenamientos con la receta del
+run 22 lo escriben idéntico byte a byte. El modelo entrenado con la base
+curada habría heredado sin aviso las predicciones del limpio. Los metas que ya
+existían no traían la huella de los pesos; se sellaron a mano después de
+reclasificar 48 de sus predicciones con el checkpoint actual (48 de 48 con la
+misma clase, diferencia máxima 1e-6), y el sello dice cómo se hizo. Al del
+27-ago, escrito por `clasificar.py`, también le faltaba la huella de su
+`pares.jsonl`: se selló después de comprobar sus 63 791 pares uno por uno
+(mismo `id_par`, en el mismo orden, con el mismo regulador y blanco).
+
+La tercera no es un detalle. `id_par` sale del PMID, la sección, el número de
+oración y las dos entidades, no del texto. Si el bronce cambia una oración y
+conserva su número, unir por `id_par` le pega a la oración nueva la predicción
+de la vieja, y nada falla. Hay una prueba que lo vigila. Donde la unión por
+`id_par` es inevitable (con el `pares.jsonl` de otra carpeta, o en la capa),
+se exige antes que las predicciones sean de ese mismo `pares.jsonl`, por su
+huella.
+
+Antes de confiar en la reutilización se reclasificaron 14 pares. Salieron
+14 de 14 con la misma clase y una diferencia máxima de probabilidad de 1e-6.
+Con eso, el 81.8 % de los 72 969 pares no volvió a pasar por el modelo. Las
+13 293 nuevas tomaron 998 s de CPU; todas, a esa velocidad, cerca de hora y
+media.
+
+## La sintaxis vive en un `.venv-nlp` aparte
+
+scispaCy exige numpy < 2 y el `.venv` tiene numpy 2.5.2, que usan torch y
+`transformers`. Bajar numpy en el `.venv` arriesgaba el entorno que clasifica.
+
+El `.venv-nlp` lleva spaCy 3.7.5 y el modelo `en_core_sci_md` 0.5.4,
+**sin el paquete `scispacy`**. El modelo carga sin él, y el paquete era el
+que no instalaba en Python 3.12. Las versiones van fijas en el extra
+`[bronce-nlp]` de `pyproject.toml`, con `weasel`, `typer` y `click` acotados:
+sin esos topes, pip resuelve versiones que rompen la CLI de spaCy.
+
+Dos reglas mantienen la excepción acotada:
+- `grn_bronce/sintaxis.py` es el **único** módulo que importa spaCy, y lo
+  hace dentro de sus funciones.
+- Sin `.venv-nlp`, el flujo marca el paso como `omitido`, no como error. La
+  capa sale igual, con las columnas de sintaxis vacías.
+
+## El entrenamiento con la base curada es supervisión distante, y corre donde vive la base
+
+La base curada es confidencial y vive en el servidor del asesor como `.xlsx`.
+Por eso el entrenamiento se arma allá, y lo corre el usuario. A una sesión de
+Claude solo vuelven conteos y métricas.
+
+`grn_verificacion/validacion.py` lee el `.xlsx` con `zipfile` y
+`ElementTree`, sin openpyxl, para correr con el Python que ya haya. La ruta
+llega por argumento: la guarda de contaminación sigue sin nombres en su lista
+blanca.
+
+Las reglas de `entrenamiento.py`, y la razón de cada una:
+- **Positivo:** el par coincide por locus con una fila de la base y el PMID de
+  la oración está en `Reference`. Es la regla b del PLAN 2.4: el locus solo no
+  dice que esa oración afirme la relación.
+- **Fuera la homología:** viene de otro organismo, no de la oración.
+- **Fuera `Origen = BioBERT`:** sería entrenar al modelo con sus propias
+  salidas.
+- **Fuera el signo `d`.**
+- **Negativos:** coocurrencias de los mismos PMIDs que no están en la base en
+  ningún sentido. Son negativos ruidosos, y se reportan así.
+- **Reservados:** los PMIDs de la muestra de 50 y las oraciones del conjunto
+  ciego no entran. Si entraran, las dos evaluaciones externas que tiene el
+  proyecto dejarían de serlo.
+- La partición va por PMID (`particionar.py --por pmid`). La métrica de
+  *E. coli* se contaminó justo por partir por oración.
+
+## El tablero corre el flujo: qué se toma de la petición y qué no
+
+`POST /api/trabajo {tipo: "flujo"}` acepta **qué** correr: corrida, pasos,
+forzar, límite y reusar. **Dónde y con qué** sale del arranque del servidor y
+nunca del cuerpo: la carpeta de salida, la raíz de datos, el modelo y los
+intérpretes. Un `python_bert` que llegara por HTTP sería ejecutar el programa
+que diga quien mande la petición, y una `salida` sería permiso de escritura en
+cualquier parte del disco. Es la misma regla que ya tenía `salida` para el
+fulltext.
+
+Tres detalles de HTTP que no son obvios, y el defecto que evita cada uno:
+- **Cancelar pide un cuerpo JSON aunque sea `{}`.** Un POST sin cuerpo es
+  una petición simple: cualquier página abierta en el mismo navegador la
+  puede mandar a 127.0.0.1 sin preflight y cortar la corrida de otro. Con
+  cuerpo, la verificación de `Content-Type` la detiene.
+- **Las salidas se mandan por bloques y con el largo exacto.** El CSV de
+  candidatas pesa decenas de MB, y leerlo entero en memoria por cada descarga
+  podía tumbar el tablero. Además, `flujo.log` crece mientras el flujo corre: mandar «hasta el
+  fin del archivo» después de anunciar un `Content-Length` deja bytes de más,
+  que con HTTP/1.1 se leen como el principio de la siguiente respuesta.
+- **El fin de un trabajo se detecta por su identidad (inicio y fin), no por
+  la transición activo → inactivo.** Un flujo todo «ya hecho» termina antes
+  del primer sondeo, y la página nunca veía la transición.
+- **El `Host` tiene que nombrar a `127.0.0.1` o `localhost`, con cualquier
+  puerto.** Escuchar solo en 127.0.0.1 no basta contra el DNS rebinding: una
+  página hostil hace que su dominio resuelva a 127.0.0.1, queda en el mismo
+  origen que el tablero y manda JSON sin preflight. Lo que la delata es que el
+  navegador sigue poniendo su dominio en `Host`. El puerto no protege nada y
+  la primera versión, que lo exigía, rompía el túnel SSH a otro puerto local
+  (`ssh -L 8766:127.0.0.1:8765`).

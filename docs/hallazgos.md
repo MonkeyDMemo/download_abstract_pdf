@@ -143,3 +143,83 @@ publicaron con licencia BSD-3: `greenelab/core-accessory-interactome`, commit
 **Regla derivada.** Los operones de PGD entran por esa exportación, con
 procedencia y huella. El diccionario sigue sin PGD: su anotación está tras el
 mismo desafío.
+
+---
+
+## El BioBERT no sube la precisión del bronce, pero acierta el signo donde lo da
+
+**8 de octubre de 2026.**
+
+Se conectó el bronce de la corrida 4 con el clasificador run22 y se volvió a
+medir sobre las mismas 50 oraciones juzgadas el 11-sep, con las reglas de
+`unir_juicios.py` (el dudoso va al denominador). Unieron 50 de 50 y P0
+reproduce 22 de 50.
+
+| | valor | IC 95 % (Wilson) |
+|---|---|---|
+| P0, bronce solo | 22/50 = 44.0 % | 31.2-57.7 |
+| P1, con el filtro del BioBERT y umbral | 16/37 = 43.2 % | 28.7-59.1 |
+| R1, correctas retenidas | 16/22 = 72.7 % | 51.8-86.8 |
+| E1, incorrectas descartadas | 6/24 = 25.0 % | 12.0-44.9 |
+| signo, donde lo da | 11/11, incluidas 2 represiones | 74.1-100 |
+| «siempre +» sobre las 15 con signo claro | 11/15 = 73.3 % | 48.0-89.1 |
+
+**Lo observado:**
+- El filtro descarta en la misma proporción las buenas y las malas, así que
+  sobre esta muestra no separa.
+- Pasar a `no` las dos filas discutibles (14 y 27) no cambia la conclusión:
+  40.0 % contra 40.5 %.
+- El signo acierta las 11 que cubre, pero deja 4 de 15 sin signo.
+- Las seis invertidas no las puede arreglar el BioBERT: en las seis el
+  regulador verdadero no es TF, y el modelo solo pone TF como `<e1>`.
+
+**Regla derivada.**
+- La predicción del BioBERT entra a la capa como columna, **no como filtro**.
+  Descartar por un umbral sin calibrar tira tantas relaciones buenas como
+  malas.
+- Toda cifra de precisión va con su retención al lado (R1).
+- El signo de 11/11 se cita con su n y su cobertura, nunca solo.
+
+---
+
+## La sintaxis v1 orienta poco y no rompe nada; el control léxico del disparador cubre más
+
+**8 de octubre de 2026.** Medido con `grn_bronce/sintaxis.py` v1 (spaCy 3.7.5,
+`en_core_sci_md` 0.5.4) sobre las 29 659 candidatas de la corrida 4: 76 453
+pares no ordenados en 96 s de CPU.
+
+**Dirección (punto 30).** La ficha de los 6 invertidos se escribió antes de
+correr (`ficha-invertidos-punto30.md`).
+- Esperaba 2 de 4 recuperables y salió **1 de 4** (la línea 20).
+- **0 de las 22 correctas se rompería**, y 6 se confirman.
+- La línea 8 falla por la regla nominal: en «RhlR-dependent phenotypes» la
+  regla pone a RhlR de regulador, cuando el sujeto (pqsE) es el regulador.
+- Sobre los 72 969 pares de la capa: 6 446 concuerdan con el orden del
+  BioBERT, 4 103 lo invierten y 55 036 quedan sin orientar.
+- **8 128 pares (11 %) tienen una mención que no se alineó con los tokens**
+  (4 874 menciones).
+
+**Signo (punto 18).** Sobre los 1 186 pares dirigidos del bronce, con 674 de
+techo:
+
+| regla | signo único | contradictorio | sin signo |
+|---|---|---|---|
+| bronce: la unión de los disparadores | 114 | 194 | 512 solo `?` |
+| control léxico: el disparador con signo (+ o −) más cercano | 537 | 137 | 512 sin disparador con signo |
+| sintaxis: el disparador dominante en el árbol | 166 | 47 | 361 solo `?` + 483 sin disparador |
+
+La primera medición del control léxico (200, 104, 635) venía de un código que
+aceptaba también los «?»: un «regulates» cercano le ganaba a un «represses»
+lejano. Con la regla fijada antes de medir, la que dice la tabla, son 537 de
+674. **Esto mide consistencia entre oraciones, no acierto:** que un par
+tenga un solo signo no dice que sea el correcto.
+
+**Regla derivada.**
+- La dirección sintáctica no reorienta el bronce: no cumple el criterio
+  fijado de antemano (≥ 3 de 4 y 0 rotas). Queda como columna informativa.
+- Las reglas no se ajustan con estas 50 oraciones, que ya están vistas. La v2
+  se mide contra una muestra nueva.
+- Para el signo de la v5, el control léxico es el candidato barato: solo
+  estándar y con el 80 % del techo. La sintaxis deja menos contradicciones a
+  costa de perder pares. Antes de adoptar uno hay que medir su acierto contra
+  signos juzgados, no solo su consistencia.

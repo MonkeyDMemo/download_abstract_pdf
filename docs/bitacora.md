@@ -8,6 +8,293 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 8 de octubre de 2026 — el flujo de punta a punta: bronce, BioBERT, sintaxis, capa y tablero
+
+El 2-oct el asesor pidió «correr el flujo con lo que tenemos», y quedó
+prometido automatizarlo para ver la capa con funciones biológicas, operones y
+la oración, con el BioBERT conectado y las técnicas de NLP investigadas. Para
+la reunión del 9-oct el orden fue: flujo + BioBERT, luego NLP, luego tablero,
+luego entrenamiento. Se abrió `grn_verificacion/` (paso 2); `grn_red/` sigue
+cerrado.
+
+### Lo que se construyó
+
+- **`python flujo.py`**, con `grn_comun/proceso.py`. Son ocho pasos:
+  operones → bronce → pares → BioBERT → red → sintaxis → capa → evaluar.
+  - Cada paso es un subproceso del CLI que ya existía, así que torch y spaCy
+    viven cada uno en su intérprete.
+  - Un paso se salta si su huella no cambió. La huella cubre sus entradas, su
+    propio código y sus parámetros, y además sus salidas tienen que seguir
+    ahí. `--forzar` rehace.
+  - Por cada corrida del bronce y modelo hay una carpeta,
+    `salidas/flujo/corrida4_run22/`, con `estado.json` (atómico, escrito
+    después de cada paso), `flujo.log` y un candado. `flujo.log` guarda ahora
+    también las líneas del propio orquestador; antes, una corrida toda «ya
+    hecho» no dejaba rastro en él.
+  - Cancelar mata el árbol entero, incluido el nieto `clasificar.py`. Los
+    códigos de salida son 0, 1 (falló un paso), 2 (uso incorrecto) y 3
+    (cancelado).
+- **`grn_verificacion/`**, solo estándar:
+  - `puente.py` lleva las candidatas del bronce a `clasificar.py` con
+    `extraer_pares`, el mismo marcado del entrenamiento. Reutiliza
+    predicciones por texto marcado idéntico, y solo del mismo checkpoint:
+    misma huella de pesos y tokenizador, mismo `config.json`, `id2label` y
+    `max_length`.
+  - `capa.py` escribe `capa_pares.csv`, de 56 columnas: oración, funciones,
+    operones, BioBERT y sintaxis.
+  - `evaluar.py` recalcula el 44 %.
+  - `validacion.py` y `entrenamiento.py` preparan el entrenamiento con la base
+    curada, que corre en el servidor del asesor (ver más abajo).
+  - El paso `biobert` deja su fila en `corridas` con `paso = '2'`.
+- **`grn_bronce/sintaxis.py`** corre en un `.venv-nlp` aparte, con spaCy 3.7.5,
+  numpy < 2 y `en_core_sci_md` 0.5.4, sin el paquete `scispacy`. Resuelve
+  cuatro de los seis bloqueantes del 27-sep, esquiva el de la tabla (la salida
+  es un JSONL) y deja diferido el del NER; el detalle está en
+  `plan-sintaxis-bronce.md`.
+  - Es el único módulo que importa spaCy.
+  - Respeta el corte de oración congelado, porque fija `is_sent_start` antes
+    del parser.
+  - Emite una línea por oración y par no ordenado de entidades, sean o no TF.
+- **El tablero gana la pestaña «Pipeline».** Se elige corrida y pasos, se
+  corre, se cancela, se ve cada paso y se bajan las salidas.
+  - Cancelar es cooperativo y pide un cuerpo JSON.
+  - Las salidas se sirven por bloques, con el largo exacto.
+  - El gestor atrapa `SystemExit`, que antes mataba el hilo en silencio con
+    «terminó bien».
+  - El fin de un trabajo se detecta por su identidad: un flujo todo «ya hecho»
+    terminaba antes del primer sondeo y la página no se enteraba.
+  - Se probó con 52 pruebas nuevas y un humo de punta a punta contra un
+    servidor real, sin navegador. Falta que alguien lo use en uno.
+- **`etapa2`, solo arreglos permitidos:**
+  - `python etapa2/red.py` no arrancaba desde el 3-sep: importaba
+    `grn_bronce` antes de `sys.path.insert`.
+  - Puntos 36 y 37: `test_clasificar` fuerza «sin torch» y
+    `test_extraer_pares` se salta sin los `.jsonl` del asesor.
+
+### Lo que dio la corrida 4 con el modelo run22, en CPU
+
+- **Pares:** 29 659 candidatas → 22 267 oraciones con par → **72 969 pares**,
+  66 866 de XML y 6 103 de resumen. 5 828 son el par que orientó el bronce,
+  1 604 son otro par de la misma oración y 65 537 no tienen par del bronce.
+- **BioBERT:**
+  - **59 676 predicciones (81.8 %) se reutilizaron del 27-ago** por texto
+    marcado idéntico. Antes de confiar en eso se reclasificaron 14 de ellas.
+    Después de la auditoría se reclasificaron 48 más: 24 del 27-ago, 12
+    reutilizadas en esta corrida y 12 nuevas. Todas dieron la misma clase,
+    con una diferencia máxima de probabilidad de 1e-6.
+  - Las 13 293 nuevas tardaron 998 s de CPU.
+  - El reparto: `activates` 18 822, `represses` 12 330, `regulates` 31 328 y
+    `no_relation` 10 489. Pasan el umbral 55 636.
+- **Red preliminar:** 8 827 aristas, 377 TF, 1 775 blancos y 537 conflictos.
+  La del 27-ago, ya con el diccionario corregido, tenía 8 488 (8 653 antes de
+  corregirlo).
+- **Capa:** 72 969 filas de 1 444 artículos.
+  - 17 326 oraciones tienen operón.
+  - 38 307 pares tienen el blanco dentro de un operón de la base, y 3 605 un
+    blanco que es operón.
+  - Huella de `operones_base.tsv`: `f399bd89da7d558d`.
+- **Idempotencia sobre datos reales:**
+  - **La tercera corrida sale con los ocho pasos «ya hecho».**
+  - La segunda rehízo el bronce y los pares, porque entre una y otra
+    cambiaron entradas de su huella (el CLI del bronce ganó el subcomando
+    `sintaxis`).
+  - `pares.jsonl` salió idéntico byte a byte, así que BioBERT y la red se
+    saltaron solos.
+  - Una cuarta, después de tocar `grn_bronce/db.py`, rehízo solo el bronce: su
+    CSV salió idéntico y los otros siete pasos se saltaron.
+
+### El 44 %, recalculado con el BioBERT
+
+Mismas 50 oraciones y reglas de `unir_juicios.py`: el dudoso va al
+denominador. Unieron 50 de 50, y P0 reproduce 22 de 50.
+
+| | valor | IC 95 % |
+|---|---|---|
+| P0, bronce solo | 22/50 = 44.0 % | 31.2-57.7 |
+| P1, bronce + BioBERT con umbral | 16/37 = 43.2 % | 28.7-59.1 |
+| P1', sin umbral | 18/42 = 42.9 % | 29.1-57.8 |
+| R1, `si` retenidas | 16/22 = 72.7 % | 51.8-86.8 |
+| E1, `no` descartadas | 6/24 = 25.0 % | 12.0-44.9 |
+| invertidas descartadas | 1/6 | |
+| S1, signo del BioBERT donde lo da | 11/11, con 2 represiones | 74.1-100 |
+| línea base «siempre +» | 11/15 = 73.3 % | 48.0-89.1 |
+
+**El filtro no sube la precisión.** Descarta una cuarta parte de las malas y
+también una cuarta parte de las buenas. Con las líneas 14 y 27 pasadas a `no`,
+quedan P0 = 40.0 % y P1 = 40.5 %: misma conclusión.
+
+**El signo, donde lo da, acierta 11 de 11**, incluidas 2 de las 4 represiones.
+Es la primera medición de signo sobre relaciones juzgadas de *P. aeruginosa*,
+pero con n = 11, y deja 4 de 15 sin cubrir (3 `no_relation` y 1
+`regulates`).
+
+Las evaluaciones de `etapa2` apenas se mueven respecto al 27-ago:
+- Oro honesto: exhaustividad 137/144 = 95.1 %, igual que entonces.
+- Acierto de signo en el oro: 92/105 = 87.6 %, que despega de la clase
+  mayoritaria con p = 0.005. El 27-ago era 90/104 = 86.5 %, con p = 0.0103.
+- Trampa del signo: 36/93 = 38.7 % sin umbral y 34/93 = 36.6 % con umbral. El
+  27-ago era 34/93 sin umbral y 33/93 con umbral.
+- El fenotipo del mutante sigue en 2 de 24, con 14 inversiones.
+
+### Sintaxis (punto 30) y disparador dominante (punto 18)
+
+La ficha de los 6 invertidos (`ficha-invertidos-punto30.md`) se escribió antes
+de correr. El usuario la confirmó después de la corrida, sin cambios.
+
+- Esperaba 2 de 4 recuperables y salió **1 de 4** (la línea 20).
+- La 8 la orienta mal la regla «RhlR-dependent».
+- Ninguna de las 22 `si` se rompe (0/22) y 6 se confirman.
+- No cumple el criterio (≥ 3 de 4 y 0 rotas): la dirección sintáctica queda
+  como columna informativa. La regla no se ajustó con estas 50.
+
+Sobre los 72 969 pares de la capa:
+- 6 446 concuerdan con el orden del BioBERT, 4 103 lo invierten y 55 036
+  quedan sin orientar.
+- 7 384 no tienen dato: son la autorregulación de una entidad consigo misma
+  (NalD → nalD), que la sintaxis no analiza. De los 8 000 pares con
+  `autorregulacion = si`, los otros 616 son por operón (PhoB → phoBR) y sí
+  tienen dato.
+- **8 128 pares (11 %) quedan con una mención sin alinear a los tokens**: es
+  lo primero que mejorar en la v2.
+
+Disparador dominante, sobre los 1 186 pares dirigidos (techo 674):
+
+| regla | signo único | mezcla | contradictorio | solo `?` | sin disparador con signo |
+|---|---|---|---|---|---|
+| bronce de hoy | 114 | 366 | 194 | 512 | — |
+| control léxico: el disparador con signo (+ o −) más cercano | 537 | — | 137 | — | 512 |
+| sintaxis: el disparador dominante en el árbol | 166 | 129 | 47 | 361 | 483 |
+
+La primera medición del control léxico daba 200, 247, 104 y 635. El código
+aceptaba también los «?», y un «regulates» cercano le ganaba a un «represses»
+lejano. La auditoría lo encontró; corregido a la regla que se había escrito
+antes de medir, da 537 de 674.
+
+**Ojo: estas cifras miden consistencia, no acierto.** Que un par tenga un solo
+signo en todas sus oraciones no dice que sea el correcto: eso se mide con
+signos juzgados, como el S1 de arriba. Con esa salvedad, el control léxico es
+el candidato barato para la v5: solo estándar, no pide `.venv-nlp` y cubre el
+80 % del techo. La sintaxis deja menos contradicciones, pero pierde 483 pares
+sin disparador.
+
+### Entrenamiento con la base curada: preparado, no corrido
+
+Es supervisión distante en el servidor del asesor; los comandos los corre el
+usuario y la base nunca entra a una sesión de Claude. La guía es
+`entrenamiento-curada.md`.
+
+- Entra el `pares.jsonl` de esta corrida, que es corpus público.
+- **Positivos:** el par por locus y el PMID en `Reference`.
+- **Quedan fuera:** homología, `Origen = BioBERT` (sería circular) y signo `d`.
+- **Negativos:** coocurrencias de los mismos PMIDs que no están en la base.
+- **Reservados:** los PMIDs de la muestra de 50 y las 182 oraciones del
+  conjunto ciego (`salidas/flujo/reservas.tsv`, 46 PMIDs).
+- Hay 47 pruebas con un `.xlsx` sintético. Una de ellas vigila que la CLI no
+  imprima oraciones.
+
+### La auditoría antes de publicar
+
+El repositorio tiene remoto público y el código se iba a clonar en el servidor
+del asesor, así que antes del commit todo lo nuevo pasó por cuatro revisores en
+paralelo:
+- publicación;
+- código;
+- la guía del servidor contra los CLI reales;
+- documentación contra el código y las cifras.
+
+Cada hallazgo lo intentó refutar un verificador aparte. Se confirmaron 48: 2 de
+publicación, 8 de la guía, 14 de código y 24 de documentación. Uno se rechazó.
+Todos quedaron corregidos, con su prueba cuando eran de código.
+
+Lo que importaba de verdad:
+
+- **La caché del BioBERT identificaba al modelo solo por su `config.json`.**
+  Dos reentrenamientos de la receta del run 22 lo escriben idéntico byte a
+  byte, así que el modelo entrenado con la base curada habría heredado sin
+  aviso las predicciones del limpio.
+  - Ahora la firma lleva la huella de los pesos y del tokenizador.
+  - Las metas viejas, del 27-ago y de este día, se sellaron a mano con esa
+    huella, después de reclasificar 48 predicciones: 24 del 27-ago, 12 nuevas
+    de este día y 12 reutilizadas. Las 48 dieron la misma clase, con una
+    diferencia máxima de 1e-6.
+- **`clasificar.py --reanudar` adoptaba lo que otro modelo dejó a medias.**
+  Ahora la lista de pendientes queda atada al modelo, y los intermedios se
+  borran al unir.
+- **Dos checkpoints «run22» caían en la misma carpeta del flujo.** Ahora solo
+  el de omisión se abrevia, y una carpeta de otro modelo detiene el flujo.
+- **En Linux, cancelar no alcanzaba a `clasificar.py`**, que nacía en otra
+  sesión. Ahora el nieto queda en el grupo del paso.
+- **La reserva por oración dejaba pasar 16 pares del conjunto ciego**: 8 de sus
+  182 oraciones llegan a la corrida 4 cortadas de otra forma. Ahora también se
+  aparta por contención, con un mínimo de 40 caracteres, y los reservados por
+  oración pasan de 500 a 516.
+- **`particionar.py` callaba cuando a test le faltaba una clase entera.**
+- **El control léxico del punto 18 aceptaba «?»**, contra la regla fijada antes
+  de medir. Corregido; las cifras están en la tabla de arriba.
+- **Lo demás:**
+  - el CLI del paso 0 y el tablero ya abren la misma base cuando hay
+    `GRN_DATOS`;
+  - el tablero rechaza un `Host` que no sea el suyo (DNS rebinding);
+  - en Windows, el reemplazo atómico aguanta a un lector unos segundos;
+  - el paso evaluar declara sus referencias y vocabularios, y cada paso declara
+    todo su código;
+  - un evaluador opcional que falló se reintenta;
+  - la guía del servidor ya no publica el host ni la cuenta, y da las cifras
+    que hay que ver en cada paso.
+
+**Una segunda pasada revisó los arreglos.** Fueron dos revisiones de código
+independientes y una de documentación, cada una con su verificador. Se
+confirmaron 16, ninguno rechazado, más 4 que aportó solo la segunda revisión
+de código. Todos quedaron corregidos:
+- **El chequeo de `Host` exigía el puerto del servidor.** Un túnel SSH a otro
+  puerto local recibía 403. Ahora se revisa solo el nombre, que es lo que
+  delata al DNS rebinding.
+- **Pasos con código o recursos sin declarar.** La sintaxis no declaraba el
+  código que comparte con los pares (la elección de ocurrencias, el léxico).
+  Los pares no declaraban el marcado ni los locus por operón, y la evaluación
+  tampoco declaraba los suyos.
+- **La red y los evaluadores de etapa2 unían predicciones viejas con un
+  `pares.jsonl` nuevo** si se pedían pasos sueltos sin BioBERT. Ahora el flujo
+  lo impide antes de esos pasos.
+- **Cifras viejas a la vista.** Si fallaban la capa o la evaluación, sus
+  salidas anteriores quedaban a la vista y el tablero las pintaba. Ahora se
+  borran antes de correr.
+- **El meta del 27-ago tampoco traía la huella de su `pares.jsonl`.** Se le
+  selló, después de comprobar sus 63 791 pares uno por uno.
+- **Detalles menores:**
+  - `particionar.py` no avisaba la clase vacía de `fold_0` en validación
+    cruzada;
+  - `--salida` con `~` no se expandía antes de la guarda del repositorio;
+  - un `--base` que no es `.xlsx` imprimía su ruta;
+  - el intérprete de spaCy pedido se cambiaba en silencio;
+  - en Linux, matar al nieto que no encabeza su grupo tardaba 15 s;
+  - dos documentos nombraban todavía la cuenta del servidor;
+  - faltaban pruebas para el plan real del flujo y el `_rel` del CLI.
+
+### Al cerrar
+
+Suites:
+- raíz: 859 OK (7 omitidas) con los dos Pythons;
+- `etapa2`: 528 OK con el `.venv`, y con el del sistema (3 omitidas);
+- `test_sintaxis` con el `.venv-nlp`: 40 OK.
+
+Se commiteó en la rama `flujo-biobert` y se subió, para clonarla en el
+servidor del asesor.
+
+Pendiente:
+- **Decisión 3** con el asesor: ¿ODB, BioCyc o PGD en la base curada?
+- En el servidor:
+  1. el reconocimiento (`nvidia-smi`, ambientes, ruta del `.xlsx`);
+  2. la construcción y la partición por PMID;
+  3. `barrido.py --solo 22`.
+- **Elegir la regla de signo de la v5 (punto 18):** el control léxico o la
+  sintaxis.
+- La alineación de menciones de la v2 de sintaxis.
+- El DDL de `validacion_interacciones`, `particion` y la tabla de sintaxis:
+  todavía no está escrito. Se escribe y se confirma antes de aplicarlo.
+
+---
+
 ## 28 de septiembre de 2026 — lo crítico del paso 1: dependencias, idempotencia y huellas
 
 Se cerraron los puntos 3, 4 y 5 de la tabla «Crítico» del PLAN. El punto 1

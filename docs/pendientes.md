@@ -11,6 +11,35 @@ Es una foto con fecha, no un segundo tablero. El estado de cada punto se lleva
 en `PLAN.md`: cuando algo se cierre, se marca allá y en la bitácora. Los
 números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
 
+**Lo que cambió el 8-oct-2026** (detalle en la bitácora de ese día):
+
+- **Cerrados:**
+  - 3.2 [36].
+  - 3.3 [37], la parte de código; falta la guía de traspaso.
+  - 7.1: se abrió `grn_verificacion/`, y `grn_red/` sigue cerrado.
+  - 9.4: el steering de Kiro quedó alineado (PGD es vía cerrada; el encolado
+    lo resolvió `trabajos.Gestor`).
+  - 9.8: el análisis de scispaCy quedó en `plan-sintaxis-bronce.md`.
+- **Avanzados:**
+  - 2.1 [18]: se midieron tres reglas de signo. Falta medir su acierto contra
+    signos juzgados y elegir una.
+  - 2.3 [30]: la sintaxis orienta 1 de 4 y no cumple el criterio.
+  - 6.5: el tablero y el CLI del paso 0 ya siguen `GRN_DATOS`.
+  - 7.3 [33]: el bronce está conectado al BioBERT y el 44 % se recalculó;
+    falta el BioBERT entrenado con la base curada.
+  - 9.2: se quitó la frase de «panorama»; queda la «sección 7» que CLAUDE.md
+    cita y el PLAN no tiene.
+  - 9.3: `menciones.tipo` y la descripción de la suite.
+  - 9.5: el README da la cifra de pruebas al día.
+- **Nuevos:**
+  - el entrenamiento con la base curada, en el servidor
+    (`entrenamiento-curada.md`);
+  - la alineación de menciones de la sintaxis: 11 % de los pares;
+  - la regla «X-dependent», que orienta al revés;
+  - el DDL de las tablas de validación y de sintaxis, que no está escrito;
+  - mover `rutas` a `grn_comun` (4.8) pesa más ahora: la importan también el
+    CLI del paso 0 y el tablero.
+
 ## Por dónde empezar
 
 1. **Llevarle al asesor las decisiones 3 y 1** (sección 1). La 3 frena usar
