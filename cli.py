@@ -82,10 +82,16 @@ def cmd_query_list(con, args):
 
 def cmd_run(con, args):
     cliente = cliente_de(args)
-    r = etl.ingestar(
-        con, cliente, args.nombre, orden=args.orden, limite=args.limite,
-        mindate=args.desde, maxdate=args.hasta, tam_lote=args.lote, log=log,
-    )
+    try:
+        r = etl.ingestar(
+            con, cliente, args.nombre, orden=args.orden, limite=args.limite,
+            mindate=args.desde, maxdate=args.hasta, tam_lote=args.lote,
+            pausa=args.pausa, log=log,
+        )
+    except (pubmed.ErrorPubMed, ValueError) as e:
+        # El mensaje ya dice que paso y la ejecucion quedo marcada 'error'
+        # en la bitacora; una traza encima solo lo esconde.
+        sys.exit(str(e))
     log("\n--- Resultado ---")
     log(f"PubMed reporta      : {r['total_pubmed']}")
     log(f"Considerados        : {r['considerados']}")
@@ -216,6 +222,8 @@ def cmd_log(con, args):
             f"{f['descargados'] or 0:>8}  {f['iniciada_en']}")
         if f["error"]:
             log(f"     error: {f['error'][:80]}")
+        if f["parametros"]:
+            log(f"     parámetros: {f['parametros'][:100]}")
 
 
 # ----------------------------------------------------------------- export
@@ -323,9 +331,14 @@ def main():
     r.add_argument("--email")
     r.add_argument("--orden", default="relevance", choices=["relevance", "pub_date"])
     r.add_argument("--limite", type=int, help="Tope de artículos a considerar.")
-    r.add_argument("--desde", help="Año mínimo, ej. 2000.")
-    r.add_argument("--hasta", help="Año máximo.")
+    r.add_argument("--desde", help="Fecha de publicación mínima: YYYY, YYYY/MM "
+                                   "o YYYY/MM/DD. Más de 10 000 resultados se "
+                                   "parten solos por fecha.")
+    r.add_argument("--hasta", help="Fecha de publicación máxima, mismo formato.")
     r.add_argument("--lote", type=int, default=200)
+    r.add_argument("--pausa", type=int, default=0,
+                   help="Segundos de espera entre lotes de efetch, además del "
+                        "límite de tasa (0 por omisión).")
     r.set_defaults(func=cmd_run)
 
     ft = sub.add_parser("fulltext", help="Bajar XML de PMC o PDF abierto.")

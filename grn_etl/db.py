@@ -54,7 +54,8 @@ CREATE TABLE IF NOT EXISTS ejecuciones (
     pmids_nuevos  INTEGER,
     pmids_previos INTEGER,
     descargados   INTEGER,
-    error         TEXT
+    error         TEXT,
+    parametros    TEXT
 );
 
 CREATE TABLE IF NOT EXISTS documentos (
@@ -178,6 +179,13 @@ def _migrar(con):
     columnas = {f["name"] for f in con.execute("PRAGMA table_info(descargas)")}
     if "url" not in columnas:
         con.execute("ALTER TABLE descargas ADD COLUMN url TEXT")
+        con.commit()
+    # 'parametros' (JSON) llego el 13-oct-2026: antes no quedaba registro de
+    # con que fechas, limite o tramos corrio cada ejecucion, y diez corridas
+    # recortadas a 1 000 articulos cada una pasaron por completas.
+    columnas = {f["name"] for f in con.execute("PRAGMA table_info(ejecuciones)")}
+    if "parametros" not in columnas:
+        con.execute("ALTER TABLE ejecuciones ADD COLUMN parametros TEXT")
         con.commit()
 
 
@@ -371,27 +379,46 @@ def conteos_consulta(con, consulta_id):
 
 # ------------------------------------------------------------- ejecuciones
 
-def abrir_ejecucion(con, consulta_id):
+def _json_o_none(valor):
+    if valor is None or isinstance(valor, str):
+        return valor
+    return json.dumps(valor, ensure_ascii=False)
+
+
+def abrir_ejecucion(con, consulta_id, parametros=None):
+    """Registra la corrida ANTES de procesar.
+
+    `parametros` (dict: orden, limite, desde, hasta, lote, pausa...) se
+    guarda como JSON desde el arranque, para que una corrida que se corte
+    deje constancia de que se pidio y no solo de que se intento.
+    """
     cur = con.execute(
-        "INSERT INTO ejecuciones (consulta_id, iniciada_en, estatus) "
-        "VALUES (?, ?, 'corriendo')",
-        (consulta_id, ahora()),
+        "INSERT INTO ejecuciones (consulta_id, iniciada_en, estatus, parametros) "
+        "VALUES (?, ?, 'corriendo', ?)",
+        (consulta_id, ahora(), _json_o_none(parametros)),
     )
     con.commit()
     return cur.lastrowid
 
 
-def cerrar_ejecucion(con, ejecucion_id, estatus, **contadores):
+def cerrar_ejecucion(con, ejecucion_id, estatus, parametros=None, **contadores):
+    """Cierra la corrida con sus contadores.
+
+    `parametros` va como argumento con nombre y no dentro de **contadores
+    porque, si llega, reemplaza al JSON de apertura (es el mismo mas los
+    tramos); si no llega, COALESCE conserva el de apertura.
+    """
     con.execute(
         """UPDATE ejecuciones SET terminada_en = ?, estatus = ?,
                   total_pubmed = ?, pmids_nuevos = ?, pmids_previos = ?,
-                  descargados = ?, error = ?
+                  descargados = ?, error = ?,
+                  parametros = COALESCE(?, parametros)
              WHERE id = ?""",
         (
             ahora(), estatus,
             contadores.get("total_pubmed"), contadores.get("pmids_nuevos"),
             contadores.get("pmids_previos"), contadores.get("descargados"),
-            contadores.get("error"), ejecucion_id,
+            contadores.get("error"), _json_o_none(parametros), ejecucion_id,
         ),
     )
     con.commit()
