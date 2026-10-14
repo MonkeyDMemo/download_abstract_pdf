@@ -172,6 +172,19 @@ PDF_VALIDO = b"%PDF-1.7\n1 0 obj\n<< >>\nendobj\ntrailer\n%%EOF\n"
 
 # ------------------------------------------------------- cliente falso
 
+def _borde(texto, fin):
+    """Rellena "YYYY" o "YYYY/MM" al primer o ultimo dia, como hace NCBI con
+    mindate y maxdate. Las fechas se comparan como cadenas: todas van con
+    ceros a la izquierda, y "/31" como ultimo dia basta para la
+    comparacion aunque el mes no lo tenga."""
+    partes = texto.split("/")
+    if len(partes) == 1:
+        return texto + ("/12/31" if fin else "/01/01")
+    if len(partes) == 2:
+        return texto + ("/31" if fin else "/01")
+    return texto
+
+
 class ClienteFalso:
     """Sustituto de pubmed.Cliente. Sin red, sin pausas, con bitacora.
 
@@ -180,15 +193,24 @@ class ClienteFalso:
     articulos:  {pmid: fragmento_xml}. Un PMID del universo que no este
                 aqui simula un registro retirado o de tipo Book: esearch
                 lo lista pero efetch no lo devuelve.
+    fechas:     {pmid: "YYYY/MM/DD" o [varias]}. Con esto esearch respeta
+                mindate/maxdate como PubMed: un PMID sin fecha no cae en
+                ninguna busqueda acotada, y uno con dos fechas (impresa y
+                electronica) cae en las dos. Sin `fechas`, las fechas se
+                ignoran, como antes.
+    fallas:     {endpoint_o_url: excepcion}. Tambien acepta un callable
+                f(n_llamada, params) que devuelve la excepcion o None, para
+                fallar solo en la n-esima llamada.
     """
 
     def __init__(self, universo=None, universos=None, articulos=None,
                  xml_pmc=None, mapa_ids=None, oa=None, unpaywall=None,
                  cuerpos=None, fallas=None, europepmc=None,
                  email="prueba@unam.mx",
-                 tool="grn-etl-prueba"):
+                 tool="grn-etl-prueba", fechas=None):
         self.universo = list(universo) if universo else None
         self.universos = universos or {}
+        self.fechas = dict(fechas or {})
         self.articulos = dict(articulos) if articulos is not None else None
         self.xml_pmc = xml_pmc or {}
         self.mapa_ids = mapa_ids or {}
@@ -230,9 +252,18 @@ class ClienteFalso:
 
     # --- superficie de pubmed.Cliente -----------------------------------
 
+    def _falla_de(self, clave, params):
+        falla = self.fallas.get(clave)
+        if callable(falla):
+            # La llamada ya esta en la bitacora, asi que el conteo incluye a
+            # esta: n == 1 es la primera.
+            n = len([c for c in self.llamadas if c[1] == clave])
+            falla = falla(n, params)
+        return falla
+
     def eutils(self, endpoint, params, intentos=5):
         self.llamadas.append(("eutils", endpoint, dict(params)))
-        falla = self.fallas.get(endpoint)
+        falla = self._falla_de(endpoint, params)
         if falla:
             raise falla
 
@@ -251,7 +282,7 @@ class ClienteFalso:
         # 'fallas' por URL simula el servicio que no contesta. Hace falta
         # ahora que None significa "contesto que no": sin esto no habria
         # forma declarativa de probar la otra mitad del contrato.
-        falla = self.fallas.get(url)
+        falla = self._falla_de(url, params or {})
         if falla:
             raise falla
 
@@ -292,8 +323,17 @@ class ClienteFalso:
             return self.universo
         return self.universos.get(term, [])
 
+    def _fechas_de(self, pmid):
+        f = self.fechas.get(pmid, [])
+        return [f] if isinstance(f, str) else list(f)
+
     def _esearch(self, params):
         pmids = self._pmids_de(params.get("term"))
+        if self.fechas and ("mindate" in params or "maxdate" in params):
+            ini = _borde(params.get("mindate", "0000"), fin=False)
+            fin = _borde(params.get("maxdate", "9999"), fin=True)
+            pmids = [p for p in pmids
+                     if any(ini <= f <= fin for f in self._fechas_de(p))]
         inicio = int(params.get("retstart", 0))
         tam = int(params.get("retmax", 9000))
         total = len(pmids) if self.total_declarado is None else self.total_declarado

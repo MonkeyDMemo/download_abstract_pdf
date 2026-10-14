@@ -314,26 +314,10 @@ class PruebasBusqueda(PruebaSinRed):
         _, _, params = cliente.llamadas[0]
         self.assertEqual(params["retmax"], str(pubmed.TOPE_ESEARCH))
 
-    def test_pasar_del_tope_falla_en_vez_de_truncar_en_silencio(self):
-        """NBK25499: PubMed solo entrega los primeros 10,000 de un conjunto.
-
-        Devolver los que quepan seria lo peor posible: la ejecucion se
-        cerraria con estatus 'ok' y la bitacora diria que el corpus esta
-        completo cuando le faltan dos tercios. Mejor no arrancar.
-        """
-        cliente = ClienteFalso(universo=[str(i) for i in range(500000, 510000)])
-        cliente.total_declarado = 25000      # PubMed reporta mas de los que da
-
-        with self.assertRaises(pubmed.ErrorPubMed) as ctx:
-            pubmed.buscar_pmids(cliente, "query enorme")
-
-        mensaje = str(ctx.exception)
-        self.assertIn("25000", mensaje)
-        self.assertIn("--desde", mensaje, "no dice como partir la consulta")
-
-    def test_con_limite_explicito_un_conjunto_enorme_no_falla(self):
+    def test_con_limite_explicito_un_conjunto_enorme_no_falla_ni_se_parte(self):
         """Con --limite el usuario ya dijo que no quiere todo; recortar ahi
-        no es mentir, es lo que pidio."""
+        no es mentir, es lo que pidio. Pasar del tope sin limite ya no
+        falla: se parte por fecha (ver test_tramos.py)."""
         cliente = ClienteFalso(universo=[str(i) for i in range(500000, 510000)])
         cliente.total_declarado = 25000
 
@@ -341,6 +325,8 @@ class PruebasBusqueda(PruebaSinRed):
 
         self.assertEqual(total, 25000)
         self.assertEqual(len(pmids), 5)
+        self.assertEqual(cliente.n_eutils("esearch.fcgi"), 1,
+                         "con limite no hay nada que partir")
 
     def test_un_error_de_esearch_se_convierte_en_ErrorPubMed(self):
         cliente = ClienteFalso(universo=[])
