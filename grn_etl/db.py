@@ -546,6 +546,41 @@ def documentos_de_consulta(con, nombre, solo_con_abstract=False, limite=None):
     return con.execute(sql, params).fetchall()
 
 
+def iterar_documentos_de_consulta(con, nombre, solo_con_abstract=False):
+    """Como documentos_de_consulta(), pero como cursor.
+
+    Es lo que usa la exportacion: con 83 000 abstracts, un fetchall subiria
+    cientos de MB a memoria solo para escribirlos a disco.
+    """
+    sql = """SELECT d.* FROM documentos d
+             JOIN consulta_documento cd ON cd.pmid = d.pmid
+             JOIN consultas c ON c.id = cd.consulta_id
+             WHERE c.nombre = ?"""
+    if solo_con_abstract:
+        sql += " AND d.tiene_abstract = 1"
+    sql += " ORDER BY d.anio DESC, d.pmid"
+    return con.execute(sql, (nombre,))
+
+
+def descargas_de_consulta(con, nombre, estatus="ok"):
+    """(pmid, pmcid, tipo) de las descargas con ese estatus de los documentos
+    de una consulta, para empaquetar el texto completo.
+
+    No devuelve 'ruta', por la misma razon que descargas_de(): quien sirve o
+    empaqueta un archivo arma la ruta desde el pmid y el pmcid validados.
+    """
+    return con.execute(
+        """SELECT d.pmid, d.pmcid, z.tipo
+             FROM descargas z
+             JOIN documentos d ON d.pmid = z.pmid
+             JOIN consulta_documento cd ON cd.pmid = d.pmid
+             JOIN consultas c ON c.id = cd.consulta_id
+            WHERE c.nombre = ? AND z.estatus = ?
+            ORDER BY d.pmid, z.tipo""",
+        (nombre, estatus),
+    ).fetchall()
+
+
 def listar_documentos(con, texto=None, consulta=None, anio=None,
                       con_abstract=None, pagina=1, por_pagina=50):
     """Documentos filtrados y paginados. Devuelve (total, filas).

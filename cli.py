@@ -22,13 +22,12 @@ Ejemplo completo:
 
 import argparse
 import csv
-import json
 import os
 import sys
 from pathlib import Path
 
 from grn_bronce import rutas
-from grn_etl import credenciales, db, etl, pubmed
+from grn_etl import credenciales, db, etl, exportar, pubmed
 
 
 def log(msg):
@@ -228,22 +227,6 @@ def cmd_log(con, args):
 
 # ----------------------------------------------------------------- export
 
-CAMPOS = ["pmid", "doi", "pmcid", "titulo", "abstract", "revista", "anio",
-          "autores", "mesh_terms", "keywords", "tipos_publicacion"]
-
-# Encabezado que lee una persona, columna por columna. Va aparte de CAMPOS
-# porque CAMPOS son las columnas de la base y las llaves del diccionario que
-# se escribe: en ASCII, que es el contrato con el resto del pipeline. Lo que
-# se abre en Excel si lleva el acento. Toda columna de CAMPOS tiene que
-# aparecer aqui, y de eso se encarga la lectura de abajo.
-ENCABEZADOS = {
-    "pmid": "pmid", "doi": "doi", "pmcid": "pmcid", "titulo": "título",
-    "abstract": "abstract", "revista": "revista", "anio": "año",
-    "autores": "autores", "mesh_terms": "mesh_terms", "keywords": "keywords",
-    "tipos_publicacion": "tipos_publicación",
-}
-
-
 def cmd_export(con, args):
     if args.pendientes:
         filas = db.pendientes_biblioteca(con, args.nombre)
@@ -272,32 +255,34 @@ def cmd_export(con, args):
     if not args.nombre:
         sys.exit("Da el nombre de la consulta a exportar.")
 
-    filas = db.documentos_de_consulta(con, args.nombre, args.solo_con_abstract)
-    if not filas:
+    if args.formato == "zip":
+        # El paquete para terceros cae junto a la base, en <datos>/exportaciones,
+        # que es donde el tablero lo lista; --salida es la ruta del archivo.
+        ruta = args.salida or os.path.join(
+            args.exportaciones, exportar.nombre_paquete(args.nombre))
+        try:
+            r = exportar.empaquetar(con, args.nombre, args.fulltext, ruta,
+                                    incluir_pdf=args.con_pdf, log=log)
+        except ValueError as e:
+            sys.exit(str(e))
+        log(f"{r['documentos']} documentos, {r['xml']} XML, {r['pdf']} PDF "
+            f"-> {r['ruta']}")
+        return
+
+    if not db.documentos_de_consulta(con, args.nombre, args.solo_con_abstract,
+                                     limite=1):
         log("No hay documentos para esa consulta.")
         return
 
     ext = "jsonl" if args.formato == "jsonl" else "csv"
     ruta = Path(args.salida or f"salidas/{args.nombre}.{ext}")
     ruta.parent.mkdir(parents=True, exist_ok=True)
-
+    docs = exportar.documentos(con, args.nombre, args.solo_con_abstract)
     if args.formato == "jsonl":
-        with open(ruta, "w", encoding="utf-8") as f:
-            for fila in filas:
-                f.write(json.dumps(db.a_dict(fila), ensure_ascii=False) + "\n")
+        n = exportar.escribir_jsonl(docs, str(ruta))
     else:
-        with open(ruta, "w", encoding="utf-8", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=CAMPOS, extrasaction="ignore")
-            # No se usa writeheader(): escribiria las llaves del diccionario,
-            # que son las columnas de la base y van sin acento. El encabezado
-            # es para leerse, asi que sale de ENCABEZADOS.
-            csv.writer(f).writerow([ENCABEZADOS[c] for c in CAMPOS])
-            for fila in filas:
-                d = db.a_dict(fila)
-                w.writerow({k: (" | ".join(v) if isinstance(v, list) else v)
-                            for k, v in d.items()})
-
-    log(f"{len(filas)} documentos -> {ruta}")
+        n = exportar.escribir_csv(docs, str(ruta))
+    log(f"{n} documentos -> {ruta}")
 
 
 # -------------------------------------------------------------------- main
@@ -385,10 +370,15 @@ def main():
     lg.add_argument("-n", type=int, default=20)
     lg.set_defaults(func=cmd_log)
 
-    ex = sub.add_parser("export", help="Volcar a CSV o JSONL.")
+    ex = sub.add_parser("export", help="Volcar a CSV, JSONL o un zip para terceros.")
     ex.add_argument("nombre", nargs="?")
-    ex.add_argument("--formato", default="csv", choices=["csv", "jsonl"])
-    ex.add_argument("--salida")
+    ex.add_argument("--formato", default="csv", choices=["csv", "jsonl", "zip"],
+                    help="zip: CSV + JSONL + texto completo descargado + LEEME, "
+                         "en <datos>/exportaciones.")
+    ex.add_argument("--salida", help="Ruta del archivo de salida.")
+    ex.add_argument("--con-pdf", action="store_true",
+                    help="Meter también los PDF en el zip (pesan y su licencia "
+                         "no siempre permite redistribuirlos).")
     ex.add_argument("--solo-con-abstract", action="store_true")
     ex.add_argument("--pendientes", action="store_true",
                     help="Exportar los que NO tienen full text, para pedirlos "
@@ -404,6 +394,9 @@ def main():
     args.db = args.db or os.path.join(raiz, "grn.db")
     if args.cmd == "fulltext" and not args.salida:
         args.salida = os.path.join(raiz, "fulltext")
+    if args.cmd == "export":
+        args.fulltext = os.path.join(raiz, "fulltext")
+        args.exportaciones = os.path.join(raiz, exportar.CARPETA)
     con = db.conectar(args.db)
     try:
         args.func(con, args)
