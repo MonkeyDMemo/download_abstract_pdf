@@ -55,6 +55,7 @@ Verificado contra el repositorio el 10-sep-2026.
 - Corpus congelado **v0-agosto**: 2 361 artículos; 2 354 con resumen; 918 con texto completo de PMC; 184 con PDF, ninguno procesado; 96 tienen también XML, así que solo 88 dependen del PDF.
 - Control en SQLite: `consultas`, `ejecuciones`, `documentos`, `consulta_documento`, `descargas`, `corpus`, `corpus_documento`.
 - Búsqueda por año de publicación (`--desde/--hasta`) y descarga incremental. Versionado con `corpus crear --nombre`.
+- Desde el 13-oct-2026: más de 10 000 resultados se parten solos por fecha de publicación (`pubmed.tramos_por_fecha`), cada lote de efetch se guarda y vincula al llegar, `run --pausa` espera entre lotes, `ejecuciones.parametros` registra lo pedido (fechas, límite, tramos), y `export --formato zip` / el botón «Exportar» del tablero arman el paquete por consulta (CSV, JSONL, XML y LEEME). Motivo: la consulta de plantas transgénicas (83 638 resultados) se había corrido por año con límite 1 000 y dejó 5 540 documentos truncados como corridas «ok».
 
 ### 2.2 Paso 1 — bronce
 
