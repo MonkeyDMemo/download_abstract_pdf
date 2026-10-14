@@ -711,10 +711,16 @@ td.nota details pre {
           <label for="r-hasta">Hasta (año)</label>
           <input type="text" id="r-hasta" class="corto" inputmode="numeric" placeholder="2026">
         </div>
+        <div class="campo">
+          <label for="r-pausa">Pausa (s)</label>
+          <input type="number" id="r-pausa" class="corto" min="0" max="600" step="1" placeholder="0">
+        </div>
         <button class="boton" id="b-run">Lanzar corrida</button>
       </div>
-      <p class="pista">Baja los abstracts que falten. Lo que ya está en la base no se
-        vuelve a descargar: solo se liga a esta consulta.</p>
+      <p class="pista">Baja los abstracts que falten, guardando lote por lote. Lo que ya está
+        en la base no se vuelve a descargar: solo se liga a esta consulta. Más de 10 000
+        resultados se parten solos por fecha de publicación; la pausa es una espera extra
+        entre lotes, además del límite de tasa de NCBI.</p>
     </div>
 
     <div class="tarjeta">
@@ -794,6 +800,31 @@ td.nota details pre {
           </tr>
         </thead>
         <tbody id="t-consultas"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <div class="tarjeta-cabeza">
+      <h2>Exportaciones</h2>
+      <div class="acciones">
+        <div class="marca-campo">
+          <input type="checkbox" id="x-pdf">
+          <label for="x-pdf">Incluir PDF al exportar</label>
+        </div>
+        <button class="boton suave mini" id="b-refrescar-exportaciones">Actualizar</button>
+      </div>
+    </div>
+    <p class="pista" style="margin-top:0">«Exportar», en la consulta, arma en segundo plano un
+      zip con el CSV, el JSONL y el texto completo descargado de esa consulta, más un LEEME;
+      el PDF solo si se marca. Los paquetes quedan en la carpeta de exportaciones de los
+      datos y se bajan de aquí.</p>
+    <div class="tabla-envoltura">
+      <table>
+        <thead>
+          <tr><th>Archivo</th><th class="num">Tamaño</th><th>Fecha</th><th>Acciones</th></tr>
+        </thead>
+        <tbody id="t-exportaciones"></tbody>
       </table>
     </div>
   </div>
@@ -1316,7 +1347,7 @@ function mostrarSeccion(nombre) {
   }
   if (!yaCargada[nombre]) {
     yaCargada[nombre] = true;
-    if (nombre === "consultas") { cargarConsultas(); }
+    if (nombre === "consultas") { cargarConsultas(); cargarExportaciones(); }
     if (nombre === "documentos") { cargarAnios(); buscarDocumentos(1); }
     if (nombre === "descargas") { buscarDescargas(1); }
     if (nombre === "bitacora") { cargarEjecuciones(); }
@@ -1546,6 +1577,7 @@ function pintarTrabajo(t) {
     cargarConsultas(true);
     if (yaCargada.bitacora) { cargarEjecuciones(); }
     if (yaCargada.pipeline) { flujoAlTerminar(t); }
+    if (yaCargada.consultas && t && t.tipo === "exportar") { cargarExportaciones(); }
   } else if (activo && t.tipo === "flujo" && lineasNuevas
              && seccionActual === "pipeline") {
     // estado.json se escribe al cerrar cada paso, y cada paso deja líneas:
@@ -1629,6 +1661,8 @@ $("b-run").addEventListener("click", function () {
   var desde = $("r-desde").value.trim(), hasta = $("r-hasta").value.trim();
   if (desde) { cuerpo.desde = desde; }
   if (hasta) { cuerpo.hasta = hasta; }
+  var pausa = $("r-pausa").value.trim();
+  if (pausa) { cuerpo.pausa = Number(pausa); }
   lanzar(cuerpo, "run de '" + nombre + "'");
 });
 
@@ -1702,9 +1736,11 @@ function cargarConsultas(silencioso) {
       var acc = el("div", "acciones");
       var bE = el("button", "boton suave mini", "Editar");
       bE.addEventListener("click", function () { editarConsulta(c); });
+      var bX = el("button", "boton suave mini", "Exportar");
+      bX.addEventListener("click", function () { exportarConsulta(c); });
       var bB = el("button", "boton peligro mini", "Borrar");
       bB.addEventListener("click", function () { borrarConsulta(c); });
-      acc.appendChild(bE); acc.appendChild(bB);
+      acc.appendChild(bE); acc.appendChild(bX); acc.appendChild(bB);
       tdAcc.appendChild(acc);
       tr.appendChild(tdAcc);
       tb.appendChild(tr);
@@ -1718,6 +1754,47 @@ $("b-refrescar-consultas").addEventListener("click", function () { cargarConsult
 $("b-limpiar-consulta").addEventListener("click", function () {
   $("c-nombre").value = ""; $("c-descripcion").value = ""; $("c-texto").value = "";
 });
+
+/* El paquete se arma como trabajo (un zip de miles de XML tarda) y aparece en
+   la tabla de exportaciones cuando el trabajo termina. Las rutas son del
+   servidor: aquí solo viaja qué consulta y si lleva PDF. */
+function exportarConsulta(c) {
+  lanzar({ tipo: "exportar", nombre: c.nombre, pdf: $("x-pdf").checked },
+         "exportación de '" + c.nombre + "'");
+}
+
+function cargarExportaciones() {
+  var tb = $("t-exportaciones");
+  filaMensaje(tb, 4, "Cargando...", "cargando");
+  return api("GET", "/api/exportaciones").then(function (archivos) {
+    archivos = archivos || [];
+    vaciar(tb);
+    if (!archivos.length) {
+      filaMensaje(tb, 4, "Todavía no hay paquetes. «Exportar» en una consulta arma el primero.");
+      return;
+    }
+    archivos.forEach(function (a) {
+      var tr = el("tr");
+      tr.appendChild(el("td", "mono", a.nombre));
+      tr.appendChild(el("td", "num", tamano(a.bytes)));
+      tr.appendChild(celdaFecha(a.modificado));
+      var acc = el("div", "acciones");
+      var bajar = el("a", "boton suave mini", "Descargar");
+      bajar.href = "/api/exportaciones/" + encodeURIComponent(a.nombre);
+      bajar.setAttribute("download", a.nombre);
+      bajar.setAttribute("aria-label", "Descargar " + a.nombre);
+      acc.appendChild(bajar);
+      var td = el("td", "nw");
+      td.appendChild(acc);
+      tr.appendChild(td);
+      tb.appendChild(tr);
+    });
+  }).catch(function (e) {
+    filaMensaje(tb, 4, "No se pudieron leer las exportaciones: " + e.message, "fallo");
+  });
+}
+
+$("b-refrescar-exportaciones").addEventListener("click", function () { cargarExportaciones(); });
 
 $("b-alta-consulta").addEventListener("click", function () {
   var nombre = $("c-nombre").value.trim();
@@ -2232,14 +2309,35 @@ function cargarEjecuciones() {
       tr.appendChild(el("td", "num", texto(f.descargados, "-")));
       tr.appendChild(celdaFecha(f.iniciada_en));
       tr.appendChild(celdaFecha(f.terminada_en));
-      var tdErr = el("td", "nota", texto(f.error, ""));
-      if (f.error) { tdErr.className = "nota fallo"; }
+      // La nota lleva el error si lo hubo; si no, lo que se pidió (fechas,
+      // límite, tramos), que es lo que delata una corrida recortada.
+      var resumen = resumenParametros(f.parametros);
+      var tdErr = el("td", "nota", texto(f.error, resumen));
+      if (f.error) {
+        tdErr.className = "nota fallo";
+        if (resumen) { tdErr.title = resumen; }
+      }
       tr.appendChild(tdErr);
       tb.appendChild(tr);
     });
   }).catch(function (e) {
     filaMensaje(tb, 10, "No se pudo leer la bitácora: " + e.message, "fallo");
   });
+}
+
+/* 'parametros' llega como texto JSON: orden, límite, fechas, lote, pausa y
+   los tramos en que se partió la consulta. Se resume en una línea. */
+function resumenParametros(crudo) {
+  if (!crudo) { return ""; }
+  var p;
+  try { p = JSON.parse(crudo); } catch (e) { return recortar(crudo, 60); }
+  var partes = [];
+  if (p.desde || p.hasta) { partes.push((p.desde || "...") + " - " + (p.hasta || "...")); }
+  if (p.limite) { partes.push("límite " + miles(p.limite)); }
+  if (p.tramos && p.tramos.length) { partes.push(p.tramos.length + " tramos"); }
+  if (p.pausa) { partes.push("pausa " + p.pausa + " s"); }
+  if (p.orden && p.orden !== "relevance") { partes.push(p.orden); }
+  return partes.join(" · ");
 }
 
 $("b-buscar-ejecuciones").addEventListener("click", cargarEjecuciones);

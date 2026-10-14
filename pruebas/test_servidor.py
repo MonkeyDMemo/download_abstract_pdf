@@ -2037,3 +2037,12 @@ class PruebasReglasDeLaPagina(BasePruebaServidor):
     def test_hay_pestana_pipeline_con_su_seccion(self):
         self.assertIn('data-seccion="pipeline"', self.pagina)
         self.assertIn('id="sec-pipeline"', self.pagina)
+
+    def test_hay_campo_de_pausa_y_tarjeta_de_exportaciones(self):
+        """Lo que el servidor acepta tiene su control en la página: la pausa
+        del run, la casilla del PDF y la tabla donde se bajan los paquetes."""
+        for id_ in ("r-pausa", "x-pdf", "t-exportaciones",
+                    "b-refrescar-exportaciones"):
+            self.assertIn('id="%s"' % id_, self.pagina, id_)
+        self.assertIn('"/api/exportaciones/"', self.pagina)
+        self.assertIn('tipo: "exportar"', self.pagina)
