@@ -25,7 +25,7 @@ from pathlib import Path
 import flujo
 import servidor
 from grn_bronce import db as bdb
-from grn_etl import credenciales, db, pubmed, trabajos
+from grn_etl import credenciales, db, exportar, pubmed, trabajos
 
 from .falsos import ClienteFalso, PruebaSinRed, jats_xml
 
@@ -57,9 +57,17 @@ class BasePruebaServidor(PruebaSinRed):
         self.addCleanup(tmp_flujo.cleanup)
         self.flujo_raiz = tmp_flujo.name
 
+        # Y la carpeta de exportaciones: sin pasarla, el Contexto caería en
+        # datos/exportaciones relativa al directorio de quien corre la
+        # suite, y las pruebas listarían sus paquetes de verdad.
+        tmp_export = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp_export.cleanup)
+        self.exportaciones = tmp_export.name
+
         self.cliente = ClienteFalso()
         self.ctx = servidor.Contexto(self.con, self.gestor, self.cliente,
-                                     self.salida, flujo_raiz=self.flujo_raiz)
+                                     self.salida, flujo_raiz=self.flujo_raiz,
+                                     exportaciones=self.exportaciones)
         self.sembrar()
 
     # ------------------------------------------------------------ semilla
@@ -112,17 +120,19 @@ class BasePruebaServidor(PruebaSinRed):
         codigo, objeto = servidor.manejar(
             metodo, ruta, params or {}, cuerpo, usado)
         if isinstance(objeto, servidor.Archivo):
-            # Un archivo que salga de manejar() solo puede vivir en tres
+            # Un archivo que salga de manejar() solo puede vivir en cuatro
             # lugares: web/, que es el tablero y su escudo; la carpeta de
-            # salida del fulltext; y la raíz del flujo, cuyas salidas (los
+            # salida del fulltext; la raíz del flujo, cuyas salidas (los
             # CSV, los JSON de resumen, flujo.log) se bajan desde la pestaña
-            # Pipeline. Las dos últimas salen de la línea de comandos y
-            # nunca de la petición. Cualquier otro lugar es una fuga del
-            # directorio del proyecto, donde están .key, la base y el
-            # código. Corre en cada petición de la suite a propósito.
+            # Pipeline; y la carpeta de exportaciones. Las tres últimas
+            # salen de la línea de comandos y nunca de la petición.
+            # Cualquier otro lugar es una fuga del directorio del proyecto,
+            # donde están .key, la base y el código. Corre en cada petición
+            # de la suite a propósito.
             permitidas = [servidor.RUTA_PAGINA.parent,
                           Path(usado.salida).resolve(),
-                          Path(usado.flujo_raiz).resolve()]
+                          Path(usado.flujo_raiz).resolve(),
+                          Path(usado.exportaciones).resolve()]
             real = objeto.ruta.resolve()
             self.assertTrue(
                 any(r == real or r in real.parents for r in permitidas),
@@ -538,6 +548,17 @@ class PruebasTrabajo(BasePruebaServidor):
                    cuerpo={"tipo": "run", "nombre": "pa", "limite": 0})
         self.falla("POST", "/api/trabajo", 400,
                    cuerpo={"tipo": "run", "nombre": "pa", "desde": "ayer"})
+        for pausa in (-1, 601, "lenta"):
+            self.falla("POST", "/api/trabajo", 400,
+                       cuerpo={"tipo": "run", "nombre": "pa", "pausa": pausa})
+        self.assertFalse(self.gestor.estado()["activo"])
+
+    def test_exportar_valida_antes_de_lanzar(self):
+        self.falla("POST", "/api/trabajo", 400, cuerpo={"tipo": "exportar"})
+        self.falla("POST", "/api/trabajo", 404,
+                   cuerpo={"tipo": "exportar", "nombre": "no_existe"})
+        self.falla("POST", "/api/trabajo", 400,
+                   cuerpo={"tipo": "exportar", "nombre": "pa", "pdf": "quiza"})
         self.assertFalse(self.gestor.estado()["activo"])
 
     def test_parametros_invalidos_del_fulltext_son_400(self):
@@ -716,6 +737,7 @@ class PruebasTrabajoConBase(PruebaSinRed):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.salida = str(Path(tmp.name) / "fulltext")
+        self.exportaciones = str(Path(tmp.name) / "exportaciones")
         self.ruta_db = str(Path(tmp.name) / "grn.db")
 
         self.con = db.conectar(self.ruta_db)
@@ -726,7 +748,8 @@ class PruebasTrabajoConBase(PruebaSinRed):
         self.id_pa, _ = db.alta_consulta(self.con, "pa", "lasR AND biofilm")
 
     def contexto(self, cliente):
-        return servidor.Contexto(self.con, self.gestor, cliente, self.salida)
+        return servidor.Contexto(self.con, self.gestor, cliente, self.salida,
+                                 exportaciones=self.exportaciones)
 
     def lanzar(self, cuerpo, cliente):
         codigo, objeto = servidor.manejar(
@@ -787,6 +810,42 @@ class PruebasTrabajoConBase(PruebaSinRed):
         escritos = sorted(p.name for p in (Path(self.salida) / "xml").iterdir())
         self.assertEqual(escritos, ["111_PMC1.txt", "111_PMC1.xml"])
         self.assertFalse(Path("C:/no/debe/usarse").exists())
+
+    def test_exportar_desde_el_endpoint_deja_el_zip_donde_dice_el_servidor(self):
+        """No exige correo (no sale a la red) y las rutas son del servidor:
+        ni la carpeta del zip ni la del texto completo llegan en el cuerpo."""
+        db.guardar_documentos(self.con, [
+            {"pmid": "111", "pmcid": "PMC1", "titulo": "Uno", "abstract": "a"},
+            {"pmid": "222", "titulo": "Dos"}])
+        db.vincular(self.con, self.id_pa, ["111", "222"])
+        xml = Path(self.salida) / "xml"
+        xml.mkdir(parents=True)
+        (xml / "111_PMC1.xml").write_bytes(b"<article/>")
+        db.registrar_descarga(self.con, "111", "xml", "ok")
+
+        estado = self.lanzar(
+            {"tipo": "exportar", "nombre": "pa", "pdf": False,
+             "ruta_zip": "C:/no/debe/usarse", "carpeta_fulltext": "C:/tampoco"},
+            cliente=None)
+
+        self.assertEqual(estado["tipo"], "exportar")
+        self.assertEqual(estado["resultado"]["documentos"], 2)
+        self.assertEqual(estado["resultado"]["xml"], 1)
+        self.assertFalse(Path("C:/no/debe/usarse").exists())
+        paquetes = os.listdir(self.exportaciones)
+        self.assertEqual(len(paquetes), 1)
+        self.assertEqual(estado["resultado"]["archivo"], paquetes[0])
+
+        # Y ya se lista y se baja por las rutas nuevas, con el mismo nombre.
+        _, lista = servidor.manejar("GET", "/api/exportaciones", {}, None,
+                                    self.contexto(None))
+        self.assertEqual([a["nombre"] for a in lista], paquetes)
+        _, objeto = servidor.manejar(
+            "GET", "/api/exportaciones/" + paquetes[0], {}, None,
+            self.contexto(None))
+        self.assertIsInstance(objeto, servidor.Archivo)
+        self.assertEqual(objeto.descarga_como, paquetes[0])
+        self.assertEqual(objeto.tipo_mime, "application/zip")
 
 
 class PruebasLogo(BasePruebaServidor):
@@ -1591,6 +1650,94 @@ class PruebasArchivosDelFlujo(BasePruebaFlujo):
             self.falla(metodo, self.ruta("red.tsv"), 404, cuerpo={})
 
 
+# ============================================= los paquetes de exportación
+
+class PruebasExportaciones(BasePruebaServidor):
+    """GET /api/exportaciones y GET /api/exportaciones/<nombre>.
+
+    La carpeta cuelga de un temporal propio con señuelos justo afuera, como
+    en las salidas del flujo: lo que hay que defender es que no exista
+    forma de servir otro archivo.
+    """
+
+    PAQUETE = "pa_20261013-223000Z.zip"
+
+    def setUp(self):
+        super().setUp()
+        base = tempfile.TemporaryDirectory()
+        self.addCleanup(base.cleanup)
+        afuera = Path(base.name)
+        self.raiz = afuera / "exportaciones"
+        self.raiz.mkdir()
+        self.ctx.exportaciones = str(self.raiz)
+
+        (afuera / ".key").write_text("SECRETO-DE-EXPORT", encoding="utf-8")
+        (afuera / "fuera.zip").write_text("SECRETO-DE-EXPORT", encoding="utf-8")
+        (self.raiz / self.PAQUETE).write_bytes(b"PK zip de prueba")
+        (self.raiz / "pa.csv").write_text("pmid\n111\n", encoding="utf-8")
+        (self.raiz / "a_medias.zip.tmp").write_bytes(b"SECRETO-DE-EXPORT")
+        (self.raiz / "notas.md").write_text("SECRETO-DE-EXPORT", encoding="utf-8")
+        (self.raiz / "sub").mkdir()
+        (self.raiz / "sub" / "x.zip").write_bytes(b"SECRETO-DE-EXPORT")
+
+    def test_la_lista_trae_nombre_bytes_y_fecha_de_lo_que_cumple_el_patron(self):
+        lista = self.ok("GET", "/api/exportaciones")
+
+        self.assertEqual(sorted(a["nombre"] for a in lista),
+                         ["pa.csv", self.PAQUETE])
+        paquete = next(a for a in lista if a["nombre"] == self.PAQUETE)
+        self.assertEqual(paquete["bytes"], len(b"PK zip de prueba"))
+        self.assertIn("T", paquete["modificado"])
+
+    def test_con_carpeta_inexistente_la_lista_es_vacia(self):
+        self.ctx.exportaciones = str(self.raiz / "no_existe")
+
+        self.assertEqual(self.ok("GET", "/api/exportaciones"), [])
+
+    def test_el_paquete_se_sirve_como_descarga_con_su_tipo(self):
+        codigo, objeto = self.pedir("GET", "/api/exportaciones/" + self.PAQUETE)
+
+        self.assertEqual(codigo, 200)
+        self.assertIsInstance(objeto, servidor.Archivo)
+        self.assertEqual(objeto.ruta.resolve(), (self.raiz / self.PAQUETE).resolve())
+        self.assertEqual(objeto.tipo_mime, "application/zip")
+        self.assertEqual(objeto.descarga_como, self.PAQUETE)
+
+        _, objeto = self.pedir("GET", "/api/exportaciones/pa.csv")
+        self.assertTrue(objeto.tipo_mime.startswith("text/csv"))
+
+    def test_cada_extension_del_patron_tiene_su_tipo(self):
+        extensiones = re.search(r"\(([a-z|]+)\)\$",
+                                exportar.ARCHIVO_VALIDO.pattern).group(1)
+        for ext in extensiones.split("|"):
+            self.assertIn(ext, exportar.TIPOS, ext)
+
+    def test_ninguna_ruta_saca_un_archivo_de_fuera_ni_a_medio_escribir(self):
+        intentos = [
+            "/api/exportaciones/..%2f.key", "/api/exportaciones/..%2ffuera.zip",
+            "/api/exportaciones/%2e%2e%2ffuera.zip",
+            "/api/exportaciones/..%5cfuera.zip",
+            "/api/exportaciones/sub%2fx.zip", "/api/exportaciones/sub/x.zip",
+            "/api/exportaciones/a_medias.zip.tmp", "/api/exportaciones/notas.md",
+            "/api/exportaciones/no_existe.zip",
+            "/api/exportaciones/" + self.PAQUETE.upper(),
+            "/api/exportaciones/" + self.PAQUETE + "%00.key",
+            "/api/exportaciones/" + self.PAQUETE + "/otro",
+        ]
+        for ruta in intentos:
+            codigo, objeto = self.pedir("GET", ruta)
+            self.assertEqual(codigo, 404, ruta)
+            self.assertNotIsInstance(objeto, servidor.Archivo, ruta)
+            self.assertNotIn("SECRETO", json.dumps(objeto, ensure_ascii=False),
+                             ruta)
+
+    def test_solo_por_GET(self):
+        for metodo in ("POST", "PUT", "DELETE"):
+            self.falla(metodo, "/api/exportaciones/" + self.PAQUETE, 404,
+                       cuerpo={})
+            self.falla(metodo, "/api/exportaciones", 404, cuerpo={})
+
+
 # ======================================== la entrega de archivos, en bytes
 
 class PruebasEntregaDeArchivos(PruebaSinRed):
@@ -1811,6 +1958,14 @@ class PruebasRutasPorOmision(PruebaSinRed):
             self.assertEqual(servidor.salida_por_omision(),
                              os.path.join("datos", "fulltext"))
 
+    def test_las_exportaciones_siguen_la_precedencia(self):
+        with unittest.mock.patch.dict(os.environ,
+                                      {"GRN_DATOS": "D:/lab/datos"}):
+            self.assertEqual(servidor.exportaciones_por_omision(),
+                             os.path.join("D:/lab/datos", "exportaciones"))
+            self.assertEqual(servidor.exportaciones_por_omision("E:/flag"),
+                             os.path.join("E:/flag", "exportaciones"))
+
     def test_el_contexto_sin_rutas_usa_las_de_omision(self):
         con = db.conectar(":memory:")
         self.addCleanup(con.close)
@@ -1819,6 +1974,11 @@ class PruebasRutasPorOmision(PruebaSinRed):
 
         self.assertEqual(ctx.flujo_raiz, flujo.RAIZ_FLUJO)
         self.assertIsNone(ctx.datos)
+        self.assertEqual(ctx.exportaciones, servidor.exportaciones_por_omision())
+        # Con la raíz de datos ya resuelta, la carpeta cuelga de ella.
+        ctx = servidor.Contexto(con, trabajos.Gestor(), datos="E:/flag")
+        self.assertEqual(ctx.exportaciones,
+                         os.path.join("E:/flag", "exportaciones"))
 
 
 class PruebasHostDelTablero(PruebaSinRed):
