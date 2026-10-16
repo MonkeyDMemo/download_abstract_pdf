@@ -192,6 +192,11 @@ def _argv_correr(args):
         argv.append("--aceptar-base-distinta")
     if args.conservar_checkpoints:
         argv.append("--conservar-checkpoints")
+    # Sin esto, la corrida en segundo plano usaría los valores por omisión
+    # sin decirlo.
+    argv += ["--semillas", args.semillas]
+    for etiqueta in args.excluir_etiqueta or ():
+        argv += ["--excluir-etiqueta", etiqueta]
     return argv
 
 
@@ -246,7 +251,9 @@ def _desprender(args, R, subprocess):
     """
     try:
         R.validar_entradas(args.nombre, args.base, args.pares, args.reservar,
-                           args.script, args.ciego, args.folds, args.hasta)
+                           args.script, args.ciego, args.folds, args.hasta,
+                           R.semillas_de(args.semillas),
+                           R.excluir_de(args.excluir_etiqueta))
     except ValueError as e:
         log("ERROR: %s" % e)
         return 2
@@ -322,6 +329,12 @@ def _cmd_reentrenar(args, R):
         error("ERROR: falta %s (o BASE_CURADA / SCRIPT_ASESOR en el entorno)."
               % " y ".join(faltan))
         return 2
+    try:
+        semillas = R.semillas_de(args.semillas)
+        excluir = R.excluir_de(args.excluir_etiqueta)
+    except ValueError as e:
+        error("ERROR: %s" % e)
+        return 2
     if args.desprender:
         return _desprender(args, R, subprocess)
 
@@ -356,7 +369,8 @@ def _cmd_reentrenar(args, R):
             horas=args.horas, gpu_min_mib=args.gpu_min_mib,
             max_length=args.max_length,
             conservar_checkpoints=args.conservar_checkpoints, hoja=args.hoja,
-            log=_nada if desprendido else log, detener=detener)
+            log=_nada if desprendido else log, detener=detener,
+            semillas=semillas, excluir=excluir)
     except R.Ocupado as e:
         error("ERROR: ya corre una corrida %s (PID %s). Mírala con "
               "`reentrenar estado` o detenla con `reentrenar detener`."
@@ -417,6 +431,16 @@ def _sub_reentrenar(sub):
                          "primera.")
     co.add_argument("--folds", type=int, default=None,
                     help="Además, validación cruzada de K pliegues.")
+    co.add_argument("--semillas", default=R.SEMILLA_MODELO,
+                    help="Semillas de la validación cruzada, separadas por "
+                         "coma (el protocolo usa 42,43,44). El modelo "
+                         "desplegable usa siempre la %s." % R.SEMILLA_MODELO)
+    co.add_argument("--excluir-etiqueta", dest="excluir_etiqueta",
+                    action="append", default=None,
+                    choices=list(R.EXCLUIBLES) + ["ninguna"],
+                    help="Clase que esta versión deja fuera; se puede "
+                         "repetir. Por omisión %s; «ninguna» para entrenar "
+                         "con todas." % ", ".join(R.EXCLUIR_POR_OMISION))
     co.add_argument("--hasta", choices=R.HASTA, default="entrenamiento",
                     help="Último paso: datos, particion o entrenamiento.")
     co.add_argument("--aceptar-base-distinta", dest="aceptar_base_distinta",

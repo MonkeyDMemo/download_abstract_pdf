@@ -49,6 +49,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import random
 import re
 import shutil
 import signal
@@ -65,6 +66,10 @@ from grn_verificacion import entrenamiento as E
 RAIZ_REPO = E.RAIZ_REPO
 PARTICIONAR = os.path.join(RAIZ_REPO, "etapa2", "particionar.py")
 BARRIDO = os.path.join(RAIZ_REPO, "etapa2", "barrido.py")
+CLASIFICAR = os.path.join(RAIZ_REPO, "etapa2", "clasificar.py")
+# El protocolo de evaluación, fijado antes de entrenar. El informe dice su
+# commit y si es anterior al inicio de la corrida.
+PROTOCOLO = os.path.join("docs", "protocolo-curada-v1.md")
 
 # run_22_lr3e-5_ep8_bs16_wu0.1, la mejor del barrido del asesor. Se cambia
 # decidiéndolo, no con un flag.
@@ -81,6 +86,38 @@ DISCO_MIN_GIB = 6
 # El orden del label_mapping.json de particionar.py y del checkpoint.
 ID2LABEL = {"0": "activates", "1": "no_relation", "2": "regulates",
             "3": "represses"}
+
+# La semilla de entrenamiento del modelo desplegable, fijada antes de ver nada
+# (la de barrido.py y la del .sh del asesor). No se elige la «mejor» semilla:
+# eso sería seleccionar con el test.
+SEMILLA_MODELO = "42"
+# Las clases que se pueden dejar fuera de una versión. no_relation no: sin
+# ella no hay clasificador.
+EXCLUIBLES = ("activates", "regulates", "represses")
+# regulates, en la base del 15-oct: 6 ejemplos de 2 artículos, 0 en dev y en
+# test, y un peso de clase 60 veces el de no_relation en el script del
+# asesor. Ni se aprende ni se mide (docs/protocolo-curada-v1.md).
+EXCLUIR_POR_OMISION = ("regulates",)
+# La predicción para evaluar va en CPU: son unos cientos de oraciones, no
+# depende de que la GPU compartida esté libre, y no compite con nadie.
+DISPOSITIVO_EVAL = "cpu"
+LOTE_EVAL = "16"
+# Cuántos ejemplos de diferencia se toleran entre la accuracy del script (GPU,
+# al terminar de entrenar) y la de clasificar.py (CPU, argmax en Python): un
+# empate casi exacto puede caer distinto. Más que eso es un error de unión.
+TOLERANCIA_COTEJO = 2
+# El bootstrap por artículos de la cifra principal.
+B_BOOTSTRAP = 2000
+SEMILLA_BOOTSTRAP = 20261016
+# Lo que fija docs/protocolo-curada-v1.md. Una corrida con otra cosa no está
+# prohibida (un ensayo, una prueba), pero el informe la lista como desviación.
+PROTOCOLO_PARAMETROS = collections.OrderedDict([
+    ("configuracion", 22),
+    ("max_length", "512"),
+    ("folds", 5),
+    ("semillas", ["42", "43", "44"]),
+    ("excluir", ["regulates"]),
+])
 
 # PLAN.md 2.4, medido el 10-sep-2026. Lo que no cuadre detiene la corrida:
 # puede ser otra versión de la base o el lector, que hasta esta pista solo se
@@ -179,6 +216,9 @@ MOTIVOS = {
     "detenido": "se pidió detener",
     "otra_corrida": "otra corrida viva usa estas carpetas",
     "informe_no_publicable": "RESULTADOS.md no pasó la verificación",
+    "test_invalido": "el test no tiene el formato que exige clasificar.py",
+    "prediccion_fallo": "clasificar.py no dejó predicciones",
+    "cotejo_clasificar": "clasificar.py y el script no dan la misma accuracy",
     "inesperado": "error inesperado del orquestador",
 }
 
@@ -242,6 +282,8 @@ def rutas(raiz, nombre):
         "barrido": os.path.join(runs, "barrido"),
         "entrenamiento": os.path.join(res, "entrenamiento.json"),
         "entrenamiento_cv": os.path.join(res, "entrenamiento_cv.json"),
+        "prediccion": os.path.join(res, "prediccion.json"),
+        "evaluacion": os.path.join(res, "evaluacion.json"),
         "estado": os.path.join(res, "estado.json"),
         "log": os.path.join(res, "reentrenar.log"),
         "err": os.path.join(res, "reentrenar.err"),
@@ -312,7 +354,8 @@ _MARCAS = re.compile(r"</?e[12]>")
 _POSIBLE_PMID = re.compile(
     r"(?<![0-9A-Za-z.])[0-9]{7,8}(?![0-9A-Za-z]|\.[0-9])")
 # Las semillas tienen forma de fecha y de PMID; son constantes conocidas.
-_NUMEROS_PERMITIDOS = frozenset([str(E.SEMILLA), str(SEMILLA_PARTICION)])
+_NUMEROS_PERMITIDOS = frozenset([str(E.SEMILLA), str(SEMILLA_PARTICION),
+                                 str(SEMILLA_BOOTSTRAP)])
 # Toda ruta absoluta de dos o más tramos (/tmp/x, /srv/a/b, no solo /home) y
 # toda ruta bajo el home (~/...). No cuenta lo que va pegado a una palabra,
 # a un número o a un marcador: «dmis-lab/biobert», «80/10/10» y
@@ -523,11 +566,19 @@ def filas_cotejo(medida, esperada=BASE_ESPERADA):
     return filas
 
 
-def macro_f1(y, yhat):
+def macro_f1(y, yhat, etiquetas=None):
     """El macro-F1 de `precision_recall_fscore_support(average="macro",
-    zero_division=0)`, el que usa el script del asesor: promedio sobre las
-    etiquetas que aparecen en `y` o en `yhat`."""
-    etiquetas = sorted(set(y) | set(yhat))
+    zero_division=0)`.
+
+    Sin `etiquetas`, como lo usa el script del asesor (sin `labels=`): el
+    promedio es sobre las etiquetas que aparecen en `y` o en `yhat`, así que
+    el conjunto cambia de un pliegue a otro y dos cifras no siempre promedian
+    lo mismo. Con `etiquetas`, sobre ese conjunto FIJO (con `labels=`), que es
+    la cifra del protocolo: una predicción fuera del conjunto cuenta como error
+    de la clase verdadera y no suma una clase con F1 0.
+    """
+    if etiquetas is None:
+        etiquetas = sorted(set(y) | set(yhat))
     if not etiquetas:
         return 0.0
     total = 0.0
@@ -548,15 +599,12 @@ def _mas_frecuente(contador):
                key=lambda e: (contador.get(e, 0), -E.ETIQUETAS.index(e)))
 
 
-def linea_base_memorizacion(entrena, prueba, llave):
-    """Cuánto se acierta sin leer la oración, solo recordando el par.
+def predicciones_linea_base(entrena, prueba, llave):
+    """(predicciones, vistos, mayoritaria) de la línea base de memorización.
 
-    Para cada ejemplo de `prueba` cuyo par (`llave`) ya está en train, se
-    predice la etiqueta más frecuente de ese par en train; para el resto, la
-    clase mayoritaria de train. Por construcción de `entrenamiento`, un par
-    registrado en la base nunca sale como no_relation y uno que no lo está
-    nunca sale como relación, así que esta línea base puede ser alta: el
-    modelo vale lo que le gana, no su F1 a secas. Devuelve solo números.
+    Para cada ejemplo de `prueba` cuyo par (`llave`) ya está en train, la
+    etiqueta más frecuente de ese par en train; para el resto, la clase
+    mayoritaria de train. `vistos[i]` dice si el par estaba.
     """
     por_par = collections.defaultdict(collections.Counter)
     for e in entrena:
@@ -565,20 +613,30 @@ def linea_base_memorizacion(entrena, prueba, llave):
             por_par[k][e["label"]] += 1
     mayoritaria = _mas_frecuente(
         collections.Counter(e["label"] for e in entrena))
-    y, yhat = [], []
-    cubiertos = aciertos = sin_llave = 0
+    predicciones, vistos = [], []
     for e in prueba:
         k = llave(e)
-        if k is None:
-            sin_llave += 1
-        if k is not None and k in por_par:
-            cubiertos += 1
-            pred = _mas_frecuente(por_par[k])
-            aciertos += pred == e["label"]
-        else:
-            pred = mayoritaria
-        y.append(e["label"])
-        yhat.append(pred)
+        visto = k is not None and k in por_par
+        predicciones.append(_mas_frecuente(por_par[k]) if visto
+                            else mayoritaria)
+        vistos.append(visto)
+    return predicciones, vistos, mayoritaria
+
+
+def linea_base_memorizacion(entrena, prueba, llave, etiquetas=None):
+    """Cuánto se acierta sin leer la oración, solo recordando el par.
+
+    Ver `predicciones_linea_base`. Por construcción de `entrenamiento`, un
+    par registrado en la base nunca sale como no_relation y uno que no lo
+    está nunca sale como relación, así que esta línea base puede ser alta: el
+    modelo vale lo que le gana, no su F1 a secas. Devuelve solo números.
+    """
+    yhat, vistos, mayoritaria = predicciones_linea_base(entrena, prueba,
+                                                        llave)
+    y = [e["label"] for e in prueba]
+    cubiertos = sum(vistos)
+    aciertos = sum(1 for a, b, v in zip(y, yhat, vistos) if v and a == b)
+    sin_llave = sum(1 for e in prueba if llave(e) is None)
     n = len(prueba)
     return {
         "n": n,
@@ -588,10 +646,320 @@ def linea_base_memorizacion(entrena, prueba, llave):
         if cubiertos else None,
         "accuracy": round(sum(1 for a, b in zip(y, yhat) if a == b) / n, 4)
         if n else None,
-        "macro_f1": round(macro_f1(y, yhat), 4) if n else None,
-        "macro_f1_mayoritaria": round(macro_f1(y, [mayoritaria] * n), 4)
+        "macro_f1": round(macro_f1(y, yhat, etiquetas), 4) if n else None,
+        "macro_f1_mayoritaria": round(macro_f1(y, [mayoritaria] * n,
+                                               etiquetas), 4)
         if n else None,
     }
+
+
+# ------------------------------------------- la evaluación del protocolo
+
+def semillas_de(texto):
+    """["42", "43", "44"] de «42,43,44»: enteros como texto, sin repetir.
+
+    Como texto a propósito: barrido.py compara la semilla con «42» para
+    decidir el nombre del run, y un entero 42 le pondría el sufijo `_s42`.
+    """
+    semillas = []
+    for parte in str(texto or "").split(","):
+        parte = parte.strip()
+        if not parte:
+            continue
+        if not parte.isdigit():
+            raise ValueError("--semillas: %r no es un entero." % parte)
+        valor = str(int(parte))
+        if valor in semillas:
+            raise ValueError("--semillas: la %s está repetida." % valor)
+        semillas.append(valor)
+    if not semillas:
+        raise ValueError("--semillas está vacía.")
+    return semillas
+
+
+def excluir_de(valores):
+    """Las etiquetas que se dejan fuera, de `--excluir-etiqueta`.
+
+    None (no se dio el flag) da EXCLUIR_POR_OMISION; «ninguna», ninguna.
+    """
+    if valores is None:
+        return tuple(EXCLUIR_POR_OMISION)
+    valores = [str(v).strip().lower() for v in valores]
+    if "ninguna" in valores:
+        if len(valores) > 1:
+            raise ValueError("--excluir-etiqueta ninguna no se combina con "
+                             "otras.")
+        return ()
+    for v in valores:
+        if v not in EXCLUIBLES:
+            raise ValueError("--excluir-etiqueta: %r no se puede excluir; se "
+                             "puede %s." % (v, ", ".join(EXCLUIBLES)))
+    excluir = tuple(sorted(set(valores)))
+    if len(E.ETIQUETAS) - len(excluir) < 2:
+        raise ValueError("Excluir %s deja menos de dos clases."
+                         % ", ".join(excluir))
+    return excluir
+
+
+def etiquetas_evaluadas(excluir):
+    """Las etiquetas del protocolo, en el orden de ETIQUETAS."""
+    return [e for e in E.ETIQUETAS if e not in excluir]
+
+
+def filtrar_etiquetas(origen, destino, excluir):
+    """Copia los tres entity_marked_*.jsonl de `origen` a `destino` sin los
+    ejemplos de las etiquetas de `excluir`. Devuelve solo conteos.
+
+    `origen` no se toca: su conteos.json sigue describiendo lo que construyó
+    datos-entrenamiento.
+    """
+    quitados = collections.defaultdict(collections.Counter)
+    quedan = 0
+    for nombre in E.ARCHIVOS:
+        lineas = []
+        for e in _leer_jsonl(os.path.join(origen, nombre)):
+            if e["label"] in excluir:
+                quitados[e["label"]][str(e["pmid"])] += 1
+                continue
+            lineas.append(json.dumps(e, ensure_ascii=False))
+        quedan += len(lineas)
+        E._escribir_atomico(os.path.join(destino, nombre), lineas)
+    return {"quitados": dict((etq, {"ejemplos": sum(arts.values()),
+                                    "articulos": len(arts)})
+                             for etq, arts in sorted(quitados.items())),
+            "quedan": quedan}
+
+
+def conteos_confusion(y, yhat):
+    """{(verdad, predicción): n}."""
+    return collections.Counter(zip(y, yhat))
+
+
+def _orden(etiqueta):
+    return (E.ETIQUETAS.index(etiqueta) if etiqueta in E.ETIQUETAS
+            else len(E.ETIQUETAS), etiqueta)
+
+
+def _macro_de_conteos(conteos, etiquetas):
+    total = 0.0
+    for e in etiquetas:
+        tp = conteos.get((e, e), 0)
+        predichos = sum(v for (_, b), v in conteos.items() if b == e)
+        soporte = sum(v for (a, _), v in conteos.items() if a == e)
+        p = tp / predichos if predichos else 0.0
+        r = tp / soporte if soporte else 0.0
+        total += 2 * p * r / (p + r) if p + r else 0.0
+    return total / len(etiquetas) if etiquetas else 0.0
+
+
+def metricas_de_conteos(conteos, etiquetas):
+    """Métricas sobre un conjunto de etiquetas FIJO, desde la matriz.
+
+    Por clase: precisión, exhaustividad, F1, soporte (verdaderos) y
+    predichos. Una predicción de una etiqueta fuera del conjunto (una clase
+    excluida) es error de la clase verdadera y se cuenta aparte en `fuera`.
+    Solo números.
+    """
+    n = sum(conteos.values())
+    por_clase = collections.OrderedDict()
+    for e in etiquetas:
+        tp = conteos.get((e, e), 0)
+        predichos = sum(v for (_, b), v in conteos.items() if b == e)
+        soporte = sum(v for (a, _), v in conteos.items() if a == e)
+        p = tp / predichos if predichos else 0.0
+        r = tp / soporte if soporte else 0.0
+        por_clase[e] = {
+            "precision": round(p, 4), "exhaustividad": round(r, 4),
+            "f1": round(2 * p * r / (p + r) if p + r else 0.0, 4),
+            "soporte": soporte, "predichos": predichos}
+    fuera = collections.Counter()
+    for (_, b), v in conteos.items():
+        if b not in etiquetas:
+            fuera[b] += v
+    filas = sorted(set(a for a, _ in conteos) | set(etiquetas), key=_orden)
+    columnas = sorted(set(b for _, b in conteos) | set(etiquetas), key=_orden)
+    aciertos = sum(v for (a, b), v in conteos.items() if a == b)
+    return collections.OrderedDict([
+        ("n", n),
+        ("accuracy", round(aciertos / n, 4) if n else None),
+        ("macro_f1", round(_macro_de_conteos(conteos, etiquetas), 4)
+         if n else None),
+        ("por_clase", por_clase),
+        ("fuera", dict(fuera)),
+        ("matriz", {"filas": filas, "columnas": columnas,
+                    "conteos": [[conteos.get((a, b), 0) for b in columnas]
+                                for a in filas]}),
+    ])
+
+
+def replicas_bootstrap(grupos, estadistico, b=B_BOOTSTRAP,
+                       semilla=SEMILLA_BOOTSTRAP):
+    """`estadistico(muestra)` en `b` remuestreos con reemplazo de los GRUPOS.
+
+    El grupo es el artículo: los ejemplos de un mismo artículo no son
+    independientes, y remuestrear ejemplos sueltos daría un intervalo
+    demasiado angosto (bootstrap por conglomerados). Las claves se ordenan
+    antes de sortear y se sortea con `random()`, la única secuencia que
+    Python garantiza igual entre versiones: el mismo resultado en 3.8 y 3.10
+    y sin depender del orden de lectura.
+    """
+    claves = sorted(grupos)
+    n = len(claves)
+    rnd = random.Random(semilla)
+    replicas = []
+    for _ in range(b):
+        muestra = [grupos[claves[int(rnd.random() * n)]] for _ in range(n)]
+        replicas.append(estadistico(muestra))
+    return replicas
+
+
+def intervalo_percentil(valores, decimales=4):
+    """[percentil 2.5, percentil 97.5] (intervalo percentil al 95 %).
+    `decimales=None`, sin redondear: para decidir con él."""
+    if len(valores) < 2:
+        return None
+    cortes = statistics.quantiles(valores, n=40, method="inclusive")
+    if decimales is None:
+        return [cortes[0], cortes[-1]]
+    return [round(cortes[0], decimales), round(cortes[-1], decimales)]
+
+
+def evaluar_oof(filas, etiquetas, semillas, b=B_BOOTSTRAP,
+                semilla=SEMILLA_BOOTSTRAP):
+    """La evaluación pre-registrada sobre las predicciones fuera de pliegue.
+
+    `filas`: una por ejemplo de test de algún pliegue (cada ejemplo es test
+    en un solo pliegue), con `pmid`, `verdad`, `base` (la línea base de
+    memorización del train de su pliegue), `mayoritaria`, `visto` (si su par
+    estaba en ese train) y `pred` {semilla: etiqueta}.
+
+    La cifra principal es el macro-F1 sobre `etiquetas` (fijas) de las
+    predicciones agrupadas de cada semilla, promediado entre semillas; su
+    intervalo, un bootstrap por artículos con los modelos fijos. La
+    comparación principal es contra la línea base, pareada en las mismas
+    réplicas. Devuelve solo números.
+    """
+    sistemas = ["s%s" % x for x in semillas] + ["base", "mayoritaria"]
+
+    def pred(f, sistema):
+        return f[sistema] if sistema in ("base", "mayoritaria") \
+            else f["pred"][sistema[1:]]
+
+    por_articulo = collections.defaultdict(
+        lambda: dict((s, collections.Counter()) for s in sistemas))
+    for f in filas:
+        articulo = por_articulo[str(f["pmid"])]
+        for s in sistemas:
+            articulo[s][(f["verdad"], pred(f, s))] += 1
+    total = dict((s, collections.Counter()) for s in sistemas)
+    for articulo in por_articulo.values():
+        for s in sistemas:
+            total[s].update(articulo[s])
+    metricas = dict((s, metricas_de_conteos(total[s], etiquetas))
+                    for s in sistemas)
+    f1 = collections.OrderedDict(
+        (x, metricas["s%s" % x]["macro_f1"]) for x in semillas)
+
+    def estadistico(muestra):
+        acum = dict((s, collections.Counter()) for s in sistemas)
+        for articulo in muestra:
+            for s in sistemas:
+                acum[s].update(articulo[s])
+        modelo = statistics.mean(_macro_de_conteos(acum["s%s" % x], etiquetas)
+                                 for x in semillas)
+        base = _macro_de_conteos(acum["base"], etiquetas)
+        return modelo, base, modelo - base
+
+    replicas = replicas_bootstrap(dict(por_articulo), estadistico, b, semilla)
+    media = statistics.mean(f1.values())
+    diferencia = media - metricas["base"]["macro_f1"]
+    # La regla se decide con el límite sin redondear: uno entre 0 y 0.00005
+    # redondeado a 0.0 diría «no se demostró ventaja».
+    ic_bruto = intervalo_percentil([r[2] for r in replicas], None)
+    ic_diferencia = intervalo_percentil([r[2] for r in replicas])
+
+    estratos = collections.OrderedDict()
+    for nombre, visto in (("visto", True), ("no_visto", False)):
+        sub = [f for f in filas if bool(f["visto"]) == visto]
+        if not sub:
+            continue
+        y = [f["verdad"] for f in sub]
+        estratos[nombre] = {
+            "n": len(sub),
+            "articulos": len(set(str(f["pmid"]) for f in sub)),
+            "macro_f1_modelo": round(statistics.mean(
+                macro_f1(y, [f["pred"][x] for f in sub], etiquetas)
+                for x in semillas), 4),
+            "macro_f1_base": round(macro_f1(
+                y, [f["base"] for f in sub], etiquetas), 4)}
+
+    soporte_articulos = collections.OrderedDict(
+        (e, len(set(str(f["pmid"]) for f in filas if f["verdad"] == e)))
+        for e in etiquetas)
+    return collections.OrderedDict([
+        ("n", len(filas)),
+        ("articulos", len(por_articulo)),
+        ("etiquetas", list(etiquetas)),
+        ("semillas", list(semillas)),
+        ("bootstrap", {"b": b, "semilla": semilla, "por": "articulo"}),
+        ("macro_f1", collections.OrderedDict([
+            ("por_semilla", f1),
+            ("media", round(media, 4)),
+            ("sd", round(statistics.stdev(f1.values()), 4)
+             if len(f1) > 1 else None),
+            ("min", min(f1.values())), ("max", max(f1.values())),
+            ("ic95", intervalo_percentil([r[0] for r in replicas]))])),
+        ("linea_base", {"macro_f1": metricas["base"]["macro_f1"],
+                        "ic95": intervalo_percentil([r[1] for r in replicas])}),
+        ("mayoritaria", {"macro_f1": metricas["mayoritaria"]["macro_f1"]}),
+        ("diferencia", {
+            "media": round(diferencia, 4), "ic95": ic_diferencia,
+            "fraccion_menor_o_igual_a_0": round(
+                sum(1 for r in replicas if r[2] <= 0) / len(replicas), 4)}),
+        ("supera_linea_base", bool(ic_bruto and ic_bruto[0] > 0)),
+        ("por_semilla", collections.OrderedDict(
+            (x, metricas["s%s" % x]) for x in semillas)),
+        ("metricas_linea_base", metricas["base"]),
+        ("soporte_articulos", soporte_articulos),
+        ("estratos", estratos),
+    ])
+
+
+def preparar_entrada_clasificar(ruta_test, ruta_entrada):
+    """Escribe el test con un `id_par` secuencial para clasificar.py y
+    devuelve los ejemplos en memoria (con su `id_par`).
+
+    particionar.py escribe el test sin `id_par`, y clasificar.py lo exige.
+    Cada fila se valida con el `validar_par` real ANTES de lanzar: si una no
+    cumple, el error dice cuántas, nunca cuál (su mensaje trae la oración).
+    """
+    C = _etapa2("clasificar")
+    ejemplos, lineas, malas = [], [], 0
+    for k, e in enumerate(_leer_jsonl(ruta_test), 1):
+        fila = {"id_par": "x%05d" % k, "pmid": int(e["pmid"]),
+                "text": e["text"], "tf": e["tf"], "target": e["target"]}
+        if C.validar_par(fila, k):
+            malas += 1
+        ejemplos.append(dict(e, id_par=fila["id_par"]))
+        lineas.append(json.dumps(fila, ensure_ascii=False))
+    if malas:
+        raise ErrorReentreno(
+            "test_invalido",
+            "%d de %d ejemplos de test no tienen el marcado que exige "
+            "clasificar.py." % (malas, len(ejemplos)))
+    E._escribir_atomico(ruta_entrada, lineas)
+    return ejemplos
+
+
+def leer_predicciones(ruta, ids):
+    """{id_par: predicción}; ValueError (sin contenido) si no son los ids."""
+    predicciones = {}
+    for d in _leer_jsonl(ruta):
+        predicciones[d["id_par"]] = d["prediccion"]
+    if set(predicciones) != set(ids):
+        raise ValueError("Las predicciones no cubren el test: %d de %d."
+                         % (len(set(predicciones) & set(ids)), len(ids)))
+    return predicciones
 
 
 def _leer_jsonl(ruta):
@@ -647,7 +1015,7 @@ def leer_particion(carpeta):
         for n in ("train", "dev", "test"))
 
 
-def fuga_por_par(carpeta, locus, pares_ciego=None):
+def fuga_por_par(carpeta, locus, pares_ciego=None, etiquetas=None):
     """La línea base de memorización en dev y test, por nombres y por locus,
     y lo que entró del conjunto ciego. Solo números."""
     partes = leer_particion(carpeta)
@@ -659,9 +1027,9 @@ def fuga_por_par(carpeta, locus, pares_ciego=None):
     for nombre in ("dev", "test"):
         r[nombre] = {
             "nombres": linea_base_memorizacion(
-                partes["train"], partes[nombre], _por_nombre),
+                partes["train"], partes[nombre], _por_nombre, etiquetas),
             "locus": linea_base_memorizacion(
-                partes["train"], partes[nombre], por_locus),
+                partes["train"], partes[nombre], por_locus, etiquetas),
         }
     if pares_ciego:
         # Solo totales por parte, sin desglose por etiqueta. Los 6 pares tienen
@@ -692,7 +1060,7 @@ _RE_CLASES = re.compile(r"^\s+(train|dev|test|TOTAL|fold_\d+)\s+(\d+)\s+"
 _RE_CELDA = re.compile(r"(\d+)\s+[0-9.]+%")
 
 
-def avisos_particion(lineas):
+def avisos_particion(lineas, excluir=()):
     """Lo que hay que saber de la salida de `particionar.py`, como datos.
 
     Lee el formato de `etapa2/particionar.py` (congelado): la tabla de
@@ -736,6 +1104,10 @@ def avisos_particion(lineas):
             a["rechazada"] = True
         if linea.startswith("Particion limpia."):
             a["limpia"] = True
+    # Una clase excluida de la versión falta en dev y test por construcción:
+    # no es un aviso ni pide validación cruzada.
+    a["clases_vacias"] = [cv for cv in a["clases_vacias"]
+                          if cv[1] not in excluir]
     a["recomendar_cv"] = bool(a["clases_vacias"]
                               or a["menos_de_5_articulos"])
     return a
@@ -976,9 +1348,11 @@ def _etapa2(nombre):
     return _MODULOS[nombre]
 
 
-def nombre_run():
+def nombre_run(semilla=SEMILLA_MODELO):
+    """El nombre que barrido.py le da al run 22 con esa semilla: el de la 42
+    es el del servidor, y las demás llevan el sufijo `_s<semilla>`."""
     B = _etapa2("barrido")
-    c = [c for c in B.configuraciones([B.SEMILLA])
+    c = [c for c in B.configuraciones([str(semilla)])
          if c["i"] == CONFIGURACION][0]
     return B.nombre_de(c)
 
@@ -1000,9 +1374,31 @@ def _codigo():
              "--untracked-files=no"],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=entorno,
             universal_newlines=True, timeout=10).stdout.strip()
+        # Todos los commits que tocan el protocolo, del último al primero.
+        # El hash va a 10 caracteres, como el del código: uno corto de 7
+        # dígitos tiene forma de PMID y el informe no se podría publicar.
+        protocolo = subprocess.run(
+            ["git", "-C", RAIZ_REPO, "log", "--format=%H %cI", "--",
+             PROTOCOLO],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=entorno,
+            universal_newlines=True, timeout=10).stdout.split()
+        protocolo_cambios = subprocess.run(
+            ["git", "-C", RAIZ_REPO, "status", "--porcelain", "--",
+             PROTOCOLO],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=entorno,
+            universal_newlines=True, timeout=10).stdout.strip()
     except (OSError, subprocess.TimeoutExpired):
-        return {"commit": None, "limpio": None}
-    return {"commit": commit or None, "limpio": not cambios}
+        return {"commit": None, "limpio": None, "protocolo": None}
+    commits = list(zip(protocolo[0::2], protocolo[1::2]))
+    return {"commit": commit or None, "limpio": not cambios,
+            # El protocolo tiene que estar commiteado ANTES de entrenar: el
+            # informe compara estas fechas con el primer entrenamiento.
+            "protocolo": {"commit": commits[0][0][:10],
+                          "fecha": commits[0][1],
+                          "primer_commit": commits[-1][0][:10],
+                          "primera_fecha": commits[-1][1],
+                          "limpio": not protocolo_cambios}
+            if commits else None}
 
 
 def _huellas(rutas_):
@@ -1044,7 +1440,8 @@ def _metricas(r):
 
 
 def validar_entradas(nombre, base, pares, reservas, script, ciego=None,
-                     folds=None, hasta="entrenamiento"):
+                     folds=None, hasta="entrenamiento", semillas=None,
+                     excluir=None):
     """ValueError si los argumentos no sirven. Va aparte para que
     `--desprender` lo compruebe ANTES de lanzar: en segundo plano, el error
     se perdería y quien lanzó vería el estado de la corrida anterior."""
@@ -1055,6 +1452,14 @@ def validar_entradas(nombre, base, pares, reservas, script, ciego=None,
         raise ValueError("--hasta tiene que ser uno de %s." % ", ".join(HASTA))
     if folds is not None and folds < 3:
         raise ValueError("--folds tiene que ser 3 o más.")
+    if semillas is not None:
+        semillas = semillas_de(",".join(semillas))
+        if folds is None and semillas != [SEMILLA_MODELO]:
+            raise ValueError("--semillas es para la validación cruzada: falta "
+                             "--folds. El modelo desplegable usa siempre la "
+                             "%s." % SEMILLA_MODELO)
+    if excluir is not None:
+        excluir_de(list(excluir) or ["ninguna"])
     if isinstance(reservas, str):
         reservas = [reservas]
     entradas = [("--pares", pares), ("--base", base), ("--script", script)]
@@ -1075,8 +1480,12 @@ def ejecutar(raiz, nombre, base, pares, reservas, script, python=None,
              aceptar_base_distinta=False, horas=HORAS,
              gpu_min_mib=GPU_MIN_MIB, max_length=MAX_LENGTH,
              conservar_checkpoints=False, hoja=None, log=_nada,
-             detener=None):
+             detener=None, semillas=None, excluir=None):
     """Corre la pista D y devuelve el estado final (el de `estado.json`).
+
+    `semillas`: las de la validación cruzada (por omisión, solo la 42).
+    `excluir`: las etiquetas que esta versión deja fuera (por omisión,
+    EXCLUIR_POR_OMISION; `()` para ninguna).
 
     Los errores de un paso no se lanzan: quedan en el estado (`estatus`
     error o cancelado, con su `motivo`) y en RESULTADOS.md, que se escribe
@@ -1086,8 +1495,12 @@ def ejecutar(raiz, nombre, base, pares, reservas, script, python=None,
     """
     if isinstance(reservas, str):
         reservas = [reservas]
+    semillas = semillas_de(",".join(semillas)) if semillas \
+        else [SEMILLA_MODELO]
+    excluir = tuple(EXCLUIR_POR_OMISION) if excluir is None \
+        else excluir_de(list(excluir) or ["ninguna"])
     validar_entradas(nombre, base, pares, reservas, script, ciego, folds,
-                     hasta)
+                     hasta, semillas, excluir)
     r = rutas(raiz, nombre)
     detener = detener or threading.Event()
     viejo = os.umask(0o077)
@@ -1106,7 +1519,8 @@ def ejecutar(raiz, nombre, base, pares, reservas, script, python=None,
                 python or os.environ.get("GRN_PYTHON_BERT") or sys.executable,
                 os.path.abspath(os.path.expanduser(ciego)) if ciego else None,
                 folds, hasta, aceptar_base_distinta, horas, gpu_min_mib,
-                str(max_length), conservar_checkpoints, hoja, log, detener)
+                str(max_length), conservar_checkpoints, hoja, log, detener,
+                semillas=semillas, excluir=excluir)
             corrida.estado["avisos"] = avisos
             return corrida.correr()
         finally:
@@ -1122,7 +1536,7 @@ class _Corrida:
     def __init__(self, r, nombre, base, pares, reservas, script, python,
                  ciego, folds, hasta, aceptar_base_distinta, horas,
                  gpu_min_mib, max_length, conservar_checkpoints, hoja, log,
-                 detener):
+                 detener, semillas=(SEMILLA_MODELO,), excluir=()):
         self.r = r
         self.nombre = nombre
         self.base, self.pares, self.reservas = base, pares, reservas
@@ -1133,6 +1547,10 @@ class _Corrida:
         self.max_length = max_length
         self.conservar_checkpoints = conservar_checkpoints
         self.hoja = hoja
+        self.semillas = list(semillas)
+        self.excluir = tuple(excluir)
+        self.etiquetas = etiquetas_evaluadas(self.excluir)
+        self.oof = {}
         self.salida = log
         self.detener = detener
         self.tope = threading.Event()
@@ -1148,7 +1566,7 @@ class _Corrida:
         self.previo = leer_estado(r["estado"]).get("pasos") or {}
         self.locus = None
         self.estado = collections.OrderedDict([
-            ("version", 1), ("nombre", nombre), ("estatus", "corriendo"),
+            ("version", 2), ("nombre", nombre), ("estatus", "corriendo"),
             ("motivo", None), ("detalle", None), ("pid", os.getpid()),
             ("inicio", _ahora()), ("fin", None), ("hasta", hasta),
             ("parametros", collections.OrderedDict([
@@ -1164,7 +1582,15 @@ class _Corrida:
                 ("semilla_datos", E.SEMILLA),
                 ("semilla_particion", SEMILLA_PARTICION),
                 ("script_huella", procedencia.huella(script)),
-                ("ciego", bool(ciego))])),
+                ("ciego", bool(ciego)),
+                ("semilla_modelo", SEMILLA_MODELO),
+                ("semillas", list(semillas)),
+                ("excluir", list(excluir)),
+                ("etiquetas_evaluadas", etiquetas_evaluadas(excluir)),
+                ("bootstrap", {"b": B_BOOTSTRAP,
+                               "semilla": SEMILLA_BOOTSTRAP,
+                               "por": "articulo"}),
+                ("dispositivo_eval", DISPOSITIVO_EVAL)])),
             ("codigo", _codigo()),
             ("pasos", collections.OrderedDict()),
             ("informe", None),
@@ -1261,8 +1687,10 @@ class _Corrida:
                 self.paso("entorno", self._paso_entorno)
                 self.paso("entrenamiento", self._paso_entrenamiento)
                 self.paso("modelo", self._paso_modelo)
+                self.paso("prediccion", self._paso_prediccion)
                 if self.folds:
                     self.paso("entrenamiento_cv", self._paso_entrenamiento_cv)
+                    self.paso("evaluacion", self._paso_evaluacion)
             self.estado["estatus"] = "ok"
         except (proceso.Cancelado, KeyboardInterrupt):
             self.estado["estatus"] = "cancelado"
@@ -1302,15 +1730,37 @@ class _Corrida:
         hue = (self.estado["pasos"].get("particion") or {}).get("huella")
         if not hue:
             return
-        for paso, ruta in (("entrenamiento", self.r["entrenamiento"]),
-                           ("entrenamiento_cv", self.r["entrenamiento_cv"])):
+        # La validación cruzada cuelga además de las huellas de sus pliegues,
+        # que solo se conocen si esta corrida pidió --folds.
+        pliegues = (self.estado["pasos"].get("particion_cv") or {}).get(
+            "huellas")
+        desplegable = self._entrenamientos()[0]
+        for paso, ruta, de_cv in (
+                ("entrenamiento", self.r["entrenamiento"], False),
+                ("prediccion", self.r["prediccion"], False),
+                ("entrenamiento_cv", self.r["entrenamiento_cv"], True),
+                ("evaluacion", self.r["evaluacion"], True)):
             if paso in self.estado["pasos"]:
                 continue
             guardado = _leer_json(ruta) or {}
-            if guardado.get("huella") == hue and guardado.get("info"):
-                info = dict(guardado["info"])
-                info["estatus"] = "previo"
-                self.estado["pasos"][paso] = info
+            if guardado.get("huella") != hue or not guardado.get("info"):
+                continue
+            # Atadas al modelo de hoy, no solo a la partición: el informe de
+            # esta corrida las presenta con sus parámetros.
+            if (paso == "entrenamiento"
+                    and self._resultado_vigente(desplegable) is None):
+                continue
+            if (paso == "prediccion"
+                    and not self._predicciones_vigentes(desplegable)):
+                continue
+            # Con otras semillas, etiquetas, max_length o predicciones, las
+            # cifras no son las de esta corrida (§1 diría otra cosa que §8).
+            if de_cv and (not pliegues
+                          or guardado.get("firma") != self._firma_cv()):
+                continue
+            info = dict(guardado["info"])
+            info["estatus"] = "previo"
+            self.estado["pasos"][paso] = info
         if ("modelo" not in self.estado["pasos"]
                 and "entrenamiento" in self.estado["pasos"]):
             curva = _leer_json(self.r["curva"])
@@ -1461,7 +1911,28 @@ class _Corrida:
         self.registrar("AVISO: se sigue con la base distinta "
                        "(--aceptar-base-distinta).")
 
-    def _particionar(self, salida, extra, archivo_txt):
+    def _entrada_particion(self, info=None):
+        """La carpeta de la que parte particionar.py: <datos>, o una copia sin
+        las etiquetas excluidas (ver EXCLUIR_POR_OMISION).
+
+        La copia se rehace cada vez que se particiona, que cuesta lo que leer
+        el train: así nunca queda una vieja hecha con otra exclusión.
+        """
+        if not self.excluir:
+            return self.r["datos"]
+        destino = os.path.join(self.r["datos"],
+                               "sin_" + "_".join(self.excluir))
+        hecho = filtrar_etiquetas(self.r["datos"], destino, self.excluir)
+        if info is not None:
+            info["excluidos"] = hecho["quitados"]
+            info["quedan"] = hecho["quedan"]
+        for etiqueta, c in hecho["quitados"].items():
+            self.registrar("Fuera de esta versión: %s, %d ejemplos de %d "
+                           "artículos." % (etiqueta, c["ejemplos"],
+                                           c["articulos"]))
+        return destino
+
+    def _particionar(self, salida, extra, archivo_txt, entrada):
         """Corre particionar.py; (código, líneas filtradas)."""
         lineas = []
 
@@ -1472,7 +1943,7 @@ class _Corrida:
             self.registrar(linea)
 
         argv = [sys.executable, "-u", PARTICIONAR,
-                "--entrada", self.r["datos"], "--salida", salida,
+                "--entrada", entrada, "--salida", salida,
                 "--por", "pmid", "--semilla", str(SEMILLA_PARTICION)] + extra
         codigo = _correr(argv, capturar, self.detener, cwd=self.r["datos"],
                          entorno=self._entorno_hijos())
@@ -1485,7 +1956,8 @@ class _Corrida:
         entradas = {"train": procedencia.huella(os.path.join(
                         self.r["datos"], E.ARCHIVOS[0])),
                     "particionar": procedencia.huella(PARTICIONAR),
-                    "semilla": SEMILLA_PARTICION}
+                    "semilla": SEMILLA_PARTICION,
+                    "excluir": list(self.excluir)}
         try:
             actual = B.huella(P)
         except OSError:
@@ -1495,8 +1967,10 @@ class _Corrida:
                 and self._reusar("particion", info, entradas=entradas,
                                  huella=actual)):
             return
-        codigo, lineas = self._particionar(P, [], self.r["particion_txt"])
-        avisos = avisos_particion(lineas)
+        entrada = self._entrada_particion(info)
+        codigo, lineas = self._particionar(P, [], self.r["particion_txt"],
+                                           entrada)
+        avisos = avisos_particion(lineas, self.excluir)
         info["entradas"] = entradas
         info["codigo"] = codigo
         info["avisos"] = avisos
@@ -1508,6 +1982,10 @@ class _Corrida:
                 "partición aunque haya escrito archivos."
                 % (codigo, " y dijo PARTICION RECHAZADA"
                    if avisos["rechazada"] else ""))
+        # El test lo va a predecir clasificar.py: si una fila no tiene su
+        # marcado, mejor saberlo aquí, sin GPU, que después de entrenar.
+        preparar_entrada_clasificar(os.path.join(P, E.ARCHIVOS[2]),
+                                    os.path.join(P, "test_ids.jsonl"))
         info["huella"] = B.huella(P)
         if avisos["recomendar_cv"]:
             self.registrar("AVISO: una clase de dev o test falta o sale de "
@@ -1520,16 +1998,21 @@ class _Corrida:
                 os.path.join(self.r["datos"], E.ARCHIVOS[0]), self.pares)
         return self.locus
 
+    def _llave_locus(self, e):
+        return self._locus().get((str(e["pmid"]), e["text"]))
+
     def _paso_fuga(self, info):
         entradas = {"particion": self.estado["pasos"]["particion"]["huella"],
                     "pares": procedencia.huella(self.pares),
                     "ciego": procedencia.huella(self.ciego)
-                    if self.ciego else None}
+                    if self.ciego else None,
+                    "etiquetas": list(self.etiquetas)}
         if self._reusar("fuga", info, entradas=entradas):
             return
         info["entradas"] = entradas
         ciego = pares_del_ciego(self.ciego) if self.ciego else None
-        f = fuga_por_par(self.r["particion"], self._locus(), ciego)
+        f = fuga_por_par(self.r["particion"], self._locus(), ciego,
+                         self.etiquetas)
         info.update(f)
         for parte in ("dev", "test"):
             n, l = f[parte]["nombres"], f[parte]["locus"]
@@ -1545,8 +2028,11 @@ class _Corrida:
 
     def _paso_particion_cv(self, info):
         PCV = _particion_cv(self.r, self.folds)
+        B = _etapa2("barrido")
+        entrada = self._entrada_particion()
         codigo, lineas = self._particionar(
-            PCV, ["--folds", str(self.folds)], self.r["particion_cv_txt"])
+            PCV, ["--folds", str(self.folds)], self.r["particion_cv_txt"],
+            entrada)
         bloques, actual = {"global": []}, "global"
         for linea in lineas:
             m = re.match(r"--- pliegue (\d+):", linea)
@@ -1555,44 +2041,157 @@ class _Corrida:
                 bloques[actual] = []
             bloques[actual].append(linea)
         info["codigo"] = codigo
-        info["avisos"] = avisos_particion(bloques["global"])
+        info["avisos"] = avisos_particion(bloques["global"], self.excluir)
         info["pliegues"] = dict(
-            (k, avisos_particion(v)) for k, v in bloques.items()
-            if k != "global")
+            (k, avisos_particion(v, self.excluir))
+            for k, v in bloques.items() if k != "global")
         rechazada = any(a["fallas"] for a in info["pliegues"].values())
         if codigo != 0 or rechazada:
             raise ErrorReentreno(
                 "particion_rechazada" if rechazada else "particion_error",
                 "particionar.py --folds %d salió con código %d."
                 % (self.folds, codigo))
+        for i in range(self.folds):
+            pliegue = os.path.join(PCV, "fold_%d" % i)
+            preparar_entrada_clasificar(os.path.join(pliegue, E.ARCHIVOS[2]),
+                                        os.path.join(pliegue,
+                                                     "test_ids.jsonl"))
+        # particionar.py es determinista con su semilla: estas huellas no
+        # cambian entre corridas, y de ellas cuelgan las predicciones ya
+        # hechas y la evaluación.
+        info["huellas"] = collections.OrderedDict(
+            ("fold_%d" % i, B.huella(os.path.join(PCV, "fold_%d" % i)))
+            for i in range(self.folds))
+        info["linea_base"] = self._linea_base_cv(PCV)
+        lb = info["linea_base"]
+        self.registrar("Línea base de memorización fuera de pliegue: macro-F1 "
+                       "%s; par ya visto en train en %d de %d ejemplos."
+                       % (lb["macro_f1"], lb["con_par_en_train"], lb["n"]))
 
-    def _corridas_de_barrido(self):
-        """[(partición, carpeta de resultados de barrido, carpeta de trabajo)]
-        de lo que hay que entrenar: el run 22 y, con --folds, cada pliegue."""
-        lista = [(self.r["particion"], self.r["barrido"], self.r["runs"])]
+    def _linea_base_cv(self, PCV):
+        """La línea base de memorización de cada pliegue y la de todas sus
+        predicciones fuera de pliegue juntas, que es la que compara el
+        protocolo. No depende del modelo: se conoce antes de entrenar, y la
+        evaluación tiene que dar la misma. Solo números."""
+        total = collections.Counter()
+        pliegues = collections.OrderedDict()
+        for i in range(self.folds):
+            pliegue = "fold_%d" % i
+            entrena = list(_leer_jsonl(os.path.join(PCV, pliegue,
+                                                    E.ARCHIVOS[0])))
+            prueba = list(_leer_jsonl(os.path.join(PCV, pliegue,
+                                                   E.ARCHIVOS[2])))
+            yhat, vistos, mayoritaria = predicciones_linea_base(
+                entrena, prueba, self._llave_locus)
+            y = [e["label"] for e in prueba]
+            conteos = conteos_confusion(y, yhat)
+            total.update(conteos)
+            por_clase = collections.Counter(y)
+            pliegues[pliegue] = collections.OrderedDict([
+                ("n", len(prueba)),
+                ("articulos", len(set(str(e["pmid"]) for e in prueba))),
+                ("por_clase", dict((e, por_clase.get(e, 0))
+                                   for e in E.ETIQUETAS)),
+                ("con_par_en_train", sum(vistos)),
+                ("mayoritaria", mayoritaria),
+                ("macro_f1", metricas_de_conteos(conteos, self.etiquetas)[
+                    "macro_f1"])])
+        return collections.OrderedDict([
+            ("pliegues", pliegues),
+            ("n", sum(f["n"] for f in pliegues.values())),
+            ("articulos", sum(f["articulos"] for f in pliegues.values())),
+            ("con_par_en_train", sum(f["con_par_en_train"]
+                                     for f in pliegues.values())),
+            ("macro_f1", metricas_de_conteos(total, self.etiquetas)[
+                "macro_f1"])])
+
+    def _entrenamientos(self):
+        """Lo que hay que entrenar, en orden: el modelo desplegable y, con
+        --folds, cada (semilla, pliegue) de la validación cruzada.
+
+        La validación cruzada va semilla por semilla: si algo se corta, queda
+        primero una semilla completa. Cada semilla tiene su propia carpeta de
+        resultados de barrido.py, porque su resumen declara INCOMPLETO un
+        barrido que encuentra corridas de otra semilla.
+        """
+        lista = [{"clave": "desplegable", "pliegue": None,
+                  "semilla": SEMILLA_MODELO, "datos": self.r["particion"],
+                  "trabajo": self.r["runs"], "resultados": self.r["barrido"],
+                  "predicciones": os.path.join(self.r["runs"],
+                                               "prediccion")}]
         if self.folds:
             PCV = _particion_cv(self.r, self.folds)
-            for i in range(self.folds):
-                trabajo = os.path.join(self.r["runs"], "cv", "fold_%d" % i)
-                lista.append((os.path.join(PCV, "fold_%d" % i),
-                              os.path.join(trabajo, "resultados"), trabajo))
+            for semilla in self.semillas:
+                for i in range(self.folds):
+                    pliegue = "fold_%d" % i
+                    trabajo = os.path.join(self.r["runs"], "cv", pliegue)
+                    lista.append({
+                        "clave": "s%s/%s" % (semilla, pliegue),
+                        "pliegue": pliegue, "semilla": semilla,
+                        "datos": os.path.join(PCV, pliegue),
+                        "trabajo": trabajo,
+                        "resultados": os.path.join(
+                            trabajo, "resultados"
+                            if semilla == SEMILLA_MODELO
+                            else "resultados_s%s" % semilla),
+                        "predicciones": os.path.join(
+                            trabajo, "predicciones", "s%s" % semilla)})
         return lista
 
+    def _destino(self, c):
+        return os.path.join(c["resultados"], nombre_run(c["semilla"]) + ".json")
+
+    def _run(self, c):
+        return os.path.join(c["trabajo"], nombre_run(c["semilla"]))
+
+    def _resultado_vigente(self, c):
+        """El JSON de barrido.py de `c`, si vale para su partición de hoy."""
+        try:
+            hue = _etapa2("barrido").huella(c["datos"])
+        except OSError:
+            return None
+        r = _leer_json(self._destino(c))
+        if (_metricas_validas(r) and r.get("huella") == hue
+                and str(r.get("max_length")) == self.max_length
+                and str(r.get("semilla")) == c["semilla"]):
+            return r
+        return None
+
+    def _inicio_entrenamiento(self, c):
+        """Cuándo empezó el entrenamiento que dio el resultado vigente de `c`
+        (lo anota `_barrido` junto a los tokens); None si no se sabe."""
+        try:
+            hue = _etapa2("barrido").huella(c["datos"])
+        except OSError:
+            return None
+        lado = _leer_json(self._destino(c) + ".tokens") or {}
+        return lado.get("inicio") if lado.get("huella") == hue else None
+
+    def _predicciones_vigentes(self, c):
+        """Si ya hay predicciones de `c` hechas con el modelo que dio su
+        resultado de hoy. Los modelos de pliegue se borran después de
+        predecir: lo que queda de ellos son su JSON y sus predicciones."""
+        firma = _leer_json(os.path.join(c["predicciones"], "firma.json"))
+        if not firma or self._resultado_vigente(c) is None:
+            return False
+        return (firma.get("huella_particion")
+                == _etapa2("barrido").huella(c["datos"])
+                and firma.get("semilla") == c["semilla"]
+                and firma.get("resultado")
+                == procedencia.huella(self._destino(c))
+                and firma.get("predicciones") == procedencia.huella(
+                    os.path.join(c["predicciones"], "predicciones.jsonl")))
+
     def _entrenamiento_hecho(self):
-        """Si ya hay resultado válido de cada entrenamiento con la partición
-        de hoy, y pesos del run 22: entonces no hace falta la GPU."""
-        B = _etapa2("barrido")
-        nombre = nombre_run()
-        for datos, resultados, _ in self._corridas_de_barrido():
-            try:
-                hue = B.huella(datos)
-            except OSError:
+        """Si cada entrenamiento ya tiene resultado válido con la partición de
+        hoy, y su modelo o sus predicciones: entonces no hace falta la GPU."""
+        for c in self._entrenamientos():
+            if c["pliegue"] is not None and self._predicciones_vigentes(c):
+                continue
+            if (self._resultado_vigente(c) is None
+                    or not _hay_pesos(self._run(c))):
                 return False
-            r = _leer_json(os.path.join(resultados, nombre + ".json"))
-            if not (_metricas_validas(r) and r.get("huella") == hue
-                    and str(r.get("max_length")) == self.max_length):
-                return False
-        return _hay_pesos(os.path.join(self.r["runs"], nombre))
+        return True
 
     def _paso_entorno(self, info):
         # Relanzar con todo entrenado (para agregar --ciego, para rehacer el
@@ -1614,17 +2213,7 @@ class _Corrida:
                 "Otra corrida viva (PID %s) usa <runs> sin el candado (¿se "
                 "borró .candado?). No se toca: detenla con `reentrenar "
                 "detener` o espera a que termine." % e.pid)
-        gpu = leer_gpu()
-        info["gpu"] = gpu
-        self.registrar("GPU: %d MiB libres de %d (mínimo %d)."
-                       % (gpu["libre_mib"], gpu["total_mib"],
-                          self.gpu_min_mib))
-        if gpu["libre_mib"] < self.gpu_min_mib:
-            raise ErrorReentreno(
-                "gpu_ocupada",
-                "La GPU tiene %d MiB libres y hacen falta %d: alguien más la "
-                "está usando. Espera y relanza; lo hecho no se repite."
-                % (gpu["libre_mib"], self.gpu_min_mib))
+        info["gpu"] = self._exigir_gpu()
         libre = shutil.disk_usage(self.r["runs"]).free / float(2 ** 30)
         info["disco_libre_gib"] = round(libre, 1)
         if libre < DISCO_MIN_GIB:
@@ -1661,20 +2250,38 @@ class _Corrida:
             self.registrar("AVISO: HF_HOME está puesto; el modelo sale de esa "
                            "caché y no de la de la cuenta.")
 
+    def _exigir_gpu(self):
+        """La memoria libre de la GPU, o gpu_ocupada. Se mira antes de cada
+        entrenamiento, no solo al empezar: con 16 entrenamientos seguidos,
+        alguien más puede tomar la GPU a la mitad, y es mejor parar limpio que
+        morir sin memoria a media época. Lo hecho no se repite."""
+        gpu = leer_gpu()
+        self.registrar("GPU: %d MiB libres de %d (mínimo %d)."
+                       % (gpu["libre_mib"], gpu["total_mib"],
+                          self.gpu_min_mib))
+        if gpu["libre_mib"] < self.gpu_min_mib:
+            raise ErrorReentreno(
+                "gpu_ocupada",
+                "La GPU tiene %d MiB libres y hacen falta %d: alguien más la "
+                "está usando. Espera y relanza; lo hecho no se repite."
+                % (gpu["libre_mib"], self.gpu_min_mib))
+        return gpu
+
     def _entorno_hijos(self):
         """Sin red, y con la marca que identifica a los hijos de esta corrida
         para `procesos_con`."""
         return dict(ENTORNO_HF, **{MARCA_ENTORNO: self.r["runs"]})
 
-    def _barrido(self, datos, trabajo, resultados, conservar, info):
-        """Corre barrido.py --solo 22 y devuelve su JSON de resultado.
+    def _barrido(self, datos, trabajo, resultados, conservar, info,
+                 semilla=SEMILLA_MODELO, primero=True):
+        """Corre barrido.py --solo 22 con una semilla y devuelve su JSON.
 
         Lo que lo hace distinto de llamarlo a secas: el éxito se decide por el
         JSON con métricas y la huella de esta partición, no por el código de
         salida; un run a medias se borra antes; y hay tope de horas.
         """
         B = _etapa2("barrido")
-        nombre = nombre_run()
+        nombre = nombre_run(semilla)
         hue = B.huella(datos)
         os.makedirs(resultados, 0o700, exist_ok=True)
         os.makedirs(trabajo, 0o700, exist_ok=True)
@@ -1683,7 +2290,8 @@ class _Corrida:
         anterior = _leer_json(destino)
         apartar = None
         if anterior is not None:
-            if anterior.get("huella") == hue:
+            if (anterior.get("huella") == hue
+                    and str(anterior.get("semilla")) == semilla):
                 if str(anterior.get("max_length")) != self.max_length:
                     raise ErrorReentreno(
                         "parametros_distintos",
@@ -1730,10 +2338,13 @@ class _Corrida:
                            % nombre)
         if os.path.exists(destino + ".error"):
             os.remove(destino + ".error")
+        if not primero:
+            self._exigir_gpu()
         argv = [self.python, "-u", BARRIDO, "--datos", datos,
                 "--script", self.script, "--trabajo", trabajo,
                 "--resultados", resultados, "--modelo", MODELO,
-                "--max_length", self.max_length, "--solo", str(CONFIGURACION)]
+                "--max_length", self.max_length, "--solo", str(CONFIGURACION),
+                "--semillas", semilla]
         if conservar:
             argv.append("--conservar")
         crudas = collections.deque(maxlen=400)
@@ -1757,6 +2368,8 @@ class _Corrida:
 
         reloj = threading.Timer(self.horas * 3600.0, disparar)
         reloj.daemon = True
+        # Para el pre-registro: el protocolo tiene que ser anterior a esto.
+        inicio = _ahora()
         reloj.start()
         try:
             codigo = _correr(argv, capturar, self.detener, cwd=trabajo,
@@ -1776,7 +2389,8 @@ class _Corrida:
             # `.json.tokens` no lo recoge el resumen de barrido.py, que busca
             # `*.json` y `*.json.error`.
             _escribir_texto(destino + ".tokens", json.dumps(
-                {"huella": hue, "tokens": info["tokens"]}) + "\n")
+                {"huella": hue, "tokens": info["tokens"],
+                 "inicio": inicio}) + "\n")
             return resultado
         error = _leer_json(destino + ".error") or {}
         cod = error.get("codigo", codigo)
@@ -1789,19 +2403,22 @@ class _Corrida:
         res = self._barrido(self.r["particion"], self.r["runs"],
                             self.r["barrido"], True, info)
         info["metricas"] = _metricas(res)
-        self.registrar("Run %d: dev macro-F1 %.4f, test macro-F1 %.4f."
+        self.registrar("Run %d: dev macro-F1 %.4f, test macro-F1 %.4f "
+                       "(regla del script)."
                        % (CONFIGURACION, res["dev_macro_f1"],
                           res["test_macro_f1"]))
         self._guardar_entrenamiento(self.r["entrenamiento"], info)
 
-    def _guardar_entrenamiento(self, ruta, info):
+    def _guardar_entrenamiento(self, ruta, info, **extra):
         """La copia con solo números que puede ver la sesión, atada a la huella
         de la partición (ver `_heredar`)."""
         copia = dict((k, v) for k, v in info.items()
                      if k not in ("estatus", "inicio", "fin", "segundos"))
-        _escribir_texto(ruta, json.dumps(
-            {"huella": self.estado["pasos"]["particion"]["huella"],
-             "info": copia}, ensure_ascii=False, indent=2) + "\n")
+        registro = {"huella": self.estado["pasos"]["particion"]["huella"],
+                    "info": copia}
+        registro.update(extra)
+        _escribir_texto(ruta, json.dumps(registro, ensure_ascii=False,
+                                         indent=2) + "\n")
 
     def _paso_modelo(self, info):
         run = os.path.join(self.r["runs"], nombre_run())
@@ -1836,31 +2453,209 @@ class _Corrida:
                     borrados += 1
         info["checkpoints_borrados"] = borrados
 
+    # ---- predicción por ejemplo y evaluación
+
+    def _predecir(self, c, res, etiquetas_json=None):
+        """Predice el test de `c` con su modelo, con etapa2/clasificar.py.
+
+        Es la misma vía de inferencia que usará el flujo. En CPU: son unos
+        cientos de oraciones y así no depende de la GPU compartida. Las
+        predicciones llevan tf y target y se quedan en <runs>; de aquí salen
+        solo métricas.
+        """
+        C = _etapa2("clasificar")
+        run = self._run(c)
+        faltan = C.archivos_que_faltan(run)
+        if faltan:
+            raise ErrorReentreno(
+                "sin_modelo", "Al modelo de %s le faltan: %s."
+                % (c["clave"], ", ".join(n for n, _ in faltan)))
+        carpeta = c["predicciones"]
+        os.makedirs(carpeta, 0o700, exist_ok=True)
+        entrada = os.path.join(c["datos"], "test_ids.jsonl")
+        ejemplos = preparar_entrada_clasificar(
+            os.path.join(c["datos"], E.ARCHIVOS[2]), entrada)
+        salida = os.path.join(carpeta, "predicciones.jsonl")
+        meta = os.path.join(carpeta, "meta.json")
+        # Sin --reanudar y sin restos: clasificar.py se niega ante un .parcial
+        # viejo, y con --reanudar adoptaría predicciones de otro modelo.
+        for viejo in (salida, salida + ".parcial", meta):
+            if os.path.exists(viejo):
+                os.remove(viejo)
+        argv = [self.python, "-u", CLASIFICAR, "--modelo", run,
+                "--entrada", entrada, "--salida", salida, "--meta", meta,
+                "--lote", LOTE_EVAL, "--max_length", self.max_length,
+                "--dispositivo", DISPOSITIVO_EVAL]
+        if etiquetas_json:
+            argv += ["--etiquetas", etiquetas_json]
+        entorno = dict(self._entorno_hijos(), TQDM_DISABLE="1",
+                       HF_HUB_DISABLE_PROGRESS_BARS="1",
+                       TRANSFORMERS_VERBOSITY="error", OMP_NUM_THREADS="8",
+                       CUDA_VISIBLE_DEVICES="")
+        codigo = _correr(argv, self.registrar, self.detener,
+                         cwd=c["trabajo"], entorno=entorno)
+        degenerado = False
+        if codigo != 0:
+            # clasificar.py se niega a escribir si las 20 o más predicciones
+            # son de una sola clase («modelo mal cargado», que a escala de
+            # corpus es cierto). Aquí un modelo que lo predice todo igual es un
+            # resultado (malo) y entra como está, si lo demás cuadra.
+            parcial = salida + ".parcial"
+            ids = [e["id_par"] for e in ejemplos]
+            if (os.path.isfile(parcial)
+                    and not C.verificar_salida(parcial, ids,
+                                               exigir_variedad=False)
+                    and len(set(d["prediccion"]
+                                for d in _leer_jsonl(parcial))) == 1):
+                os.replace(parcial, salida)
+                degenerado = True
+                self.registrar("AVISO: el modelo de %s predice una sola clase "
+                               "en todo su test; entra como está."
+                               % c["clave"])
+            else:
+                raise ErrorReentreno(
+                    "prediccion_fallo",
+                    "clasificar.py salió con código %d sin predicciones "
+                    "válidas para %s; el motivo está en reentrenar.log."
+                    % (codigo, c["clave"]))
+        resultado = self._evaluar_prediccion(c, ejemplos, res, degenerado)
+        _escribir_texto(os.path.join(carpeta, "firma.json"), json.dumps({
+            "huella_particion": _etapa2("barrido").huella(c["datos"]),
+            "semilla": c["semilla"],
+            "resultado": procedencia.huella(self._destino(c)),
+            "predicciones": procedencia.huella(salida),
+            "degenerado": degenerado}, indent=2) + "\n")
+        return resultado
+
+    def _cargar_predicciones(self, c):
+        """Las predicciones vigentes de `c`, sin volver a predecir."""
+        firma = _leer_json(os.path.join(c["predicciones"], "firma.json"))
+        ejemplos = preparar_entrada_clasificar(
+            os.path.join(c["datos"], E.ARCHIVOS[2]),
+            os.path.join(c["datos"], "test_ids.jsonl"))
+        return self._evaluar_prediccion(c, ejemplos,
+                                        self._resultado_vigente(c),
+                                        firma.get("degenerado", False))
+
+    def _evaluar_prediccion(self, c, ejemplos, res, degenerado):
+        try:
+            predicciones = leer_predicciones(
+                os.path.join(c["predicciones"], "predicciones.jsonl"),
+                [e["id_par"] for e in ejemplos])
+        except ValueError as e:
+            raise ErrorReentreno("prediccion_fallo", "%s: %s"
+                                 % (c["clave"], e))
+        y = [e["label"] for e in ejemplos]
+        yhat = [predicciones[e["id_par"]] for e in ejemplos]
+        # clasificar.py solo se niega desde 20 predicciones; un pliegue con
+        # menos que lo predice todo igual es igual de degenerado. En el
+        # ensayo sintético, tres de seis pliegues lo hacían sin marca.
+        degenerado = degenerado or (len(yhat) > 1 and len(set(yhat)) == 1)
+        aciertos = sum(1 for a, b in zip(y, yhat) if a == b)
+        del_script = (res or {}).get("test_accuracy")
+        diferencia = (abs(aciertos - del_script * len(y))
+                      if isinstance(del_script, (int, float)) else None)
+        return {
+            "ejemplos": ejemplos, "yhat": yhat, "degenerado": degenerado,
+            "articulos": len(set(str(e["pmid"]) for e in ejemplos)),
+            "metricas": metricas_de_conteos(conteos_confusion(y, yhat),
+                                            self.etiquetas),
+            # La accuracy por argmax de clasificar.py contra la del script:
+            # si no cuadran, la unión de predicciones con etiquetas (o el
+            # orden de etiquetas del modelo) está mal, y todo lo demás
+            # mediría ruido.
+            "cotejo": {
+                "accuracy_clasificar": round(aciertos / len(y), 4)
+                if y else None,
+                "accuracy_script": del_script,
+                "diferencia_ejemplos": round(diferencia, 1)
+                if diferencia is not None else None,
+                "ok": diferencia is not None
+                and diferencia <= TOLERANCIA_COTEJO}}
+
+    @staticmethod
+    def _numeros_de_prediccion(pr):
+        """Lo que de una predicción va al estado: solo números."""
+        return collections.OrderedDict([
+            ("n", pr["metricas"]["n"]), ("articulos", pr["articulos"]),
+            ("metricas", pr["metricas"]), ("cotejo", pr["cotejo"]),
+            ("degenerado", pr["degenerado"])])
+
+    def _paso_prediccion(self, info):
+        """El modelo desplegable sobre su test de la partición única.
+
+        Es descriptivo (el test tiene unos pocos artículos) y comprueba el
+        artefacto: el modelo tal como lo usará el flujo, con su
+        label_mapping.json junto a los pesos y sin --etiquetas.
+        """
+        c = self._entrenamientos()[0]
+        res = self._resultado_vigente(c)
+        if res is None:
+            raise ErrorReentreno("sin_modelo", "No hay resultado vigente del "
+                                               "run %d." % CONFIGURACION)
+        if self._predicciones_vigentes(c):
+            pr = self._cargar_predicciones(c)
+            info["estatus"] = "saltado"
+        else:
+            pr = self._predecir(c, res)
+        info.update(self._numeros_de_prediccion(pr))
+        self._guardar_entrenamiento(self.r["prediccion"], info)
+        if not pr["cotejo"]["ok"]:
+            raise ErrorReentreno(
+                "cotejo_clasificar",
+                "La accuracy de clasificar.py (%s) no cuadra con la del "
+                "script (%s) en más de %d ejemplos: no se evalúa con una "
+                "unión que no cuadra." % (pr["cotejo"]["accuracy_clasificar"],
+                                         pr["cotejo"]["accuracy_script"],
+                                         TOLERANCIA_COTEJO))
+
     def _paso_entrenamiento_cv(self, info):
-        pliegues = collections.OrderedDict()
-        info["pliegues"] = pliegues
-        for i, (datos, resultados, trabajo) in enumerate(
-                self._corridas_de_barrido()[1:]):
+        corridas = collections.OrderedDict()
+        info["corridas"] = corridas
+        self.oof = {}
+        for c in self._entrenamientos()[1:]:
             if self.detener.is_set():
-                raise proceso.Cancelado("antes del pliegue %d" % i)
-            pliegue = "fold_%d" % i
-            self.registrar("Pliegue %d de %d." % (i + 1, self.folds))
-            sub = {"estatus": "corriendo"}
-            res = self._barrido(datos, trabajo, resultados, False, sub)
-            m = _metricas(res)
-            partes = leer_particion(datos)
-            m["linea_base_macro_f1_test"] = linea_base_memorizacion(
-                partes["train"], partes["test"],
-                lambda e: self._locus().get((str(e["pmid"]), e["text"]))
-            )["macro_f1"]
-            m["tokens"] = sub.get("tokens")
-            pliegues[pliegue] = m
+                raise proceso.Cancelado("antes de %s" % c["clave"])
+            self.registrar("Validación cruzada: %s." % c["clave"])
+            sub = {}
+            if self._predicciones_vigentes(c):
+                pr = self._cargar_predicciones(c)
+                res = self._resultado_vigente(c)
+                sub["estatus"] = "saltado"
+                # Si la corrida murió entre firma.json y el rmtree, el modelo
+                # del pliegue seguía ahí para siempre: unos 3 GB cada vez.
+                if os.path.isdir(self._run(c)):
+                    shutil.rmtree(self._run(c), ignore_errors=True)
+            else:
+                res = self._barrido(c["datos"], c["trabajo"], c["resultados"],
+                                    True, sub, semilla=c["semilla"],
+                                    primero=False)
+                pr = self._predecir(c, res, etiquetas_json=os.path.join(
+                    c["datos"], "label_mapping.json"))
+                # El modelo del pliegue ya dio lo que tenía que dar: sus
+                # predicciones. Se borra (con sus checkpoints son unos 3 GB).
+                shutil.rmtree(self._run(c))
+            self.oof[c["clave"]] = pr
+            fila = _metricas(res)
+            fila.update(estatus=sub.get("estatus", "ok"),
+                        tokens=sub.get("tokens"),
+                        macro_f1_fijo=pr["metricas"]["macro_f1"],
+                        accuracy_clasificar=pr["cotejo"][
+                            "accuracy_clasificar"],
+                        cotejo_ok=pr["cotejo"]["ok"],
+                        degenerado=pr["degenerado"])
+            corridas[c["clave"]] = fila
+            if not pr["cotejo"]["ok"]:
+                self.registrar("AVISO: en %s la accuracy de clasificar.py no "
+                               "cuadra con la del script." % c["clave"])
             self.guardar()
+        # Las métricas del script, como las reporta su barrido (regla y∪ŷ):
+        # para compararse con el del asesor, no para la cifra principal.
         agregado = collections.OrderedDict()
         for llave in ("test_macro_f1", "dev_macro_f1", "test_accuracy",
-                      "linea_base_macro_f1_test"):
-            valores = [p[llave] for p in pliegues.values()
-                       if isinstance(p.get(llave), (int, float))]
+                      "macro_f1_fijo"):
+            valores = [f[llave] for f in corridas.values()
+                       if isinstance(f.get(llave), (int, float))]
             if valores:
                 agregado[llave] = {
                     "media": round(statistics.mean(valores), 4),
@@ -1869,8 +2664,77 @@ class _Corrida:
                     "min": round(min(valores), 4),
                     "max": round(max(valores), 4)}
         info["agregado"] = agregado
-        self._guardar_entrenamiento(self.r["entrenamiento_cv"], info)
+        self._guardar_entrenamiento(self.r["entrenamiento_cv"], info,
+                                    firma=self._firma_cv())
 
+    def _firma_cv(self):
+        """Lo que define las cifras de la validación cruzada: con otra cosa
+        distinta, una corrida no las hereda (ver `_heredar`)."""
+        return {
+            "pliegues": self.estado["pasos"]["particion_cv"]["huellas"],
+            "semillas": list(self.semillas),
+            "etiquetas": list(self.etiquetas),
+            "max_length": self.max_length,
+            "b": B_BOOTSTRAP, "semilla_bootstrap": SEMILLA_BOOTSTRAP,
+            "predicciones": dict(
+                (c["clave"], procedencia.huella(os.path.join(
+                    c["predicciones"], "predicciones.jsonl")))
+                for c in self._entrenamientos()[1:])}
+
+    def _paso_evaluacion(self, info):
+        """La cifra del protocolo: las predicciones fuera de pliegue de cada
+        semilla, contra la línea base de memorización del train de su
+        pliegue, con un bootstrap por artículos (ver `evaluar_oof`)."""
+        # Se recalcula siempre (son segundos). Saltarla por una firma dejaba
+        # cifras viejas tras corregir el código o cambiar los locus de
+        # --pares, que no cambian los archivos de los pliegues.
+        firma = self._firma_cv()
+        filas = []
+        PCV = _particion_cv(self.r, self.folds)
+        for i in range(self.folds):
+            pliegue = "fold_%d" % i
+            entrena = list(_leer_jsonl(os.path.join(PCV, pliegue,
+                                                    E.ARCHIVOS[0])))
+            # El test del pliegue es el mismo para todas las semillas, en el
+            # mismo orden (test_ids.jsonl es determinista).
+            ejemplos = self.oof["s%s/%s" % (self.semillas[0],
+                                            pliegue)]["ejemplos"]
+            base, vistos, mayoritaria = predicciones_linea_base(
+                entrena, ejemplos, self._llave_locus)
+            for k, e in enumerate(ejemplos):
+                filas.append({
+                    "pmid": e["pmid"], "verdad": e["label"], "base": base[k],
+                    "mayoritaria": mayoritaria, "visto": vistos[k],
+                    "pred": dict((s, self.oof["s%s/%s" % (s, pliegue)]
+                                  ["yhat"][k]) for s in self.semillas)})
+        evaluacion = evaluar_oof(filas, self.etiquetas, self.semillas)
+        # La misma línea base que se fijó al particionar, antes de entrenar:
+        # si no, las predicciones no están unidas a los ejemplos de su pliegue.
+        fijada = (self.estado["pasos"]["particion_cv"].get("linea_base")
+                  or {}).get("macro_f1")
+        if fijada is not None and fijada != evaluacion["linea_base"][
+                "macro_f1"]:
+            raise ErrorReentreno(
+                "inesperado", "La línea base de la evaluación (%s) no es la "
+                "que se fijó al particionar (%s)."
+                % (evaluacion["linea_base"]["macro_f1"], fijada))
+        info.update(evaluacion)
+        # El primer entrenamiento detrás de estas cifras, desplegable
+        # incluido: el pre-registro se compara con esto, no con el inicio de
+        # la invocación que las calcula.
+        inicios = [self._inicio_entrenamiento(c)
+                   for c in self._entrenamientos()]
+        info["entrenado_desde"] = (min(inicios, key=_fecha_utc)
+                                   if inicios and all(inicios) else None)
+        self._guardar_entrenamiento(self.r["evaluacion"], info, firma=firma)
+        m, d = evaluacion["macro_f1"], evaluacion["diferencia"]
+        self.registrar(
+            "Protocolo: macro-F1 %.4f (sd %s, IC95 %s) contra la línea base "
+            "%.4f; diferencia %+.4f, IC95 %s: %s."
+            % (m["media"], m["sd"], m["ic95"],
+               evaluacion["linea_base"]["macro_f1"], d["media"], d["ic95"],
+               "supera" if evaluacion["supera_linea_base"]
+               else "no se demostró ventaja"))
 
 # ----------------------------------------------------------------- informe
 
@@ -1884,6 +2748,113 @@ def _num(x, fmt="%.4f"):
     if isinstance(x, (int, float)):
         return fmt % x
     return str(x)
+
+
+def desviaciones_del_protocolo(parametros, solo=None):
+    """Lo que esta corrida hizo distinto de PROTOCOLO_PARAMETROS; con
+    `solo`, nada más esas llaves (una corrida sin evaluación no se desvía en
+    semillas ni en la receta, porque no entrenó)."""
+    desviaciones = []
+    for llave, esperado in PROTOCOLO_PARAMETROS.items():
+        if solo is not None and llave not in solo:
+            continue
+        valor = parametros.get(llave)
+        if valor != esperado:
+            desviaciones.append("%s: el protocolo fija %s y esta corrida usó %s"
+                                % (llave, esperado, valor))
+    return desviaciones
+
+
+def _fecha_utc(texto):
+    try:
+        return datetime.datetime.fromisoformat(
+            str(texto).replace("Z", "+00:00")).astimezone(
+                datetime.timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def _preregistro(estado):
+    """(clave, detalle) de si las cifras de la sección 8 son pre-registradas;
+    (None, None) si esta corrida no las tiene.
+
+    Se compara el protocolo con el primer entrenamiento detrás de esas
+    cifras (`entrenado_desde`), no con el inicio de la invocación que
+    escribe el informe: una que lo reusa todo empieza después de cualquier
+    enmienda, y diría «anterior» de un protocolo escrito viendo las cifras.
+    """
+    ev = (estado.get("pasos") or {}).get("evaluacion") or {}
+    if not ev.get("macro_f1"):
+        return None, None
+    proto = (estado.get("codigo") or {}).get("protocolo")
+    if not proto:
+        return "no", "el protocolo no está commiteado"
+    desde = _fecha_utc(ev.get("entrenado_desde"))
+    if desde is None:
+        return "desconocido", ("no se sabe cuándo empezó el entrenamiento "
+                               "detrás de estas cifras")
+    primera = _fecha_utc(proto.get("primera_fecha") or proto.get("fecha"))
+    ultima = _fecha_utc(proto.get("fecha"))
+    if primera is None or primera > desde:
+        return "no", ("el protocolo es posterior al primer entrenamiento (%s)"
+                      % ev["entrenado_desde"])
+    if not proto.get("limpio"):
+        return "sucio", "el protocolo tiene cambios sin commitear"
+    if ultima is not None and ultima > desde:
+        return "enmendado", (
+            "el protocolo original es anterior al primer entrenamiento (%s), "
+            "con enmiendas posteriores (ver su sección 12)"
+            % ev["entrenado_desde"])
+    return "si", ("anterior al primer entrenamiento (%s)"
+                  % ev["entrenado_desde"])
+
+
+def _linea_protocolo(estado):
+    """El commit del protocolo y, si hay cifras de validación cruzada, si
+    son pre-registradas: es lo que distingue un pre-registro de una
+    descripción hecha después."""
+    proto = (estado.get("codigo") or {}).get("protocolo")
+    clave, detalle = _preregistro(estado)
+    if not proto:
+        return "**no está commiteado%s**" % (
+            ": las cifras de la sección 8 no son pre-registradas"
+            if clave else "")
+    texto = "commit `%s` del %s" % (proto.get("commit"), proto.get("fecha"))
+    if proto.get("primer_commit") not in (None, proto.get("commit")):
+        texto += " (el primero, `%s`, del %s)" % (
+            proto["primer_commit"], proto.get("primera_fecha"))
+    if not proto.get("limpio"):
+        texto += "; **con cambios sin commitear**"
+    if clave == "si":
+        texto += "; %s: las cifras de la sección 8 son pre-registradas" \
+            % detalle
+    elif clave == "enmendado":
+        texto += "; %s" % detalle
+    elif clave is not None:
+        texto += "; **%s: las cifras de la sección 8 no son " \
+            "pre-registradas**" % detalle
+    return texto
+
+
+def _tabla_por_clase(w, metricas, articulos=None, base=None):
+    w("| clase | soporte | artículos | precisión | exhaustividad | F1 |%s"
+      % (" F1 línea base |" if base else ""))
+    w("|---|---:|---:|---:|---:|---:|%s" % ("---:|" if base else ""))
+    for clase, m in metricas["por_clase"].items():
+        arts = (articulos or {}).get(clase)
+        w("| %s | %s | %s | %s | %s | %s |%s" % (
+            clase, m["soporte"],
+            "—" if arts is None else ("%d%s" % (arts, " (<5)"
+                                                if arts < 5 else "")),
+            _num(m["precision"]), _num(m["exhaustividad"]), _num(m["f1"]),
+            " %s |" % _num(base["por_clase"][clase]["f1"]) if base else ""))
+
+
+def _tabla_confusion(w, matriz):
+    w("| verdad \\ predicción | %s |" % " | ".join(matriz["columnas"]))
+    w("|---|%s" % ("---:|" * len(matriz["columnas"])))
+    for fila, valores in zip(matriz["filas"], matriz["conteos"]):
+        w("| %s | %s |" % (fila, " | ".join(str(v) for v in valores)))
 
 
 def informe(estado, r=None):
@@ -1926,10 +2897,31 @@ def informe(estado, r=None):
       % (par.get("configuracion"), par.get("run"), par.get("max_length"),
          par.get("modelo")))
     w("- Partición por PMID, 80/10/10%s."
-      % ("; validación cruzada de %d pliegues" % par["folds"]
+      % ("; validación cruzada de %d pliegues con las semillas %s"
+         % (par["folds"], ", ".join(par.get("semillas") or []))
          if par.get("folds") else ""))
+    w("- El modelo desplegable es el de la partición única con la semilla "
+      "%s, fijada de antemano: no se elige la mejor semilla."
+      % par.get("semilla_modelo", SEMILLA_MODELO))
+    if par.get("excluir"):
+        w("- Clases evaluadas: %s. **Fuera de esta versión: %s**: sin soporte "
+          "para aprenderla ni medirla (ver el protocolo y la sección 5). El "
+          "modelo conserva las cuatro etiquetas de `label_mapping.json`, pero "
+          "no aprende %s y no la va a predecir."
+          % (", ".join(par.get("etiquetas_evaluadas") or []),
+             ", ".join(par["excluir"]), ", ".join(par["excluir"])))
     w("- Tope por entrenamiento: %s h. GPU libre mínima: %s MiB."
       % (par.get("horas"), par.get("gpu_min_mib")))
+    w("- Protocolo de evaluación (`%s`): %s." % (PROTOCOLO,
+                                                _linea_protocolo(estado)))
+    evaluo = bool((p.get("evaluacion") or {}).get("macro_f1"))
+    desviaciones = desviaciones_del_protocolo(
+        par, None if evaluo else ("folds", "excluir"))
+    if desviaciones:
+        w("- **Desviaciones del protocolo:** %s." % "; ".join(desviaciones))
+    else:
+        w("- Conforme al protocolo%s." % (
+            "" if evaluo else " en lo que hizo esta corrida, que no evalúa"))
     w("")
 
     w("## 2. Reservas")
@@ -1993,6 +2985,10 @@ def informe(estado, r=None):
         w("")
         w("- Veredicto: %s." % ("limpia" if av.get("limpia") else
                                 "**RECHAZADA o incompleta**"))
+        for etiqueta, c in sorted((pa.get("excluidos") or {}).items()):
+            w("- %s quedó fuera antes de particionar: %d ejemplos de %d "
+              "artículos. Que falte en dev y test es por eso, no un aviso."
+              % (etiqueta, c["ejemplos"], c["articulos"]))
         for parte, clase in av.get("clases_vacias") or []:
             w("- **%s no tiene ningún ejemplo de %s**: el macro-F1 de esa "
               "parte promedia sobre una clase menos." % (parte, clase))
@@ -2014,6 +3010,43 @@ def informe(estado, r=None):
     else:
         w("Sin datos.")
     w("")
+    lbcv = (p.get("particion_cv") or {}).get("linea_base") or {}
+    if lbcv.get("pliegues"):
+        w("### 5.1 Pliegues de la validación cruzada")
+        w("")
+        w("Cada pliegue es test una vez (con el siguiente de dev y el resto "
+          "de train). La línea base de memorización no depende del modelo: "
+          "es la misma antes y después de entrenar.")
+        w("")
+        evaluadas = par.get("etiquetas_evaluadas") or list(E.ETIQUETAS)
+        w("| pliegue | artículos | ejemplos | %s | par ya visto en train | "
+          "macro-F1 línea base |" % " | ".join(evaluadas))
+        w("|---|---:|---:|%s---:|---:|" % ("---:|" * len(evaluadas)))
+        for nombre, f in lbcv["pliegues"].items():
+            w("| %s | %s | %s | %s | %s | %s |" % (
+                nombre, f["articulos"], f["n"],
+                " | ".join(str(f["por_clase"].get(e, 0)) for e in evaluadas),
+                _pct(f["con_par_en_train"], f["n"]), _num(f["macro_f1"])))
+        w("| **todos** | %s | %s | %s | %s | **%s** |" % (
+            lbcv["articulos"], lbcv["n"],
+            " | ".join(str(sum(f["por_clase"].get(e, 0)
+                               for f in lbcv["pliegues"].values()))
+                       for e in evaluadas),
+            _pct(lbcv["con_par_en_train"], lbcv["n"]),
+            _num(lbcv["macro_f1"])))
+        w("")
+        w("La última fila es la línea base del protocolo: el macro-F1 sobre %s "
+          "de todas sus predicciones fuera de pliegue." % ", ".join(evaluadas))
+        w("")
+        vacias = ["- **El test de %s no tiene ningún ejemplo de %s.**"
+                  % (nombre, clase)
+                  for nombre, a in sorted(((p.get("particion_cv") or {}).get(
+                      "pliegues") or {}).items())
+                  for parte, clase in a.get("clases_vacias") or []
+                  if parte == "test"]
+        if vacias:
+            s.extend(vacias)
+            w("")
 
     w("## 6. Fuga por par y línea base de memorización")
     w("")
@@ -2109,13 +3142,11 @@ def informe(estado, r=None):
             w("| %s | %s | %s |" % (nombre, _num(m.get("dev_" + k), fmt),
                                     _num(m.get("test_" + k), fmt)))
         w("")
-        lb = ((fu.get("test") or {}).get("locus") or {}).get("macro_f1")
-        if isinstance(lb, (int, float)) and isinstance(
-                m.get("test_macro_f1"), (int, float)):
-            w("- **Modelo menos línea base**, macro-F1 de test: %+.4f."
-              % (m["test_macro_f1"] - lb))
-        w("- El F1 es macro sobre las cuatro clases, `no_relation` "
-          "incluida.")
+        w("- Estas son las métricas del script del asesor. Su macro-F1 "
+          "promedia sobre las etiquetas que aparecen en el test o en las "
+          "predicciones (sin `labels=`): el conjunto cambia de una partición "
+          "a otra. La cifra del protocolo, con las etiquetas fijas, está en "
+          "7.1 y en 8.")
     mo = p.get("modelo") or {}
     cu = mo.get("curva")
     if cu and cu.get("epocas"):
@@ -2138,35 +3169,164 @@ def informe(estado, r=None):
     if not (m or en.get("sonda")):
         w("Sin entrenamiento en esta corrida.")
     w("")
+    pr = p.get("prediccion") or {}
+    if pr.get("metricas"):
+        w("### 7.1 El modelo desplegable sobre su test (descriptivo)")
+        w("")
+        if pr.get("estatus") == "previo":
+            w("Estas cifras son de una corrida anterior con el mismo modelo; "
+              "en esta no se recalcularon.")
+            w("")
+        w("%s ejemplos de **%s artículos**: con tan pocos artículos esto no es "
+          "una estimación del desempeño; la cifra es la de la sección 8. "
+          "Sirve para comprobar el modelo tal como lo usará el flujo "
+          "(`clasificar.py`, en CPU, con su `label_mapping.json`)."
+          % (pr.get("n"), pr.get("articulos")))
+        w("")
+        _tabla_por_clase(w, pr["metricas"])
+        w("")
+        w("- Macro-F1 sobre %s (fijas): %s; accuracy %s."
+          % (", ".join(par.get("etiquetas_evaluadas") or []),
+             _num(pr["metricas"]["macro_f1"]),
+             _num(pr["metricas"]["accuracy"])))
+        lb = ((fu.get("test") or {}).get("locus") or {}).get("macro_f1")
+        if isinstance(lb, (int, float)):
+            w("- Modelo menos línea base de memorización, en este test: %+.4f."
+              % (pr["metricas"]["macro_f1"] - lb))
+        co = pr.get("cotejo") or {}
+        w("- Cotejo con el script: accuracy %s con clasificar.py y %s con el "
+          "script (%s ejemplos de diferencia; se toleran %d)."
+          % (_num(co.get("accuracy_clasificar")),
+             _num(co.get("accuracy_script")),
+             _num(co.get("diferencia_ejemplos"), "%.1f"), TOLERANCIA_COTEJO))
+        if pr.get("degenerado"):
+            w("- **El modelo predice una sola clase en todo este test.**")
+        w("")
+        w("Matriz de confusión (conteos):")
+        w("")
+        _tabla_confusion(w, pr["metricas"]["matriz"])
+        w("")
 
-    w("## 8. Validación cruzada")
+    w("## 8. Validación cruzada: la cifra del protocolo")
     w("")
     cv = p.get("entrenamiento_cv") or {}
-    if cv.get("pliegues"):
-        w("Cada pliegue entrena con el 60 % del corpus (dev y test son 20 % "
-          "cada uno): sus cifras no se comparan punto a punto con las del "
-          "reparto 80/10/10. Una sola semilla (42): la desviación mezcla la "
-          "partición con el azar del entrenamiento.")
+    ev = p.get("evaluacion") or {}
+    if ev.get("macro_f1"):
+        if ev.get("estatus") == "previo":
+            w("Estas cifras son de una corrida anterior con los mismos "
+              "pliegues; en esta no se recalcularon.")
+            w("")
+        k = par.get("folds") or 0
+        w("%d pliegues por artículo × %d semillas (%s). Cada ejemplo es test "
+          "en un solo pliegue: las predicciones fuera de pliegue de cada "
+          "semilla cubren los %d ejemplos de %d artículos. Cada pliegue "
+          "entrena con el %s de los artículos." % (
+              k, len(ev["semillas"]), ", ".join(ev["semillas"]), ev["n"],
+              ev["articulos"], _pct(k - 2, k)))
         w("")
-        w("| pliegue | dev macro-F1 | test macro-F1 | test accuracy | "
-          "línea base test |")
-        w("|---|---:|---:|---:|---:|")
-        for nombre, f in cv["pliegues"].items():
-            w("| %s | %s | %s | %s | %s |" % (
-                nombre, _num(f.get("dev_macro_f1")),
+        w("### 8.1 Cifra principal (pre-registrada)")
+        w("")
+        mf, di = ev["macro_f1"], ev["diferencia"]
+        bo = ev.get("bootstrap") or {}
+        w("- **Macro-F1** sobre %s (etiquetas fijas): **%s** de media entre "
+          "semillas (sd %s; por semilla %s), IC95 %s."
+          % (", ".join(ev["etiquetas"]), _num(mf["media"]), _num(mf["sd"]),
+             ", ".join("%s %s" % (k, _num(v))
+                       for k, v in mf["por_semilla"].items()),
+             mf["ic95"]))
+        w("- Línea base de memorización (la etiqueta del par en el train de "
+          "su pliegue): %s, IC95 %s. Clase mayoritaria: %s."
+          % (_num(ev["linea_base"]["macro_f1"]), ev["linea_base"]["ic95"],
+             _num(ev["mayoritaria"]["macro_f1"])))
+        w("- **Modelo menos línea base: %+.4f, IC95 %s**; réplicas con "
+          "diferencia ≤ 0: %s."
+          % (di["media"], di["ic95"],
+             _num(di["fraccion_menor_o_igual_a_0"])))
+        w("- **Regla del protocolo** (supera si el límite inferior del IC95 "
+          "de la diferencia es mayor que 0): **%s**."
+          % ("supera a la línea base" if ev["supera_linea_base"]
+             else "no se demostró ventaja sobre recordar el par"))
+        w("- Intervalos: bootstrap percentil por artículos, B = %s, semilla "
+          "%s, con los modelos fijos." % (bo.get("b"), bo.get("semilla")))
+        w("")
+        w("### 8.2 Por clase")
+        w("")
+        primera = ev["semillas"][0]
+        por_semilla = ev["por_semilla"]
+        promedio = {"por_clase": collections.OrderedDict()}
+        for clase in ev["etiquetas"]:
+            valores = [por_semilla[x]["por_clase"][clase]
+                       for x in ev["semillas"]]
+            promedio["por_clase"][clase] = {
+                "soporte": valores[0]["soporte"],
+                "precision": statistics.mean(v["precision"] for v in valores),
+                "exhaustividad": statistics.mean(v["exhaustividad"]
+                                                 for v in valores),
+                "f1": statistics.mean(v["f1"] for v in valores)}
+        _tabla_por_clase(w, promedio, ev.get("soporte_articulos"),
+                         ev["metricas_linea_base"])
+        w("")
+        w("Media de las semillas. «(<5)»: con menos de 5 artículos, el F1 de "
+          "esa clase es ruido.")
+        w("")
+        w("### 8.3 Matrices de confusión")
+        w("")
+        for x in ev["semillas"]:
+            w("Semilla %s:" % x)
+            w("")
+            _tabla_confusion(w, por_semilla[x]["matriz"])
+            w("")
+        fuera = sum(sum((por_semilla[x].get("fuera") or {}).values())
+                    for x in ev["semillas"])
+        if fuera:
+            w("Hay %d predicciones de clases fuera de la versión, sumando "
+              "las semillas: cuentan como error de la clase verdadera."
+              % fuera)
+            w("")
+        if ev.get("estratos"):
+            w("### 8.4 Pares ya vistos en train y pares nuevos")
+            w("")
+            w("¿Generaliza a relaciones que no vio? En los pares nuevos la "
+              "línea base no puede recordar nada: ahí se ve lo que el modelo "
+              "lee de la oración.")
+            w("")
+            w("| | ejemplos | artículos | macro-F1 modelo | "
+              "macro-F1 línea base |")
+            w("|---|---:|---:|---:|---:|")
+            for nombre, e in ev["estratos"].items():
+                w("| %s | %s | %s | %s | %s |" % (
+                    "par ya visto" if nombre == "visto" else "par nuevo",
+                    e["n"], e["articulos"], _num(e["macro_f1_modelo"]),
+                    _num(e["macro_f1_base"])))
+            w("")
+    if cv.get("corridas"):
+        w("### 8.5 Por pliegue y semilla")
+        w("")
+        w("Métricas del script (regla del asesor, comparables con su "
+          "barrido) y el macro-F1 con las etiquetas fijas.")
+        w("")
+        w("| corrida | dev macro-F1 | test macro-F1 | test accuracy | "
+          "macro-F1 fijo | cotejo |")
+        w("|---|---:|---:|---:|---:|---|")
+        for clave, f in cv["corridas"].items():
+            w("| %s | %s | %s | %s | %s | %s%s |" % (
+                clave, _num(f.get("dev_macro_f1")),
                 _num(f.get("test_macro_f1")), _num(f.get("test_accuracy")),
-                _num(f.get("linea_base_macro_f1_test"))))
+                _num(f.get("macro_f1_fijo")),
+                "ok" if f.get("cotejo_ok") else "**no cuadra**",
+                "; una sola clase" if f.get("degenerado") else ""))
         ag = cv.get("agregado") or {}
         if ag:
-            w("| **media ± sd** | %s | %s | %s | %s |" % tuple(
+            w("| **media ± sd** | %s | %s | %s | %s | |" % tuple(
                 "%s ± %s" % (_num((ag.get(k) or {}).get("media")),
                              _num((ag.get(k) or {}).get("sd")))
                 for k in ("dev_macro_f1", "test_macro_f1", "test_accuracy",
-                          "linea_base_macro_f1_test")))
-    else:
+                          "macro_f1_fijo")))
+        w("")
+    if not (ev.get("macro_f1") or cv.get("corridas")):
         w("No se corrió%s." % (" (se recomienda: ver sección 5)"
                                if av.get("recomendar_cv") else ""))
-    w("")
+        w("")
 
     w("## 9. Cómo leer estas cifras")
     w("")
@@ -2181,6 +3341,20 @@ def informe(estado, r=None):
       "mayoría de artículos que la base no cita y con muchos más pares sin "
       "relación: con la misma tasa de falsos positivos, la precisión de las "
       "tres clases de relación será menor que aquí.")
+    w("- **El intervalo es por artículos y con los modelos fijos.** Dice "
+      "cuánto cambiaría la cifra con otros artículos, no con otro "
+      "entrenamiento (para eso está la desviación entre semillas) ni con "
+      "otra partición.")
+    if par.get("folds"):
+        # particionar.py: un pliegue es test y el siguiente dev, (K-2)/K train.
+        w("- **Cada pliegue entrena con el %s de los artículos** (con K "
+          "pliegues, uno es test y otro dev): la cifra es algo conservadora "
+          "para el modelo desplegable, que entrena con el 80 %%."
+          % _pct(par["folds"] - 2, par["folds"]))
+    if par.get("excluir"):
+        w("- **%s no está en esta versión.** El modelo no la predice: las "
+          "aristas de la red con signo «?» no van a venir de él."
+          % ", ".join(par["excluir"]))
     w("- **No es comparable con el 0.87 de E. coli** (otro organismo, otro "
       "test, y aquel con fuga) **ni con el 44 %**, que es la precisión del "
       "bronce juzgada a mano sobre 50 candidatas, reservadas para "
@@ -2200,7 +3374,29 @@ def informe(estado, r=None):
     if b.get("diferencias"):
         avisos.append("La base difiere de PLAN.md 2.4 en %d conteos."
                       % b["diferencias"])
-    if av.get("recomendar_cv") and not cv.get("pliegues"):
+    if desviaciones:
+        avisos.append("La corrida se desvía del protocolo: %s."
+                      % "; ".join(desviaciones))
+    clave, detalle = _preregistro(estado)
+    if clave in ("no", "desconocido", "sucio"):
+        avisos.append("Las cifras de la sección 8 no son pre-registradas: "
+                      "%s." % detalle)
+    elif clave == "enmendado":
+        avisos.append("El protocolo tiene enmiendas posteriores al primer "
+                      "entrenamiento: ver su sección 12.")
+    degenerados = [k for k, f in (cv.get("corridas") or {}).items()
+                   if f.get("degenerado")]
+    if (p.get("prediccion") or {}).get("degenerado"):
+        degenerados.insert(0, "desplegable")
+    if degenerados:
+        avisos.append("Modelos que predicen una sola clase: %s."
+                      % ", ".join(degenerados))
+    sin_cotejo = [k for k, f in (cv.get("corridas") or {}).items()
+                  if not f.get("cotejo_ok")]
+    if sin_cotejo:
+        avisos.append("La accuracy de clasificar.py no cuadra con la del "
+                      "script en: %s." % ", ".join(sin_cotejo))
+    if av.get("recomendar_cv") and not cv.get("corridas"):
         avisos.append("particionar.py recomienda validación cruzada "
                       "(`--folds 5`).")
     if tk.get("truncados"):
@@ -2282,9 +3478,24 @@ def resumen_estado(raiz, nombre, lineas=15):
         for n, i in pasos.items()))
     m = (pasos.get("entrenamiento") or {}).get("metricas")
     if m:
-        salida.append("  run %s: dev macro-F1 %s, test macro-F1 %s" % (
-            CONFIGURACION, _num(m.get("dev_macro_f1")),
-            _num(m.get("test_macro_f1"))))
+        salida.append("  run %s: dev macro-F1 %s, test macro-F1 %s (regla del "
+                      "script)" % (CONFIGURACION, _num(m.get("dev_macro_f1")),
+                                   _num(m.get("test_macro_f1"))))
+    ev = pasos.get("evaluacion") or {}
+    if ev.get("macro_f1"):
+        salida.append(
+            "  protocolo: macro-F1 %s (IC95 %s) contra la línea base %s; "
+            "diferencia %s, IC95 %s: %s" % (
+                _num(ev["macro_f1"]["media"]), ev["macro_f1"]["ic95"],
+                _num(ev["linea_base"]["macro_f1"]),
+                _num(ev["diferencia"]["media"], "%+.4f"),
+                ev["diferencia"]["ic95"],
+                "supera" if ev.get("supera_linea_base")
+                else "no se demostró ventaja"))
+    cv = (pasos.get("entrenamiento_cv") or {}).get("corridas") or {}
+    if cv and not ev.get("macro_f1"):
+        salida.append("  validación cruzada: %d entrenamientos hechos"
+                      % len(cv))
     if (estado.get("informe") or {}).get("estatus") == "ok":
         salida.append("  informe: <resultados>/RESULTADOS.md")
     elif estado.get("informe"):

@@ -13,13 +13,16 @@ import os
 import re
 import shutil
 import signal
+import statistics
 import subprocess
 import sys
 import tempfile
 import time
+import types
 import unittest
 from unittest import mock
 
+from grn_comun import procedencia
 from grn_verificacion import cli
 from grn_verificacion import entrenamiento as E
 from grn_verificacion import reentrenar as R
@@ -102,8 +105,10 @@ if modo == "lento":
     os.replace(os.environ["FALSO_PIDS"] + ".tmp", os.environ["FALSO_PIDS"])
     time.sleep(120)
     sys.exit(0)
+from falso_modelo import metricas_de
 with open(args.labels_json) as f:
     etiquetas = json.load(f)
+orden = list(etiquetas)
 if modo == "id2label_mal":
     etiquetas = list(reversed(etiquetas))
 historial = [
@@ -127,16 +132,134 @@ with open(os.path.join(args.out_dir, "pytorch_model.bin"), "wb") as f:
 with open(os.path.join(args.out_dir, "config.json"), "w") as f:
     json.dump({"id2label": dict((str(i), e)
                                 for i, e in enumerate(etiquetas))}, f)
-metricas = {"eval_loss": 1.0, "eval_accuracy": 0.7, "eval_macro_f1": 0.61,
-            "eval_precision": 0.6, "eval_recall": 0.62, "eval_runtime": 1.0,
-            "eval_samples_per_second": 100.0, "eval_steps_per_second": 7.0,
-            "epoch": 2.0}
+# Lo que clasificar.py exige del tokenizador (save_model lo deja en el real).
+with open(os.path.join(args.out_dir, "vocab.txt"), "w") as f:
+    f.write("[PAD]\\n")
+with open(os.path.join(args.out_dir, "tokenizer_config.json"), "w") as f:
+    f.write("{}\\n")
+# Las métricas salen de la misma regla que usa el clasificar falso, para que
+# el cotejo entre los dos cuadre como cuadra con el modelo real.
 with open(os.path.join(args.out_dir, "eval_metrics.json"), "w") as f:
-    json.dump(metricas, f)
+    json.dump(metricas_de(args.dev_jsonl, orden), f)
 with open(os.path.join(args.out_dir, "test_metrics.json"), "w") as f:
-    json.dump(dict(metricas, eval_macro_f1=0.55), f)
+    json.dump(metricas_de(args.test_jsonl, orden), f)
 print("Done. Best model in:", args.out_dir)
 '''
+
+# La «predicción» de los modelos falsos: determinista por el texto, la misma
+# en el script de entrenamiento falso y en el clasificar falso.
+FALSO_MODELO = '''
+import hashlib, json, os
+
+
+def predecir(texto, etiquetas):
+    if os.environ.get("FALSO_PRED", "").startswith("una_clase"):
+        return "no_relation"
+    h = int(hashlib.sha1(texto.encode("utf-8")).hexdigest(), 16)
+    return etiquetas[h % len(etiquetas)]
+
+
+def metricas_de(ruta, etiquetas):
+    """Las del compute_metrics del script del asesor: macro sobre las
+    etiquetas presentes en y o en yhat."""
+    with open(ruta, encoding="utf-8") as f:
+        filas = [json.loads(l) for l in f if l.strip()]
+    y = [f["label"] for f in filas]
+    yhat = [predecir(f["text"], etiquetas) for f in filas]
+    presentes = sorted(set(y) | set(yhat))
+    tp_p = tp_r = tp_f = 0.0
+    for e in presentes:
+        tp = sum(1 for a, b in zip(y, yhat) if a == e and b == e)
+        fp = sum(1 for a, b in zip(y, yhat) if a != e and b == e)
+        fn = sum(1 for a, b in zip(y, yhat) if a == e and b != e)
+        p = tp / (tp + fp) if tp + fp else 0.0
+        r = tp / (tp + fn) if tp + fn else 0.0
+        tp_p += p
+        tp_r += r
+        tp_f += 2 * p * r / (p + r) if p + r else 0.0
+    k = len(presentes) or 1
+    n = len(y)
+    return {"eval_loss": 1.0,
+            "eval_accuracy": sum(1 for a, b in zip(y, yhat) if a == b) / n
+            if n else 0.0,
+            "eval_macro_f1": tp_f / k, "eval_precision": tp_p / k,
+            "eval_recall": tp_r / k, "eval_runtime": 1.0,
+            "eval_samples_per_second": 100.0, "eval_steps_per_second": 7.0,
+            "epoch": 2.0}
+'''
+
+# Un clasificar.py falso con el contrato del real: reusa sus piezas
+# (validar_par, archivos_que_faltan, fila_salida, verificar_salida), se niega
+# ante un .parcial viejo y, como el real, deja el trabajo en .parcial y sale
+# con 1 si las predicciones no cumplen las invariantes. FALSO_PRED elige qué
+# predice: hash (lo mismo que el script falso), una_clase (también el script
+# falso; se niega a escribir, como el real desde 20 filas), una_clase_callada
+# (escribe, como el real con menos), otro_modelo o falla (sale con 1 sin
+# escribir nada); FALSO_FALLA_EN=N hace fallar solo la llamada N.
+CLASIFICAR_FALSO = '''
+import argparse, importlib.util, json, os, sys
+from falso_modelo import predecir
+spec = importlib.util.spec_from_file_location(
+    "clasificar_real", os.environ["FALSO_CLASIFICAR_REAL"])
+C = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(C)
+ap = argparse.ArgumentParser()
+for flag in ("--modelo", "--etiquetas", "--entrada", "--salida", "--meta",
+             "--lote", "--max_length", "--dispositivo"):
+    ap.add_argument(flag)
+args = ap.parse_args()
+with open(os.environ["FALSO_CUENTA_CLASIFICAR"], "a") as f:
+    f.write("x\\n")
+with open(os.environ["FALSO_CUENTA_CLASIFICAR"]) as f:
+    llamada = len(f.read().split())
+modo = os.environ.get("FALSO_PRED", "hash")
+if modo == "falla" or os.environ.get("FALSO_FALLA_EN") == str(llamada):
+    print("Falla a propósito, antes de escribir nada.", flush=True)
+    sys.exit(1)
+if C.archivos_que_faltan(args.modelo):
+    sys.exit("Al modelo le faltan archivos.")
+with open(args.etiquetas or os.path.join(args.modelo,
+                                         "label_mapping.json")) as f:
+    etiquetas = json.load(f)
+with open(args.entrada, encoding="utf-8") as f:
+    filas = [json.loads(l) for l in f if l.strip()]
+for n, fila in enumerate(filas, 1):
+    problema = C.validar_par(fila, n)
+    if problema:
+        sys.exit(problema)
+verdad = None
+if modo == "otro_modelo":
+    # Acierta todo: lee la verdad del test de al lado, en el mismo orden. No
+    # es el modelo que evaluó el script, y el cotejo lo tiene que ver.
+    with open(os.path.join(os.path.dirname(args.entrada),
+                           "entity_marked_test.jsonl"), encoding="utf-8") as f:
+        verdad = [json.loads(l)["label"] for l in f if l.strip()]
+parcial = args.salida + ".parcial"
+if os.path.exists(parcial):
+    sys.exit("Hay una corrida a medias en el .parcial.")
+with open(parcial, "w", encoding="utf-8") as f:
+    for k, fila in enumerate(filas):
+        pred = (verdad[k] if verdad is not None
+                else predecir(fila["text"], etiquetas))
+        probs = [0.97 if e == pred else 0.01 for e in etiquetas]
+        f.write(json.dumps(C.fila_salida(fila, etiquetas, probs)) + "\\n")
+# La variedad se exige siempre aquí: el real la exige desde 20 filas, y los
+# tests de juguete son más chicos.
+problemas = C.verificar_salida(parcial, [x["id_par"] for x in filas],
+                               exigir_variedad=modo == "una_clase" or None)
+if problemas:
+    print("No escribo; el trabajo queda en el .parcial.", flush=True)
+    sys.exit(1)
+os.replace(parcial, args.salida)
+with open(args.meta, "w") as f:
+    json.dump({"n_salida": len(filas)}, f)
+'''
+
+CLASIFICAR_REAL = R.CLASIFICAR
+
+# El mismo modelo falso, cargado aquí para saber qué métricas reporta.
+falso_modelo = types.ModuleType("falso_modelo")
+exec(FALSO_MODELO, falso_modelo.__dict__)
 
 ORACION_RESERVADA = "QzjbR  controls nyjbC after florbination jb."
 
@@ -184,6 +307,11 @@ class _Escenario(unittest.TestCase):
                   NVIDIA_FALSO % sys.executable, 0o755)
         self.script = _escribir(os.path.join(falsos, "script_falso.py"),
                                 SCRIPT_FALSO)
+        _escribir(os.path.join(falsos, "py", "falso_modelo.py"),
+                  FALSO_MODELO)
+        clasificar = _escribir(os.path.join(falsos, "clasificar_falso.py"),
+                               CLASIFICAR_FALSO)
+        self.cuenta_clasificar = os.path.join(self.tmp, "clasificaciones.txt")
         self.cuenta = os.path.join(self.tmp, "llamadas.txt")
         self.pids = os.path.join(self.tmp, "pids.txt")
         self.raiz = os.path.join(self.tmp, "raiz")
@@ -195,6 +323,9 @@ class _Escenario(unittest.TestCase):
             "FALSO_CUENTA": self.cuenta,
             "FALSO_PIDS": self.pids,
             "FALSO_MODO": "ok",
+            "FALSO_PRED": "hash",
+            "FALSO_CUENTA_CLASIFICAR": self.cuenta_clasificar,
+            "FALSO_CLASIFICAR_REAL": CLASIFICAR_REAL,
         }
         parche = mock.patch.dict(os.environ, self.entorno)
         parche.start()
@@ -206,6 +337,9 @@ class _Escenario(unittest.TestCase):
         disco = mock.patch.object(R, "DISCO_MIN_GIB", 0)
         disco.start()
         self.addCleanup(disco.stop)
+        falso = mock.patch.object(R, "CLASIFICAR", clasificar)
+        falso.start()
+        self.addCleanup(falso.stop)
         self.r = R.rutas(self.raiz, "curada-v1")
         # Si una prueba falla a la mitad, barrido.py, el script falso y su
         # nieto llevan la marca: se matan aquí, antes del rmtree del temporal
@@ -232,11 +366,22 @@ class _Escenario(unittest.TestCase):
                             **kwargs)
         return estado, lineas
 
-    def llamadas(self):
-        if not os.path.exists(self.cuenta):
+    def llamadas(self, cuenta=None):
+        cuenta = cuenta or self.cuenta
+        if not os.path.exists(cuenta):
             return 0
-        with open(self.cuenta) as f:
+        with open(cuenta) as f:
             return len(f.read().split())
+
+    def clasificaciones(self):
+        return self.llamadas(self.cuenta_clasificar)
+
+    def esperado(self, datos):
+        """Las métricas que el script falso reporta para el test de `datos`."""
+        with open(os.path.join(datos, "label_mapping.json")) as f:
+            etiquetas = json.load(f)
+        return falso_modelo.metricas_de(os.path.join(datos, E.ARCHIVOS[2]),
+                                        etiquetas)
 
     def leer(self, ruta):
         with open(ruta, encoding="utf-8") as f:
@@ -481,6 +626,248 @@ class PruebasPiezas(unittest.TestCase):
             with open(ruta, encoding="utf-8") as f:
                 ast.parse(f.read(), filename=ruta, feature_version=(3, 8))
 
+    def test_el_contrato_con_clasificar_y_barrido(self):
+        """Los flags que el orquestador le pasa a clasificar.py existen (el
+        falso de las pruebas acepta lo que sea), y el modelo desplegable usa
+        la semilla que barrido.py nombra sin sufijo."""
+        ayuda = subprocess.run(
+            [sys.executable, CLASIFICAR_REAL, "--help"], cwd=E.RAIZ_REPO,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            universal_newlines=True, timeout=60).stdout
+        for flag in ("--modelo", "--etiquetas", "--entrada", "--salida",
+                     "--meta", "--lote", "--max_length", "--dispositivo"):
+            self.assertIn(flag + " ", ayuda)
+        self.assertIn(R.DISPOSITIVO_EVAL, ayuda)
+        self.assertEqual(R._etapa2("barrido").SEMILLA, R.SEMILLA_MODELO)
+        self.assertFalse(R.nombre_run().endswith("_s42"))
+        self.assertEqual(R.nombre_run() + "_s43", R.nombre_run(43))
+
+
+class PruebasProtocolo(unittest.TestCase):
+    """Las métricas del protocolo, contra cuentas a mano."""
+
+    A, N, G, P = "activates", "no_relation", "regulates", "represses"
+    ETQ = [A, N, P]
+
+    def test_metricas_y_matriz_a_mano(self):
+        A, N, G, P = self.A, self.N, self.G, self.P
+        y = [A, A, A, N, N, P]
+        yhat = [A, N, G, N, A, P]
+        m = R.metricas_de_conteos(R.conteos_confusion(y, yhat), self.ETQ)
+        # activates: P 1/2, R 1/3, F1 0.4; no_relation: P 1/2, R 1/2;
+        # represses: 1. La predicción de regulates es error de activates.
+        self.assertEqual((6, 0.5, 0.6333), (m["n"], m["accuracy"],
+                                           m["macro_f1"]))
+        self.assertEqual({"precision": 0.5, "exhaustividad": 0.3333,
+                          "f1": 0.4, "soporte": 3, "predichos": 2},
+                         m["por_clase"][A])
+        self.assertEqual(0.5, m["por_clase"][N]["f1"])
+        self.assertEqual(1.0, m["por_clase"][P]["f1"])
+        self.assertEqual({G: 1}, m["fuera"])
+        self.assertEqual({"filas": [A, N, P], "columnas": [A, N, G, P],
+                          "conteos": [[1, 1, 1, 0], [1, 1, 0, 0],
+                                      [0, 0, 0, 1]]}, m["matriz"])
+        self.assertAlmostEqual(0.6333, R.macro_f1(y, yhat, self.ETQ), 4)
+
+    def test_el_macro_fijo_no_es_el_de_la_union(self):
+        """El script promedia sobre las clases presentes: una clase que no
+        aparece en un pliegue sale del promedio y la cifra sube."""
+        y, yhat = [self.A, self.A, self.N], [self.A, self.N, self.N]
+        self.assertAlmostEqual(2 / 3.0, R.macro_f1(y, yhat))
+        self.assertAlmostEqual(4 / 9.0, R.macro_f1(y, yhat, self.ETQ))
+        self.assertEqual(0.4444, R.metricas_de_conteos(
+            R.conteos_confusion(y, yhat), self.ETQ)["macro_f1"])
+
+    def test_el_bootstrap_es_reproducible_y_sortea_articulos(self):
+        grupos = dict((str(k), k) for k in range(7))
+        # La secuencia de random() es la misma en 3.8 y en 3.10.
+        self.assertEqual([[0, 3, 4, 2, 2, 1, 4], [6, 3, 3, 0, 5, 5, 4]],
+                         R.replicas_bootstrap(grupos, list, b=2,
+                                              semilla=R.SEMILLA_BOOTSTRAP))
+        articulos = {"1": ["1a", "1b"], "2": ["2a"], "3": ["3a", "3b", "3c"]}
+        una = R.replicas_bootstrap(articulos, list, b=50, semilla=7)
+        self.assertEqual(una, R.replicas_bootstrap(articulos, list, b=50,
+                                                   semilla=7))
+        self.assertNotEqual(una, R.replicas_bootstrap(articulos, list, b=50,
+                                                      semilla=8))
+        # Sin depender del orden en que se leyeron los artículos.
+        self.assertEqual(una, R.replicas_bootstrap(
+            dict(reversed(list(articulos.items()))), list, b=50, semilla=7))
+        # Cada réplica trae artículos enteros, tantos como hay.
+        for muestra in una:
+            self.assertEqual(3, len(muestra))
+            for articulo in muestra:
+                self.assertIn(articulo, articulos.values())
+
+    def test_intervalo_percentil(self):
+        self.assertEqual([2.5, 97.5], R.intervalo_percentil(
+            list(range(101))))
+        self.assertIsNone(R.intervalo_percentil([1.0]))
+
+    def _filas(self, n=12):
+        """Ejemplos de 2 en 2 por artículo, con verdad que rota."""
+        return [{"pmid": 100 + k // 2, "verdad": self.ETQ[k % 3],
+                 "mayoritaria": self.N, "visto": k % 2 == 0}
+                for k in range(n)]
+
+    def test_un_modelo_igual_a_la_linea_base_no_la_supera(self):
+        filas = self._filas()
+        for k, f in enumerate(filas):
+            f["base"] = self.ETQ[(k // 2) % 3]
+            f["pred"] = {"42": f["base"], "43": f["base"]}
+        ev = R.evaluar_oof(filas, self.ETQ, ["42", "43"], b=200, semilla=1)
+        self.assertEqual((12, 6), (ev["n"], ev["articulos"]))
+        self.assertEqual(ev["linea_base"]["macro_f1"], ev["macro_f1"]["media"])
+        self.assertEqual(0.0, ev["macro_f1"]["sd"])
+        self.assertEqual(0.0, ev["diferencia"]["media"])
+        self.assertEqual([0.0, 0.0], ev["diferencia"]["ic95"])
+        self.assertEqual(1.0, ev["diferencia"]["fraccion_menor_o_igual_a_0"])
+        self.assertFalse(ev["supera_linea_base"])
+        self.assertEqual(["visto", "no_visto"], list(ev["estratos"]))
+        self.assertEqual({self.A: 4, self.N: 4, self.P: 4},
+                         dict(ev["soporte_articulos"]))
+
+    def test_un_modelo_que_acierta_supera_a_una_linea_base_que_falla(self):
+        filas = self._filas()
+        for k, f in enumerate(filas):
+            f["base"] = self.ETQ[(k + 1) % 3]
+            f["pred"] = {"42": f["verdad"]}
+            f["visto"] = False
+        ev = R.evaluar_oof(filas, self.ETQ, ["42"], b=200, semilla=1)
+        self.assertEqual(1.0, ev["macro_f1"]["media"])
+        self.assertIsNone(ev["macro_f1"]["sd"])
+        self.assertEqual(0.0, ev["linea_base"]["macro_f1"])
+        self.assertEqual([1.0, 1.0], ev["diferencia"]["ic95"])
+        self.assertTrue(ev["supera_linea_base"])
+        self.assertEqual(["no_visto"], list(ev["estratos"]))
+        self.assertEqual(1.0, ev["estratos"]["no_visto"]["macro_f1_modelo"])
+
+    def test_semillas_y_etiquetas_excluidas(self):
+        self.assertEqual(["42", "43", "44"], R.semillas_de("42, 43,44"))
+        self.assertEqual(["7"], R.semillas_de("007"))
+        for malo in ("", "42,42", "42,x", "-1", "4.2"):
+            with self.subTest(semillas=malo), self.assertRaises(ValueError):
+                R.semillas_de(malo)
+        self.assertEqual(("regulates",), R.excluir_de(None))
+        self.assertEqual((), R.excluir_de(["ninguna"]))
+        self.assertEqual(("regulates", "represses"),
+                         R.excluir_de(["represses", "Regulates", "regulates"]))
+        for malo in (["no_relation"], ["ninguna", "regulates"], ["otra"],
+                     ["activates", "regulates", "represses"]):
+            with self.subTest(excluir=malo), self.assertRaises(ValueError):
+                R.excluir_de(malo)
+        self.assertEqual(self.ETQ, R.etiquetas_evaluadas(("regulates",)))
+
+    def test_filtrar_etiquetas_no_toca_el_origen(self):
+        tmp = tempfile.mkdtemp(prefix="grn_filtro_")
+        self.addCleanup(shutil.rmtree, tmp)
+        origen = os.path.join(tmp, "origen")
+        destino = os.path.join(tmp, "destino")
+        filas = {E.ARCHIVOS[0]: [(1, self.A), (1, self.G), (2, self.G)],
+                 E.ARCHIVOS[1]: [(3, self.N)],
+                 E.ARCHIVOS[2]: [(2, self.G), (4, self.P)]}
+        for nombre, lista in filas.items():
+            _escribir(os.path.join(origen, nombre), "".join(
+                json.dumps({"pmid": p, "label": l, "text": "t"}) + "\n"
+                for p, l in lista))
+        antes = dict((n, procedencia.huella(os.path.join(origen, n)))
+                     for n in E.ARCHIVOS)
+        hecho = R.filtrar_etiquetas(origen, destino, ("regulates",))
+        self.assertEqual({"quitados": {self.G: {"ejemplos": 3,
+                                                "articulos": 2}},
+                          "quedan": 3}, hecho)
+        for nombre in E.ARCHIVOS:
+            self.assertEqual(antes[nombre], procedencia.huella(
+                os.path.join(origen, nombre)))
+            with open(os.path.join(destino, nombre), encoding="utf-8") as f:
+                self.assertEqual([l for p, l in filas[nombre]
+                                  if l != self.G],
+                                 [json.loads(x)["label"] for x in f])
+
+    def test_una_clase_excluida_no_es_aviso_de_particionar(self):
+        lineas = ["  AVISO: %s no tiene ningun ejemplo de regulates: el F1 de "
+                  "esa clase ahi no se mide." % parte for parte in ("dev",
+                                                                  "test")]
+        self.assertTrue(R.avisos_particion(lineas)["recomendar_cv"])
+        a = R.avisos_particion(lineas, excluir=("regulates",))
+        self.assertEqual([], a["clases_vacias"])
+        self.assertFalse(a["recomendar_cv"])
+
+    def test_desviaciones_del_protocolo(self):
+        p = json.loads(json.dumps(R.PROTOCOLO_PARAMETROS))
+        self.assertEqual([], R.desviaciones_del_protocolo(p))
+        p.update(folds=3, semillas=["42"])
+        d = R.desviaciones_del_protocolo(p)
+        self.assertEqual(2, len(d))
+        self.assertIn("folds", d[0])
+        # Un tramo 1 no entrena: no se desvía en semillas.
+        p.update(folds=5)
+        self.assertEqual([], R.desviaciones_del_protocolo(
+            p, ("folds", "excluir")))
+
+    def test_el_pre_registro_se_mide_desde_el_primer_entrenamiento(self):
+        def estado(primera, ultima, limpio=True, desde="2026-10-20T10:00:00Z",
+                   evaluo=True, proto=True):
+            return {"inicio": "2026-12-01T00:00:00Z",
+                    "codigo": {"protocolo": {
+                        "commit": "b" * 10, "fecha": ultima,
+                        "primer_commit": "a" * 10, "primera_fecha": primera,
+                        "limpio": limpio} if proto else None},
+                    "pasos": {"evaluacion": {"macro_f1": {"media": 0.5},
+                                             "entrenado_desde": desde}
+                              if evaluo else {}}}
+        antes, despues = "2026-10-19T09:00:00-06:00", "2026-10-21T09:00:00Z"
+        casos = [
+            (estado(antes, antes), "si"),
+            (estado(antes, despues), "enmendado"),
+            (estado(despues, despues), "no"),
+            (estado(antes, antes, limpio=False), "sucio"),
+            (estado(antes, antes, desde=None), "desconocido"),
+            (estado(antes, antes, proto=False), "no"),
+            (estado(antes, antes, evaluo=False), None),
+        ]
+        for e, esperado in casos:
+            with self.subTest(esperado=esperado):
+                self.assertEqual(esperado, R._preregistro(e)[0])
+                linea = R._linea_protocolo(e)
+                self.assertEqual(esperado in ("no", "sucio", "desconocido"),
+                                 "no son pre-registradas" in linea)
+        # La invocación que escribe el informe empieza después de todo: no
+        # cuenta.
+        self.assertEqual("no", R._preregistro(estado(despues, despues))[0])
+
+    def test_el_hash_del_protocolo_no_parece_un_pmid(self):
+        """Con %h, un hash corto de 7 dígitos tenía forma de PMID y el
+        informe del tramo 2 no se habría podido publicar."""
+        def falso(argv, **kwargs):
+            salida = ""
+            if "rev-parse" in argv:
+                salida = "0123abcdef\n"
+            elif "log" in argv:
+                salida = ("4721509123" + "c" * 30 + " 2026-10-20T09:00:00-06:00"
+                          "\n" + "1234567890" + "d" * 30
+                          + " 2026-10-17T09:00:00-06:00\n")
+            return mock.Mock(stdout=salida)
+        with mock.patch.object(R.subprocess, "run", falso):
+            codigo = R._codigo()
+        proto = codigo["protocolo"]
+        self.assertEqual(("4721509123", "1234567890"),
+                         (proto["commit"], proto["primer_commit"]))
+        self.assertEqual("2026-10-17T09:00:00-06:00", proto["primera_fecha"])
+        R.verificar_publicable("- Protocolo: %s.\n" % R._linea_protocolo(
+            {"codigo": codigo, "pasos": {}}))
+
+    def test_la_regla_se_decide_sin_redondear(self):
+        filas = self._filas()
+        for k, f in enumerate(filas):
+            f["base"] = self.ETQ[(k + 1) % 3]
+            f["pred"] = {"42": f["verdad"]}
+        with mock.patch.object(R, "replicas_bootstrap", lambda *a, **k: [
+                (0.5, 0.49997, 0.00003)] * 100):
+            ev = R.evaluar_oof(filas, self.ETQ, ["42"], b=100, semilla=1)
+        self.assertEqual([0.0, 0.0], ev["diferencia"]["ic95"])
+        self.assertTrue(ev["supera_linea_base"])
+
 
 # ------------------------------------------------------- la orquestación
 
@@ -493,17 +880,26 @@ class PruebasCorrida(_Escenario):
         pasos = estado["pasos"]
         self.assertEqual(
             ["reservas", "datos", "base", "particion", "fuga", "entorno",
-             "entrenamiento", "modelo"], list(pasos))
+             "entrenamiento", "modelo", "prediccion"], list(pasos))
         self.assertTrue(all(p["estatus"] == "ok" for p in pasos.values()))
-        self.assertEqual(1, self.llamadas())
+        self.assertEqual((1, 1), (self.llamadas(), self.clasificaciones()))
         run = os.path.join(self.r["runs"], R.nombre_run())
         self.assertTrue(os.path.isfile(os.path.join(run,
                                                     "label_mapping.json")))
         self.assertFalse([n for n in os.listdir(run)
                           if n.startswith("checkpoint-")])
         self.assertEqual(2, pasos["modelo"]["checkpoints_borrados"])
-        self.assertEqual(0.55, pasos["entrenamiento"]["metricas"][
-            "test_macro_f1"])
+        esperado = self.esperado(self.r["particion"])
+        self.assertAlmostEqual(esperado["eval_macro_f1"],
+                               pasos["entrenamiento"]["metricas"][
+                                   "test_macro_f1"])
+        # clasificar.py y el script predicen lo mismo, así que cuadran.
+        cotejo = pasos["prediccion"]["cotejo"]
+        self.assertTrue(cotejo["ok"])
+        self.assertEqual(0, cotejo["diferencia_ejemplos"])
+        self.assertAlmostEqual(esperado["eval_accuracy"],
+                               cotejo["accuracy_clasificar"], places=4)
+        self.assertFalse(pasos["prediccion"]["degenerado"])
         self.assertEqual(2, len(pasos["modelo"]["curva"]["epocas"]))
         self.assertTrue(pasos["particion"]["avisos"]["limpia"])
         self.assertIn("ciego", pasos["fuga"])
@@ -594,8 +990,10 @@ class PruebasCorrida(_Escenario):
         estado, _ = self.correr(hasta="particion")
         self.assertEqual("ok", estado["estatus"])
         self.assertEqual("previo", estado["pasos"]["entrenamiento"]["estatus"])
-        self.assertEqual(0.55, estado["pasos"]["entrenamiento"]["metricas"][
-            "test_macro_f1"])
+        self.assertAlmostEqual(
+            self.esperado(self.r["particion"])["eval_macro_f1"],
+            estado["pasos"]["entrenamiento"]["metricas"]["test_macro_f1"])
+        self.assertEqual("previo", estado["pasos"]["prediccion"]["estatus"])
         informe = self.leer(self.r["informe"])
         self.assertIn("de una corrida anterior", informe)
         self.assertIn("Modelo menos línea base", informe)
@@ -764,11 +1162,16 @@ class PruebasCorrida(_Escenario):
         estado, _ = self.correr(folds=3)
         self.assertEqual("ok", estado["estatus"], estado.get("detalle"))
         cv = estado["pasos"]["entrenamiento_cv"]
-        self.assertEqual(["fold_0", "fold_1", "fold_2"], list(cv["pliegues"]))
-        self.assertEqual(0.55, cv["agregado"]["test_macro_f1"]["media"])
-        self.assertEqual(0.0, cv["agregado"]["test_macro_f1"]["sd"])
-        self.assertEqual(4, self.llamadas())
-        # Sin --conservar: los pliegues no dejan modelo.
+        self.assertEqual(["s42/fold_0", "s42/fold_1", "s42/fold_2"],
+                         list(cv["corridas"]))
+        PCV = os.path.join(self.r["datos"], "por_pmid_k3")
+        self.assertAlmostEqual(
+            statistics.mean(self.esperado(os.path.join(PCV, "fold_%d" % i))[
+                "eval_macro_f1"] for i in range(3)),
+            cv["agregado"]["test_macro_f1"]["media"], places=4)
+        self.assertEqual((4, 4), (self.llamadas(), self.clasificaciones()))
+        self.assertTrue(all(f["cotejo_ok"] for f in cv["corridas"].values()))
+        # Los pliegues no dejan modelo: se borra en cuanto predice.
         cv_runs = os.path.join(self.r["runs"], "cv")
         self.assertFalse([d for _, ds, _ in os.walk(cv_runs) for d in ds
                           if d.startswith("run_")])
@@ -777,8 +1180,9 @@ class PruebasCorrida(_Escenario):
     def test_un_pliegue_rechazado_no_entrena(self):
         real = R._Corrida._particionar
 
-        def con_fuga(corrida, salida, extra, archivo_txt):
-            codigo, lineas = real(corrida, salida, extra, archivo_txt)
+        def con_fuga(corrida, salida, extra, archivo_txt, entrada):
+            codigo, lineas = real(corrida, salida, extra, archivo_txt,
+                                  entrada)
             if "--folds" in extra:
                 lineas = lineas + ["--- pliegue 1: train=1 dev=1 test=1",
                                    "     FALLA: 1 PMIDs de test tambien en "
@@ -828,6 +1232,315 @@ class PruebasCorrida(_Escenario):
             for nombre in archivos:
                 self.assertNotIn("Hoja1", self.leer(os.path.join(carpeta,
                                                                  nombre)))
+
+
+@unittest.skipUnless(POSIX, "el orquestador es para el servidor (POSIX)")
+class PruebasCorridaProtocolo(_Escenario):
+    """Exclusión, semillas, predicción con clasificar.py y evaluación."""
+
+    def etiquetas_de(self, carpeta):
+        vistas = set()
+        for nombre in E.ARCHIVOS:
+            with open(os.path.join(carpeta, nombre), encoding="utf-8") as f:
+                vistas.update(json.loads(l)["label"] for l in f if l.strip())
+        return vistas
+
+    def runs_de_pliegue(self):
+        cv = os.path.join(self.r["runs"], "cv")
+        return [d for _, ds, _ in os.walk(cv) for d in ds
+                if d.startswith("run_")]
+
+    def test_regulates_queda_fuera_y_el_mapa_sigue_con_cuatro(self):
+        estado, _ = self.correr(hasta="particion")
+        self.assertEqual("ok", estado["estatus"], estado.get("detalle"))
+        with open(self.r["conteos"], encoding="utf-8") as f:
+            construidos = json.load(f)["conteos"]["entrenamiento"][
+                "por_etiqueta"]
+        # El juguete trae regulates: si no, esta prueba no prueba nada.
+        self.assertGreater(construidos["regulates"], 0)
+        excluidos = estado["pasos"]["particion"]["excluidos"]
+        self.assertEqual(construidos["regulates"],
+                         excluidos["regulates"]["ejemplos"])
+        self.assertNotIn("regulates", self.etiquetas_de(self.r["particion"]))
+        # <datos> sigue con todo: es lo que construyó datos-entrenamiento.
+        self.assertIn("regulates", self.etiquetas_de(self.r["datos"]))
+        with open(os.path.join(self.r["particion"],
+                               "label_mapping.json")) as f:
+            self.assertEqual(list(E.ETIQUETAS), json.load(f))
+        self.assertEqual(["activates", "no_relation", "represses"],
+                         estado["parametros"]["etiquetas_evaluadas"])
+        avisos = estado["pasos"]["particion"]["avisos"]
+        self.assertFalse([c for c in avisos["clases_vacias"]
+                          if c[1] == "regulates"])
+        informe = self.leer(self.r["informe"])
+        self.assertIn("**Fuera de esta versión: regulates**", informe)
+        self.assertIn("regulates quedó fuera antes de particionar", informe)
+        # Sin exclusión, la partición se rehace y regulates vuelve.
+        estado, _ = self.correr(hasta="particion", excluir=())
+        self.assertEqual("ok", estado["pasos"]["particion"]["estatus"])
+        self.assertIn("regulates", self.etiquetas_de(self.r["particion"]))
+        self.assertEqual(list(E.ETIQUETAS),
+                         estado["parametros"]["etiquetas_evaluadas"])
+
+    def test_semillas_por_pliegue_y_la_segunda_corrida_no_repite(self):
+        estado, _ = self.correr(folds=3, semillas=["42", "43"])
+        self.assertEqual("ok", estado["estatus"], estado.get("detalle"))
+        # El desplegable y 2 semillas × 3 pliegues; cada uno predice una vez.
+        self.assertEqual((7, 7), (self.llamadas(), self.clasificaciones()))
+        cv = estado["pasos"]["entrenamiento_cv"]
+        self.assertEqual(["s%s/fold_%d" % (x, i) for x in ("42", "43")
+                          for i in range(3)], list(cv["corridas"]))
+        self.assertTrue(os.path.isdir(os.path.join(
+            self.r["runs"], "cv", "fold_0", "resultados_s43")))
+        self.assertEqual([], self.runs_de_pliegue())
+        ev = estado["pasos"]["evaluacion"]
+        self.assertEqual("ok", ev["estatus"])
+        self.assertEqual(["42", "43"], list(ev["macro_f1"]["por_semilla"]))
+        self.assertEqual(["activates", "no_relation", "represses"],
+                         ev["etiquetas"])
+        # Las predicciones fuera de pliegue cubren cada ejemplo una vez.
+        PCV = os.path.join(self.r["datos"], "por_pmid_k3")
+        n = 0
+        for i in range(3):
+            with open(os.path.join(PCV, "fold_%d" % i, E.ARCHIVOS[2]),
+                      encoding="utf-8") as f:
+                n += sum(1 for l in f if l.strip())
+        self.assertEqual(n, ev["n"])
+        self.assertEqual({"b": R.B_BOOTSTRAP, "semilla": R.SEMILLA_BOOTSTRAP,
+                          "por": "articulo"}, ev["bootstrap"])
+        # Solo se desvía en lo que se pidió distinto.
+        desviaciones = R.desviaciones_del_protocolo(estado["parametros"])
+        self.assertEqual(["folds", "semillas"],
+                         [d.split(":")[0] for d in desviaciones])
+        informe = self.leer(self.r["informe"])
+        for texto in ("### 8.1 Cifra principal", "### 8.2 Por clase",
+                      "### 8.3 Matrices de confusión", "Semilla 43:",
+                      "### 8.5 Por pliegue y semilla", "media ± sd",
+                      "**Desviaciones del protocolo:**",
+                      "Modelo menos línea base"):
+            self.assertIn(texto, informe)
+        self.assertNotIn("recomienda validación cruzada", informe)
+        os.environ["FALSO_GPU_FALLA"] = "1"
+        otra, _ = self.correr(folds=3, semillas=["42", "43"])
+        self.assertEqual("ok", otra["estatus"], otra.get("detalle"))
+        self.assertEqual((7, 7), (self.llamadas(), self.clasificaciones()))
+        for paso in ("entorno", "entrenamiento", "prediccion"):
+            self.assertEqual("saltado", otra["pasos"][paso]["estatus"], paso)
+        # La evaluación se recalcula siempre: cuesta segundos.
+        self.assertEqual("ok", otra["pasos"]["evaluacion"]["estatus"])
+        # Y su pre-registro se mide desde el primer entrenamiento, que cae
+        # en la primera corrida, no desde esta invocación.
+        self.assertEqual(ev["entrenado_desde"],
+                         otra["pasos"]["evaluacion"]["entrenado_desde"])
+        self.assertLessEqual(R._fecha_utc(estado["inicio"]),
+                             R._fecha_utc(ev["entrenado_desde"]))
+        self.assertLessEqual(R._fecha_utc(ev["entrenado_desde"]),
+                             R._fecha_utc(estado["fin"]))
+        self.assertTrue(all(f["estatus"] == "saltado" for f in
+                            otra["pasos"]["entrenamiento_cv"][
+                                "corridas"].values()))
+        self.assertEqual(ev["macro_f1"], otra["pasos"]["evaluacion"][
+            "macro_f1"])
+
+    def test_un_modelo_que_predice_una_sola_clase_entra_con_aviso(self):
+        os.environ["FALSO_PRED"] = "una_clase"
+        estado, _ = self.correr(folds=3)
+        self.assertEqual("ok", estado["estatus"], estado.get("detalle"))
+        self.assertTrue(estado["pasos"]["prediccion"]["degenerado"])
+        self.assertTrue(estado["pasos"]["prediccion"]["cotejo"]["ok"])
+        corridas = estado["pasos"]["entrenamiento_cv"]["corridas"]
+        self.assertTrue(all(f["degenerado"] for f in corridas.values()))
+        matriz = estado["pasos"]["prediccion"]["metricas"]["matriz"]
+        columna = matriz["columnas"].index("no_relation")
+        self.assertEqual(estado["pasos"]["prediccion"]["n"],
+                         sum(f[columna] for f in matriz["conteos"]))
+        informe = self.leer(self.r["informe"])
+        self.assertIn("Modelos que predicen una sola clase: desplegable, "
+                      "s42/fold_0", informe)
+        self.assertIn("**El modelo predice una sola clase en todo este "
+                      "test.**", informe)
+
+    def test_una_sola_clase_sin_queja_de_clasificar_tambien_se_marca(self):
+        """Con menos de 20 filas clasificar.py escribe aunque todas sean de
+        una clase: la marca sale de las predicciones."""
+        os.environ["FALSO_PRED"] = "una_clase_callada"
+        estado, _ = self.correr(folds=3)
+        self.assertEqual("ok", estado["estatus"], estado.get("detalle"))
+        self.assertTrue(estado["pasos"]["prediccion"]["degenerado"])
+        corridas = estado["pasos"]["entrenamiento_cv"]["corridas"]
+        self.assertTrue(all(f["degenerado"] for f in corridas.values()))
+        self.assertIn("Modelos que predicen una sola clase: desplegable",
+                      self.leer(self.r["informe"]))
+
+    def test_si_clasificar_falla_al_relanzar_solo_predice(self):
+        os.environ["FALSO_PRED"] = "falla"
+        estado, _ = self.correr()
+        self.assertEqual(("error", "prediccion_fallo"),
+                         (estado["estatus"], estado["motivo"]))
+        self.assertEqual((1, 1), (self.llamadas(), self.clasificaciones()))
+        os.environ["FALSO_PRED"] = "hash"
+        # El modelo está: no hace falta la GPU para predecir en CPU.
+        os.environ["FALSO_GPU_FALLA"] = "1"
+        estado, _ = self.correr()
+        self.assertEqual("ok", estado["estatus"], estado.get("detalle"))
+        self.assertEqual("ok", estado["pasos"]["prediccion"]["estatus"])
+        self.assertEqual((1, 2), (self.llamadas(), self.clasificaciones()))
+
+    def test_un_pliegue_que_no_predice_conserva_su_modelo(self):
+        """Un fallo de clasificar.py no cuesta el entrenamiento del pliegue:
+        su modelo se borra solo después de predecir."""
+        # Llamadas a clasificar: 1 el desplegable, 2 y 3 los pliegues 0 y 1.
+        os.environ["FALSO_FALLA_EN"] = "3"
+        estado, _ = self.correr(folds=3)
+        self.assertEqual(("error", "prediccion_fallo"),
+                         (estado["estatus"], estado["motivo"]))
+        self.assertEqual((3, 3), (self.llamadas(), self.clasificaciones()))
+        cv = os.path.join(self.r["runs"], "cv")
+        self.assertFalse(os.path.exists(os.path.join(cv, "fold_0",
+                                                     R.nombre_run())))
+        self.assertTrue(os.path.isdir(os.path.join(cv, "fold_1",
+                                                   R.nombre_run())))
+        del os.environ["FALSO_FALLA_EN"]
+        estado, _ = self.correr(folds=3)
+        self.assertEqual("ok", estado["estatus"], estado.get("detalle"))
+        # Solo se entrena el pliegue 2; predicen el 1 y el 2.
+        self.assertEqual((4, 5), (self.llamadas(), self.clasificaciones()))
+        self.assertEqual([], self.runs_de_pliegue())
+
+    def test_si_clasificar_no_cuadra_con_el_script_es_error(self):
+        os.environ["FALSO_PRED"] = "otro_modelo"
+        estado, _ = self.correr()
+        # La premisa: el modelo falso falla más de lo que se tolera.
+        n = estado["pasos"]["prediccion"]["n"]
+        esperado = self.esperado(self.r["particion"])["eval_accuracy"]
+        self.assertLess(esperado * n, n - R.TOLERANCIA_COTEJO)
+        self.assertEqual(("error", "cotejo_clasificar"),
+                         (estado["estatus"], estado["motivo"]))
+        self.assertFalse(estado["pasos"]["prediccion"]["cotejo"]["ok"])
+        self.assertNotIn("entrenamiento_cv", estado["pasos"])
+
+    def test_el_tramo_1_con_folds_fija_la_linea_base_antes_de_entrenar(self):
+        estado, _ = self.correr(hasta="particion", folds=3)
+        self.assertEqual("ok", estado["estatus"], estado.get("detalle"))
+        self.assertEqual((0, 0), (self.llamadas(), self.clasificaciones()))
+        lb = estado["pasos"]["particion_cv"]["linea_base"]
+        self.assertEqual(["fold_0", "fold_1", "fold_2"], list(lb["pliegues"]))
+        # Cada ejemplo que quedó tras la exclusión es test en un solo pliegue.
+        self.assertEqual(estado["pasos"]["particion"]["quedan"], lb["n"])
+        self.assertTrue(all(f["por_clase"]["regulates"] == 0
+                            for f in lb["pliegues"].values()))
+        informe = self.leer(self.r["informe"])
+        self.assertIn("### 5.1 Pliegues de la validación cruzada", informe)
+        self.assertIn("| pliegue | artículos | ejemplos | activates | "
+                      "no_relation | represses |", informe)
+        # Al entrenar, la evaluación da la misma línea base.
+        estado, _ = self.correr(folds=3)
+        self.assertEqual("ok", estado["estatus"], estado.get("detalle"))
+        self.assertEqual(lb["macro_f1"], estado["pasos"]["evaluacion"][
+            "linea_base"]["macro_f1"])
+
+    def test_el_tramo_1_con_folds_hereda_la_validacion_cruzada(self):
+        primero, _ = self.correr(folds=3)
+        os.environ["FALSO_GPU_FALLA"] = "1"
+        estado, _ = self.correr(hasta="particion", folds=3)
+        self.assertEqual("ok", estado["estatus"], estado.get("detalle"))
+        for paso in ("entrenamiento", "prediccion", "entrenamiento_cv",
+                     "evaluacion"):
+            self.assertEqual("previo", estado["pasos"][paso]["estatus"], paso)
+        self.assertEqual(primero["pasos"]["evaluacion"]["macro_f1"],
+                         estado["pasos"]["evaluacion"]["macro_f1"])
+        self.assertEqual((4, 4), (self.llamadas(), self.clasificaciones()))
+        informe = self.leer(self.r["informe"])
+        self.assertIn("### 8.1 Cifra principal", informe)
+        self.assertIn("de una corrida anterior con los mismos pliegues",
+                      informe)
+        # Con otros pliegues, la validación cruzada anterior no vale.
+        estado, _ = self.correr(hasta="particion")
+        self.assertNotIn("evaluacion", estado["pasos"])
+        self.assertEqual("previo", estado["pasos"]["prediccion"]["estatus"])
+
+    def test_un_test_sin_el_marcado_de_clasificar_se_ve_al_particionar(self):
+        C = R._etapa2("clasificar")
+        real = C.validar_par
+        with mock.patch.object(C, "validar_par", lambda fila, n: (
+                "Fila %d: %s" % (n, fila["text"]) if n == 2
+                else real(fila, n))):
+            estado, _ = self.correr(hasta="particion", folds=3)
+        self.assertEqual(("error", "test_invalido"),
+                         (estado["estatus"], estado["motivo"]))
+        # Dice cuántos, nunca cuál: el mensaje de validar_par trae la oración.
+        self.assertRegex(estado["detalle"], r"^1 de \d+ ejemplos de test")
+        self.assertNotIn("<e1>", json.dumps(R.leer_estado(self.r["estado"])))
+        self.assertNotIn("<e1>", self.leer(self.r["informe"]))
+        self.assertEqual(0, self.llamadas())
+
+    def test_no_se_heredan_cifras_de_otras_semillas(self):
+        """§1 decía «Conforme al protocolo» y «semillas 42, 43» sobre cifras
+        de una sola semilla heredadas de otra corrida."""
+        self.correr(folds=3)
+        os.environ["FALSO_GPU_FALLA"] = "1"
+        estado, _ = self.correr(hasta="particion", folds=3,
+                                semillas=["42", "43"])
+        self.assertEqual("ok", estado["estatus"], estado.get("detalle"))
+        for paso in ("entrenamiento_cv", "evaluacion"):
+            self.assertNotIn(paso, estado["pasos"])
+        informe = self.leer(self.r["informe"])
+        self.assertNotIn("### 8.1", informe)
+        # Un tramo 1 no se desvía en semillas: no entrenó.
+        self.assertNotIn("semillas: el protocolo fija", informe)
+        # Con las mismas semillas, sí hereda.
+        estado, _ = self.correr(hasta="particion", folds=3)
+        self.assertEqual("previo", estado["pasos"]["evaluacion"]["estatus"])
+        self.assertIn("semillas: el protocolo fija", self.leer(
+            self.r["informe"]))
+
+    def test_la_evaluacion_usa_el_codigo_de_hoy(self):
+        self.correr(folds=3)
+        llamadas = []
+        real = R.evaluar_oof
+
+        def contar(*a, **k):
+            llamadas.append(1)
+            return real(*a, **k)
+
+        with mock.patch.object(R, "evaluar_oof", contar):
+            estado, _ = self.correr(folds=3)
+        self.assertEqual("ok", estado["estatus"], estado.get("detalle"))
+        self.assertEqual(1, len(llamadas))
+
+    def test_un_corte_antes_de_borrar_el_modelo_del_pliegue_no_lo_deja(self):
+        real = shutil.rmtree
+        cortes = []
+
+        def cortar(ruta, *a, **k):
+            if (not cortes and os.sep + "cv" + os.sep in ruta
+                    and os.path.basename(ruta).startswith("run_")):
+                cortes.append(ruta)
+                raise KeyboardInterrupt
+            return real(ruta, *a, **k)
+
+        with mock.patch.object(R.shutil, "rmtree", cortar):
+            estado, _ = self.correr(folds=3)
+        self.assertEqual("cancelado", estado["estatus"])
+        self.assertEqual(1, len(self.runs_de_pliegue()))
+        estado, _ = self.correr(folds=3)
+        self.assertEqual("ok", estado["estatus"], estado.get("detalle"))
+        self.assertEqual([], self.runs_de_pliegue())
+        # No se volvió a entrenar ni a predecir el pliegue cortado.
+        self.assertEqual((4, 4), (self.llamadas(), self.clasificaciones()))
+
+    def test_las_semillas_sin_folds_no_se_aceptan(self):
+        with self.assertRaises(ValueError):
+            self.correr(semillas=["42", "43"])
+        r = self.correr_cli("--semillas", "42,43")
+        self.assertEqual(2, r.returncode, r.stdout)
+        self.assertIn("--folds", r.stdout)
+        r = self.correr_cli("--folds", "3", "--semillas", "42,42")
+        self.assertEqual(2, r.returncode, r.stdout)
+        self.assertIn("repetida", r.stdout)
+        r = self.correr_cli("--excluir-etiqueta", "no_relation")
+        self.assertEqual(2, r.returncode, r.stdout)
+        self.assertFalse(os.path.exists(self.r["estado"]))
 
 
 @unittest.skipUnless(POSIX, "el orquestador es para el servidor (POSIX)")
