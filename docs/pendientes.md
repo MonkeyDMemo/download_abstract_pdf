@@ -336,6 +336,15 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
    `PROCEDENCIA.md`: normalizar cada archivo entero de una pasada.
 7. **50 archivos versionados con CRLF** en el checkout, pese a `eol=lf` en
    `.gitattributes`. Lo mitigan `huella_texto` y la prueba de divergencia.
+8. **El candado de `flujo.py`** (`.flujo.lock`, O_EXCL) no revisa si el PID
+   que lo tomó sigue vivo: una corrida muerta por SIGKILL lo deja puesto y hay
+   que borrarlo a mano. `reentrenar.py` usa `fcntl.flock`, que el núcleo
+   suelta solo (9-oct-2026).
+9. **El conjunto ciego trae columna `pmid` y nadie la usa.** `cli reservas`
+   reserva sus oraciones, no sus 29 artículos. Reservar los artículos, o sus
+   6 pares, haría que la trampa del signo siguiera siendo externa para un
+   modelo entrenado con la base; el 9-oct se decidió no hacerlo y declararlo
+   en `RESULTADOS.md`.
 
 ## 7. Pasos 2 y 3
 
