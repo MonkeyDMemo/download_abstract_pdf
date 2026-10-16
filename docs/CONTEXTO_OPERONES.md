@@ -1,8 +1,24 @@
 # Contexto: Base de operones de P. aeruginosa PAO1
 
-> Este es el encargo original. Cómo se hizo finalmente cada fuente, qué se
-> tomó y qué no, y el diccionario de datos están en
-> [`catalogo-operones.md`](catalogo-operones.md).
+> **Documento histórico: el encargo del 18 de septiembre de 2026.** Se
+> conserva como se recibió, con algunas notas posteriores, y ya no describe el
+> código. Lo vigente está en otros tres documentos:
+> - [`guia-operones.md`](guia-operones.md): cómo funciona y cómo se regenera;
+> - [`catalogo-operones.md`](catalogo-operones.md): cada fuente y el
+>   diccionario de datos;
+> - [`operones-asesor.md`](operones-asesor.md): estado y decisiones abiertas.
+>
+> | lo que dice este documento | lo que hay hoy |
+> |---|---|
+> | dentro de `grn_etl/`, con subcomandos en su `cli.py` (tarea 4) | un paquete aparte, `grn_operones/`, con su propio CLI. `grn_etl/` está cerrado, y un `grn_bronce/operones/` taparía el módulo que expande los operones |
+> | existe un prototipo, `operones_extraccion.py` | nunca entró a git: se portó a `grn_operones/` y se borró el 18-sep (`77008be`) |
+> | crudo en `datos/bronze/operones/<fuente>/<fecha>/` | `<GRN_DATOS>/operones_crudo/<fuente>/<fecha>/` |
+> | `operones_bronze` con `fuente` y `fecha_descarga` | la fuente vive en `operones_extracciones` y la fecha en `operones_descargas`. Son cinco tablas (`grn_operones/db.py`) |
+> | ODB por paginación HTTP | el volcado de texto del sitio: la tabla paginada es una aplicación de JavaScript sin datos |
+> | normalizar con la anotación de pseudomonas.com (regla 1) | con `grn_bronce/recursos/genes_pao1.tsv`, porque pseudomonas.com está tras un desafío de Cloudflare |
+> | adyacencia, cadena y orden contra el GFF (regla 2) | la adyacencia, por la numeración de los locus; la hebra, del GFF de RefSeq. Lo que falla va a «para revisar» |
+> | subconjuntos y solapamientos como unidades alternativas (regla 3) | solo los subconjuntos estrictos se marcan `es_alternativa`; un solapamiento no |
+> | re-correr no debe duplicar registros | cada `extraer` es una foto nueva, a propósito. Lo idempotente es silver y `reparsear`, y PGD no se vuelve a bajar mientras su foto sirva |
 
 ## Proyecto
 
