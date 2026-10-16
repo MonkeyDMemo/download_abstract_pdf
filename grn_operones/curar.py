@@ -18,10 +18,11 @@ Las seis reglas del encargo, y las dos desviaciones que hubo que hacer:
    `construir_diccionario/diccionario_independiente/cache/`. Solo si faltan
    las dos la fila queda marcada `hebra_no_verificada` en vez de darse por
    buena.
-3. **Deduplicar** por conjunto ordenado de locus tags. Los subconjuntos y los
-   solapamientos **no se fusionan**: se conservan como unidades alternativas
-   marcadas, porque un operon puede transcribirse entero o en parte y las dos
-   cosas estan documentadas.
+3. **Deduplicar** por conjunto de locus tags. Una unidad cuyos genes son un
+   subconjunto estricto de los de otra **no se fusiona**: se conserva marcada
+   como alternativa (`es_alternativa`), porque un operón puede transcribirse
+   entero o en parte y las dos cosas están documentadas. Dos unidades que solo
+   se solapan no se marcan.
 4. **Nivel de evidencia**: `conocido` (tiene PMID) > `curado` (respaldo
    experimental o de literatura sin PMID: BioCyc con evidence code de
    curación, ODB o PseudoCAP sin cita) > `predicho`. Se cuenta cuántas
@@ -65,8 +66,9 @@ LOCUS = re.compile(r"^PA(\d{4})(?:\.(\d))?$")
 # `^PA\d{4}(\.\d)?$` y excluye 58 filas del GFF. No es un hueco de
 # sinonimos sino de clave primaria, y cambiarla obliga a revalidar el
 # pipeline entero, asi que aqui solo se MARCA para que el conteo de no
-# resueltos quede explicado. La regex propuesta es `^PA\d{4}[a-z]?(\.\d)?$`
-# y el cambio va en su propio commit, con visto bueno del asesor.
+# resueltos quede explicado. La regex propuesta es `^PA\d{4}[a-z]?(\.\d+)?$`
+# (con `\d+`, porque `crcZ` es `PA4726.11`) y el cambio va en su propio
+# commit, con visto bueno del asesor.
 LOCUS_SUFIJO = re.compile(r"^PA\d{4}[a-z](\.\d)?$", re.I)
 
 RUTA_GENES = os.path.join(
