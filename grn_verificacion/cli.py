@@ -5,6 +5,7 @@
     python -m grn_verificacion.cli capa --carpeta DIR --bronce CSV [--sintaxis JSONL]
     python -m grn_verificacion.cli evaluar --carpeta DIR --bronce CSV
     python -m grn_verificacion.cli datos-entrenamiento --pares JSONL --base XLSX ...
+    python -m grn_verificacion.cli reentrenar correr|estado|detener --raiz DIR ...
 
 Lo normal es no llamarlo a mano: `python flujo.py` corre los pasos en orden y
 se salta lo que ya está hecho.
@@ -162,6 +163,231 @@ def cmd_reservas(args):
     return 0
 
 
+def _ruta(valor):
+    return os.path.abspath(os.path.expanduser(valor)) if valor else valor
+
+
+def _argv_correr(args):
+    """La misma corrida para relanzarla desprendida: rutas absolutas, porque
+    el proceso nuevo arranca en la raíz del repositorio. Sin `--base`: viaja
+    en el entorno (ver `reentrenar.desprender`)."""
+    argv = ["reentrenar", "correr", "--raiz", _ruta(args.raiz),
+            "--nombre", args.nombre,
+            "--pares", _ruta(args.pares), "--script", _ruta(args.script),
+            "--hasta", args.hasta, "--horas", repr(args.horas),
+            "--gpu-min-mib", str(args.gpu_min_mib),
+            "--max-length", str(args.max_length)]
+    for ruta in args.reservar:
+        argv += ["--reservar", _ruta(ruta)]
+    if args.python:
+        argv += ["--python", args.python]
+    if args.ciego:
+        argv += ["--ciego", _ruta(args.ciego)]
+    if args.folds is not None:
+        argv += ["--folds", str(args.folds)]
+    if args.hoja is not None:
+        argv += ["--hoja", args.hoja]
+    if args.aceptar_base_distinta:
+        argv.append("--aceptar-base-distinta")
+    if args.conservar_checkpoints:
+        argv.append("--conservar-checkpoints")
+    return argv
+
+
+# Cuánto espera `--desprender` antes de devolver la terminal: si el proceso
+# ya murió (un argumento malo, el candado tomado), se dice aquí y no hay que ir
+# a buscarlo al estado.
+ESPERA_DESPRENDER = 5
+
+
+def _raiz_mostrable(raiz):
+    """La raíz para imprimirla: con el home como `~`, o `<raiz>`. El shell ya
+    expandió `~/grn-guillermo`, y la ruta absoluta lleva la cuenta."""
+    raiz = os.path.abspath(os.path.expanduser(raiz))
+    casa = os.path.expanduser("~")
+    if raiz == casa or raiz.startswith(casa + os.sep):
+        return os.path.join("~", os.path.relpath(raiz, casa))
+    return "<raiz>"
+
+
+def cmd_reentrenar(args):
+    """Ningún error sale como traceback: traería rutas del servidor sin
+    filtrar. Se dice el tipo y el mensaje filtrado."""
+    from grn_verificacion import reentrenar as R
+    try:
+        return _cmd_reentrenar(args, R)
+    except KeyboardInterrupt:
+        log("Interrumpido.")
+        return 3
+    except Exception as e:
+        try:
+            mensaje = R.Saneador(R.rutas(args.raiz, args.nombre)).linea(str(e))
+        except Exception:
+            mensaje = None
+        log("ERROR: %s%s" % (type(e).__name__,
+                             ": %s" % mensaje if mensaje else ""))
+        return 1
+
+
+def _cmd_reentrenar(args, R):
+    import signal
+    import subprocess
+    import threading
+
+    if args.accion == "estado":
+        for linea in R.resumen_estado(args.raiz, args.nombre, args.lineas):
+            log(linea)
+        return 0
+    if args.accion == "detener":
+        r = R.detener_corrida(args.raiz, args.nombre, esperar=args.esperar)
+        if r["pid"]:
+            log("Detenida la corrida %s (PID %s)%s." % (
+                args.nombre, r["pid"], ", a la fuerza" if r["forzado"] else ""))
+        else:
+            log("No había ninguna corrida %s en marcha." % args.nombre)
+        if r["huerfanos"]:
+            log("Además se detuvieron %d procesos huérfanos." % r["huerfanos"])
+        return 0
+
+    faltan = [f for f, v in (("--base", args.base), ("--script", args.script))
+              if not v]
+    if faltan:
+        log("ERROR: falta %s (o BASE_CURADA / SCRIPT_ASESOR en el entorno)."
+            % " y ".join(faltan))
+        return 2
+    if args.desprender:
+        proc = R.desprender(_argv_correr(args), args.raiz, args.nombre,
+                            base=args.base)
+        try:
+            codigo = proc.wait(timeout=ESPERA_DESPRENDER)
+        except subprocess.TimeoutExpired:
+            log("Lanzada la corrida %s en segundo plano (PID %d). Sobrevive "
+                "a un corte de SSH. Sigue con:" % (args.nombre, proc.pid))
+            log("  python -m grn_verificacion.cli reentrenar estado --raiz %s "
+                "--nombre %s" % (_raiz_mostrable(args.raiz), args.nombre))
+            return 0
+        for linea in R.resumen_estado(args.raiz, args.nombre):
+            log(linea)
+        return codigo
+
+    detener = threading.Event()
+    senales = {"n": 0}
+
+    def al_recibir(numero, marco):
+        # Sin print aquí: un print dentro del manejador puede reventar con
+        # «reentrant call». La primera señal pide detener con orden; la
+        # segunda corta por las malas, y `proceso.correr` mata el árbol.
+        senales["n"] += 1
+        detener.set()
+        if senales["n"] > 1:
+            raise KeyboardInterrupt
+
+    anteriores = {}
+    for nombre in ("SIGTERM", "SIGINT", "SIGHUP"):
+        if hasattr(signal, nombre):
+            numero = getattr(signal, nombre)
+            anteriores[numero] = signal.signal(numero, al_recibir)
+    try:
+        estado = R.ejecutar(
+            args.raiz, args.nombre, args.base, args.pares, args.reservar,
+            args.script, python=args.python, ciego=args.ciego,
+            folds=args.folds, hasta=args.hasta,
+            aceptar_base_distinta=args.aceptar_base_distinta,
+            horas=args.horas, gpu_min_mib=args.gpu_min_mib,
+            max_length=args.max_length,
+            conservar_checkpoints=args.conservar_checkpoints, hoja=args.hoja,
+            log=log, detener=detener)
+    except R.Ocupado as e:
+        log("ERROR: ya corre una corrida %s (PID %s). Mírala con "
+            "`reentrenar estado` o detenla con `reentrenar detener`."
+            % (args.nombre, e.pid))
+        return 4
+    except R.ErrorReentreno as e:
+        log("ERROR: %s" % e.detalle)
+        return 1
+    except ValueError as e:
+        log("ERROR: %s" % e)
+        return 2
+    finally:
+        for numero, anterior in anteriores.items():
+            signal.signal(numero, anterior)
+    motivo = estado.get("motivo")
+    log("Corrida %s: %s%s. Informe: <resultados>/RESULTADOS.md" % (
+        args.nombre, estado["estatus"], " (%s)" % motivo if motivo else ""))
+    return {"ok": 0, "cancelado": 3}.get(estado["estatus"], 1)
+
+
+def _sub_reentrenar(sub):
+    from grn_verificacion import reentrenar as R
+    re_ = sub.add_parser(
+        "reentrenar",
+        help="Pista D de punta a punta en el servidor: datos, partición por "
+             "PMID y run 22, desprendible y con informe sin contenido.")
+    acciones = re_.add_subparsers(dest="accion", required=True)
+
+    def comunes(p):
+        p.add_argument("--raiz", required=True,
+                       help="Carpeta propia en el servidor (~/grn-guillermo); "
+                            "ahí quedan datos/, runs/ y resultados/.")
+        p.add_argument("--nombre", default="curada-v1",
+                       help="Nombre de la corrida. Por omisión curada-v1.")
+
+    co = acciones.add_parser("correr", help="Corre (o retoma) la corrida.")
+    comunes(co)
+    co.add_argument("--base", default=os.environ.get("BASE_CURADA"),
+                    help="Ruta del .xlsx de la base curada; por omisión "
+                         "$BASE_CURADA. Nunca se imprime.")
+    co.add_argument("--pares", required=True,
+                    help="pares.jsonl del puente (corpus público).")
+    co.add_argument("--reservar", action="append", default=[],
+                    metavar="ARCHIVO", required=True,
+                    help="Archivo de reservas; se puede repetir.")
+    co.add_argument("--script", default=os.environ.get("SCRIPT_ASESOR"),
+                    help="bio_bert_re_finetune.py del asesor; por omisión "
+                         "$SCRIPT_ASESOR.")
+    co.add_argument("--python", default=None,
+                    help="Intérprete con torch y transformers; por omisión "
+                         "$GRN_PYTHON_BERT o el que corre esto.")
+    co.add_argument("--ciego", default=None,
+                    help="TSV del conjunto ciego (columnas tf y blanco): "
+                         "cuenta cuánto de sus pares entró.")
+    co.add_argument("--hoja", default=None,
+                    help="Nombre de la hoja de la base; por omisión la "
+                         "primera.")
+    co.add_argument("--folds", type=int, default=None,
+                    help="Además, validación cruzada de K pliegues.")
+    co.add_argument("--hasta", choices=R.HASTA, default="entrenamiento",
+                    help="Último paso: datos, particion o entrenamiento.")
+    co.add_argument("--aceptar-base-distinta", dest="aceptar_base_distinta",
+                    action="store_true",
+                    help="Seguir aunque la base no coincida con PLAN.md 2.4.")
+    co.add_argument("--horas", type=float, default=R.HORAS,
+                    help="Tope por entrenamiento. Por omisión %s." % R.HORAS)
+    co.add_argument("--gpu-min-mib", dest="gpu_min_mib", type=int,
+                    default=R.GPU_MIN_MIB,
+                    help="Memoria libre mínima de la GPU para lanzar.")
+    co.add_argument("--max-length", dest="max_length", default=R.MAX_LENGTH,
+                    help="Techo de tokens del script. Por omisión %s."
+                         % R.MAX_LENGTH)
+    co.add_argument("--conservar-checkpoints", dest="conservar_checkpoints",
+                    action="store_true",
+                    help="No borrar los checkpoint-* al terminar.")
+    co.add_argument("--desprender", action="store_true",
+                    help="Correr en segundo plano, en su propia sesión: "
+                         "sobrevive a un corte de SSH.")
+    co.set_defaults(func=cmd_reentrenar)
+
+    es = acciones.add_parser("estado", help="Cómo va la corrida.")
+    comunes(es)
+    es.add_argument("--lineas", type=int, default=15)
+    es.set_defaults(func=cmd_reentrenar)
+
+    de = acciones.add_parser("detener", help="Detiene la corrida.")
+    comunes(de)
+    de.add_argument("--esperar", type=float, default=60.0)
+    de.set_defaults(func=cmd_reentrenar)
+
+
 def consola_tolerante():
     """La consola de Windows imprime cp1252: los acentos caben, pero la barra
     de progreso de transformers («█») o una sigma no, y un `print` con ellos
@@ -230,6 +456,8 @@ def main(argv=None):
                     help="TSV con columna `oracion`: el conjunto ciego de la "
                          "trampa del signo, versionado en etapa2/.")
     rs.set_defaults(func=cmd_reservas)
+
+    _sub_reentrenar(sub)
 
     args = ap.parse_args(argv)
     return args.func(args)
