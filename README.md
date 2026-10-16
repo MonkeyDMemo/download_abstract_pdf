@@ -113,17 +113,31 @@ python3 cli.py run pa_regulacion
 
 Este es el paso que hace el trabajo interesante:
 
-1. `esearch` trae la lista completa de PMIDs, sin descargar contenido.
+1. `esearch` trae la lista completa de PMIDs, sin descargar contenido. PubMed
+   solo entrega los primeros 10 000 de un conjunto: si la consulta trae más,
+   se parte sola por fecha de publicación en tramos que quepan (alineados al
+   año; por días solo si un año rebasa el tope) y se unen sin duplicar.
 2. Se resta contra lo que ya está en la tabla `documentos`.
-3. `efetch` baja solo la diferencia, por lotes de 200.
+3. `efetch` baja solo la diferencia, por lotes de 200, **guardando y
+   vinculando cada lote** en cuanto llega: una corrida que se corta conserva
+   lo bajado y volver a lanzarla pide solo el resto.
 4. Se vinculan **todos** los PMIDs a la consulta, no solo los nuevos.
 
 El paso 4 es el que hace que valga la pena: un artículo que ya estaba en la
 base porque lo trajo otra consulta igual pertenece a esta, y se liga sin
 volver a descargarlo.
 
-Opciones útiles: `--limite N` para probar con pocos, `--orden pub_date` para
-traer primero lo reciente, `--desde 2010 --hasta 2024` para acotar por año.
+Opciones útiles: `--limite N` para probar con pocos (ojo: con límite se
+recorta sin partir, y la corrida queda registrada con ese límite),
+`--orden pub_date` para traer primero lo reciente, `--desde 2010 --hasta 2024`
+para acotar por fecha de publicación (también `2024/06` o `2024/06/15`), y
+`--pausa 5` para esperar cinco segundos entre lotes además del límite de tasa.
+Lo que se pidió en cada corrida queda en la bitácora (`log`), tramos incluidos.
+
+NCBI pide correr los trabajos grandes (más de 100 peticiones) en fin de semana
+o entre las 21:00 y las 5:00, hora del Este; el programa lo recuerda cuando
+toca. Y a todo software que use E-utilities le pide mostrar su aviso:
+https://www.ncbi.nlm.nih.gov/About/disclaimer.html
 
 ### 3. Texto completo, primero XML
 
@@ -168,8 +182,16 @@ python3 cli.py log       # historial de corridas, con errores si los hubo
 ```bash
 python3 cli.py export pa_regulacion --formato jsonl   # -> salidas/pa_regulacion.jsonl
 python3 cli.py export pa_regulacion --formato csv
+python3 cli.py export pa_regulacion --formato zip     # -> <datos>/exportaciones/pa_regulacion_<fecha>Z.zip
 python3 cli.py export --pendientes                    # -> salidas/pendientes_biblioteca.csv
 ```
+
+`--formato zip` es el paquete para pasarle a alguien de fuera: `documentos.csv`
+(UTF-8 con BOM, Excel lo abre con doble clic), `documentos.jsonl`, el XML y el
+texto plano de PMC descargados para esa consulta, y un `LEEME.txt` con la
+query, la fecha, los conteos, lo registrado que faltaba en disco y el aviso de
+NCBI. El PDF solo entra con `--con-pdf`: pesa y su licencia no siempre permite
+redistribuirlo. El mismo paquete se arma desde el tablero, botón «Exportar».
 
 `export --pendientes` es la lista de lo que **no** se pudo bajar, con el DOI y
 las ligas a PMC, a PubMed y al editor, para pedirlo por la biblioteca
@@ -179,8 +201,10 @@ institucional.
 
 Lo mismo que hace el CLI, pero en el navegador: ver las consultas, buscar entre
 los documentos, corregir a mano un título o un año que llegó mal, revisar las
-descargas y lanzar un `run` o un `fulltext` viendo la bitácora avanzar en vivo.
-La pestaña «Pipeline» corre el flujo completo (ver más abajo).
+descargas, lanzar un `run` o un `fulltext` viendo la bitácora avanzar en vivo,
+y exportar una consulta como zip («Exportar» en Consultas; el paquete se baja
+de la tarjeta «Exportaciones» cuando termina). La pestaña «Pipeline» corre el
+flujo completo (ver más abajo).
 
 Al entrar explica qué es la herramienta y los cuatro pasos para usarla, así que
 alguien que llega nuevo al laboratorio puede abrirlo sin haber leído esto.
@@ -403,7 +427,9 @@ etapa2/                el clasificador heredado, congelado
 pruebas/               las del paso 0, del tablero y del flujo; ninguna toca la red
 datos/grn.db           la base (fuera del repositorio)
 datos/fulltext/        XML, texto derivado y PDF (fuera del repositorio)
+datos/exportaciones/   los paquetes zip por consulta (fuera del repositorio)
 salidas/               exportaciones CSV y JSONL (fuera del repositorio)
+queries/               las queries booleanas que se registran con `query add`
 ```
 
 ## Más documentación

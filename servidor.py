@@ -38,7 +38,7 @@ from pathlib import Path
 
 import flujo
 from grn_bronce import rutas
-from grn_etl import credenciales, db, etl, pubmed, trabajos
+from grn_etl import credenciales, db, etl, exportar, pubmed, trabajos
 
 # El tablero es un solo archivo, sin recursos externos. La ruta se resuelve
 # contra __file__ y no contra el directorio de trabajo: asi 'python
@@ -64,6 +64,12 @@ def salida_por_omision(datos=None):
     flag, luego `GRN_DATOS`, luego `./datos`. La resuelve `grn_bronce.rutas`
     para que la regla esté escrita en un solo sitio."""
     return os.path.join(rutas.raiz_datos(datos), "fulltext")
+
+
+def exportaciones_por_omision(datos=None):
+    """`<datos>/exportaciones`: donde caen los paquetes por consulta, junto a
+    la base, para que el CLI y el tablero vean los mismos."""
+    return os.path.join(rutas.raiz_datos(datos), exportar.CARPETA)
 
 
 ORDENES = ("relevance", "pub_date")
@@ -119,17 +125,22 @@ class Contexto:
              o None para que el flujo la resuelva solo. Absoluta porque sus
              pasos corren con el directorio de trabajo en la raíz del
              repositorio, que no tiene por qué ser el del servidor.
+    exportaciones: carpeta de los paquetes por consulta (<datos>/
+             exportaciones). Mismo criterio que 'salida': de ahí se sirven
+             descargas y ahí escribe el trabajo de exportar, así que sale
+             de la línea de comandos y jamás de una petición.
     """
 
     def __init__(self, con, gestor, cliente=None, salida=None,
                  correo_explicito=None, al_cambiar_cliente=None,
-                 flujo_raiz=None, datos=None):
+                 flujo_raiz=None, datos=None, exportaciones=None):
         self.con = con
         self.gestor = gestor
         self.cliente = cliente
         self.salida = salida or salida_por_omision()
         self.flujo_raiz = flujo_raiz or flujo.RAIZ_FLUJO
         self.datos = datos
+        self.exportaciones = exportaciones or exportaciones_por_omision(datos)
         # El Contexto se arma de nuevo en cada peticion, asi que un cliente
         # nuevo tiene que subir a quien lo guarda entre peticiones o se
         # perderia al terminar esta. El callable lo pone la capa HTTP; en
@@ -731,6 +742,10 @@ def _lanzar_trabajo(ctx, cuerpo):
             "limite": _entero(cuerpo.get("limite"), "limite", minimo=1),
             "mindate": _fecha(cuerpo, "desde"),
             "maxdate": _fecha(cuerpo, "hasta"),
+            # Segundos entre lotes de efetch, además del limitador de tasa.
+            # Diez minutos de tope: más que eso ya no es cortesía con NCBI.
+            "pausa": _entero(cuerpo.get("pausa"), "pausa", minimo=0,
+                             maximo=600) or 0,
         }
         funcion = etl.ingestar
 
@@ -762,9 +777,25 @@ def _lanzar_trabajo(ctx, cuerpo):
         # fulltext corren en el hilo y no.
         cancelable = True
 
+    elif tipo == "exportar":
+        # No sale a la red, así que no exige correo. Las rutas (de dónde
+        # lee el texto completo, dónde deja el zip) son del servidor: una
+        # ruta que llegara en el cuerpo sería permiso de escritura en
+        # cualquier parte del disco.
+        nombre = _texto(cuerpo, "nombre", obligatorio=True)
+        _consulta_por_nombre(ctx, nombre)
+        argumentos = {
+            "nombre": nombre,
+            "carpeta_fulltext": ctx.salida,
+            "ruta_zip": os.path.join(ctx.exportaciones,
+                                     exportar.nombre_paquete(nombre)),
+            "incluir_pdf": _booleano(cuerpo.get("pdf"), "pdf"),
+        }
+        funcion = exportar.empaquetar
+
     else:
         raise ErrorPeticion(
-            400, "'tipo' debe ser 'run', 'fulltext' o 'flujo'")
+            400, "'tipo' debe ser 'run', 'fulltext', 'flujo' o 'exportar'")
 
     # El gestor inyecta 'con' (su propia conexión, abierta en su hilo),
     # 'log' y, si es cancelable, 'detener'. Si ya hay uno corriendo lanza
@@ -825,6 +856,25 @@ def _archivo_flujo(ctx, carpeta, nombre, params):
             404, f"no hay un archivo '{nombre}' en la carpeta '{carpeta}'")
     descarga = None if (ver and extension in SE_PUEDEN_VER) else nombre
     return 200, Archivo(ruta, TIPOS_FLUJO[extension], descarga_como=descarga)
+
+
+# ----------------------------------------------------------- exportaciones
+
+def _listar_exportaciones(ctx):
+    return 200, exportar.listar_exportaciones(ctx.exportaciones)
+
+
+def _archivo_exportacion(ctx, nombre):
+    """Un paquete de exportación, siempre como descarga.
+
+    exportar.ruta_exportacion exige el patrón de nombre, que el archivo esté
+    listado y que sea hijo directo de la carpeta; aquí se comprueba otra vez
+    que caiga dentro de ella, igual que con las salidas del flujo.
+    """
+    ruta = exportar.ruta_exportacion(ctx.exportaciones, nombre)
+    if ruta is None or not _dentro_de(Path(ctx.exportaciones), Path(ruta)):
+        raise ErrorPeticion(404, f"no hay una exportación '{nombre}'")
+    return 200, Archivo(ruta, exportar.tipo_mime(nombre), descarga_como=nombre)
 
 
 # ------------------------------------------------------------------ ruteo
@@ -928,6 +978,15 @@ def _rutear(metodo, ruta, params, cuerpo, ctx):
             return _ver_carpeta_flujo(ctx, resto[0])
         if len(resto) == 3 and resto[1] == "archivos":
             return _archivo_flujo(ctx, resto[0], resto[2], params)
+
+    # Cuarta familia de rutas que entregan archivos: los paquetes por
+    # consulta. La carpeta sale de la raíz de datos al arrancar, nunca de
+    # la petición; el nombre lo valida exportar.ruta_exportacion.
+    if recurso == "exportaciones" and metodo == "GET":
+        if not resto:
+            return _listar_exportaciones(ctx)
+        if len(resto) == 1:
+            return _archivo_exportacion(ctx, resto[0])
 
     _no_encontrado(metodo, ruta)
 
@@ -1043,7 +1102,8 @@ class ManejadorHTTP(http.server.BaseHTTPRequestHandler):
                            correo_explicito=self.server.correo_explicito,
                            al_cambiar_cliente=guardar_cliente,
                            flujo_raiz=self.server.flujo_raiz,
-                           datos=self.server.datos)
+                           datos=self.server.datos,
+                           exportaciones=self.server.exportaciones)
             codigo, objeto = manejar(metodo, url.path, params, cuerpo, ctx)
         except Exception:
             # El detalle va a la terminal y no a la respuesta: un traceback
@@ -1179,7 +1239,8 @@ class Servidor(http.server.ThreadingHTTPServer):
     allow_reuse_address = (sys.platform != "win32")
 
     def __init__(self, puerto, ruta_db, gestor, cliente, salida,
-                 correo_explicito=None, flujo_raiz=None, datos=None):
+                 correo_explicito=None, flujo_raiz=None, datos=None,
+                 exportaciones=None):
         self.ruta_db = ruta_db
         self.gestor = gestor
         self.cliente = cliente
@@ -1187,6 +1248,7 @@ class Servidor(http.server.ThreadingHTTPServer):
         self.correo_explicito = correo_explicito
         self.flujo_raiz = flujo_raiz
         self.datos = datos
+        self.exportaciones = exportaciones
         # 127.0.0.1 y nada mas. Ver el docstring del modulo: sin
         # autenticacion, con capacidad de borrar y de gastar el limite de
         # NCBI de todo el laboratorio, atarlo a 0.0.0.0 seria abrirle eso a
@@ -1263,6 +1325,7 @@ def main():
     raiz_datos = rutas.raiz_datos(args.datos)
     ruta_db = args.db or os.path.join(raiz_datos, "grn.db")
     salida = args.salida or salida_por_omision(args.datos)
+    exportaciones = os.path.abspath(exportaciones_por_omision(args.datos))
     flujo_raiz = os.path.abspath(args.flujo)
     # El flujo lee su base de <datos>/grn.db. Si --db apunta a otra, el
     # tablero listaría corridas del bronce que el flujo no encuentra.
@@ -1291,7 +1354,8 @@ def main():
         servidor = Servidor(args.puerto, ruta_db, gestor, cliente, salida,
                             correo_explicito=args.email,
                             flujo_raiz=flujo_raiz,
-                            datos=os.path.abspath(raiz_datos))
+                            datos=os.path.abspath(raiz_datos),
+                            exportaciones=exportaciones)
     except OSError as e:
         sys.exit(f"No se pudo abrir el puerto {args.puerto}: {e}\n"
                  f"Si ya hay otro tablero corriendo, usa --puerto.")
@@ -1304,6 +1368,7 @@ def main():
         f"({ORIGEN_DATOS.get(origen, origen.replace('entorno:', 'por '))})",
         f"Base   : {ruta_db}",
         f"Salida : {salida}",
+        f"Export : {exportaciones}",
         f"Flujo  : {flujo_raiz}",
         # Se dice si hay API key, nunca cual.
         "API key: " + ("sí (10 peticiones/segundo)"

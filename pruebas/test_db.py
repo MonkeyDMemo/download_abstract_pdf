@@ -8,6 +8,7 @@ que tengan que seguir comportandose igual.
 """
 
 import json
+import sqlite3
 import tempfile
 from pathlib import Path
 
@@ -413,3 +414,64 @@ class PruebasConexion(PruebaSinRed):
         con2 = self.abrir(ruta)
 
         self.assertEqual(db.pmids_conocidos(con2, ["111"]), {"111"})
+
+
+# ------------------------------------------------------------- migracion
+
+class PruebasMigracion(PruebaSinRed):
+    """_migrar agrega a una base vieja las columnas que el esquema gano
+    despues. Sin esto habria que pedirle a alguien que borre su base y
+    vuelva a descargar todo, que es justo lo que el proyecto existe para
+    evitar."""
+
+    ESQUEMA_VIEJO = """
+        CREATE TABLE ejecuciones (
+            id INTEGER PRIMARY KEY, consulta_id INTEGER NOT NULL,
+            iniciada_en TEXT NOT NULL, terminada_en TEXT, estatus TEXT NOT NULL,
+            total_pubmed INTEGER, pmids_nuevos INTEGER, pmids_previos INTEGER,
+            descargados INTEGER, error TEXT);
+        CREATE TABLE descargas (
+            id INTEGER PRIMARY KEY, pmid TEXT NOT NULL, tipo TEXT NOT NULL,
+            estatus TEXT NOT NULL, fuente TEXT, ruta TEXT, bytes INTEGER,
+            nota TEXT, intentos INTEGER NOT NULL DEFAULT 1,
+            actualizado_en TEXT NOT NULL, UNIQUE (pmid, tipo));
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.ruta = Path(tempfile.mkdtemp()) / "vieja.db"
+        viejo = sqlite3.connect(str(self.ruta))
+        viejo.executescript(self.ESQUEMA_VIEJO)
+        viejo.close()
+
+    def columnas(self, con, tabla):
+        return {f["name"] for f in con.execute(f"PRAGMA table_info({tabla})")}
+
+    def test_una_base_vieja_gana_las_columnas_nuevas_al_abrirse(self):
+        con = db.conectar(str(self.ruta))
+        self.addCleanup(con.close)
+
+        self.assertIn("parametros", self.columnas(con, "ejecuciones"))
+        self.assertIn("url", self.columnas(con, "descargas"))
+
+    def test_abrir_dos_veces_no_truena_ni_duplica(self):
+        db.conectar(str(self.ruta)).close()
+        con = db.conectar(str(self.ruta))
+        self.addCleanup(con.close)
+
+        self.assertEqual(
+            len([c for c in self.columnas(con, "ejecuciones") if c == "parametros"]), 1)
+
+    def test_los_parametros_de_apertura_se_conservan_si_el_cierre_no_trae(self):
+        con = db.conectar(":memory:")
+        self.addCleanup(con.close)
+        consulta_id, _ = db.alta_consulta(con, "pa", "q")
+
+        ej = db.abrir_ejecucion(con, consulta_id, {"limite": 4})
+        db.cerrar_ejecucion(con, ej, "error", error="se cayo")
+        self.assertEqual(json.loads(db.obtener_ejecucion(con, ej)["parametros"]),
+                         {"limite": 4})
+
+        db.cerrar_ejecucion(con, ej, "ok", parametros={"limite": 4, "tramos": []})
+        self.assertEqual(json.loads(db.obtener_ejecucion(con, ej)["parametros"]),
+                         {"limite": 4, "tramos": []})
