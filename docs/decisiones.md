@@ -170,6 +170,32 @@ segmentación necesita partir recursivamente cualquier tramo que siga pasándose
 del tope, y eso pide sus propias pruebas. Un error claro hoy vale más que una
 segmentación a medio probar.
 
+**Actualización del 13-oct-2026: ahora sí se segmenta, con sus pruebas.** Lo
+que destrabó la decisión fue una consulta de 83 638 resultados que se corrió a
+mano por año desde el tablero con «límite 1 000»: con límite el programa
+recorta sin avisar, y diez corridas quedaron en la bitácora como `ok` con
+≤1 000 de ~5 000 artículos cada una. Fallar protegía contra el truncado
+silencioso del programa, no contra el del usuario. La segmentación
+(`pubmed.tramos_por_fecha`) tomó cuatro decisiones:
+
+- **Una petición de `esearch` por nodo, sin contar aparte.** Si el conteo del
+  tramo cabe, el tramo es hoja y la misma respuesta ya trae sus ids; si no, se
+  parte. Un `rettype=count` previo ahorraría ~100 KB de ids por nodo interno y
+  a cambio abriría una carrera entre contar y pedir.
+- **El punto medio se alinea al 31 de diciembre** cuando el rango cruza años,
+  y solo baja a mitades de días dentro de un año que por sí solo rebase el
+  tope. Los tramos salen legibles (`1990/01/01 - 2003/12/31`).
+- **Mitades `[ini, medio]` y `[medio + 1 día, fin]`**, para que la suma de
+  tramos sea comparable con el total. Desde 2014 `[dp]` empata la fecha
+  impresa y la electrónica, así que un artículo puede caer en dos tramos: la
+  unión lo cuenta una vez y una suma mayor que el total es aviso suave; una
+  unión menor que el total es aviso fuerte, y la corrida sigue.
+- **Un día que rebase el tope es error**, con el día y el conteo en el
+  mensaje: ahí ya no hay forma de partir sin truncar.
+
+Y la bitácora ganó `ejecuciones.parametros`, porque la causa de fondo no era
+el tope sino que nada registraba que se había pedido con límite.
+
 ## "No hay" contra "no pude preguntar"
 
 `convertir_ids()` hacía `continue` cuando el ID Converter no respondía, y
@@ -1272,11 +1298,12 @@ Dos reglas mantienen la excepción acotada:
 
 ## El entrenamiento con la base curada es supervisión distante, y corre donde vive la base
 
-La base curada es confidencial y vive en el servidor del asesor como `.xlsx`.
-Por eso el entrenamiento se arma allá. Lo corre el usuario o, desde el
-9-oct-2026, una sesión de Claude abierta en el servidor con `reentrenar` (ver
-la decisión siguiente). A una sesión de Claude solo vuelven conteos y
-métricas.
+La base curada es confidencial. El entrenamiento se arma en el servidor del
+asesor, que tiene la GPU. El `.xlsx` no estaba ahí: se sube una sola vez,
+fuera del clon (`~/grn-guillermo/`), y de ahí no sale. Lo corre el usuario
+o, desde el 9-oct-2026, una sesión de Claude abierta en el servidor con
+`reentrenar` (ver la decisión siguiente). A una sesión de Claude solo
+vuelven conteos y métricas.
 
 `grn_verificacion/validacion.py` lee el `.xlsx` con `zipfile` y
 `ElementTree`, sin openpyxl, para correr con el Python que ya haya. La ruta

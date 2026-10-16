@@ -301,21 +301,33 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
 4. **Aviso de exención de NCBI**, que es obligatorio: pie del tablero, epílogo
    del CLI y párrafo del README.
 5. **Avisar de la hora**: NCBI pide los trabajos grandes en fin de semana o
-   entre 21:00 y 5:00, hora del Este.
+   entre 21:00 y 5:00, hora del Este. Desde el 13-oct `ingestar()` lo recuerda
+   en el log cuando la corrida pasa de 100 peticiones; falta estimarlo antes
+   de lanzar y hacerlo también en `fulltext`.
 6. **EPost y el History server.** Subir el lote de 200 a 500 ya se puede con
    `run --lote`; EPost tendría que conservar lo de pedir solo la diferencia.
 7. **Umbral para dejar E-utilities**: si el corpus llega a decenas de miles de
-   artículos, la vía es la descarga local de MEDLINE. Es el mismo disparador
-   que reabriría la segmentación automática por fechas de las consultas de más
-   de 10 000 resultados, que hoy fallan a propósito.
+   artículos, la vía es la descarga local de MEDLINE. La segmentación
+   automática por fechas ya existe (13-oct, `pubmed.tramos_por_fecha`) y
+   resuelve el tope de 10 000 por consulta; una consulta de 83 638 son ~480
+   peticiones y todavía cabe. El umbral sigue siendo el volumen sostenido.
 8. **Query refinada del grupo de OPM** (externa), para los artículos de la base
-   curada que faltan en el corpus. Si pasa de 10 000 resultados, partirla por
-   fechas.
-9. **Pedir por biblioteca lo que no es de acceso abierto** (`export
-   --pendientes`; Elsevier, por su API de TDM). Las cifras de 607 y 738 son del
-   corte del 17-ago.
-10. **Ampliar el corpus con los 607 PDFs de PMC fuera del subset abierto**:
+   curada que faltan en el corpus. Ya no hace falta partirla a mano: `run` la
+   parte solo si pasa de 10 000.
+9. **Aviso de exención de NCBI**: el README y el `LEEME.txt` de cada paquete
+   exportado ya lo llevan (13-oct); faltan el pie del tablero y el epílogo del
+   CLI (punto 4 de esta lista).
+10. **Pedir por biblioteca lo que no es de acceso abierto** (`export
+    --pendientes`; Elsevier, por su API de TDM). Las cifras de 607 y 738 son
+    del corte del 17-ago.
+11. **Ampliar el corpus con los 607 PDFs de PMC fuera del subset abierto**:
     pospuesto hasta tener la precisión medida.
+12. **La consulta de plantas transgénicas** (`queries/plantas_transgenicas.txt`,
+    83 638 resultados): borrar `Dr_edgardo_solicitudv1` (sus 10 corridas
+    llevaban límite 1 000 y dejaron 5 540 documentos truncados), registrarla
+    como `plantas_transgenicas` y correrla sin límite de noche o en fin de
+    semana. Los 5 540 documentos se conservan y se vuelven a vincular sin
+    bajarlos otra vez.
 
 ## 6. Deuda técnica
 

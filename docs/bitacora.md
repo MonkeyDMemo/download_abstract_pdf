@@ -106,6 +106,75 @@ Abierto:
     tiene que correr en el servidor.
 - **Se borró** `~/grn-guillermo/ensayo` (datos sintéticos del ensayo).
 
+---
+
+## 13 de octubre de 2026 — el paso 0 vuelve a abrirse: tramos por fecha, guardado por lote y exportación
+
+**Qué pasó.** El asesor pidió una consulta sobre cultivos transgénicos
+(1990–2026) para otro proyecto. En PubMed trae **83 638 resultados**, y
+`esearch` solo entrega los primeros 10 000 de un conjunto: el programa fallaba
+a propósito y pedía partir por año. Se corrió por año desde el tablero, con
+«límite 1 000» para que arrancara. El diagnóstico, con conteos agregados de la
+base: las 10 corridas «ok» de `Dr_edgardo_solicitudv1` consideraron exactamente
+1 000 PMIDs cada una cuando PubMed reportaba 4 312–5 849 por tramo; los 5 540
+documentos de 2021–2026 son muestras truncadas, cuatro tramos se corrieron dos
+veces, y nada en la base decía que se había pedido con límite. Además,
+`ingestar()` escribía una sola vez al final: una corrida de 420 lotes cortada
+en el 400 perdía todo, contra el principio 2 de CLAUDE.md.
+
+**Qué se construyó** (rama `etl-tramos-export`, sobre `flujo-biobert`; seis
+commits, 922 pruebas en verde):
+
+- `pubmed.tramos_por_fecha`: más de 10 000 resultados se parten por fecha de
+  publicación con una petición de `esearch` por nodo (sin contar aparte), con
+  el punto medio alineado al 31 de diciembre y mitades de días solo dentro de
+  un año que rebase el tope; la unión no duplica, avisa si queda corta o si hay
+  artículos en dos tramos (`[dp]` empata fecha impresa y electrónica), y un día
+  indivisible falla con el día en el mensaje. `buscar_pmids` conserva su firma;
+  las fechas aceptan `YYYY`, `YYYY/MM` y `YYYY/MM/DD`. Para 83 638 en 37 años
+  son ~30-40 esearch frente a 419 efetch.
+- `ingestar()` guarda y vincula cada lote en cuanto llega, vincula primero lo
+  ya conocido, acepta `--pausa` (segundos entre lotes, 0 por omisión), recuerda
+  la ventana horaria de NCBI en corridas de más de 100 peticiones, resume el
+  progreso para caber en las 400 líneas del gestor, y cierra `'error'` con los
+  contadores reales.
+- `ejecuciones.parametros` (JSON: orden, límite, fechas, lote, pausa, tramos),
+  con migración aditiva. `log` y la Bitácora del tablero lo muestran: es lo que
+  habría delatado las corridas recortadas.
+- `grn_etl/exportar.py`: el CSV y el JSONL salen de `cli.py`, y el paquete zip
+  por consulta (`documentos.csv` con BOM para Excel, `documentos.jsonl`, el XML
+  y el texto plano de PMC, el PDF solo con `--con-pdf`, y un `LEEME.txt` con la
+  query, los conteos, lo registrado que falta en disco y el aviso de NCBI).
+  Rutas desde pmid y pmcid validados, nunca desde `descargas.ruta`; escritura
+  atómica; en flujo, sin cargar nada entero en memoria.
+- Tablero: trabajo `exportar` (no exige correo; las rutas son del servidor),
+  `GET /api/exportaciones[/<nombre>]` como cuarta familia de rutas que entregan
+  archivos, botón «Exportar» por consulta con la casilla «Incluir PDF», tarjeta
+  «Exportaciones» y campo «Pausa (s)» en el run.
+
+**Verificado** con una partición simulada (120 PMIDs fechados, tope 50: cinco
+tramos alineados al año, unión exacta, 22 peticiones), un corte en el lote 3 de
+5 (quedan 4 documentos vinculados y la recorrida pide solo 6), y un zip
+sembrado con un pmcid con travesía y una `descargas.ruta` apuntando a una llave
+fuera de la carpeta: nada de eso sale en el paquete.
+
+**Decisiones.** Sin `contar()`; alineado al año; PDF opt-in por peso y
+licencias; el CSV suelto sigue en `salidas/` y sin BOM (contrato del README);
+la carpeta de paquetes es `<datos>/exportaciones`, que `grn_etl` recibe como
+ruta para no importar `grn_bronce.rutas`. La rama salió de `flujo-biobert` y
+no de `main` porque `flujo-biobert` tiene diez commits sin fusionar que tocan
+`servidor.py` y `web/index.html`; cuando se fusione, esta rama entra limpia.
+
+**Qué sigue.** Fusionar `flujo-biobert` y luego esta rama; borrar
+`Dr_edgardo_solicitudv1` desde el tablero (los 5 540 documentos se conservan);
+`query add plantas_transgenicas --archivo queries/plantas_transgenicas.txt` y
+correrla sin límite de noche o en fin de semana (~480 peticiones). La primera
+corrida real dirá, con el aviso unión-vs-total, si la partición por `pdat`
+pierde o duplica algo. Pendientes 5.5, 5.7, 5.8 y 5.12 de `docs/pendientes.md`
+actualizados.
+
+---
+
 ## 8 de octubre de 2026 — el flujo de punta a punta: bronce, BioBERT, sintaxis, capa y tablero
 
 El 2-oct el asesor pidió «correr el flujo con lo que tenemos», y quedó

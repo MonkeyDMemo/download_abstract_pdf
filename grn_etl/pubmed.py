@@ -6,6 +6,8 @@ diccionarios. Eso la hace probable sin red y reutilizable desde un
 servicio web sin cambios.
 """
 
+import calendar
+import datetime
 import json
 import time
 import urllib.error
@@ -142,58 +144,193 @@ class Cliente:
 # resultados. La documentacion (NBK25499) lo dice sin rodeos: "For PubMed
 # and PMC, ESearch can only retrieve the first 10,000 records matching the
 # query", y la receta de ir subiendo retstart la limita explicitamente a
-# "databases other than PubMed or PMC". Para pasar de ahi manda partir la
-# consulta en tramos de fecha.
+# "databases other than PubMed or PMC". Para pasar de ahi hay que partir la
+# consulta en tramos de fecha, y eso hace tramos_por_fecha().
 TOPE_ESEARCH = 10000
 
+# Guarda contra una particion desbocada (una fecha mal normalizada, un tope
+# parcheado a 1). Cuatrocientos tramos son cuatrocientas peticiones; ninguna
+# consulta razonable los necesita.
+MAX_TRAMOS = 400
 
-def buscar_pmids(cliente, query, mindate=None, maxdate=None, orden="relevance",
-                 limite=None, avisos=None):
-    """esearch de una consulta. Devuelve (total_reportado, lista_de_pmids).
+# PubMed no tiene nada anterior a 1781 ni fechas de publicacion a siglos
+# vista. Sustituyen al "1800"/"3000" de antes con fechas que datetime sabe
+# partir a la mitad.
+FECHA_MINIMA = datetime.date(1700, 1, 1)
+FECHA_MAXIMA = datetime.date(2999, 12, 31)
 
-    Se traen los PMIDs completos ANTES de descargar nada. Asi se puede
-    comparar contra la base y bajar solo lo que falta.
 
-    Una sola peticion con retmax en el tope: para PubMed no hay segunda
-    pagina que valga. Si la consulta trae mas de TOPE_ESEARCH resultados
-    se falla de inmediato en vez de devolver lo que quepa, porque el
-    llamador no tiene como distinguir una lista completa de una truncada:
-    guardaria 10,000 de 25,000 y cerraria la ejecucion con estatus 'ok'.
-    Un corpus incompleto que la bitacora presenta como completo es peor
-    que una corrida que no arranca.
+def _nada(*_a, **_k):
+    pass
+
+
+def _fecha(texto, fin=False):
+    """Convierte "YYYY", "YYYY/MM" o "YYYY/MM/DD" en date.
+
+    Con fin=True devuelve el ultimo dia del periodo: "2021" es 2021/12/31 y
+    "2021/02" es 2021/02/28. Es lo que E-utilities hace con mindate y
+    maxdate; se hace explicito para poder partir el rango por la mitad.
     """
-    base = {"db": "pubmed", "term": query, "sort": orden, "retmode": "xml"}
-    if mindate or maxdate:
-        base["datetype"] = "pdat"
-        base["mindate"] = mindate or "1800"
-        base["maxdate"] = maxdate or "3000"
+    try:
+        partes = [int(p) for p in str(texto).strip().split("/")]
+        anio = partes[0]
+        if len(partes) == 1:
+            return datetime.date(anio, 12, 31) if fin else datetime.date(anio, 1, 1)
+        mes = partes[1]
+        if len(partes) == 2:
+            dia = calendar.monthrange(anio, mes)[1] if fin else 1
+            return datetime.date(anio, mes, dia)
+        if len(partes) == 3:
+            return datetime.date(anio, mes, partes[2])
+    except (ValueError, IndexError):
+        pass
+    raise ErrorPubMed(
+        f"Fecha no valida: '{texto}'. Usa YYYY, YYYY/MM o YYYY/MM/DD.")
 
-    raiz = ET.fromstring(cliente.eutils(
-        "esearch.fcgi", {**base, "retstart": "0", "retmax": str(TOPE_ESEARCH)}
-    ))
+
+def _texto_fecha(d):
+    return d.strftime("%Y/%m/%d")
+
+
+def _punto_medio(ini, fin):
+    """Donde se parte un rango que rebasa el tope.
+
+    Si el rango cruza anios, el corte es un 31 de diciembre: los tramos
+    salen alineados al anio (1990/01/01 - 2003/12/31) y se leen de un
+    vistazo en la bitacora. Solo dentro de un anio que por si solo rebase
+    el tope se baja a mitades de dias.
+    """
+    if ini.year < fin.year:
+        return datetime.date(ini.year + (fin.year - ini.year) // 2, 12, 31)
+    return ini + (fin - ini) // 2
+
+
+def _esearch(cliente, query, orden, tope, ini=None, fin=None, avisos=None):
+    """Una peticion a esearch. Devuelve (total_reportado, pmids)."""
+    params = {"db": "pubmed", "term": query, "sort": orden, "retmode": "xml",
+              "retstart": "0", "retmax": str(tope)}
+    if ini is not None or fin is not None:
+        params["datetype"] = "pdat"
+        params["mindate"] = _texto_fecha(ini or FECHA_MINIMA)
+        params["maxdate"] = _texto_fecha(fin or FECHA_MAXIMA)
+
+    raiz = ET.fromstring(cliente.eutils("esearch.fcgi", params))
     err = raiz.findtext(".//ERROR")
     if err:
         raise ErrorPubMed(f"esearch: {err}")
 
     total = int(raiz.findtext("Count", "0"))
     if avisos is not None:
+        # El mismo aviso vuelve en cada tramo; con una vez basta.
         for w in raiz.findall(".//WarningList/*"):
-            avisos.append(f"[{w.tag}] {(w.text or '').strip()}")
-
+            aviso = f"[{w.tag}] {(w.text or '').strip()}"
+            if aviso not in avisos:
+                avisos.append(aviso)
     pmids = [e.text for e in raiz.findall(".//IdList/Id") if e.text]
+    return total, pmids
 
-    # Con --limite el usuario ya dijo que no quiere todo, asi que un total
-    # enorme no lo sorprende: se recorta y ya. Sin limite, callarse el
-    # recorte seria mentir sobre lo que se trajo.
-    if total > TOPE_ESEARCH and not limite:
-        raise ErrorPubMed(
-            f"La consulta trae {total} resultados y PubMed solo permite "
-            f"recuperar los primeros {TOPE_ESEARCH} de un mismo conjunto.\n"
-            f"Partela por fechas y corre cada tramo: "
-            f"--desde 1990 --hasta 2009, luego --desde 2010, etc. "
-            f"Los tramos se acumulan en la misma consulta sin duplicar nada.\n"
-            f"Para explorar sin bajar todo, usa --limite N."
-        )
+
+def tramos_por_fecha(cliente, query, ini, fin, orden="relevance", tope=None,
+                     max_tramos=MAX_TRAMOS, avisos=None, log=_nada):
+    """Parte [ini, fin] en tramos de fecha de publicacion que quepan en el tope.
+
+    Cada tramo hace la misma peticion de esearch que haria la consulta
+    entera. Si el conteo cabe, el tramo es hoja y ya trae sus PMIDs; si no,
+    se parte a la mitad y se vuelve a preguntar. No hay un paso previo de
+    contar con rettype=count: ahorraria unos 100 KB de ids por nodo interno
+    y a cambio abriria una carrera entre contar y pedir (un tramo que cuenta
+    9 990 y al pedirlo trae 10 003). Una peticion por nodo, y lo que esa
+    peticion devuelve es lo que vale.
+
+    Devuelve [{"desde", "hasta", "n", "pmids"}] en orden cronologico. Las
+    mitades vacias se descartan. Un solo dia que rebase el tope no se puede
+    partir mas y es error: devolver una parte seria truncar en silencio.
+    """
+    tope = TOPE_ESEARCH if tope is None else tope
+    tramos = []
+    # Pila: se apila primero la mitad derecha para sacar la izquierda antes.
+    pendientes = [(ini, fin)]
+    while pendientes:
+        a, b = pendientes.pop()
+        total, pmids = _esearch(cliente, query, orden, tope, a, b, avisos)
+        if total == 0:
+            continue
+        if total <= tope:
+            tramos.append({"desde": _texto_fecha(a), "hasta": _texto_fecha(b),
+                           "n": total, "pmids": pmids})
+            log(f"  tramo {_texto_fecha(a)} - {_texto_fecha(b)}: "
+                f"{total} articulos")
+        elif a == b:
+            raise ErrorPubMed(
+                f"El dia {_texto_fecha(a)} trae {total} resultados y PubMed "
+                f"solo entrega {tope} de un mismo conjunto: no se puede partir "
+                f"mas por fecha. Acota la consulta o usa --limite.")
+        else:
+            medio = _punto_medio(a, b)
+            pendientes.append((medio + datetime.timedelta(days=1), b))
+            pendientes.append((a, medio))
+        if len(tramos) + len(pendientes) > max_tramos:
+            raise ErrorPubMed(
+                f"La particion por fecha paso de {max_tramos} tramos; algo "
+                f"esta mal en las fechas o en la consulta.")
+    return tramos
+
+
+def buscar_pmids(cliente, query, mindate=None, maxdate=None, orden="relevance",
+                 limite=None, avisos=None, tramos=None, log=_nada, tope=None):
+    """esearch de una consulta. Devuelve (total_reportado, lista_de_pmids).
+
+    Se traen los PMIDs completos ANTES de descargar nada. Asi se puede
+    comparar contra la base y bajar solo lo que falta.
+
+    Hasta el tope, una sola peticion con retmax al maximo: para PubMed no
+    hay segunda pagina que valga. Por encima del tope, y sin `limite`, la
+    consulta se parte por fecha de publicacion con tramos_por_fecha() y se
+    une sin duplicar; `tramos`, si se pasa una lista, recibe la descripcion
+    de cada tramo sin sus PMIDs, para que quepa en la bitacora. Devolver
+    solo lo que cupiera seria lo peor posible: el llamador no distingue una
+    lista completa de una truncada, guardaria 10,000 de 25,000 y cerraria
+    la ejecucion con estatus 'ok'.
+
+    Con `limite` el usuario ya dijo que no quiere todo: se recorta y ya,
+    sin partir. Las fechas aceptan YYYY, YYYY/MM o YYYY/MM/DD y viajan
+    siempre como dia completo, con la misma semantica que les da NCBI.
+    """
+    tope = TOPE_ESEARCH if tope is None else tope
+    ini = fin = None
+    if mindate or maxdate:
+        ini = _fecha(mindate) if mindate else FECHA_MINIMA
+        fin = _fecha(maxdate, fin=True) if maxdate else FECHA_MAXIMA
+        if ini > fin:
+            raise ErrorPubMed(
+                f"El rango de fechas esta al reves: {_texto_fecha(ini)} es "
+                f"posterior a {_texto_fecha(fin)}.")
+
+    total, pmids = _esearch(cliente, query, orden, tope, ini, fin, avisos)
+
+    if total > tope and not limite:
+        log(f"PubMed reporta {total} articulos y solo entrega {tope} de un "
+            f"mismo conjunto: se parte por fecha de publicacion.")
+        partes = tramos_por_fecha(cliente, query, ini or FECHA_MINIMA,
+                                  fin or FECHA_MAXIMA, orden, tope,
+                                  avisos=avisos, log=log)
+        # Desde 2014 [dp] empata la fecha impresa y la electronica, asi que
+        # un articulo puede caer en dos tramos: la union lo cuenta una vez.
+        pmids = list(dict.fromkeys(p for t in partes for p in t["pmids"]))
+        suma = sum(t["n"] for t in partes)
+        if tramos is not None:
+            tramos.extend({"desde": t["desde"], "hasta": t["hasta"], "n": t["n"]}
+                          for t in partes)
+        log(f"  {len(partes)} tramos, {len(pmids)} PMIDs distintos; el orden "
+            f"es por fecha, no por relevancia.")
+        if len(pmids) < total:
+            log(f"  AVISO: la union de los tramos trae {len(pmids)} PMIDs y "
+                f"PubMed reporta {total}; faltan {total - len(pmids)}. Un "
+                f"articulo sin fecha de publicacion indexada no cae en "
+                f"ningun tramo.")
+        elif suma > total:
+            log(f"  {suma - total} articulos aparecen en dos tramos (fecha "
+                f"impresa y electronica); la union los cuenta una vez.")
 
     if limite:
         pmids = pmids[:limite]
@@ -281,22 +418,31 @@ def parsear_articulos(xml_bytes):
     return salida
 
 
-def traer_articulos(cliente, pmids, tam_lote=200, al_avanzar=None):
-    """efetch por lista explicita de PMIDs (no por historial).
+def iterar_articulos(cliente, pmids, tam_lote=200):
+    """efetch por lista explicita de PMIDs (no por historial), lote a lote.
 
-    Con lista explicita se controla exactamente que se pide, que es lo
-    que permite pedir solo la diferencia contra la base.
+    Rinde (registros, hechos, total) despues de cada lote, para que quien
+    llama guarde en la base conforme llega y no al final: con 400 lotes, lo
+    que se descarga en memoria y se escribe al terminar se pierde entero si
+    la corrida se corta en el 399. Con lista explicita se controla
+    exactamente que se pide, que es lo que permite pedir solo la diferencia
+    contra la base.
     """
-    todos = []
     for i in range(0, len(pmids), tam_lote):
         lote = pmids[i:i + tam_lote]
         xml_bytes = cliente.eutils("efetch.fcgi", {
             "db": "pubmed", "id": ",".join(lote), "retmode": "xml",
         })
-        regs = parsear_articulos(xml_bytes)
+        yield parsear_articulos(xml_bytes), min(i + tam_lote, len(pmids)), len(pmids)
+
+
+def traer_articulos(cliente, pmids, tam_lote=200, al_avanzar=None):
+    """Todos los registros de una vez. Envoltorio de iterar_articulos()."""
+    todos = []
+    for regs, hechos, total in iterar_articulos(cliente, pmids, tam_lote):
         todos.extend(regs)
         if al_avanzar:
-            al_avanzar(min(i + tam_lote, len(pmids)), len(pmids), len(regs))
+            al_avanzar(hechos, total, len(regs))
     return todos
 
 

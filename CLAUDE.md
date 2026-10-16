@@ -40,6 +40,10 @@ lexica, no una afirmacion, y va etiquetada como tal.
 ETL de literatura biomedica desde PubMed. Recibe consultas booleanas,
 descarga abstracts por lotes y mantiene el estado en SQLite. En un segundo
 lote opcional descarga texto completo (XML de PMC, PDF de acceso abierto).
+Cerrado no quiere decir intocable: el 13-oct-2026 gano la particion por fecha
+para consultas de mas de 10 000 resultados, el guardado por lote y la
+exportacion por consulta, porque es el servicio que otros proyectos del
+laboratorio usan para sus propias consultas.
 
 **El valor central es no volver a descargar lo que ya se tiene, y saber en
 todo momento que se tiene.** Sin eso, cada estudiante del laboratorio corre su
@@ -193,7 +197,9 @@ barata de romper algo sin enterarse.
   publico.
 - `salidas/` tambien esta ignorado.
 - **Entrenar con la base curada** (8-oct-2026, PLAN.md:44): corre en el
-  servidor del asesor, donde vive el `.xlsx`. Desde el 9-oct-2026 lo puede
+  servidor del asesor. El `.xlsx` no estaba ahi: el usuario lo sube una sola
+  vez, fuera del clon (`~/grn-guillermo/`), y de ahi no sale. Desde el
+  9-oct-2026 lo puede
   lanzar tambien una sesion de Claude abierta ahi, con el asesor avisado,
   pero solo con `python -m grn_verificacion.cli reentrenar` y solo dentro de
   `~/grn-guillermo`. `grn_verificacion/validacion.py`, `entrenamiento.py` y
@@ -218,8 +224,10 @@ grn_etl/               paso 0, cerrado
   db.py                  esquema SQLite y todo el SQL del paso 0
   pubmed.py              clientes de E-utilities, PMC, Europe PMC, Unpaywall
   etl.py                 orquestacion
+  exportar.py            CSV, JSONL y el paquete zip por consulta
   trabajos.py            gestor de trabajos en segundo plano, uno a la vez
   credenciales.py        entorno primero, archivo despues
+queries/               las queries booleanas, para registrarlas con query add
 grn_bronce/            paso 1, en construccion
   texto.py               segmentacion en oraciones y offsets absolutos
   operones.py            el catalogo y la UNICA expansion operon -> genes
@@ -339,7 +347,7 @@ administra unicamente sus tablas.
 | tabla | rol |
 |---|---|
 | `consultas` | la query booleana con nombre |
-| `ejecuciones` | bitacora de cada corrida del ETL |
+| `ejecuciones` | bitacora de cada corrida del ETL; `parametros` (JSON) guarda orden, limite, fechas, lote, pausa y los tramos |
 | `documentos` | un articulo, unico por PMID |
 | `consulta_documento` | que consulta trajo que documento (N a N) |
 | `descargas` | estado de full text por PMID y tipo (`xml` / `pdf`) |
@@ -379,9 +387,15 @@ descargar todo el solapamiento, que en este dominio es enorme.
 
 De ahi sale la idempotencia. El flujo de `ingestar()`:
 
-1. `esearch` trae la lista completa de PMIDs, sin descargar contenido.
-2. Se resta contra `documentos` via `db.pmids_conocidos()`.
-3. `efetch` solo de la diferencia.
+1. `esearch` trae la lista completa de PMIDs, sin descargar contenido. Si la
+   consulta pasa de 10 000 (el tope de PubMed por conjunto), se parte sola
+   por fecha de publicacion con `pubmed.tramos_por_fecha()` y se une sin
+   duplicar; con `--limite` se recorta y no se parte.
+2. Se resta contra `documentos` via `db.pmids_conocidos()`, y los conocidos
+   se vinculan de inmediato.
+3. `efetch` solo de la diferencia, **lote a lote: cada lote se guarda y se
+   vincula en cuanto llega**, no al final. Una corrida cortada conserva los
+   lotes previos y cierra `'error'` con los contadores reales.
 4. Se vinculan **todos** los PMIDs a la consulta, no solo los nuevos.
 
 El paso 4 importa: un articulo que ya estaba por otra consulta igual
@@ -396,6 +410,7 @@ Romper la idempotencia es un defecto grave, no una regresion menor.
 | alta de consulta | `SELECT` por nombre; si existe, actualiza |
 | insercion de documento | `ON CONFLICT(pmid) DO NOTHING` |
 | vinculo consulta-documento | `ON CONFLICT(consulta_id, pmid) DO NOTHING` |
+| descarga de abstracts | por lote: los dos `ON CONFLICT` de arriba despues de cada efetch; la recorrida resta contra `documentos` y pide solo lo que falta |
 | creacion de corpus | `ON CONFLICT(corpus_id, pmid) DO NOTHING`, y `ValueError` si el nombre ya existe con otro conjunto |
 | descarga de full text | `UNIQUE(pmid, tipo)` mas el filtro de `pendientes_descarga()` |
 
@@ -482,12 +497,13 @@ unidad. Todo es exportable a CSV.
 
 ```bash
 python3 cli.py query add <nombre> --archivo queries/<x>.txt
-python3 cli.py run <nombre> [--limite N] [--orden pub_date]
+python3 cli.py run <nombre> [--limite N] [--orden pub_date] [--desde 2010 --hasta 2024] [--pausa 5]
 python3 cli.py fulltext --tipo xml      # primero XML
 python3 cli.py fulltext --tipo pdf      # luego PDF
 python3 cli.py estado
-python3 cli.py log
+python3 cli.py log                      # con lo que se pidio en cada corrida
 python3 cli.py export <nombre> --formato jsonl
+python3 cli.py export <nombre> --formato zip [--con-pdf]   # paquete para terceros, en <datos>/exportaciones
 python3 cli.py export --pendientes      # los que faltan, para la biblioteca
 
 python3 cli.py corpus crear --nombre v1 --consulta <nombre>
@@ -559,7 +575,7 @@ contra rutas fijas que salen de `__file__`, no por prefijo: en la raiz viven
 `.key`, la base y el codigo, y apuntar un manejador de archivos estatico ahi
 los expondria.
 
-Bajo `/api/` hay tres familias de rutas que si entregan archivos. Las dos del
+Bajo `/api/` hay cuatro familias de rutas que si entregan archivos. Las dos del
 corpus son `/api/documentos/<pmid>/texto` y `/api/documentos/<pmid>/pdf`. La
 ruta de disco **se arma con el PMID y el PMCID validados** (`^\d{1,12}$` y
 `^PMC\d{1,12}$`) mas la convencion de nombres, nunca leyendo
@@ -578,6 +594,16 @@ además tiene que estar en el listado), y `servidor.py` comprueba otra vez con
 `Content-Length` bytes: `flujo.log` crece mientras el flujo corre, y con
 HTTP/1.1 los bytes de más se leerían como el principio de la siguiente
 respuesta.
+
+La cuarta son los paquetes por consulta: `/api/exportaciones` lista y
+`/api/exportaciones/<nombre>` entrega, siempre como descarga. La carpeta es
+`<datos>/exportaciones` y sale de la raiz de datos al arrancar, nunca de una
+peticion; el nombre lo valida `exportar.ruta_exportacion` (patron cerrado con
+extension `zip`, `csv` o `jsonl`, listado, hijo directo) y `servidor.py`
+comprueba otra vez con `_dentro_de`. El paquete lo arma el trabajo `exportar`
+(`POST /api/trabajo`), que no exige correo porque no sale a la red, y que
+recibe de la peticion solo que consulta y si lleva PDF: de donde lee el texto
+completo y donde deja el zip son rutas del servidor.
 
 El aspecto es el sistema Nocturne, cuya referencia esta en
 `web/UI mockups request/` (no se sirve ni se ejecuta: es un lienzo de diseno y
@@ -621,6 +647,11 @@ Las pruebas que no pueden faltar:
 - **Idempotencia del ETL**: correr la misma ingesta dos veces y verificar que
   la segunda no llama a `efetch`
   (`pruebas/test_idempotencia.py::PruebasSegundaCorrida`).
+- **Mas de 10 000 resultados no se truncan ni se duplican**
+  (`pruebas/test_tramos.py`): la particion por fecha devuelve el universo
+  entero, un dia indivisible falla con el dia en el mensaje, y el corte en el
+  lote k deja k-1 lotes guardados (`test_idempotencia.py::PruebasPorLote`).
+  Diez corridas recortadas a 1 000 pasaron por completas antes de esto.
 - **Idempotencia del flujo y del paso 2**: la segunda corrida de `flujo.py` sale
   toda «saltado» (`pruebas/test_flujo.py`), y la segunda clasificacion no llama
   al modelo; la cache del BioBERT es por texto marcado, no por `id_par`, y
@@ -814,7 +845,8 @@ articulo, 180 IDs por llamada al ID Converter). Lo que quedo abierto:
    fines de semana o entre las 21:00 y las 5:00 hora del Este, con la misma
    sancion de bloqueo por IP que la tasa de peticiones. Un `fulltext` sobre
    mil documentos a media manana cae justo en la ventana que pide evitar.
-   Arreglo: que `cli.py` estime las peticiones antes de lanzar y avise.
+   Desde el 13-oct-2026 `ingestar()` lo recuerda en el log cuando la corrida
+   pasa de 100 peticiones; falta hacerlo antes de lanzar y para `fulltext`.
 4. **No usamos EPost ni el History server.** Pasamos listas explicitas de
    PMIDs en lotes de 200. Es una via documentada y va por POST, asi que no
    incumple nada, pero el 200 se eligio como si fuera un tope y no lo es: la
@@ -827,11 +859,14 @@ articulo, 180 IDs por llamada al ID Converter). Lo que quedo abierto:
    pasa.
 6. **Falta el aviso de exencion de responsabilidad.** NBK25497 usa "must":
    quien use E-utilities dentro de software tiene que mostrar a sus usuarios
-   la liga a https://www.ncbi.nlm.nih.gov/About/disclaimer.html . Son tres
-   lineas: pie del tablero, epilogo del CLI y parrafo del README.
+   la liga a https://www.ncbi.nlm.nih.gov/About/disclaimer.html . El README y
+   el `LEEME.txt` de cada paquete exportado ya la llevan (13-oct-2026); faltan
+   el pie del tablero y el epilogo del CLI.
 7. **Umbral para dejar E-utilities.** Si el corpus objetivo llega de forma
    sostenida a decenas de miles de articulos, la via que NCBI senala no es mas
-   paginacion sino la descarga local de MEDLINE/PubMed.
+   paginacion sino la descarga local de MEDLINE/PubMed. La particion por fecha
+   (13-oct-2026) resuelve el tope de 10 000 por consulta, no este umbral: una
+   consulta de 83 638 son ~480 peticiones, y eso todavia cabe.
 
 ## Deuda resuelta
 

@@ -10,9 +10,15 @@ Ninguna de las dos habla con la terminal: reportan por callback. Por eso
 el mismo codigo sirve para el CLI de hoy y para un endpoint HTTP manana.
 """
 
+import time
 from pathlib import Path
 
 from . import db, pubmed
+
+# NBK25497 pide correr los trabajos grandes en fin de semana o de noche
+# (hora del Este), y habla de "mas de 100 peticiones". Python 3.8 no trae
+# zoneinfo, asi que el aviso es texto y la hora la juzga quien corre.
+PETICIONES_GRANDE = 100
 
 
 def _nada(*_a, **_k):
@@ -22,57 +28,83 @@ def _nada(*_a, **_k):
 # ------------------------------------------------------------- abstracts
 
 def ingestar(con, cliente, nombre_consulta, orden="relevance", limite=None,
-             mindate=None, maxdate=None, tam_lote=200, log=_nada):
+             mindate=None, maxdate=None, tam_lote=200, pausa=0, log=_nada):
     """Corre una consulta y guarda los abstracts que falten.
 
-    El flujo es: pedir a PubMed la lista completa de PMIDs, restarle lo
-    que ya esta en la base, y descargar solo la diferencia. Correr esto
-    dos veces seguidas no genera trafico de descarga la segunda vez.
+    El flujo es: pedir a PubMed la lista completa de PMIDs (por tramos de
+    fecha si pasa de 10 000), restarle lo que ya esta en la base, y
+    descargar solo la diferencia, lote a lote. Cada lote se guarda y se
+    vincula en cuanto llega: una corrida de 400 lotes que se corta en el
+    399 conserva 398, y volver a lanzarla pide solo lo que falta. Correr
+    esto dos veces seguidas no genera trafico de descarga la segunda vez.
+
+    `pausa` son segundos de espera entre lotes de efetch, ademas del
+    limitador de tasa del cliente; por omision ninguna.
     """
     consulta = db.obtener_consulta(con, nombre_consulta)
     if not consulta:
         raise ValueError(f"No existe la consulta '{nombre_consulta}'")
 
-    ejecucion_id = db.abrir_ejecucion(con, consulta["id"])
+    parametros = {"orden": orden, "limite": limite, "desde": mindate,
+                  "hasta": maxdate, "lote": tam_lote, "pausa": pausa}
+    ejecucion_id = db.abrir_ejecucion(con, consulta["id"], parametros)
 
+    total = None
+    conocidos, faltantes = set(), []
+    descargados = 0
     try:
-        avisos = []
+        avisos, tramos = [], []
         log(f"Buscando en PubMed (orden: {orden})...")
         total, pmids = pubmed.buscar_pmids(
-            cliente, consulta["texto"], mindate, maxdate, orden, limite, avisos
+            cliente, consulta["texto"], mindate, maxdate, orden, limite,
+            avisos, tramos=tramos, log=log,
         )
         for a in avisos:
             log(f"  aviso de NCBI: {a}")
         log(f"PubMed reporta {total} articulos; se consideran {len(pmids)}.")
+        if tramos:
+            parametros["tramos"] = tramos
 
         conocidos = db.pmids_conocidos(con, pmids)
         faltantes = [p for p in pmids if p not in conocidos]
         log(f"Ya en la base: {len(conocidos)}   por descargar: {len(faltantes)}")
 
-        descargados = 0
-        if faltantes:
-            def avance(hechos, total_f, n):
-                log(f"  efetch {hechos}/{total_f} (+{n} registros)")
+        # Lo que ya esta en la base se vincula antes de bajar nada: un
+        # articulo descargado por otra consulta tambien pertenece a esta, y
+        # si la corrida se corta, lo que no costo trafico ya quedo ligado.
+        db.vincular(con, consulta["id"],
+                    [p for p in pmids if p in conocidos], ejecucion_id)
 
-            registros = pubmed.traer_articulos(
-                cliente, faltantes, tam_lote, al_avanzar=avance
-            )
-            descargados = db.guardar_documentos(con, registros)
+        n_lotes = -(-len(faltantes) // tam_lote)
+        if 1 + 2 * len(tramos) + n_lotes > PETICIONES_GRANDE:
+            log(f"  Corrida grande (~{1 + 2 * len(tramos) + n_lotes} peticiones): "
+                f"NCBI pide hacerlas en fin de semana o entre 21:00 y 5:00, "
+                f"hora del Este (NBK25497).")
 
-            recuperados = {r["pmid"] for r in registros}
-            perdidos = set(faltantes) - recuperados
-            if perdidos:
-                log(f"  {len(perdidos)} PMIDs no devolvieron registro "
-                    f"(retirados o de tipo Book)")
+        # El gestor del tablero guarda 400 lineas: con 420 lotes, una linea
+        # por lote tiraria justo las primeras, que son los tramos.
+        cada = max(1, n_lotes // 40)
+        recuperados = set()
+        for i, (registros, hechos, total_f) in enumerate(
+                pubmed.iterar_articulos(cliente, faltantes, tam_lote), 1):
+            descargados += db.guardar_documentos(con, registros)
+            del_lote = [r["pmid"] for r in registros]
+            recuperados.update(del_lote)
+            # Los que efetch no devolvio no se vinculan: db.vincular() no
+            # liga lo que no esta en 'documentos'.
+            db.vincular(con, consulta["id"], del_lote, ejecucion_id)
+            if i % cada == 0 or hechos == total_f:
+                log(f"  efetch {hechos}/{total_f} ({descargados} guardados)")
+            if pausa > 0 and hechos < total_f:
+                time.sleep(pausa)
 
-        # Se vinculan TODOS los pmids, no solo los nuevos: un articulo ya
-        # descargado por otra consulta tambien pertenece a esta. Los que
-        # efetch no devolvio los descarta db.vincular(), que no liga lo que
-        # no esta en 'documentos'.
-        db.vincular(con, consulta["id"], pmids, ejecucion_id)
+        perdidos = set(faltantes) - recuperados
+        if perdidos:
+            log(f"  {len(perdidos)} PMIDs no devolvieron registro "
+                f"(retirados o de tipo Book)")
 
         db.cerrar_ejecucion(
-            con, ejecucion_id, "ok",
+            con, ejecucion_id, "ok", parametros=parametros,
             total_pubmed=total, pmids_nuevos=len(faltantes),
             pmids_previos=len(conocidos), descargados=descargados,
         )
@@ -83,7 +115,16 @@ def ingestar(con, cliente, nombre_consulta, orden="relevance", limite=None,
         }
 
     except Exception as e:
-        db.cerrar_ejecucion(con, ejecucion_id, "error", error=str(e)[:500])
+        # Los contadores reales hasta donde llego, no NULL: si el corte fue
+        # en el lote 140, 'descargados' dice 139 lotes y la bitacora deja de
+        # mentir por omision. Si ni el esearch corrio, no hay nada que decir.
+        db.cerrar_ejecucion(
+            con, ejecucion_id, "error", parametros=parametros,
+            error=str(e)[:500], total_pubmed=total,
+            pmids_nuevos=None if total is None else len(faltantes),
+            pmids_previos=None if total is None else len(conocidos),
+            descargados=descargados,
+        )
         raise
 
 

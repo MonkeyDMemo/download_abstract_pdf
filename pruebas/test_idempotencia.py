@@ -6,9 +6,13 @@ regresion menor: significa que cada corrida vuelve a pedirle a NCBI lo
 que ya esta en la base.
 """
 
+import json
+import unittest.mock
+
 from grn_etl import db, etl, pubmed
 
 from .falsos import ClienteFalso, PruebaSinRed, articulo_xml
+from .test_tramos import TOPE, parchar_tope, universo_fechado
 
 
 class BasePruebaIngesta(PruebaSinRed):
@@ -314,26 +318,10 @@ class PruebasBusqueda(PruebaSinRed):
         _, _, params = cliente.llamadas[0]
         self.assertEqual(params["retmax"], str(pubmed.TOPE_ESEARCH))
 
-    def test_pasar_del_tope_falla_en_vez_de_truncar_en_silencio(self):
-        """NBK25499: PubMed solo entrega los primeros 10,000 de un conjunto.
-
-        Devolver los que quepan seria lo peor posible: la ejecucion se
-        cerraria con estatus 'ok' y la bitacora diria que el corpus esta
-        completo cuando le faltan dos tercios. Mejor no arrancar.
-        """
-        cliente = ClienteFalso(universo=[str(i) for i in range(500000, 510000)])
-        cliente.total_declarado = 25000      # PubMed reporta mas de los que da
-
-        with self.assertRaises(pubmed.ErrorPubMed) as ctx:
-            pubmed.buscar_pmids(cliente, "query enorme")
-
-        mensaje = str(ctx.exception)
-        self.assertIn("25000", mensaje)
-        self.assertIn("--desde", mensaje, "no dice como partir la consulta")
-
-    def test_con_limite_explicito_un_conjunto_enorme_no_falla(self):
+    def test_con_limite_explicito_un_conjunto_enorme_no_falla_ni_se_parte(self):
         """Con --limite el usuario ya dijo que no quiere todo; recortar ahi
-        no es mentir, es lo que pidio."""
+        no es mentir, es lo que pidio. Pasar del tope sin limite ya no
+        falla: se parte por fecha (ver test_tramos.py)."""
         cliente = ClienteFalso(universo=[str(i) for i in range(500000, 510000)])
         cliente.total_declarado = 25000
 
@@ -341,6 +329,8 @@ class PruebasBusqueda(PruebaSinRed):
 
         self.assertEqual(total, 25000)
         self.assertEqual(len(pmids), 5)
+        self.assertEqual(cliente.n_eutils("esearch.fcgi"), 1,
+                         "con limite no hay nada que partir")
 
     def test_un_error_de_esearch_se_convierte_en_ErrorPubMed(self):
         cliente = ClienteFalso(universo=[])
@@ -362,3 +352,188 @@ class PruebasBusqueda(PruebaSinRed):
         _, _, params = cliente.llamadas[0]
         self.assertEqual(params["term"], query)
         self.assertEqual(params["db"], "pubmed")
+
+
+# --------------------------------------------------- guardado por lote
+
+def falla_en(n_llamada, excepcion):
+    """Una falla de ClienteFalso que salta solo en la n-esima llamada."""
+    return lambda n, params: excepcion if n == n_llamada else None
+
+
+class PruebasPorLote(BasePruebaIngesta):
+    """El principio 2 del proyecto: el estado se escribe despues de cada
+    lote, no al final. Antes ingestar() acumulaba todos los lotes en
+    memoria y guardaba una sola vez: una corrida de 420 lotes cortada en el
+    400 perdia todo."""
+
+    def setUp(self):
+        super().setUp()
+        self.alta("pa")
+        self.universo = [str(i) for i in range(1, 11)]
+
+    def test_el_corte_en_el_lote_k_deja_los_lotes_previos_guardados_y_vinculados(self):
+        cliente = ClienteFalso(
+            universo=self.universo,
+            fallas={"efetch.fcgi": falla_en(3, pubmed.ErrorPubMed("se cayo"))})
+
+        with self.assertRaises(pubmed.ErrorPubMed):
+            etl.ingestar(self.con, cliente, "pa", tam_lote=2, log=self.log)
+
+        self.assertEqual(self.cuenta("documentos"), 4)
+        self.assertEqual(self.cuenta("consulta_documento"), 4)
+        fila = db.historial(self.con, "pa")[0]
+        self.assertEqual(fila["estatus"], "error")
+        self.assertEqual(fila["descargados"], 4, "los contadores son los reales")
+        self.assertEqual(fila["total_pubmed"], 10)
+        self.assertEqual(fila["pmids_nuevos"], 10)
+        self.assertEqual(fila["pmids_previos"], 0)
+
+    def test_la_recorrida_tras_un_corte_solo_pide_el_resto(self):
+        cliente = ClienteFalso(
+            universo=self.universo,
+            fallas={"efetch.fcgi": falla_en(3, pubmed.ErrorPubMed("se cayo"))})
+        with self.assertRaises(pubmed.ErrorPubMed):
+            etl.ingestar(self.con, cliente, "pa", tam_lote=2, log=self.log)
+        cliente.fallas = {}
+        cliente.reiniciar()
+
+        r = etl.ingestar(self.con, cliente, "pa", tam_lote=2, log=self.log)
+
+        self.assertEqual(cliente.pmids_pedidos(), ["5", "6", "7", "8", "9", "10"])
+        self.assertEqual((r["previos"], r["nuevos"], r["descargados"]), (4, 6, 6))
+        self.assertEqual(self.cuenta("documentos"), 10)
+        self.assertEqual(self.cuenta("consulta_documento"), 10)
+
+    def test_los_conocidos_se_vinculan_antes_del_primer_efetch(self):
+        """Un articulo que ya estaba por otra consulta tambien pertenece a
+        esta; ligarlo no cuesta trafico, asi que no espera a la descarga."""
+        self.alta("otra")
+        cliente = ClienteFalso(universos={"query de pa": ["1", "2", "3"],
+                                          "query de otra": ["1", "2", "3", "4", "5"]})
+        etl.ingestar(self.con, cliente, "pa", log=self.log)
+        cliente.fallas = {"efetch.fcgi": pubmed.ErrorPubMed("se cayo")}
+
+        with self.assertRaises(pubmed.ErrorPubMed):
+            etl.ingestar(self.con, cliente, "otra", log=self.log)
+
+        ligados = self.con.execute(
+            """SELECT COUNT(*) c FROM consulta_documento cd
+               JOIN consultas c ON c.id = cd.consulta_id WHERE c.nombre = 'otra'"""
+        ).fetchone()["c"]
+        self.assertEqual(ligados, 3)
+        fila = db.historial(self.con, "otra")[0]
+        self.assertEqual((fila["pmids_previos"], fila["pmids_nuevos"],
+                          fila["descargados"]), (3, 2, 0))
+
+    def test_si_el_esearch_falla_los_contadores_quedan_en_null(self):
+        cliente = ClienteFalso(universo=self.universo,
+                               fallas={"esearch.fcgi": pubmed.ErrorPubMed("sin red")})
+
+        with self.assertRaises(pubmed.ErrorPubMed):
+            etl.ingestar(self.con, cliente, "pa", log=self.log)
+
+        fila = db.historial(self.con, "pa")[0]
+        self.assertIsNone(fila["total_pubmed"])
+        self.assertIsNone(fila["pmids_nuevos"])
+        self.assertEqual(fila["descargados"], 0)
+
+    def test_el_log_de_progreso_cabe_en_el_deque_del_gestor(self):
+        """trabajos.Gestor guarda 400 lineas. 500 lotes con una linea cada
+        uno tirarian las primeras, que son los tramos y los avisos."""
+        cliente = ClienteFalso(universo=[str(i) for i in range(1, 501)])
+
+        etl.ingestar(self.con, cliente, "pa", tam_lote=1, log=self.log)
+
+        avances = [m for m in self.mensajes if m.startswith("  efetch")]
+        self.assertLessEqual(len(avances), 60)
+        self.assertIn("  efetch 500/500 (500 guardados)", avances[-1])
+
+    def test_una_corrida_grande_avisa_la_ventana_de_ncbi(self):
+        cliente = ClienteFalso(universo=[str(i) for i in range(1, 102)])
+
+        etl.ingestar(self.con, cliente, "pa", tam_lote=1, log=self.log)
+
+        self.assertTrue(any("21:00" in m for m in self.mensajes))
+
+    def test_una_corrida_chica_no_avisa_nada(self):
+        cliente = ClienteFalso(universo=["1", "2", "3"])
+
+        etl.ingestar(self.con, cliente, "pa", log=self.log)
+
+        self.assertFalse(any("21:00" in m for m in self.mensajes))
+
+
+class PruebasPausa(BasePruebaIngesta):
+
+    def setUp(self):
+        super().setUp()
+        self.alta("pa")
+        self.cliente = ClienteFalso(universo=[str(i) for i in range(1, 6)])
+
+    def test_la_pausa_duerme_entre_lotes_y_no_despues_del_ultimo(self):
+        with unittest.mock.patch.object(etl.time, "sleep") as sleep:
+            etl.ingestar(self.con, self.cliente, "pa", tam_lote=2, pausa=7,
+                         log=self.log)
+
+        self.assertEqual(sleep.call_args_list,
+                         [unittest.mock.call(7), unittest.mock.call(7)])
+
+    def test_sin_pausa_no_duerme(self):
+        with unittest.mock.patch.object(etl.time, "sleep") as sleep:
+            etl.ingestar(self.con, self.cliente, "pa", tam_lote=2, log=self.log)
+
+        sleep.assert_not_called()
+
+
+class PruebasParametros(BasePruebaIngesta):
+    """Lo que se pidio queda en la bitacora. Diez corridas recortadas a
+    1 000 articulos pasaron por completas porque nada guardaba el limite."""
+
+    def setUp(self):
+        super().setUp()
+        self.alta("pa")
+
+    def parametros(self):
+        return json.loads(db.historial(self.con, "pa")[0]["parametros"])
+
+    def test_los_parametros_quedan_en_la_ejecucion_como_json(self):
+        cliente = ClienteFalso(universo=[str(i) for i in range(1, 11)])
+
+        etl.ingestar(self.con, cliente, "pa", limite=4, mindate="2000",
+                     maxdate="2024", log=self.log)
+
+        self.assertEqual(self.parametros(), {
+            "orden": "relevance", "limite": 4, "desde": "2000", "hasta": "2024",
+            "lote": 200, "pausa": 0})
+
+    def test_los_parametros_se_escriben_al_abrir_y_sobreviven_a_un_error(self):
+        cliente = ClienteFalso(universo=["1"],
+                               fallas={"esearch.fcgi": pubmed.ErrorPubMed("sin red")})
+
+        with self.assertRaises(pubmed.ErrorPubMed):
+            etl.ingestar(self.con, cliente, "pa", limite=9, log=self.log)
+
+        self.assertEqual(self.parametros()["limite"], 9)
+
+    def test_los_tramos_quedan_en_parametros_al_cerrar(self):
+        parchar_tope(self)
+        fechas = universo_fechado()
+        cliente = ClienteFalso(universo=sorted(fechas), fechas=fechas)
+
+        r = etl.ingestar(self.con, cliente, "pa", log=self.log)
+
+        tramos = self.parametros()["tramos"]
+        self.assertEqual(len(tramos), 5)
+        self.assertEqual(set(tramos[0]), {"desde", "hasta", "n"})
+        self.assertEqual(sum(t["n"] for t in tramos), 120)
+        self.assertEqual((r["total_pubmed"], r["descargados"]), (120, 120))
+        self.assertTrue(any("tramo 1995/01/01" in m for m in self.mensajes))
+        self.assertLessEqual(max(t["n"] for t in tramos), TOPE)
+
+    def test_sin_tramos_no_hay_llave_tramos(self):
+        cliente = ClienteFalso(universo=["1", "2"])
+
+        etl.ingestar(self.con, cliente, "pa", log=self.log)
+
+        self.assertNotIn("tramos", self.parametros())

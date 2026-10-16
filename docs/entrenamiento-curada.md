@@ -130,6 +130,29 @@ source ~/grn-guillermo/entorno.sh
 El heredoc va entre comillas: `$HOME` se escribe tal cual y se expande cada
 vez que se carga el archivo.
 
+**La base curada, si no está en el servidor.** Es el único archivo
+confidencial que viaja, y viaja una sola vez: de la laptop directo a
+`~/grn-guillermo/`, fuera del clon (el repositorio es público, y un archivo
+dentro del clon se puede commitear por error). La copia la haces tú, no una
+sesión de Claude. En la laptop, desde PowerShell, la huella (un hash, no el
+contenido) y la copia:
+
+```powershell
+Get-FileHash -Algorithm SHA256 "<ruta local del .xlsx>"
+scp "<ruta local del .xlsx>" asesor:grn-guillermo/GRN_experimental.xlsx
+```
+
+En el servidor, ciérrala y comprueba que llegó entera:
+
+```bash
+chmod 600 ~/grn-guillermo/GRN_experimental.xlsx
+sha256sum ~/grn-guillermo/GRN_experimental.xlsx   # el mismo hash, en minúsculas
+```
+
+`chmod 600` la cierra a las otras cuentas de la máquina, no a quien entre con
+la misma cuenta compartida. Si se queda o se borra al terminar, lo decide el
+asesor.
+
 **Las reservas.** Lo que no puede entrar al entrenamiento:
 
 - los 46 PMIDs y las 50 oraciones de la muestra de juicios con la que se
