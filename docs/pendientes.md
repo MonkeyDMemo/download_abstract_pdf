@@ -40,11 +40,34 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
   - mover `rutas` a `grn_comun` (4.8) pesa más ahora: la importan también el
     CLI del paso 0 y el tablero.
 
+**Lo que cambió el 16-oct-2026** (detalle en la bitácora de ese día). Los
+operones quedaron documentados en dos documentos nuevos: `operones-asesor.md`,
+para el asesor, y `guia-operones.md`, para quien los mantenga.
+
+- **Cerrados:**
+  - 1.11: el PLAN tiene la reunión del 25-sep en su §1.4.
+  - 4.9: las dos guías de máquina dicen cómo regenerar `operones_base.tsv`, y
+    `guia-operones.md` §8 da las tres vías.
+  - 9.9: la historia del 18 al 24-sep quedó reconstruida de los commits, en
+    `guia-operones.md` §0.
+- **Avanzados:**
+  - 1.1: el asesor respondió de palabra; falta la confirmación por escrito, y
+    la pregunta está lista.
+  - 1.2: el comentario de `curar.py` ya cita la regex con `\d+`.
+  - 1.10: las correcciones están escritas; falta mandarlas.
+  - 9.1: el §1 del PLAN ya tiene la reunión del 25-sep, y la fila 34 ya no
+    dice «completar».
+  - 9.3: `CLAUDE.md` ya lista las cinco tablas de `grn_operones`.
+- **Nuevos**, encontrados al documentar y sin arreglar: 3.14 y 4.10 a 4.19.
+
 ## Por dónde empezar
 
-1. **Llevarle al asesor las decisiones 3 y 1** (sección 1). La 3 frena usar
-   los operones como rasgo del paso 2; la 1 frena la mitad del trabajo de
-   diccionario.
+1. **Mandarle al asesor `operones-asesor.md`, con la pregunta escrita de la
+   decisión 3** (§8 de ese documento).
+   - La 3 frena usar los operones como rasgo del paso 2.
+   - La 1 frena la mitad del trabajo de diccionario.
+   - Las dos, y el resto de las de operones, van ahí con nuestra
+     recomendación.
 2. **Bronce v5: disparador dominante [18] y autorregulación [16]** (2.1 y
    2.2), con el DDL de la bandera propuesto antes de escribir código.
 3. **Las dos pruebas de `etapa2` [36] y [37]** (3.2 y 3.3): son arreglos de
@@ -58,45 +81,48 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
 
 ## 1. Preguntas y decisiones para el asesor
 
-1. **Decisión 3: ¿la base curada usó ODB, BioCyc o PGD como fuente de
-   operones?** Hasta saberlo, la pertenencia a operones solo anota las
-   oraciones: no entra como rasgo del paso 2 evaluado contra esa base, y no se
-   puede montar la guarda de contaminación por procedencia (3.13). La pregunta
-   se redactó el 25-sep, antes de que entrara PGD, y ahora tiene que incluirla.
-   `reunion-asesor-25sep.md:192-194`, `decisiones.md:1174-1176`.
+1. **Decisión 3 (abierta): respuesta verbal, probable (semana del 5 al 9 de
+   octubre de 2026). GRN_experimental es la red regulatoria y no una fuente de
+   operones. Falta confirmar por escrito si alguna relación se amplió por
+   pertenencia a operón; hasta entonces la pertenencia solo anota.**
+   - Mientras tanto, la pertenencia no entra como rasgo del paso 2, y no se
+     monta la guarda de contaminación por procedencia (3.13).
+   - La pregunta escrita y lo que cambia con cada respuesta están en
+     `operones-asesor.md` §8.
+   - Lo que hay que tocar cuando llegue está en `guia-operones.md` §11.
 2. **Decisión 1: la regex de locus tag.** Aprobar `^PA\d{4}[a-z]?(\.\d+)?$`,
    que recupera 58 locus que hoy se pierden (entre ellos crcZ, `PA4726.11`, que
    sale como su regulador cbrB cuando el texto lo nombra por locus) y los 22
    promotores de CDBProm con sufijo de letra. Costo: regenerar el diccionario,
    una corrida nueva del bronce y recalcular 95.1 / 84.7 / 44.0; toca el
-   generador y `lexico.py` de `etapa2`. El comentario de
-   `grn_operones/curar.py:68` todavía cita la propuesta vieja, con `\d`.
-   `reunion-asesor-25sep.md:125-142, 184-188`.
+   generador y `lexico.py` de `etapa2`. `reunion-asesor-25sep.md` §2.C y §4.
 3. **Decisión 2: las 16 unidades de BioCyc en `pendiente_revision`** (cita sin
    código de evidencia, 21 PMIDs): ¿conocidas o predichas? Va con otra
    pregunta: hoy los PMIDs y la evidencia se toman de todo el subárbol de la
    unidad, y 16 de las 64 con PMID lo traen solo por su promotor. Tomarlos solo
    de su `citation` cambiaría qué cuenta como conocido.
-   `catalogo-operones.md:161, 172-173, 635-642`.
+   `catalogo-operones.md` §3.2 y §8.
 4. **Decisión 4: CDBProm y la clave de silver.** Validar las dos discrepancias
    del volcado (el encabezado dice F/R y los datos D/R; el rango es de 81 pb y
    la secuencia de 60 nt) y decidir si el inicio de transcripción entra en la
    clave: hoy dos unidades con los mismos genes colapsan y el promotor no dice
-   a cuál pertenece. `catalogo-operones.md:336-342, 393-396, 643-644`.
+   a cuál pertenece. `catalogo-operones.md` §3.4, §4.3 y §8.
 5. **Decisión 6: validar tres decisiones tomadas por cuenta propia.** El modelo
    bronce/silver de cinco tablas, el paquete `grn_operones/` en vez de
    `grn_etl/operones/`, y normalizar con `genes_pao1.tsv` y no con la
-   anotación de pseudomonas.com (que `CONTEXTO_OPERONES.md:105-106` todavía
-   propone). `reunion-asesor-25sep.md:203-206`.
+   anotación de pseudomonas.com (que proponía el encargo, regla 1 de
+   `CONTEXTO_OPERONES.md`). `reunion-asesor-25sep.md` §4.
 6. **Decisión 7 [34]: los 103 operones del corpus que no están en el
    catálogo.** El 27-sep se midió que los mayores (exoSTY, rsmZY, phzMS, lasRI,
    cyaAB) son genes separados que el texto abrevia juntos, y solo 3 de los 103
    tienen su conjunto exacto en la base de operones: completarlos tal cual
-   metería uniones que no se cotranscriben. La fila 34 del PLAN todavía dice
-   «completar». `decisiones.md:1127-1134`, `bitacora.md:242-247`.
+   metería uniones que no se cotranscriben. Recomendación: dejarlos como lista
+   de huecos (`operones-asesor.md` §7). `decisiones.md` («La base de operones
+   anota el bronce, no lo detecta»), bitácora del 27-sep (tarde).
 7. **Contar la literatura de operones por PMID único.** ODB, BioCyc y
    PseudoCAP pueden citar el mismo artículo, y hoy cuentan como respaldos
-   distintos en `n_fuentes`. `decisiones.md:1060-1062`, `curar.py:44-47`.
+   distintos en `n_fuentes`. `decisiones.md` («Lo que la integración
+   destapó»), `curar.py` («La trampa de contar fuentes»).
 8. **Las seis preguntas de la sección 4 del PLAN** (`PLAN.md:183-188`):
    - P1: qué hacer con las 66 filas de homología que traen además una cita
      directa. La exclusión de las 2 850 ya está acordada y medida.
@@ -119,10 +145,12 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
     operones con promotor no eran 1 350 (hoy son 1 574, ya con PGD), y PGD y
     BioCyc no comparten Pathway Tools. La decisión 5 (buscar un volcado de PGD)
     quedó superada: los operones entraron por la exportación de su curador.
-    `bitacora.md:268-296`.
+    Bitácora del 27-sep. *Escrito el 16-oct-2026 en la fe de erratas del guion
+    y en `operones-asesor.md` §9; falta mandarlo.*
 11. **Registrar la reunión del 25-sep en el §1 del PLAN**, con lo que pidió ahí
     el asesor (los operones de pseudomonas.com) y las decisiones que quedaron
-    sin respuesta; después, cada respuesta que llegue. `PLAN.md:17-45`.
+    sin respuesta; después, cada respuesta que llegue. *Cerrado el
+    16-oct-2026: `PLAN.md` §1.4.*
 12. **Aviso escrito al asesor antes de usar Claude Code en la máquina del
     laboratorio.** Solo aplica si se usa ahí; hoy el trabajo corre en la
     laptop. `CLAUDE.md:548-552`.
@@ -156,7 +184,7 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
    - la capa de sinónimos desde NCBI Gene (`gene_info` más un
      `sinonimos_manual.tsv` con autor, fecha y PMID): diseñada y no empezada,
      y las «tres condiciones acordadas» no están escritas en el repositorio
-     (`reunion-asesor-25sep.md:172-174, 247-248`);
+     (`reunion-asesor-25sep.md` §3 y §6);
    - **[35]** PA14 → PAO1 por ortología: 377 locus `PA14_#####`, 837
      menciones. Primero el mapeo y solo después el tokenizador, que hoy parte
      el guion bajo. `PLAN.md:167` y `PLAN.md:83` se contradicen sobre si toda
@@ -252,6 +280,9 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
     `etapa2/README.md:269-272`.
 13. **Guarda de contaminación por procedencia de operones**, cuando llegue la
     decisión 3 (1.1).
+14. **Ninguna prueba ejercita el paso `operones` del flujo**: ni omitido cuando
+    falta `operones_base.tsv`, ni con `--rehacer-operones`.
+    `pruebas/test_flujo.py`, `guia-operones.md` §6.
 
 ## 4. Catálogo de operones
 
@@ -282,7 +313,48 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
 8. **Mover `rutas` de `grn_bronce` a `grn_comun`.** `grn_operones/fuentes.py:40-45`.
 9. **Las guías de máquina no dicen cómo generar `operones_base.tsv`**
    (`catalogo --paso1`, con cuenta de BioCyc): en una máquina nueva el bronce
-   reporta «recurso ausente».
+   reporta «recurso ausente». *Cerrado el 16-oct-2026: nota en las dos guías
+   de máquina y las tres vías en `guia-operones.md` §8. Con la base copiada no
+   hace falta la cuenta de BioCyc.*
+
+Los que siguen se encontraron el 16-oct-2026, al documentar los operones. El
+detalle de cada uno está en `guia-operones.md` §12.
+
+10. **Las entradas del paso `operones` de `flujo.py` están incompletas.**
+    Declara `operones_pao1.tsv`, `curar.py` y `exportar.py`. No declara la
+    base de datos, los crudos, el resto del paquete, `genes_pao1.tsv`, el GFF
+    ni `grn_bronce/operones.py`. Un cambio en ellos no rehace el paso, y hoy
+    hace falta `--forzar operones`.
+11. **`extraer` y `reparsear` salen con 0 aunque falle una fuente** por
+    credenciales, red o un crudo que falta. En cambio, un XML ilegible o un
+    `--archivo` que no existe terminan con traza. `grn_operones/cli.py`.
+12. **Una extracción fallida cuenta como corrida fallida.** Pasa en dos casos:
+    - la que no trae archivos queda incompleta, como CDBProm en cada
+      `extraer --fuente todo` sin `--url` ni `CDBPROM_URL`;
+    - la que falla antes de bajar queda abierta, como BioCyc sin
+      credenciales.
+
+    A la segunda, `curar` pide revisar la foto. `fuentes.extraer`,
+    `db.edad_de_la_foto`.
+13. **`extraer --archivo` exige el correo de contacto** aunque no haga ninguna
+    petición.
+14. **El CSV de conflictos no trae `nombre`**: la unidad solo se identifica
+    por sus locus. `exportar.COLUMNAS_CONFLICTOS`.
+15. **Código muerto:** `fuentes.URL_ODB_TABLA` y `--max-paginas`, que se acepta
+    y no hace nada.
+16. **La ruta del crudo es la de la máquina que bajó.** `reparsear` usa
+    `operones_descargas.ruta` tal cual, y una ruta de Windows no se resuelve en
+    Linux.
+17. **La autorregulación por operón cuenta operones sintéticos.**
+    `etapa2/extraer_pares.py` usa `lexico.miembros_operon`, que incluye las
+    concatenaciones del texto, mientras el resto del proyecto expande solo por
+    tabla. Está en `etapa2`, congelada: el arreglo cuenta como corrección de
+    error.
+18. **`pares_informe.json` no sella `operones_pao1.tsv`**, con el que el
+    puente expande el blanco de un par. Sí sella `genes_pao1.tsv`.
+19. **La capa corrida a mano puede mezclar dos versiones de la base:**
+    `operones_en_oracion` viene del bronce, y `operones_del_blanco` del
+    `operones_base.tsv` del momento. Por el flujo no pasa.
 
 ## 5. Paso 0 y NCBI
 
@@ -386,7 +458,9 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
     capa.
 12. **Operones en la red: expansión o anotación** (paso 3). El catálogo con
     nivel de evidencia puede informarlo; la pertenencia como rasgo espera la
-    decisión 3.
+    decisión 3. Es la D9 de `operones-asesor.md` §7, con la recomendación de
+    expandir con el catálogo del paso 1 y conservar la arista original como
+    procedencia.
 13. **Independencia de los 307 pares con dos o más PMIDs.**
 14. **RegulomePA como contraste.**
 15. **Texto completo contra resumen**: el modelo ya corrió sobre todo el
@@ -409,18 +483,18 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
 ## 9. Documentación, entorno y limpieza
 
 1. **`PLAN.md`**: el §2 describe la corrida 1 (488 221 menciones, 239
-   disparadores) y no la 4; el §1 no tiene la reunión del 25-sep; la fila 30
-   todavía propone scispaCy y la 34 dice «completar»; los pendientes de
-   `grn_operones` no tienen filas.
+   disparadores) y no la 4; la fila 30 todavía propone scispaCy; los
+   pendientes de `grn_operones` no tienen filas. El §1 ya tiene la reunión del
+   25-sep, y la fila 34 ya no dice «completar» (16-oct).
 2. **Referencias colgantes a `PLAN.md`**: `CLAUDE.md:547` remite a una
    «sección 7» que no existe; `CLAUDE.md:560` dice que los pasos 2 y 3 están
    descritos ahí como panorama (se quitaron en `96d80db`); `CLAUDE.md`, el
    README y el steering lo describen con «sus tablas y sus contratos».
 3. **`CLAUDE.md`**: `menciones.tipo` toma ocho valores, no siete (falta
    `contexto_regulatorio`, desde la corrida 3); el modelo de datos no lista las
-   cinco tablas de `grn_operones`; la carpeta `queries/` no existe (las
-   consultas están en la raíz); y la descripción de la suite de la raíz omite
-   `grn_operones`.
+   cinco tablas de `grn_operones` (resuelto el 16-oct); la carpeta `queries/`
+   no existe (las consultas están en la raíz); y la descripción de la suite de
+   la raíz omite `grn_operones`.
 4. **Steering de Kiro**: `dominio-grn.md` prevé un diccionario desde PGD, que
    es vía cerrada; `migracion-servicio.md` da por pendiente el encolado, que ya
    resolvió `trabajos.Gestor`.
@@ -436,7 +510,8 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
 8. **Versionar el análisis de scispaCy**, que hoy solo existe en la
    conversación del 27-sep.
 9. **La bitácora no tiene entradas del 18 al 24-sep**, cuando se construyó
-   `grn_operones`.
+   `grn_operones`. *Cerrado el 16-oct-2026: reconstruido de los commits en
+   `guia-operones.md` §0.*
 10. **La rama `etapa2-reparticion`** está fusionada en `main` y sin borrar, en
     local y en `origin`.
 11. **El torch del Python del sistema está roto** desde la instalación fallida
