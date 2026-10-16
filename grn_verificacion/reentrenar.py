@@ -2074,6 +2074,7 @@ class _Corrida:
         protocolo. No depende del modelo: se conoce antes de entrenar, y la
         evaluación tiene que dar la misma. Solo números."""
         total = collections.Counter()
+        arts_por_clase = collections.defaultdict(set)
         pliegues = collections.OrderedDict()
         for i in range(self.folds):
             pliegue = "fold_%d" % i
@@ -2086,6 +2087,8 @@ class _Corrida:
             y = [e["label"] for e in prueba]
             conteos = conteos_confusion(y, yhat)
             total.update(conteos)
+            for e in prueba:
+                arts_por_clase[e["label"]].add(str(e["pmid"]))
             por_clase = collections.Counter(y)
             pliegues[pliegue] = collections.OrderedDict([
                 ("n", len(prueba)),
@@ -2102,6 +2105,9 @@ class _Corrida:
             ("articulos", sum(f["articulos"] for f in pliegues.values())),
             ("con_par_en_train", sum(f["con_par_en_train"]
                                      for f in pliegues.values())),
+            # Cada ejemplo es test en un solo pliegue: esto es el corpus.
+            ("articulos_por_clase", dict(
+                (e, len(arts_por_clase.get(e, ()))) for e in E.ETIQUETAS)),
             ("macro_f1", metricas_de_conteos(total, self.etiquetas)[
                 "macro_f1"])])
 
@@ -2896,9 +2902,11 @@ def informe(estado, r=None):
       "temprano con paciencia 2, sobre `%s`."
       % (par.get("configuracion"), par.get("run"), par.get("max_length"),
          par.get("modelo")))
+    entreno_cv = bool((p.get("entrenamiento_cv") or {}).get("corridas"))
     w("- Partición por PMID, 80/10/10%s."
-      % ("; validación cruzada de %d pliegues con las semillas %s"
-         % (par["folds"], ", ".join(par.get("semillas") or []))
+      % ("; validación cruzada de %d pliegues%s" % (
+          par["folds"], " con las semillas %s"
+          % ", ".join(par.get("semillas") or []) if entreno_cv else "")
          if par.get("folds") else ""))
     w("- El modelo desplegable es el de la partición única con la semilla "
       "%s, fijada de antemano: no se elige la mejor semilla."
@@ -3037,6 +3045,10 @@ def informe(estado, r=None):
         w("")
         w("La última fila es la línea base del protocolo: el macro-F1 sobre %s "
           "de todas sus predicciones fuera de pliegue." % ", ".join(evaluadas))
+        if lbcv.get("articulos_por_clase"):
+            w("Artículos con al menos un ejemplo de cada clase: %s."
+              % "; ".join("%s %s" % (e, lbcv["articulos_por_clase"].get(e, 0))
+                          for e in evaluadas))
         w("")
         vacias = ["- **El test de %s no tiene ningún ejemplo de %s.**"
                   % (nombre, clase)
@@ -3324,8 +3336,12 @@ def informe(estado, r=None):
                           "macro_f1_fijo")))
         w("")
     if not (ev.get("macro_f1") or cv.get("corridas")):
-        w("No se corrió%s." % (" (se recomienda: ver sección 5)"
-                               if av.get("recomendar_cv") else ""))
+        if par.get("folds") and lbcv.get("pliegues"):
+            w("Los pliegues están hechos (sección 5.1). Se entrenan en el "
+              "tramo 2, con las semillas del protocolo.")
+        else:
+            w("No se corrió%s." % (" (se recomienda: ver sección 5)"
+                                   if av.get("recomendar_cv") else ""))
         w("")
 
     w("## 9. Cómo leer estas cifras")
@@ -3396,7 +3412,7 @@ def informe(estado, r=None):
     if sin_cotejo:
         avisos.append("La accuracy de clasificar.py no cuadra con la del "
                       "script en: %s." % ", ".join(sin_cotejo))
-    if av.get("recomendar_cv") and not cv.get("corridas"):
+    if av.get("recomendar_cv") and not par.get("folds"):
         avisos.append("particionar.py recomienda validación cruzada "
                       "(`--folds 5`).")
     if tk.get("truncados"):

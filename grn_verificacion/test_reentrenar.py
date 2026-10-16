@@ -1429,10 +1429,20 @@ class PruebasCorridaProtocolo(_Escenario):
         self.assertEqual(estado["pasos"]["particion"]["quedan"], lb["n"])
         self.assertTrue(all(f["por_clase"]["regulates"] == 0
                             for f in lb["pliegues"].values()))
+        arts = lb["articulos_por_clase"]
+        self.assertEqual(0, arts["regulates"])
+        self.assertTrue(all(arts[e] > 0 for e in ("activates", "no_relation",
+                                                  "represses")))
         informe = self.leer(self.r["informe"])
         self.assertIn("### 5.1 Pliegues de la validación cruzada", informe)
         self.assertIn("| pliegue | artículos | ejemplos | activates | "
                       "no_relation | represses |", informe)
+        self.assertIn("Artículos con al menos un ejemplo de cada clase: "
+                      "activates %d;" % arts["activates"], informe)
+        # Un tramo 1 con --folds no habla de semillas ni recomienda --folds.
+        self.assertIn("validación cruzada de 3 pliegues.", informe)
+        self.assertNotIn("recomienda validación cruzada", informe)
+        self.assertIn("Los pliegues están hechos", informe)
         # Al entrenar, la evaluación da la misma línea base.
         estado, _ = self.correr(folds=3)
         self.assertEqual("ok", estado["estatus"], estado.get("detalle"))
