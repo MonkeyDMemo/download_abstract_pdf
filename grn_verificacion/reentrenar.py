@@ -87,6 +87,12 @@ ID2LABEL = {"0": "activates", "1": "no_relation", "2": "regulates",
 # había probado con .xlsx sintéticos. «otro» tiene que ser 0: una fila con un
 # `Origen` desconocido sí da positivos, y si la versión nueva marcara de otra
 # forma lo que propuso el modelo, el entrenamiento se volvería circular.
+#
+# Conciliado el 15-oct-2026 con la base del servidor (solo conteos): los «310
+# PMIDs distintos» de PLAN.md son 310 identificadores, 309 PMIDs más el único
+# DOI, que está en la única fila sin PMID (`pmids_de` cuenta los DOIs aparte).
+# Se coteja también esa fila: así una celda de `Reference` que el lector dejara
+# de entender no pasa por la diferencia de uno que ya estaba explicada.
 BASE_ESPERADA = collections.OrderedDict([
     ("filas", 5584),
     ("signo", collections.OrderedDict([
@@ -94,7 +100,8 @@ BASE_ESPERADA = collections.OrderedDict([
     ("origen", collections.OrderedDict([
         ("historica", 4824), ("biobert", 544), ("ambos", 216), ("otro", 0)])),
     ("homologia", 2850),
-    ("pmids_distintos", 310),
+    ("pmids_distintos", 309),
+    ("filas_sin_pmid", 1),
     ("dois_descartados", 1),
 ])
 

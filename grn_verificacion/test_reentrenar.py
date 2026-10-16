@@ -295,8 +295,8 @@ class _Escenario(unittest.TestCase):
 class PruebasPiezas(unittest.TestCase):
 
     def test_cotejo_de_la_base(self):
-        medida = {"filas": 5584, "homologia": 2850, "pmids_distintos": 310,
-                  "dois_descartados": 1,
+        medida = {"filas": 5584, "homologia": 2850, "pmids_distintos": 309,
+                  "filas_sin_pmid": 1, "dois_descartados": 1,
                   "signo": {"+": 4060, "-": 598, "?": 909, "d": 14,
                             "ilegible": 3},
                   "origen": {"historica": 4824, "biobert": 544, "ambos": 216,

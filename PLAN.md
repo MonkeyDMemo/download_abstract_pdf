@@ -82,6 +82,7 @@ Verificado contra el repositorio el 10-sep-2026.
 - `Interaction` codifica solo signo: `+` 4 059 · `Unknown` 786 · `-` 598 · vacío 123 · `d` 14 · `+, +` 1 · 3 celdas con un locus corrido. Mapea uno a uno con el +/−/? del bronce.
 - **La etiqueta de `Reference` sí marca procedencia:** dos variantes que dicen "homology", en **2 850 filas (51 %)**, 2 808 de ellas de Histórica. Una variante indica inferencia desde la cepa PA14.
 - `Reference` son PMIDs; requiere normalizar (float con `.0`, listas por coma, etiqueta pegada, PMIDs de 7 dígitos, 1 DOI). 310 PMIDs distintos, 208 en el corpus (67.1 %).
+- **Nota del 15-oct-2026** (tramo 1 de `reentrenar`, solo conteos, sin abrir el archivo). Los 310 son identificadores distintos: **309 PMIDs y 1 DOI**. La única fila sin PMID es la del DOI, y `validacion.pmids_de` cuenta los DOIs aparte; el 67.1 % se calculó con 310 en el denominador. `Origen` no trae los tres valores literales: son etiquetas de 26 a 28 caracteres que contienen «Histórica», «BioBERT» o «Ambos» (con estos conteos exactos); el lector las reconoce por palabra clave desde el commit 7a8b01b. Todo lo demás de esta sección cuadró.
 - Locus: formato PA#### en las 5 584 filas; 3 006 distintos, de los que 1 796 (59.7 %) aparecen en `menciones`.
 
 **Construcción del denominador exigible: 2 003 filas.**

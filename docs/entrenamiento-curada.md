@@ -204,7 +204,9 @@ lee `~/grn-guillermo/resultados/curada-v1/RESULTADOS.md`. Qué revisar ahí:
    - signo `+` 4 060 (4 059 más el `+, +`), `?` 909 (786 `Unknown` más 123
      vacías), `-` 598, `d` 14, ilegible 3 (los locus corridos);
    - origen Histórica 4 824, BioBERT 544, Ambos 216, **otro 0**;
-   - homología 2 850; 310 PMIDs distintos; 1 DOI.
+   - homología 2 850; 309 PMIDs distintos, 1 fila sin PMID y 1 DOI (PLAN.md
+     dice «310 PMIDs»: son 310 identificadores, porque la fila sin PMID es
+     justo la del DOI; conciliado el 15-oct).
 
    **Si algo no coincide, la corrida se detiene y no se entrena.** Puede ser
    otra versión de la base o el lector, que hasta esta pista solo se había
