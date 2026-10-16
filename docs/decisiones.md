@@ -1299,9 +1299,11 @@ Dos reglas mantienen la excepción acotada:
 ## El entrenamiento con la base curada es supervisión distante, y corre donde vive la base
 
 La base curada es confidencial. El entrenamiento se arma en el servidor del
-asesor, que tiene la GPU, y lo corre el usuario. El `.xlsx` no estaba ahí: se
-sube una sola vez, directo a `GRN_DATOS` y fuera del clon, y de ahí no sale. A
-una sesión de Claude solo vuelven conteos y métricas.
+asesor, que tiene la GPU. El `.xlsx` no estaba ahí: se sube una sola vez,
+fuera del clon (`~/grn-guillermo/`), y de ahí no sale. Lo corre el usuario
+o, desde el 9-oct-2026, una sesión de Claude abierta en el servidor con
+`reentrenar` (ver la decisión siguiente). A una sesión de Claude solo
+vuelven conteos y métricas.
 
 `grn_verificacion/validacion.py` lee el `.xlsx` con `zipfile` y
 `ElementTree`, sin openpyxl, para correr con el Python que ya haya. La ruta
@@ -1318,11 +1320,138 @@ Las reglas de `entrenamiento.py`, y la razón de cada una:
 - **Fuera el signo `d`.**
 - **Negativos:** coocurrencias de los mismos PMIDs que no están en la base en
   ningún sentido. Son negativos ruidosos, y se reportan así.
-- **Reservados:** los PMIDs de la muestra de 50 y las oraciones del conjunto
-  ciego no entran. Si entraran, las dos evaluaciones externas que tiene el
-  proyecto dejarían de serlo.
+- **Reservados:** los PMIDs y las oraciones de la muestra de 50, y las
+  oraciones del conjunto ciego, no entran. Hasta el 9-oct solo se reservaban
+  los PMIDs de la muestra. Eso apartaba el artículo, pero no una copia de la
+  oración juzgada en otro artículo: `_sin_repetidos_entre_pmids` corre después
+  de quitar lo reservado y ya no veía el original. En la corrida 4 no pasaba
+  (los reservados por oración siguen en 516), pero no estaba garantizado.
+  **Reservar oraciones no aparta pares.** Los 6 pares del conjunto ciego
+  entran desde otras oraciones con la etiqueta de la base, así que para un
+  modelo entrenado aquí la trampa del signo deja de ser una evaluación
+  externa. El 9-oct se decidió dejarlo así y declararlo: `RESULTADOS.md`
+  cuenta cuánto entró.
 - La partición va por PMID (`particionar.py --por pmid`). La métrica de
-  *E. coli* se contaminó justo por partir por oración.
+  *E. coli* se contaminó justo por partir por oración. Aquí partir por PMID no
+  basta para medir generalización: la etiqueta depende casi solo del par, y
+  el mismo par cae en train y en test. Se decidió no entrenar dos veces
+  (`--por par`) y reportar junto al F1 una línea base que solo recuerda el
+  par: el modelo vale lo que le gana.
+
+## La pista D es un orquestador desprendible, y lo que se publica es un informe filtrado
+
+La guía del 8-oct eran tres comandos a mano dentro de tmux. La revisión del
+9-oct encontró que, seguida al pie de la letra en el servidor, se rompía:
+
+- **No hay tmux**, y pegado entero el bloque entrenaba en primer plano: un
+  corte de SSH lo mataba.
+- **No había cómo detenerlo.** Matar el PID de `conda run` dejaba vivos a
+  `barrido.py` y al script del asesor con la GPU tomada, y en la cuenta
+  compartida «tus procesos» no se distinguen por usuario.
+- **`barrido.py` sale con 0 aunque el entrenamiento falle**, y está congelado.
+- **Pegar la salida en la bitácora publicaba rutas del servidor**, con la
+  cuenta si los datos caían bajo el home.
+
+`grn_verificacion/reentrenar.py` lo resuelve en Python y no en un `.sh`. El
+camino feliz cabe en veinte líneas de bash, pero lo difícil no: detectar el
+fallo que `barrido.py` calla, cotejar la base, la línea base, el filtro, un
+tope que alcance al nieto y saltar lo hecho por huella. Además, en bash no se
+prueba con unittest. Cuatro piezas que no son obvias:
+
+- **`fcntl.flock` y no un archivo creado con O_EXCL.** El núcleo suelta el
+  candado cuando el proceso muere, también por SIGKILL, y no queda uno viejo
+  que haya que borrar a mano: el defecto del `.flujo.lock`.
+- **Los huérfanos se buscan en `/proc` por una marca en el entorno.** Si el
+  orquestador muere por SIGKILL o por el OOM-killer, no alcanza a matar el
+  árbol. Antes de volver a entrenar se buscan los procesos con
+  `GRN_REENTRENAR=<runs>/<nombre>` en `/proc/PID/environ`, una variable que
+  solo pone el orquestador y que heredan `barrido.py` y el script, y se matan
+  sus grupos. La primera versión buscaba esa carpeta en la línea de comandos,
+  y la revisión del 15-oct encontró por qué no sirve: `flujo.py --modelo` y
+  `clasificar.py` nombran la misma carpeta al usar el modelo recién
+  entrenado, y una corrida nueva los habría matado.
+- **`matar_arbol` espera al grupo, no al hijo** (`grn_comun/proceso.py`,
+  lo usa también el flujo). Antes solo mandaba SIGKILL si el hijo directo
+  tardaba en morir. Si `barrido.py` moría con SIGTERM y el script del asesor
+  no, el nieto seguía con la GPU y con la tubería abierta, y quien leía la
+  salida se quedaba esperando: así se saltaba el tope de 4 horas. Ahora lo
+  que quede del grupo a los 5 s muere con SIGKILL.
+- **El candado no basta si alguien borra el archivo.** Antes de tocar nada,
+  una corrida nueva busca si los procesos marcados tienen todavía a su
+  orquestador vivo de padre (un huérfano de verdad lo perdió). Si es así, se
+  detiene con `otra_corrida` en vez de matar el entrenamiento ajeno.
+- **El paso de datos corre dentro del proceso**, no como subproceso. Así sus
+  conteos llegan estructurados, y una excepción que no sea `ValueError` (que
+  podría traer el valor de una celda en su mensaje) se registra solo por su
+  tipo.
+- **El informe es publicable por construcción.** Se arma desde datos
+  estructurados y no desde el log. Antes de escribirse pasa por una
+  verificación que rechaza rutas absolutas o bajo `~`, locus, marcadores de
+  entidad y cualquier cosa con forma de PMID. Si no pasa, no se escribe. El
+  error dice qué patrón y en qué línea, nunca el texto.
+- **Lo que escribe `barrido.py` va con lo confidencial**, en `<runs>/barrido`:
+  su JSON y su resumen llevan la ruta absoluta de la partición, y está
+  congelado. A `<resultados>` llega una copia con solo números
+  (`entrenamiento.json`), atada a la huella de la partición. Esa copia también
+  es la que permite relanzar el tramo 1 después de entrenar sin perder las
+  métricas del informe.
+- **Del conjunto ciego, solo totales.** Contar por etiqueta los ejemplos de
+  sus seis pares, que tienen nombre público, diría qué signo les da la base o
+  si los registra. Eso ya no es «esquema y conteos».
+
+## La curada v1 se evalúa con un protocolo escrito antes de entrenar
+
+El tramo 1 real (15-oct) mostró tres cosas que el diseño de la pista D no
+tenía resueltas. `regulates` tiene 6 ejemplos de 2 artículos y ninguno en dev
+ni en test. El test de la partición única tiene 4 artículos. Y ningún código
+daba métricas por clase, matrices ni un intervalo para el F1. El 16-oct el
+usuario decidió excluir `regulates` en esta versión y aplicar el protocolo
+completo (`docs/protocolo-curada-v1.md`).
+
+- **Excluir, no fusionar.** `regulates` es una relación sin signo. Pasarla a
+  `activates` o a `represses` le pondría un signo que la base no da, y pasarla
+  a `no_relation` sería falso. Se quita antes de particionar y el mapa sigue
+  con cuatro etiquetas, así que `clasificar.py` y el flujo no cambian. El
+  script del asesor le daría el peso mayor (60 veces el de `no_relation`), y
+  con *E. coli* el modelo ya se refugiaba en esa clase. Sin ejemplos, ese
+  peso no entra en la pérdida: `CrossEntropyLoss` pondera por la clase
+  verdadera.
+- **El protocolo se commitea antes del tramo 2, y el informe lo comprueba.**
+  Con 96 artículos, elegir después de ver una cifra (otra semilla, otra
+  métrica, otro corte) mueve el resultado más que el modelo. `RESULTADOS.md`
+  dice el commit del protocolo, si es anterior al inicio de la corrida, y
+  lista cada parámetro que se aparta de él.
+- **Validación cruzada por artículo con tres semillas, y las predicciones
+  juntas.** Con unos 19 artículos por pliegue, el F1 de cada pliegue es ruido,
+  y la regla del script cambia de clases de un pliegue a otro. Se juntan las
+  predicciones fuera de pliegue de cada semilla y se calcula un macro-F1 sobre
+  un conjunto fijo de clases. La media por pliegue con la regla del script
+  sigue en el informe, para compararla con el barrido del asesor.
+- **Bootstrap por artículo, con los modelos fijos.** Remuestrear ejemplos
+  sueltos daría un intervalo demasiado angosto, porque los de un artículo no
+  son independientes. Reentrenar en cada réplica costaría 2000 veces la
+  corrida. Lo que el intervalo no recoge del entrenamiento lo muestran, en
+  parte, las tres semillas.
+- **La línea base se fija al particionar.** No depende del modelo, así que el
+  tramo 1 ya la reporta (sección 5.1) y va al protocolo antes de entrenar. La
+  evaluación la recalcula, y si no da lo mismo se detiene: querría decir que
+  las predicciones no están unidas a los ejemplos de su pliegue.
+- **Las predicciones por ejemplo salen de `etapa2/clasificar.py`, sin tocar
+  nada congelado.** El script del asesor solo escribe métricas agregadas; es
+  suyo y no se modifica, y `etapa2` está congelada. `clasificar.py` es además
+  la vía de inferencia que usa el flujo, así que también se prueba el
+  artefacto. Corre en CPU: son unos cientos de oraciones, y así no compite por
+  la GPU compartida. La accuracy por argmax se coteja contra la del script:
+  si no cuadra, la unión entre predicciones y ejemplos está mal y no se
+  evalúa.
+- **Los modelos de pliegue se borran después de predecir.** Son 15, de unos
+  400 MB cada uno sin checkpoints. Lo que queda de ellos son sus predicciones
+  y su resultado, y con eso basta para retomar sin reentrenar.
+- **Un modelo que predice una sola clase es un resultado, no un error.**
+  `clasificar.py` se niega a escribir en ese caso, desde 20 filas, porque a
+  escala de corpus casi siempre es un modelo mal cargado. Aquí se acepta su
+  `.parcial` si todo lo demás cuadra, y el informe lo marca. La marca sale de
+  las predicciones, también con menos de 20 filas.
 
 ## El tablero corre el flujo: qué se toma de la petición y qué no
 

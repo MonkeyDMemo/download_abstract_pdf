@@ -197,13 +197,20 @@ barata de romper algo sin enterarse.
   publico.
 - `salidas/` tambien esta ignorado.
 - **Entrenar con la base curada** (8-oct-2026, PLAN.md:44): corre en el
-  servidor del asesor, y lo corre el usuario. El `.xlsx` no estaba ahí: el
-  usuario lo sube una sola vez, directo a `GRN_DATOS` y fuera del clon, y de
-  ahí no sale.
-  `grn_verificacion/validacion.py` y `entrenamiento.py` reciben la ruta por
-  argumento, nunca la nombran, e imprimen solo conteos; sus derivados y el
-  modelo entrenado se quedan en el servidor. A una sesion de Claude solo
-  llegan metricas y conteos. Ver `docs/entrenamiento-curada.md`.
+  servidor del asesor. El `.xlsx` no estaba ahi: el usuario lo sube una sola
+  vez, fuera del clon (`~/grn-guillermo/`), y de ahi no sale. Desde el
+  9-oct-2026 lo puede
+  lanzar tambien una sesion de Claude abierta ahi, con el asesor avisado,
+  pero solo con `python -m grn_verificacion.cli reentrenar` y solo dentro de
+  `~/grn-guillermo`. `grn_verificacion/validacion.py`, `entrenamiento.py` y
+  `reentrenar.py` reciben la ruta por argumento, nunca la nombran, e imprimen
+  solo conteos; sus derivados y el modelo entrenado se quedan en el servidor
+  (`~/grn-guillermo/datos/` y `runs/`). La sesion lee solo `reentrenar
+  estado` y `RESULTADOS.md`, que pasan por un filtro (sin rutas, locus,
+  marcadores ni PMIDs); nunca abre la base, `datos/` ni `runs/`, que ademas
+  estan bajo deny en `.claude/settings.local.json`. Lo que se publica es
+  `RESULTADOS.md`, no la salida de la terminal. Ver
+  `docs/entrenamiento-curada.md`.
 
 ## Estructura
 
@@ -235,6 +242,8 @@ grn_verificacion/      paso 2, en construccion
   evaluar.py             el 44 % recalculado con el clasificador conectado
   validacion.py          lector del .xlsx de la base curada (ruta por argumento)
   entrenamiento.py       datos de entrenamiento por supervision distante
+  reentrenar.py          la pista D de punta a punta en el servidor: datos,
+                         particion por PMID y run 22, desprendible, con informe
 flujo.py               el flujo de punta a punta; idempotente por huella
 grn_comun/             lo que usan los tres pasos
   procedencia.py         huella por contenido de cada eslabon de la cadena
@@ -507,6 +516,13 @@ python3 servidor.py --datos D --flujo salidas/flujo   # --db y --salida salen de
 python3 flujo.py --corrida 4            # operones -> bronce -> BioBERT -> capa -> evaluacion
 python3 flujo.py --corrida 4 --limite 200   # prueba rapida en su propia carpeta
 python3 flujo.py --pasos capa,evaluar --forzar capa
+
+# en el servidor, con el python de pseudoRE; ver docs/entrenamiento-curada.md
+$PY -m grn_verificacion.cli reentrenar correr --raiz ~/grn-guillermo --pares P \
+    --reservar R --hasta particion --folds 5   # tramo 1: datos, pliegues y linea base, sin GPU
+$PY -m grn_verificacion.cli reentrenar correr ... --folds 5 --semillas 42,43,44 \
+    --desprender                          # tramo 2, con docs/protocolo-curada-v1.md ya commiteado
+$PY -m grn_verificacion.cli reentrenar estado|detener --raiz ~/grn-guillermo
 ```
 
 El tablero hace lo mismo que el CLI desde el navegador y ademas deja corregir
@@ -699,14 +715,19 @@ Las pruebas que no pueden faltar:
   en una carpeta propia (`~/grn-guillermo`, clon por git) y `GRN_DATOS` fuera
   del repositorio. No se tocan las carpetas ajenas, ni `~/pseudomonas-trn`, ni
   el ambiente `pseudoRE` del asesor: se usan para correr, sin instalar nada en
-  ellos. Los comandos los corre el usuario por SSH; Claude prepara y prueba los
-  scripts. **El host y la cuenta no se escriben en el repositorio, que es
-  público**: los comandos de la guía usan el alias `asesor` del
+  ellos. Los comandos los corre el usuario por SSH o, desde el 9-oct-2026,
+  una sesion de Claude abierta en `~/grn-guillermo` (ver Confidencialidad).
+  **El servidor no tiene tmux ni screen**: lo largo se lanza con
+  `reentrenar correr --desprender`, que corre en su propia sesion y sobrevive
+  a un corte de SSH. **El host y la cuenta no se escriben en el repositorio,
+  que es público**: los comandos de la guía usan el alias `asesor` del
   `~/.ssh/config` de la laptop.
 
 ## Fuera de alcance
 
-- Modificar archivos fuera del repositorio o del venv del proyecto.
+- Modificar archivos fuera del repositorio o del venv del proyecto. La
+  excepcion es la carpeta propia del servidor, `~/grn-guillermo`, donde
+  `reentrenar` escribe `datos/`, `runs/` y `resultados/`.
 - Usar `sudo`, cambiar configuracion del sistema o instalar paquetes globales.
 - Ejecutar Playwright u otros navegadores. Desactivado por omision.
 - **Crear `grn_red/`** (paso 3). `grn_verificacion/` se abrio el 8-oct-2026,

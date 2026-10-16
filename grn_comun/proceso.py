@@ -88,14 +88,34 @@ def matar_arbol(proc):
                 pass
 
         senal(signal.SIGTERM)
+        limite = time.monotonic() + 5
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
+            pass
+        # Que muera el hijo no basta: un nieto que ignora SIGTERM (o tarda en
+        # morir) sigue con la GPU y con la tubería abierta, y quien lee la
+        # salida se queda esperando. Se espera al GRUPO, y lo que quede a los
+        # 5 s se mata con SIGKILL.
+        while lider and time.monotonic() < limite and _grupo_vivo(proc.pid):
+            time.sleep(0.1)
+        if proc.poll() is None or (lider and _grupo_vivo(proc.pid)):
             senal(signal.SIGKILL)
     try:
         proc.wait(timeout=10)
     except subprocess.TimeoutExpired:
         proc.kill()
+
+
+def _grupo_vivo(pgid):
+    """Si queda algún proceso en el grupo `pgid`."""
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 def correr(argv, log=lambda m: None, detener=None, cwd=None, entorno=None,

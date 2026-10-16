@@ -366,6 +366,13 @@ class PruebasPiezas(unittest.TestCase):
         self.assertEqual("ambos", V.origen_de("Ambos"))
         self.assertEqual("otro", V.origen_de(""))
         self.assertEqual("otro", V.origen_de("Validada"))
+        # Las celdas reales son etiquetas más largas (inventadas aquí): por
+        # igualdad caían todas en «otro» y BioBERT no se excluía.
+        self.assertEqual("historica",
+                         V.origen_de(u"Histórica (versión anterior)"))
+        self.assertEqual("biobert", V.origen_de("BioBERT (curada a mano)"))
+        self.assertEqual("ambos",
+                         V.origen_de("Ambos (Histórica + BioBERT validada)"))
 
 
 class PruebasCompatibilidad(unittest.TestCase):

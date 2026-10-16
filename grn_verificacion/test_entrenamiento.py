@@ -422,10 +422,13 @@ class PruebasReservas(unittest.TestCase):
         conteos = E.escribir_reservas_de_juicios(
             self.ruta("r.tsv"), ruta_csv=csv_ruta,
             oraciones_extra=["Extra   frase."])
-        self.assertEqual({"pmids": 2, "oraciones": 1}, conteos)
+        # Las oraciones juzgadas también: el PMID no aparta sus copias en
+        # otros artículos.
+        self.assertEqual({"pmids": 2, "oraciones": 4}, conteos)
         reservas, _ = E.leer_reservas([self.ruta("r.tsv")])
         self.assertEqual({"11111111", "22222222"}, reservas["pmids"])
-        self.assertEqual({"Extra frase."}, reservas["oraciones"])
+        self.assertEqual({"Extra frase.", "Una, con coma.", "Otra.",
+                          "Tercera."}, reservas["oraciones"])
         pmids, oraciones = E.reservas_de_csv(csv_ruta, "pmid", "oracion")
         self.assertEqual(3, len(oraciones))
         with self.assertRaises(ValueError):
@@ -434,9 +437,13 @@ class PruebasReservas(unittest.TestCase):
     def test_el_csv_versionado_de_juicios_da_pmids(self):
         if not os.path.exists(E.RUTA_JUICIOS):
             self.skipTest("No está el CSV de la muestra de 50 juicios.")
-        pmids, _ = E.reservas_de_csv(E.RUTA_JUICIOS)
+        pmids, oraciones = E.reservas_de_csv(E.RUTA_JUICIOS, "pmid", "oracion")
         self.assertTrue(pmids)
         self.assertTrue(all(p.isdigit() for p in pmids))
+        # 50 juicios, 46 artículos y 50 oraciones distintas: son las cifras
+        # que repite «Reservas: PMIDs 46; oraciones 232» con el conjunto ciego.
+        self.assertEqual(46, len(pmids))
+        self.assertEqual(50, len(oraciones))
 
 
 class PruebasLeerPares(unittest.TestCase):
