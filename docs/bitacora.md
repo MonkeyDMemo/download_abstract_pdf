@@ -61,6 +61,42 @@ terminó «ok» y el informe no trae desviaciones ni avisos. Las cifras están e
 - **Por clase:** `activates` 0.49, `no_relation` 0.70 (empata con la línea
   base) y `represses` 0.28. El signo es lo débil.
 
+### Prueba en el flujo (16-oct, tarde)
+
+Se clasificaron los 72 969 pares de la corrida 4 con el modelo nuevo: 2 min
+52 s en la GPU. Después corrieron `red.py`, `evaluar_oro.py` y
+`evaluar_signo.py`. Las salidas se quedan en el servidor (`~/grn-guillermo/
+flujo/`) y aquí van solo conteos. Se compara con el modelo de *E. coli* sobre
+la misma corrida (8-oct).
+
+- **Predicciones:**
+  - `activates` 14 872, `represses` 16 581, `regulates` 0 y `no_relation`
+    41 516;
+  - el modelo de *E. coli* dio 18 822, 12 330, 31 328 y 10 489.
+- **Red:**
+  - 1 025 aristas (contra 8 827), con 236 activaciones, **744 represiones** y
+    45 conflictos;
+  - pasan los umbrales solo 3 147 predicciones.
+- **Oro**, con el denominador honesto:
+  - exhaustividad 93/144 = 64.6 % (contra 95.1 %);
+  - **acierto de signo 38/82 = 46.3 %** (contra 87.6 %);
+  - debajo de «siempre activa» (70.7 %) y sin despegar del azar (p = 0.69).
+- **Trampa del signo:** 51/93 sin umbral y 7/93 con umbral. No cuenta como
+  evaluación para este modelo: sus pares entraron al entrenamiento y la trampa
+  es casi toda de represiones.
+
+**Lectura:** el modelo le gana a memorizar el par (validación cruzada), pero
+en la red real está sesgado a la represión y el signo no sirve. Lo más
+probable es que venga de los pesos de clase por la inversa de la frecuencia:
+`represses` es la clase más chica, y en la validación cruzada su precisión
+fue 0.25. **No reemplaza al modelo de *E. coli* así como está.**
+
+Abierto:
+- el 44 % con este modelo, que necesita la carpeta del flujo de la laptop
+  (el bronce de la corrida 4);
+- decidir si se entrena una v2 sin pesos de clase, o con pesos más suaves,
+  como enmienda fechada del protocolo.
+
 ### Al cerrar
 
 - **Pendiente del asesor:**
