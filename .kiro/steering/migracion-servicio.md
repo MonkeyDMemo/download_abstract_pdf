@@ -59,13 +59,18 @@ tiempo.
 Una corrida sobre las consultas reales tarda varios minutos, mas de lo que
 aguanta una peticion HTTP sincrona.
 
-El endpoint debe encolar y devolver el `ejecucion_id` de inmediato. La tabla
-`ejecuciones` ya funciona como estado del trabajo: tiene `estatus`
-(`corriendo` / `ok` / `error`), `iniciada_en`, `terminada_en` y `error`. No
-hace falta una tabla nueva de jobs.
+**Resuelto para el tablero local por `grn_etl/trabajos.Gestor`.**
+`POST /api/trabajo` lanza la funcion en un hilo, contesta 202 de inmediato, y
+el cliente sondea `GET /api/trabajo`. Desde el 8-oct-2026 corre tambien el
+flujo completo (`flujo.correr`), el unico cancelable: `POST
+/api/trabajo/cancelar` enciende un `threading.Event` y cada paso, que es un
+proceso aparte, se mata con su arbol. La tabla `ejecuciones` sigue siendo la
+bitacora del ETL; no hizo falta una tabla de jobs.
 
-Un endpoint `GET /ejecuciones/{id}` que lea esa fila cubre el sondeo del
-cliente.
+Lo que queda para varios usuarios es deliberado: **un trabajo a la vez, por
+proceso**. Una cola de verdad (varios trabajos, varios workers) solo tiene
+sentido cuando existan el limitador compartido de la seccion 1 y PostgreSQL de
+la seccion 2; antes, dos workers rebasarian juntos el limite de NCBI.
 
 ## Lo que no cambia
 

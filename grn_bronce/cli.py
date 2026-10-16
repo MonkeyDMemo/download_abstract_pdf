@@ -75,7 +75,7 @@ def _exportar(con, args, t0):
     # `is not None` y no la verdad del valor: `--corrida 0` tiene que salir
     # como «no existe la corrida 0», no caer en identificar el corpus entero.
     if args.corrida is not None:
-        return _reexportar(con, args)
+        return _reexportar(con, args, carpeta=_carpeta_salida(args))
 
     corpus_id, corpus_nombre = None, "(todos los documentos)"
     if args.corpus:
@@ -164,7 +164,7 @@ def _exportar(con, args, t0):
 
     resumen, candidatas, conteos, hubo_xlsx = _volcar(
         con, db.corrida(con, corrida_id), corpus_nombre, cuenta,
-        time.time() - t0, faltan)
+        time.time() - t0, faltan, _carpeta_salida(args))
     db.cerrar_corrida(con, corrida_id, "ok", None, len(documentos),
                       len(candidatas))
     # Terminar 'ok' no basta: `identificar` atrapa el error de cada documento
@@ -186,6 +186,16 @@ def _exportar(con, args, t0):
                 % (vieja, corrida_id))
     _mostrar(resumen, candidatas, cuenta, conteos, hubo_xlsx, faltan)
     return 0
+
+
+def _carpeta_salida(args):
+    """Dónde se vuelcan los archivos: `--salida`, o `salidas/` como siempre.
+
+    Con `getattr` porque las pruebas arman `Namespace` a mano sin este campo.
+    El flujo lo usa para que cada corrida tenga su propia carpeta y un volcado
+    no pise los archivos de otra.
+    """
+    return getattr(args, "salida", None) or "salidas"
 
 
 def _reexportar(con, args, carpeta="salidas"):
@@ -613,7 +623,44 @@ def cmd_operones(args):
     return 0
 
 
+def cmd_sintaxis(args):
+    """La sintaxis con spaCy sobre un CSV de candidatas (punto 30).
+
+    Corre con el intérprete de `.venv-nlp`: spaCy y el modelo de scispaCy piden
+    numpy<2 y el `.venv` tiene el numpy 2 de torch. Escribe una línea por
+    oración y par no ordenado de entidades; es una propuesta, no una
+    afirmación, y no se registra en `corridas` hasta que haya tabla propia.
+    Nunca se imprime el texto de una oración: una «Δ» tumba la consola cp1252.
+    """
+    try:
+        from grn_bronce import sintaxis
+    except ImportError as e:
+        sys.exit("No se pudo cargar la sintaxis (%s). Se corre con el "
+                 "intérprete de .venv-nlp; ver docs/plan-sintaxis-bronce.md."
+                 % e)
+    if args.diagnostico:
+        info = sintaxis.diagnostico(log)
+        for clave in sorted(info):
+            log("  %s: %s" % (clave, info[clave]))
+        return 0 if info.get("ok") else 1
+    if not args.entrada:
+        sys.exit("Falta --entrada: el CSV de oraciones candidatas.")
+    salida = args.salida or os.path.join(
+        "salidas", os.path.basename(args.entrada).replace(
+            "_oraciones_candidatas.csv", "_sintaxis.jsonl"))
+    resultado = sintaxis.ejecutar(args.entrada, salida, args.limite, log)
+    for clave in sorted(resultado):
+        log("  %s: %s" % (clave, resultado[clave]))
+    return 0
+
+
 def main():
+    # La consola de Windows es cp1252: los acentos caben, una «Δ» o una sigma
+    # no, y un `print` con ellas tumbaba la corrida. Se reemplaza lo que no
+    # cabe; los archivos de datos van siempre en UTF-8.
+    for flujo_salida in (sys.stdout, sys.stderr):
+        if hasattr(flujo_salida, "reconfigure"):
+            flujo_salida.reconfigure(errors="replace")
     ap = argparse.ArgumentParser(
         prog="grn-bronce",
         description="Paso 1: identificacion de elementos (capa bronce).")
@@ -633,6 +680,8 @@ def main():
                          "para anotarla con recursos nuevos (la pertenencia "
                          "a operones) sin tocar lo que detecto. No la cierra "
                          "ni la modifica.")
+    ex.add_argument("--salida", default=None,
+                    help="Carpeta de los archivos (por omisión, salidas/).")
     ex.set_defaults(func=cmd_exportar)
 
     pa = sub.add_parser("pares", help="Pares dirigidos de una corrida, a CSV.")
@@ -652,6 +701,20 @@ def main():
                     help="Cuantos faltantes listar en pantalla (el CSV los "
                          "lleva todos).")
     op.set_defaults(func=cmd_operones)
+
+    si = sub.add_parser(
+        "sintaxis",
+        help="Dirección y disparador dominante con spaCy (correr con "
+             ".venv-nlp).")
+    si.add_argument("--entrada", default=None,
+                    help="CSV de oraciones candidatas de `exportar`.")
+    si.add_argument("--salida", default=None,
+                    help="JSONL de salida (por omisión, junto al CSV en "
+                         "salidas/, con la corrida en el nombre).")
+    si.add_argument("--limite", type=int, default=None)
+    si.add_argument("--diagnostico", action="store_true",
+                    help="Versiones, carga del modelo y prueba de humo.")
+    si.set_defaults(func=cmd_sintaxis)
 
     args = ap.parse_args()
     if getattr(args, "corpus", None) == "":

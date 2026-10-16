@@ -31,6 +31,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -727,9 +728,17 @@ class PruebasMainSinTorch(Temporal):
         pantalla = io.StringIO()
         anterior = sys.argv
         sys.argv = argv
+        # "Sin torch" por construcción, no por accidente del entorno. Donde
+        # torch sí se importa (el .venv), main() seguía de largo hasta cargar
+        # el checkpoint falso de la prueba y moría con un ValueError del
+        # tokenizador (punto 36 del PLAN). Un None en sys.modules hace que
+        # `import torch` lance ImportError en cualquier máquina, y patch.dict
+        # deja sys.modules como estaba al salir.
         try:
-            with contextlib.redirect_stdout(pantalla):
-                C.main()
+            with mock.patch.dict(sys.modules, {"torch": None,
+                                               "transformers": None}):
+                with contextlib.redirect_stdout(pantalla):
+                    C.main()
         finally:
             sys.argv = anterior
         return pantalla.getvalue()

@@ -117,6 +117,12 @@ CLAVES_PREDICCION = ("id_par", "pmid", "tf", "target", "prediccion",
 
 CLAVES_PAR = ("id_par", "oracion_cruda", "n_oracion")
 
+# La raiz del repositorio entra al path ANTES de importar de ella. Desde el
+# 3-sep el import de grn_bronce iba antes de esta linea, y `python etapa2/red.py`
+# moria con ModuleNotFoundError; las pruebas no lo veian porque `discover` ya
+# pone la raiz en el path.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # Del modulo compartido, no una copia local: la clave de dedup de esta etapa y
 # la union de la etapa 6 con las oraciones auditadas tienen que normalizar el
 # espaciado igual. Si cada etapa escribe su propio normalizador, esa union
@@ -127,7 +133,6 @@ from grn_bronce.texto import normalizar_espacios
 # por ruta. La ruta es siempre la misma y el contenido cambia; sin la huella,
 # la evaluacion no puede saber que le pusieron al lado un archivo de otra
 # corrida. Ver el docstring de procedencia.py.
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from grn_comun import procedencia
 
 

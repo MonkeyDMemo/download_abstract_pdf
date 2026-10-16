@@ -60,7 +60,11 @@ RAIZ = os.path.dirname(DIRECTORIO)
 # paquete nuevo que produzca filas del pipeline se agrega aqui.
 # `grn_operones` entra el 27-sep-2026: escribe `operones_base.tsv`, que el
 # bronce lee para decir a que operones pertenecen los genes de cada oracion.
-VIGILADOS = ("etapa2", "grn_bronce", "grn_comun", "grn_operones")
+# `grn_verificacion` entra el 8-oct-2026: lleva el bronce al BioBERT y arma la
+# capa que se evalua. Es tambien donde vive el lector de la base curada, que
+# recibe la ruta por argumento: aqui no puede aparecer su nombre.
+VIGILADOS = ("etapa2", "grn_bronce", "grn_comun", "grn_operones",
+             "grn_verificacion")
 
 # Donde viven los scripts de DEL_PIPELINE, que es un subconjunto de VIGILADOS
 # a proposito. `grn_operones` se escanea igual que los demas, pero no aloja
@@ -68,7 +72,8 @@ VIGILADOS = ("etapa2", "grn_bronce", "grn_comun", "grn_operones")
 # `_ruta_de` lo buscara ahi, un `etapa2/red.py` renombrado o movido se daria
 # por encontrado con el archivo equivocado, y la prueba dejaria de vigilarlo
 # sin avisar.
-DONDE_VIVE_EL_PIPELINE = ("etapa2", "grn_bronce", "grn_comun")
+DONDE_VIVE_EL_PIPELINE = ("etapa2", "grn_bronce", "grn_comun",
+                          "grn_verificacion")
 
 # Los nombres que no se pueden teclear, cada uno con la expresion que lo
 # atrapa. Sin distinguir mayusculas: `ORO_PSEUDOMONAS` como constante o
@@ -128,7 +133,8 @@ LISTA_BLANCA = {
 # nuevo no herede el permiso por accidente.
 DEL_PIPELINE = ("construir_diccionario.py", "extraer_pares.py",
                 "clasificar.py", "red.py", "lexico.py", "texto.py",
-                "particionar.py", "barrido.py", "diagnostico.py")
+                "particionar.py", "barrido.py", "diagnostico.py",
+                "puente.py", "capa.py", "sintaxis.py")
 
 
 def _ruta_de(nombre):

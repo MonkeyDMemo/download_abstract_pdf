@@ -462,6 +462,32 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); ou
   border: 1px solid var(--malo); font-size: 13px; word-break: break-word;
 }
 
+/* -------------------------------------------------------------- pipeline */
+
+/* Los pasos del flujo van en un fieldset con leyenda: son un solo control
+   (qué se corre) y así lo anuncia un lector de pantalla. */
+.pasos-flujo {
+  border: 1px solid var(--borde2); border-radius: var(--radio);
+  margin: 14px 0 0; padding: 8px 14px 2px;
+}
+.pasos-flujo legend { font-size: 12px; font-weight: 650; color: var(--tenue); padding: 0 6px; }
+.pasos-flujo .lista { display: flex; flex-wrap: wrap; gap: 0 22px; }
+.marca-campo input:disabled + label { color: var(--tenue); cursor: not-allowed; }
+.avisos-flujo { list-style: none; margin: 10px 0 0; padding: 0; }
+.avisos-flujo li { font-size: 12.5px; color: var(--alerta); margin-top: 4px; }
+/* La nota de un paso fallido trae las últimas líneas del programa: la
+   primera se lee en la tabla y el resto se despliega. */
+td.nota details summary { cursor: pointer; }
+td.nota details pre {
+  white-space: pre-wrap; word-break: break-word;
+  margin: 6px 0 0; max-height: 240px; overflow: auto;
+  background: var(--consola-fondo); color: var(--consola-texto);
+  border-radius: var(--radio-sm); padding: 8px 10px;
+}
+.bloque-cifras + .bloque-cifras { margin-top: 18px; }
+.bloque-cifras h3 { text-transform: none; letter-spacing: 0; }
+.bloque-cifras .resultado { margin-top: 8px; }
+
 /* ---------------------------------------------------------------- avisos */
 
 .avisos { position: fixed; right: 16px; top: 14px; z-index: 90; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, 90vw); }
@@ -473,6 +499,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); ou
 }
 .aviso.ok { border-left-color: var(--ok); }
 .aviso.malo { border-left-color: var(--malo); }
+.aviso.alerta { border-left-color: var(--alerta); }
 .aviso .titulo { font-weight: 700; }
 .aviso .cuerpo { color: var(--tenue); font-size: 12.5px; margin-top: 2px; word-break: break-word; }
 
@@ -544,6 +571,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); ou
   <button class="pestana" role="tab" aria-selected="false" data-seccion="documentos">Documentos</button>
   <button class="pestana" role="tab" aria-selected="false" data-seccion="descargas">Descargas</button>
   <button class="pestana" role="tab" aria-selected="false" data-seccion="bitacora">Bitácora</button>
+  <button class="pestana" role="tab" aria-selected="false" data-seccion="pipeline">Pipeline</button>
 </nav>
 
 <div class="avisos" id="avisos"></div>
@@ -940,6 +968,111 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--acento); ou
   </div>
 </section>
 
+<!-- =========================================================== PIPELINE -->
+<section class="seccion" id="sec-pipeline">
+
+  <div class="tarjeta">
+    <div class="tarjeta-cabeza">
+      <h2>Flujo</h2>
+      <button class="boton suave mini" id="b-refrescar-flujo">Actualizar</button>
+    </div>
+    <p class="sub">Operones, bronce, pares, BioBERT, red, sintaxis, capa y evaluación,
+      uno tras otro, sobre una corrida del bronce. Cada paso se salta si sus entradas
+      no cambiaron, así que correrlo dos veces seguidas no repite nada. Las salidas
+      quedan en una carpeta por corrida y modelo.</p>
+
+    <div class="campos" style="margin-top:12px">
+      <div class="campo crece">
+        <label for="p-corrida">Corrida del bronce</label>
+        <select id="p-corrida"><option value="">cargando...</option></select>
+      </div>
+    </div>
+
+    <fieldset class="pasos-flujo">
+      <legend>Pasos</legend>
+      <div class="lista" id="p-pasos"></div>
+    </fieldset>
+
+    <div class="campos" style="margin-top:12px">
+      <div class="marca-campo">
+        <input type="checkbox" id="p-reusar" checked>
+        <label for="p-reusar"
+               title="Toma las predicciones de BioBERT ya calculadas en datos_etapa2/ y solo clasifica los pares nuevos.">Reutilizar predicciones del 27-ago</label>
+      </div>
+      <div class="marca-campo">
+        <input type="checkbox" id="p-rapida">
+        <label for="p-rapida">Prueba rápida (200 oraciones)</label>
+      </div>
+      <button class="boton" id="b-flujo-correr">Correr</button>
+      <button class="boton peligro" id="b-flujo-cancelar" disabled>Cancelar</button>
+    </div>
+    <ul class="avisos-flujo" id="p-avisos"></ul>
+    <p class="pista">Cancelar detiene el paso en curso y los procesos que haya lanzado; lo
+      hecho hasta ahí queda en <span class="mono">estado.json</span> y la siguiente vez se
+      retoma desde ese paso. La prueba rápida escribe en otra carpeta y no evalúa: la
+      evaluación solo tiene sentido sobre la corrida entera.</p>
+  </div>
+
+  <div class="rejilla2">
+    <div class="tarjeta">
+      <div class="tarjeta-cabeza"><h2>Pasos</h2></div>
+      <div class="campos" style="margin-bottom:10px">
+        <div class="campo crece">
+          <label for="p-carpeta">Carpeta</label>
+          <select id="p-carpeta"></select>
+        </div>
+      </div>
+      <p class="sub" id="p-carpeta-info" style="margin-bottom:10px"></p>
+      <div class="tabla-envoltura">
+        <table>
+          <thead>
+            <tr><th>Paso</th><th class="nw">Estatus</th><th class="num">Duración</th><th>Nota</th></tr>
+          </thead>
+          <tbody id="t-pasos-flujo"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tarjeta">
+      <div class="tarjeta-cabeza">
+        <h2>Consola</h2>
+        <div class="trabajo-cabeza">
+          <span class="ins gris" id="ins-trabajo-p">sin trabajo</span>
+          <span class="mono" id="tiempo-trabajo-p" style="color:var(--tenue)"></span>
+        </div>
+      </div>
+      <p class="sub mono" id="param-trabajo-p" style="margin-bottom:8px"></p>
+      <div class="consola" id="consola-p"><span class="aviso-consola">Sin trabajo en curso.</span></div>
+      <div class="resultado" id="resultado-trabajo-p"></div>
+      <div class="caja-error" id="error-trabajo-p" hidden></div>
+      <p class="pista">Es la misma consola del Panel y guarda las últimas 400 líneas. La
+        salida entera de cada paso queda en <span class="mono">flujo.log</span>, en Salidas.</p>
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <div class="tarjeta-cabeza"><h2>Cifras</h2></div>
+    <div id="p-cifras"><p class="sub">Elige una carpeta.</p></div>
+  </div>
+
+  <div class="tarjeta">
+    <div class="tarjeta-cabeza">
+      <h2>Salidas</h2>
+      <span class="sub" id="p-salidas-total"></span>
+    </div>
+    <div class="tabla-envoltura">
+      <table>
+        <thead>
+          <tr><th>Archivo</th><th class="num">Tamaño</th><th class="nw">Modificado</th><th class="nw">Acciones</th></tr>
+        </thead>
+        <tbody id="t-salidas-flujo"></tbody>
+      </table>
+    </div>
+    <p class="pista">Se descargan desde esta máquina; nada pasa por internet. El CSV de
+      candidatas pesa decenas de MB: se abre con una hoja de cálculo, no en el navegador.</p>
+  </div>
+</section>
+
 </main>
 
 <div class="capa" id="capa" hidden>
@@ -1187,6 +1320,17 @@ function mostrarSeccion(nombre) {
     if (nombre === "documentos") { cargarAnios(); buscarDocumentos(1); }
     if (nombre === "descargas") { buscarDescargas(1); }
     if (nombre === "bitacora") { cargarEjecuciones(); }
+    if (nombre === "pipeline") { cargarFlujo(); }
+  } else if (nombre === "pipeline") {
+    // Volver a la pestaña refresca en silencio: alguien pudo correr el
+    // flujo desde la terminal mientras tanto.
+    cargarFlujo(true);
+  }
+  // Una consola oculta no se desplaza, así que al mostrarla se lleva al
+  // final, que es donde está lo nuevo.
+  var consolas = document.querySelectorAll("#sec-" + nombre + " .consola");
+  for (var k = 0; k < consolas.length; k++) {
+    consolas[k].scrollTop = consolas[k].scrollHeight;
   }
   ajustarSondeo();
   // La red solo se anima con el Panel a la vista: repintar detras de una
@@ -1269,15 +1413,27 @@ var sondeo = null;
 var ticker = null;
 var firmaLineas = "";
 
-function pintarTrabajo(t) {
-  var previo = trabajo;
-  trabajo = t || null;
-  var activo = !!(t && t.activo);
+/* El mismo trabajo se pinta en dos lugares, el Panel y la pestaña Pipeline,
+   con las mismas líneas. Cada consola recuerda por su cuenta si quien la
+   mira estaba pegado al final. */
+var VISTAS_TRABAJO = [
+  { ins: "ins-trabajo", tiempo: "tiempo-trabajo", param: "param-trabajo",
+    consola: "consola", resultado: "resultado-trabajo", error: "error-trabajo" },
+  { ins: "ins-trabajo-p", tiempo: "tiempo-trabajo-p", param: "param-trabajo-p",
+    consola: "consola-p", resultado: "resultado-trabajo-p", error: "error-trabajo-p" }
+];
 
-  var ins = $("ins-trabajo");
-  if (activo) {
+function pintarInsigniaTrabajo(ins, t) {
+  var activo = !!(t && t.activo);
+  if (activo && t.cancelando) {
+    ins.className = "ins alerta";
+    ins.textContent = "cancelando: " + texto(t.tipo, "trabajo");
+  } else if (activo) {
     ins.className = "ins";
     ins.textContent = "corriendo: " + texto(t.tipo, "trabajo");
+  } else if (t && t.cancelado) {
+    ins.className = "ins alerta";
+    ins.textContent = "cancelado";
   } else if (t && t.error) {
     ins.className = "ins malo";
     ins.textContent = "terminó con error";
@@ -1288,66 +1444,113 @@ function pintarTrabajo(t) {
     ins.className = "ins gris";
     ins.textContent = "sin trabajo";
   }
+}
 
-  var par = t && t.parametros ? t.parametros : null;
-  $("param-trabajo").textContent = par ? Object.keys(par).map(function (k) {
-    return k + "=" + (par[k] === null || par[k] === undefined ? "" : par[k]);
-  }).join("   ") : "";
+/* Un valor de los parámetros o del resultado en una línea. El resultado
+   del flujo trae un objeto (el estatus de cada paso), que sin esto saldría
+   como "[object Object]". */
+function valorCorto(v) {
+  if (v === null || v === undefined) { return ""; }
+  if (Array.isArray(v)) { return v.map(valorCorto).join(", "); }
+  if (typeof v === "object") {
+    return Object.keys(v).map(function (k) { return k + " " + valorCorto(v[k]); })
+                         .join(" · ");
+  }
+  return String(v);
+}
 
-  actualizarTiempo();
+function pintarConsola(c, lineas, activo) {
+  var pegado = (c.scrollHeight - c.scrollTop - c.clientHeight) < 48;
+  vaciar(c);
+  if (!lineas.length) {
+    c.appendChild(el("span", "aviso-consola",
+      activo ? "Arrancando..." : "Sin trabajo en curso."));
+  } else {
+    lineas.forEach(function (ln) {
+      var fila = el("div");
+      fila.appendChild(el("span", "hora", horaDe(ln.t)));
+      fila.appendChild(el("span", null, texto(ln.texto, "")));
+      c.appendChild(fila);
+    });
+  }
+  if (pegado) { c.scrollTop = c.scrollHeight; }
+}
+
+function pintarTrabajo(t) {
+  var previo = trabajo;
+  trabajo = t || null;
+  var activo = !!(t && t.activo);
 
   var lineas = (t && t.lineas) ? t.lineas : [];
   var firma = lineas.length + "|" + (lineas.length ? String(lineas[lineas.length - 1].texto) : "");
-  if (firma !== firmaLineas) {
-    firmaLineas = firma;
-    var c = $("consola");
-    var pegado = (c.scrollHeight - c.scrollTop - c.clientHeight) < 48;
-    vaciar(c);
-    if (!lineas.length) {
-      c.appendChild(el("span", "aviso-consola",
-        activo ? "Arrancando..." : "Sin trabajo en curso."));
-    } else {
-      lineas.forEach(function (ln) {
-        var fila = el("div");
-        fila.appendChild(el("span", "hora", horaDe(ln.t)));
-        fila.appendChild(el("span", null, texto(ln.texto, "")));
-        c.appendChild(fila);
+  var lineasNuevas = firma !== firmaLineas;
+  firmaLineas = firma;
+
+  var par = t && t.parametros ? t.parametros : null;
+  var textoParam = par ? Object.keys(par).map(function (k) {
+    return k + "=" + valorCorto(par[k]);
+  }).join("   ") : "";
+
+  VISTAS_TRABAJO.forEach(function (v) {
+    pintarInsigniaTrabajo($(v.ins), t);
+    $(v.param).textContent = textoParam;
+    if (lineasNuevas) { pintarConsola($(v.consola), lineas, activo); }
+
+    var res = vaciar($(v.resultado));
+    if (t && t.resultado && typeof t.resultado === "object") {
+      Object.keys(t.resultado).forEach(function (k) {
+        var p = el("div", "par");
+        p.appendChild(el("span", null, k + ": "));
+        p.appendChild(el("b", null, texto(valorCorto(t.resultado[k]))));
+        res.appendChild(p);
       });
     }
-    if (pegado) { c.scrollTop = c.scrollHeight; }
-  }
 
-  var res = vaciar($("resultado-trabajo"));
-  if (t && t.resultado && typeof t.resultado === "object") {
-    Object.keys(t.resultado).forEach(function (k) {
-      var p = el("div", "par");
-      p.appendChild(el("span", null, k + ": "));
-      p.appendChild(el("b", null, texto(t.resultado[k])));
-      res.appendChild(p);
-    });
-  }
+    // Un trabajo cancelado no falló: la insignia ya lo dice, y la caja roja
+    // haría pensar que algo se rompió.
+    var caja = $(v.error);
+    if (t && t.error && !t.cancelado) {
+      caja.hidden = false;
+      caja.textContent = "Error: " + String(t.error);
+    } else {
+      caja.hidden = true;
+      caja.textContent = "";
+    }
+  });
 
-  var caja = $("error-trabajo");
-  if (t && t.error) {
-    caja.hidden = false;
-    caja.textContent = "Error: " + String(t.error);
-  } else {
-    caja.hidden = true;
-    caja.textContent = "";
-  }
+  actualizarTiempo();
 
   trabajoActivo = activo;
   actualizarBotonesDeLanzar();
 
-  // Al terminar un trabajo cambian las cifras y la bitacora.
-  var seguiaActivo = !!(previo && previo.activo);
-  if (seguiaActivo && !activo) {
-    avisar("Trabajo terminado", t && t.error ? "Terminó con error, revisa la consola."
-                                             : "Terminó sin error.",
-           t && t.error ? "malo" : "ok");
+  // Al terminar un trabajo cambian las cifras, la bitácora y, si fue el
+  // flujo, sus carpetas. No basta con ver pasar 'activo' de sí a no: un
+  // flujo con todos sus pasos ya hechos termina antes del primer sondeo y
+  // nunca se le ve activo. Por eso también cuenta un trabajo terminado que
+  // no es el que se pintó la vez anterior. Sin 'previo' (la primera carga
+  // de la página) no se avisa de nada: ese trabajo ya era viejo.
+  var termino = !!(previo && t && !activo && t.terminado_en
+                   && (previo.activo || previo.iniciado_en !== t.iniciado_en
+                       || previo.terminado_en !== t.terminado_en));
+  if (termino) {
+    if (t && t.cancelado) {
+      avisar("Trabajo cancelado",
+             "Lo hecho quedó guardado; volver a lanzarlo retoma donde se quedó.",
+             "alerta");
+    } else {
+      avisar("Trabajo terminado", t && t.error ? "Terminó con error, revisa la consola."
+                                               : "Terminó sin error.",
+             t && t.error ? "malo" : "ok");
+    }
     cargarPanel();
     cargarConsultas(true);
     if (yaCargada.bitacora) { cargarEjecuciones(); }
+    if (yaCargada.pipeline) { flujoAlTerminar(t); }
+  } else if (activo && t.tipo === "flujo" && lineasNuevas
+             && seccionActual === "pipeline") {
+    // estado.json se escribe al cerrar cada paso, y cada paso deja líneas:
+    // es la señal para volver a mirar la carpeta.
+    refrescarFlujoEnVivo();
   }
   ajustarSondeo();
 }
@@ -1363,10 +1566,12 @@ function horaDe(t) {
 }
 
 function actualizarTiempo() {
-  var n = $("tiempo-trabajo");
-  if (!trabajo || !trabajo.iniciado_en) { n.textContent = ""; return; }
-  var t = transcurrido(trabajo.iniciado_en, trabajo.terminado_en);
-  n.textContent = t ? (trabajo.activo ? "corriendo " : "duró ") + t : "";
+  var dicho = "";
+  if (trabajo && trabajo.iniciado_en) {
+    var t = transcurrido(trabajo.iniciado_en, trabajo.terminado_en);
+    dicho = t ? (trabajo.activo ? "corriendo " : "duró ") + t : "";
+  }
+  VISTAS_TRABAJO.forEach(function (v) { $(v.tiempo).textContent = dicho; });
 }
 
 function sondearTrabajo() {
@@ -1382,15 +1587,17 @@ function detenerSondeo() {
 }
 
 /* Cada 1.5 s mientras hay trabajo activo. Sin trabajo se baja a 5 s y solo
-   con el Panel a la vista, para enterarse de una corrida lanzada por otra
-   persona sin castigar al servidor con sondeos inutiles. */
+   con el Panel o el Pipeline a la vista, que son las dos pestañas con
+   consola, para enterarse de una corrida lanzada por otra persona sin
+   castigar al servidor con sondeos inútiles. */
 var periodoSondeo = 0;
 function ajustarSondeo() {
   var activo = !!(trabajo && trabajo.activo);
+  var conConsola = seccionActual === "panel" || seccionActual === "pipeline";
   var quiere;
   if (servidorVivo === false) { quiere = 10000; }
   else if (activo) { quiere = 1500; }
-  else { quiere = (seccionActual === "panel" ? 5000 : 0); }
+  else { quiere = (conConsola ? 5000 : 0); }
   if (quiere === periodoSondeo && (sondeo || quiere === 0)) { return; }
   detenerSondeo();
   periodoSondeo = quiere;
@@ -2179,6 +2386,566 @@ function verPdf(pmid) {
   cuerpo.appendChild(marco);
 }
 
+/* =========================================================== PIPELINE */
+
+/* El flujo de punta a punta (flujo.py) visto desde el tablero. Aquí no se
+   calcula nada: se pinta lo que dicen /api/flujo y el estado.json de cada
+   carpeta, y el flujo se lanza por la misma vía que el run y el fulltext,
+   así que el candado de un-trabajo-a-la-vez lo cubre igual. */
+
+var flujoInfo = null;          // lo ultimo que dijo /api/flujo
+var carpetaElegida = null;     // la que pintan Pasos, Cifras y Salidas
+var carpetaEsperada = null;    // {corrida, limite} de un flujo cuya carpeta aun no existe
+var eleccionInicial = false;
+var ultimoRefrescoFlujo = 0;
+var firmaCifras = "";
+
+var LIMITE_PRUEBA = 200;
+
+var CLASE_PASO = { ok: "ok", saltado: "ok", error: "malo", cancelado: "alerta",
+                   omitido: "alerta", pendiente: "gris" };
+
+/* Las cifras salen de estos dos resúmenes, cuando la carpeta ya los tiene.
+   Un resumen de varios MB ya no es resumen: se ofrece para bajar. */
+var ARCHIVOS_CIFRAS = ["evaluacion.json", "capa_resumen.json"];
+var MAX_BYTES_CIFRAS = 2 * 1048576;
+var MAX_CIFRAS = 60;
+
+function urlCarpeta(nombre) {
+  return "/api/flujo/" + encodeURIComponent(nombre);
+}
+
+function urlArchivoFlujo(carpeta, archivo) {
+  return urlCarpeta(carpeta) + "/archivos/" + encodeURIComponent(archivo);
+}
+
+function insigniaPaso(estatus) {
+  var s = String(estatus || "pendiente");
+  return el("span", "ins " + (CLASE_PASO[s] || "gris"), s);
+}
+
+function duracion(segundos) {
+  if (segundos === null || segundos === undefined || segundos === "") { return "-"; }
+  var n = Number(segundos);
+  if (isNaN(n)) { return "-"; }
+  if (n < 60) { return n.toFixed(1) + " s"; }
+  var s = Math.round(n), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return (h > 0 ? h + ":" + dosDig(m) : m) + ":" + dosDig(s % 60);
+}
+
+function corridaDelFormulario() {
+  var v = $("p-corrida").value;
+  return v ? Number(v) : null;
+}
+
+function limiteDelFormulario() {
+  return $("p-rapida").checked ? LIMITE_PRUEBA : null;
+}
+
+/* La carpeta de una corrida y un límite. Puede haber varias, una por
+   modelo: gana la que se actualizó al último. Sin corrida, cualquiera con
+   ese límite. */
+function buscarCarpeta(corrida, limite) {
+  var carpetas = (flujoInfo && flujoInfo.carpetas) || [];
+  var lim = limite ? Number(limite) : null;
+  var mejor = null;
+  carpetas.forEach(function (c) {
+    if ((c.limite ? Number(c.limite) : null) !== lim) { return; }
+    if (corrida !== null && corrida !== undefined
+        && Number(c.corrida_bronce) !== Number(corrida)) { return; }
+    if (!mejor || String(c.actualizado || "") > String(mejor.actualizado || "")) {
+      mejor = c;
+    }
+  });
+  return mejor ? mejor.nombre : null;
+}
+
+function existeCarpeta(nombre) {
+  return ((flujoInfo && flujoInfo.carpetas) || []).some(function (c) {
+    return c.nombre === nombre;
+  });
+}
+
+/* La carpeta del último flujo que corrió el tablero, si lo hubo. */
+function carpetaDelUltimoFlujo() {
+  if (!trabajo || trabajo.tipo !== "flujo") { return null; }
+  if (trabajo.resultado && trabajo.resultado.carpeta
+      && existeCarpeta(trabajo.resultado.carpeta)) {
+    return trabajo.resultado.carpeta;
+  }
+  var p = trabajo.parametros || {};
+  return buscarCarpeta(p.corrida, p.limite);
+}
+
+function cargarFlujo(silencioso) {
+  return api("GET", "/api/flujo").then(function (info) {
+    flujoInfo = info || {};
+    pintarFormularioFlujo(flujoInfo);
+
+    if (carpetaElegida && !existeCarpeta(carpetaElegida)) { carpetaElegida = null; }
+    if (!eleccionInicial) {
+      eleccionInicial = true;
+      carpetaElegida = carpetaDelUltimoFlujo()
+        || buscarCarpeta(corridaDelFormulario(), limiteDelFormulario());
+    }
+    if (!carpetaElegida && carpetaEsperada) {
+      // El flujo que se lanzó ya creó su carpeta: desde ahora se pinta esa.
+      carpetaElegida = buscarCarpeta(carpetaEsperada.corrida, carpetaEsperada.limite);
+      if (carpetaElegida) { carpetaEsperada = null; }
+    }
+    pintarSelectCarpetas();
+    return cargarCarpeta(silencioso);
+  }).catch(function (e) {
+    if (!silencioso) {
+      filaMensaje($("t-pasos-flujo"), 4, "No se pudo leer el flujo: " + e.message, "fallo");
+    }
+  });
+}
+
+function refrescarFlujoEnVivo() {
+  var ahora = Date.now();
+  if (ahora - ultimoRefrescoFlujo < 3000) { return; }
+  ultimoRefrescoFlujo = ahora;
+  cargarFlujo(true);
+}
+
+function flujoAlTerminar(t) {
+  if (t && t.tipo === "flujo" && t.resultado && t.resultado.carpeta) {
+    carpetaElegida = t.resultado.carpeta;
+    carpetaEsperada = null;
+  }
+  firmaCifras = "";        // las cifras pudieron cambiar con la corrida
+  cargarFlujo(true);
+}
+
+/* Mientras el flujo corre la pestaña se refresca cada pocos segundos.
+   Rehacer un select que no cambió cerraría la lista que alguien tiene
+   abierta, así que solo se rehace si cambió lo que muestra. */
+var firmaCorridas = null;
+var firmaCarpetas = null;
+
+function pintarFormularioFlujo(info) {
+  var sel = $("p-corrida");
+  var previo = sel.value;
+  var corridas = info.corridas_bronce || [];
+  var firma = JSON.stringify(corridas);
+  if (firma !== firmaCorridas) {
+    firmaCorridas = firma;
+    vaciar(sel);
+    if (!corridas.length) {
+      // Sin corridas listadas (una base sin tablas del bronce), el flujo
+      // toma por su cuenta la última terminada.
+      var vacia = el("option", null, "la última terminada");
+      vacia.value = "";
+      sel.appendChild(vacia);
+    }
+    corridas.forEach(function (c) {
+      var partes = ["Corrida " + c.id, texto(c.metodo, "?") + " v" + texto(c.version, "?"),
+                    fechaCorta(c.iniciada_en)];
+      if (c.n_salida !== null && c.n_salida !== undefined) {
+        partes.push(miles(c.n_salida) + " candidatas");
+      }
+      var o = el("option", null, partes.join(" · "));
+      o.value = String(c.id);
+      sel.appendChild(o);
+    });
+    // Llegan de la más nueva a la más vieja: sin elección previa queda la
+    // última, que es la que casi siempre se quiere.
+    if (previo && Array.prototype.some.call(sel.options, function (o) {
+          return o.value === previo; })) {
+      sel.value = previo;
+    }
+  }
+
+  // Las casillas se arman una sola vez, para no borrar lo que la persona
+  // ya marcó cada vez que se refresca.
+  var caja = $("p-pasos");
+  if (!caja.children.length) {
+    (info.pasos || []).forEach(function (p) {
+      var d = el("div", "marca-campo");
+      var chk = el("input");
+      chk.type = "checkbox";
+      chk.id = "p-paso-" + p;
+      chk.checked = true;
+      chk.setAttribute("data-paso", p);
+      var lab = el("label", null, texto((info.nombres || {})[p], p));
+      lab.setAttribute("for", chk.id);
+      d.appendChild(chk);
+      d.appendChild(lab);
+      caja.appendChild(d);
+    });
+  }
+
+  var entornos = info.entornos || {};
+  var avisos = [];
+  var sintaxis = $("p-paso-sintaxis");
+  if (sintaxis) {
+    sintaxis.disabled = !entornos.nlp;
+    sintaxis.title = entornos.nlp ? "" : "No hay entorno de spaCy (.venv-nlp) en esta máquina.";
+    if (!entornos.nlp) {
+      sintaxis.checked = false;
+      avisos.push("«Sintaxis» está apagado: no hay entorno de spaCy (.venv-nlp) en esta "
+                  + "máquina. La capa sale igual, sin el análisis sintáctico.");
+    }
+  }
+  var reusar = $("p-reusar");
+  reusar.disabled = !entornos.reuso;
+  if (!entornos.reuso) {
+    reusar.checked = false;
+    avisos.push("No están las predicciones del 27-ago (datos_etapa2/): BioBERT "
+                + "clasificará todos los pares.");
+  }
+  if (entornos.modelo === false) {
+    avisos.push("No está el modelo (modelo_limpio_run22/): el paso «BioBERT» va a fallar.");
+  }
+  if (entornos.operones_base === false) {
+    avisos.push("Falta grn_bronce/recursos/operones_base.tsv: el paso de operones se "
+                + "omite y la capa solo trae los operones que nombra la oración.");
+  }
+  var ul = vaciar($("p-avisos"));
+  avisos.forEach(function (a) { ul.appendChild(el("li", null, a)); });
+}
+
+function pintarSelectCarpetas() {
+  var carpetas = (flujoInfo && flujoInfo.carpetas) || [];
+  var firma = (carpetaElegida || "") + "|" + carpetas.map(function (c) {
+    return c.nombre;
+  }).join("|");
+  if (firma === firmaCarpetas) { return; }
+  firmaCarpetas = firma;
+  var sel = vaciar($("p-carpeta"));
+  if (!carpetaElegida) {
+    var o = el("option", null, carpetas.length ? "(ninguna para esta corrida)"
+                                               : "(todavía no hay carpetas)");
+    o.value = "";
+    sel.appendChild(o);
+  }
+  carpetas.forEach(function (c) {
+    var x = el("option", null, c.nombre);
+    x.value = c.nombre;
+    sel.appendChild(x);
+  });
+  sel.value = carpetaElegida || "";
+  sel.disabled = !carpetas.length;
+}
+
+function cargarCarpeta(silencioso) {
+  var nombre = carpetaElegida;
+  if (!nombre) { pintarSinCarpeta(); return Promise.resolve(); }
+  if (!silencioso) { filaMensaje($("t-pasos-flujo"), 4, "Cargando...", "cargando"); }
+  return api("GET", urlCarpeta(nombre)).then(function (d) {
+    if (nombre !== carpetaElegida) { return; }   // eligieron otra mientras llegaba
+    d = d || {};
+    pintarPasos(d);
+    pintarSalidas(d);
+    return pintarCifras(d);
+  }).catch(function (e) {
+    if (nombre !== carpetaElegida) { return; }
+    if (e.codigo === 404) {
+      // La borraron entre el listado y el detalle.
+      carpetaElegida = null;
+      pintarSelectCarpetas();
+      pintarSinCarpeta();
+      return;
+    }
+    filaMensaje($("t-pasos-flujo"), 4, "No se pudo leer la carpeta: " + e.message, "fallo");
+  });
+}
+
+function pintarSinCarpeta() {
+  var corrida = corridaDelFormulario();
+  $("p-carpeta-info").textContent = "";
+  filaMensaje($("t-pasos-flujo"), 4, corrida
+    ? "Todavía no hay carpeta del flujo para la corrida " + corrida
+      + (limiteDelFormulario() ? " en prueba rápida" : "") + ": se crea al correrlo."
+    : "Todavía no hay carpetas del flujo: se crean al correrlo.");
+  filaMensaje($("t-salidas-flujo"), 4, "Sin carpeta no hay salidas.");
+  $("p-salidas-total").textContent = "";
+  firmaCifras = "";
+  vaciar($("p-cifras")).appendChild(el("p", "sub",
+    "Las cifras aparecen cuando terminan los pasos «Capa» y «Evaluación»."));
+}
+
+/* La nota de un paso fallido trae las últimas líneas del programa: la
+   primera se lee en la tabla y el resto se despliega. */
+function celdaNota(nota) {
+  var td = el("td", "nota");
+  if (!nota) { return td; }
+  var s = String(nota);
+  var corte = s.indexOf("\n");
+  if (corte < 0) { td.textContent = s; return td; }
+  var det = el("details");
+  det.appendChild(el("summary", null, s.slice(0, corte)));
+  det.appendChild(el("pre", "mono", s.slice(corte + 1)));
+  td.appendChild(det);
+  return td;
+}
+
+function pintarPasos(d) {
+  var estado = d.estado || {};
+  var registros = estado.pasos || {};
+  var pasos = (flujoInfo && flujoInfo.pasos) || Object.keys(registros);
+  var nombres = (flujoInfo && flujoInfo.nombres) || {};
+
+  var partes = [];
+  if (estado.corrida_bronce !== null && estado.corrida_bronce !== undefined) {
+    partes.push("Corrida " + estado.corrida_bronce + " del bronce");
+  }
+  if (estado.modelo) { partes.push("modelo " + estado.modelo); }
+  partes.push(estado.limite ? "prueba rápida de " + miles(estado.limite) + " oraciones"
+                            : "corrida entera");
+  if (estado.actualizado) { partes.push("actualizada " + fechaCorta(estado.actualizado)); }
+  if (estado.nota) { partes.push(estado.nota); }
+  $("p-carpeta-info").textContent = partes.join(" · ");
+
+  var tb = vaciar($("t-pasos-flujo"));
+  pasos.forEach(function (p) {
+    var r = registros[p] || {};
+    var estatus = r.estatus || "pendiente";
+    var tr = el("tr");
+    var tdN = el("td", null, texto(nombres[p] || r.nombre, p));
+    tdN.title = p;
+    tr.appendChild(tdN);
+    var tdE = el("td", "nw");
+    tdE.appendChild(insigniaPaso(estatus));
+    tr.appendChild(tdE);
+    // Un paso saltado conserva los segundos de la vez que sí corrió:
+    // mostrarlos diría que hoy tardó eso.
+    var tdD = el("td", "num", estatus === "saltado" ? "-" : duracion(r.segundos));
+    if (estatus === "saltado" && r.segundos !== undefined && r.segundos !== null) {
+      tdD.title = "La última vez que corrió tardó " + duracion(r.segundos);
+    }
+    tr.appendChild(tdD);
+    tr.appendChild(celdaNota(r.nota));
+    tb.appendChild(tr);
+  });
+}
+
+function pintarSalidas(d) {
+  var tb = vaciar($("t-salidas-flujo"));
+  var archivos = d.archivos || [];
+  $("p-salidas-total").textContent = archivos.length
+    ? miles(archivos.length) + " archivos en " + d.nombre : "";
+  if (!archivos.length) {
+    filaMensaje(tb, 4, "La carpeta todavía no tiene archivos.");
+    return;
+  }
+  archivos.forEach(function (a) {
+    var tr = el("tr");
+    tr.appendChild(el("td", "mono", a.nombre));
+    tr.appendChild(el("td", "num", tamano(a.bytes)));
+    tr.appendChild(celdaFecha(a.modificado));
+
+    var acc = el("div", "acciones");
+    var url = urlArchivoFlujo(d.nombre, a.nombre);
+    var bajar = el("a", "boton suave mini", "Descargar");
+    bajar.href = url;
+    bajar.setAttribute("download", a.nombre);
+    bajar.setAttribute("aria-label", "Descargar " + a.nombre);
+    acc.appendChild(bajar);
+    // Lo que el navegador pinta como texto se puede abrir en otra pestaña:
+    // flujo.log trae entera la salida que la consola recorta.
+    if (/\.(json|log|txt)$/.test(a.nombre)) {
+      var ver = el("a", "boton suave mini", "Ver");
+      ver.href = url + "?ver=1";
+      ver.target = "_blank";
+      ver.rel = "noopener";
+      ver.setAttribute("aria-label", "Ver " + a.nombre + " en otra pestaña");
+      acc.appendChild(ver);
+    }
+    var td = el("td", "nw");
+    td.appendChild(acc);
+    tr.appendChild(td);
+    tb.appendChild(tr);
+  });
+}
+
+/* Las claves de un JSON son identificadores y van sin acento (CLAUDE.md);
+   en una etiqueta para leer sí lo llevan. Solo las palabras obvias: lo que
+   no está aquí se muestra tal cual, con espacios en vez de guiones bajos. */
+var PALABRAS_CIFRA = {
+  precision: "precisión", oracion: "oración", relacion: "relación",
+  funcion: "función", operon: "operón", evaluacion: "evaluación",
+  linea: "línea", minimo: "mínimo", maximo: "máximo", numero: "número",
+  prediccion: "predicción", clasificacion: "clasificación",
+  sintactica: "sintáctica", sintactico: "sintáctico", anio: "año",
+  biobert: "BioBERT", pct: "%"
+};
+var SIGLAS_CIFRA = { n: true, f1: true, tp: true, fp: true, fn: true, tn: true,
+                     id: true, pmid: true };
+
+function etiquetaCifra(clave) {
+  var s = String(clave).split(/[_\s]+/).filter(Boolean).map(function (w) {
+    var m = w.toLowerCase();
+    if (SIGLAS_CIFRA[m]) { return m.toUpperCase(); }
+    return PALABRAS_CIFRA[m] || w;
+  }).join(" ");
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function valorCifra(v) {
+  if (typeof v === "boolean") { return v ? "sí" : "no"; }
+  if (typeof v === "number") {
+    return Math.floor(v) === v ? miles(v)
+                               : v.toLocaleString("es-MX", { maximumFractionDigits: 3 });
+  }
+  return String(v);
+}
+
+/* Las cifras sueltas de un JSON cualquiera: números, booleanos y textos
+   cortos, con la ruta de claves como etiqueta. Las listas no son cifras y
+   se saltan; tres niveles bastan para un resumen. Así la tarjeta sirve con
+   las claves que tengan hoy evaluacion.json y capa_resumen.json, y con las
+   que tengan mañana. */
+function aplanarCifras(valor, ruta, salida) {
+  if (valor === null || valor === undefined) { return; }
+  var tipo = typeof valor;
+  if (tipo === "number" || tipo === "boolean" || (tipo === "string" && valor.length <= 80)) {
+    if (ruta.length) {
+      salida.push({ ruta: ruta.join("."), etiqueta: ruta.map(etiquetaCifra).join(" · "),
+                    valor: valorCifra(valor) });
+    }
+    return;
+  }
+  if (tipo === "object" && !Array.isArray(valor) && ruta.length < 3) {
+    Object.keys(valor).forEach(function (k) {
+      aplanarCifras(valor[k], ruta.concat([k]), salida);
+    });
+  }
+}
+
+function bloqueCifras(pieza) {
+  var bloque = el("div", "bloque-cifras");
+  bloque.appendChild(el("h3", "mono", pieza.archivo.nombre));
+  if (pieza.grande) {
+    bloque.appendChild(el("p", "sub", "Pesa " + tamano(pieza.archivo.bytes)
+                          + "; no se pinta aquí. Bájalo desde Salidas."));
+    return bloque;
+  }
+  if (pieza.error) {
+    bloque.appendChild(el("p", "fallo", "No se pudo leer: " + pieza.error.message));
+    return bloque;
+  }
+  var pares = [];
+  aplanarCifras(pieza.datos, [], pares);
+  if (!pares.length) {
+    bloque.appendChild(el("p", "sub", "No trae cifras sueltas que pintar."));
+    return bloque;
+  }
+  var lista = el("div", "resultado");
+  pares.slice(0, MAX_CIFRAS).forEach(function (x) {
+    var chip = el("div", "par");
+    chip.title = x.ruta;
+    chip.appendChild(el("span", null, x.etiqueta + ": "));
+    chip.appendChild(el("b", null, x.valor));
+    lista.appendChild(chip);
+  });
+  bloque.appendChild(lista);
+  if (pares.length > MAX_CIFRAS) {
+    bloque.appendChild(el("p", "pista", "Y " + miles(pares.length - MAX_CIFRAS)
+                          + " cifras más en el archivo; ábrelo con «Ver» en Salidas."));
+  }
+  return bloque;
+}
+
+function pintarCifras(d) {
+  var caja = $("p-cifras");
+  var presentes = (d.archivos || []).filter(function (a) {
+    return ARCHIVOS_CIFRAS.indexOf(a.nombre) >= 0;
+  });
+  // Mientras el flujo corre se refresca seguido; los JSON solo se vuelven a
+  // pedir si cambiaron.
+  var firma = d.nombre + "|" + presentes.map(function (a) {
+    return a.nombre + ":" + a.bytes + ":" + a.modificado;
+  }).join("|");
+  if (firma === firmaCifras) { return Promise.resolve(); }
+  if (!presentes.length) {
+    firmaCifras = firma;
+    vaciar(caja).appendChild(el("p", "sub", "Todavía no hay cifras en esta carpeta: "
+      + "aparecen cuando terminan los pasos «Capa» y «Evaluación»."));
+    return Promise.resolve();
+  }
+  return Promise.all(presentes.map(function (a) {
+    if (Number(a.bytes) > MAX_BYTES_CIFRAS) { return { archivo: a, grande: true }; }
+    return api("GET", urlArchivoFlujo(d.nombre, a.nombre) + "?ver=1").then(
+      function (datos) { return { archivo: a, datos: datos }; },
+      function (e) { return { archivo: a, error: e }; });
+  })).then(function (piezas) {
+    if (d.nombre !== carpetaElegida) { return; }
+    firmaCifras = firma;
+    vaciar(caja);
+    piezas.forEach(function (p) { caja.appendChild(bloqueCifras(p)); });
+  });
+}
+
+function seguirAlFormulario() {
+  carpetaEsperada = null;
+  carpetaElegida = buscarCarpeta(corridaDelFormulario(), limiteDelFormulario());
+  pintarSelectCarpetas();
+  cargarCarpeta();
+}
+
+$("p-corrida").addEventListener("change", seguirAlFormulario);
+$("p-rapida").addEventListener("change", seguirAlFormulario);
+
+$("p-carpeta").addEventListener("change", function () {
+  carpetaElegida = $("p-carpeta").value || null;
+  carpetaEsperada = null;
+  pintarSelectCarpetas();
+  cargarCarpeta();
+});
+
+$("b-refrescar-flujo").addEventListener("click", function () {
+  firmaCifras = "";
+  cargarFlujo();
+  sondearTrabajo();
+});
+
+$("b-flujo-correr").addEventListener("click", function () {
+  var marcas = $("p-pasos").querySelectorAll("input[data-paso]");
+  if (!marcas.length) {
+    avisar("Todavía no cargan los pasos", "Espera un momento o usa «Actualizar».", "malo");
+    return;
+  }
+  var pasos = [];
+  for (var i = 0; i < marcas.length; i++) {
+    if (marcas[i].checked && !marcas[i].disabled) {
+      pasos.push(marcas[i].getAttribute("data-paso"));
+    }
+  }
+  if (!pasos.length) { avisar("Faltan pasos", "Marca al menos un paso.", "malo"); return; }
+
+  var corrida = corridaDelFormulario();
+  var limite = limiteDelFormulario();
+  var cuerpo = {
+    tipo: "flujo", corrida: corrida, pasos: pasos, limite: limite,
+    reusar: $("p-reusar").checked && !$("p-reusar").disabled
+  };
+  // Pasos y Salidas siguen al flujo que se lanza. Si su carpeta todavía
+  // no existe, se toma en cuanto el flujo la cree.
+  carpetaElegida = buscarCarpeta(corrida, limite);
+  carpetaEsperada = carpetaElegida ? null : { corrida: corrida, limite: limite };
+  pintarSelectCarpetas();
+  cargarCarpeta(true);
+  lanzar(cuerpo, "flujo sobre " + (corrida ? "la corrida " + corrida
+                                           : "la última corrida del bronce")
+                 + (limite ? ", prueba rápida" : ""));
+});
+
+$("b-flujo-cancelar").addEventListener("click", function () {
+  $("b-flujo-cancelar").disabled = true;
+  api("POST", "/api/trabajo/cancelar", {}).then(function (r) {
+    avisar("Cancelación pedida",
+           "El paso en curso se detiene en unos segundos; lo hecho queda en estado.json.",
+           "alerta");
+    if (r && r.trabajo) { pintarTrabajo(r.trabajo); }
+  }).catch(function (e) {
+    if (e.codigo === 409) { avisar("Nada que cancelar", e.message, "alerta"); }
+    else { avisarError(e); }
+    sondearTrabajo();
+  });
+});
+
 /* ============================================ credenciales de NCBI */
 
 /* El correo y la API key se configuran desde aqui y quedan guardados, asi
@@ -2241,6 +3008,23 @@ function actualizarBotonesDeLanzar() {
       ? "Configura el correo de contacto en «Credenciales de NCBI»"
       : (ocupado ? "Hay un trabajo en curso" : "");
   });
+
+  // El flujo no sale a PubMed: no depende del correo, solo de que no haya
+  // otro trabajo corriendo.
+  var correr = $("b-flujo-correr");
+  if (correr) {
+    correr.disabled = ocupado;
+    correr.title = ocupado ? "Hay un trabajo en curso" : "";
+  }
+  var cancelar = $("b-flujo-cancelar");
+  if (cancelar) {
+    var puede = !!(trabajo && trabajo.activo && trabajo.cancelable
+                   && !trabajo.cancelando);
+    cancelar.disabled = !puede;
+    cancelar.title = puede ? "" :
+      (trabajo && trabajo.cancelando ? "Ya se pidió cancelar; se está deteniendo"
+       : (ocupado ? "Este trabajo no se puede cancelar" : "No hay nada corriendo"));
+  }
 }
 
 $("b-guardar-config").addEventListener("click", function () {

@@ -9,6 +9,7 @@ ademas hace las pruebas instantaneas.
 
 import json
 import shutil
+import sys
 import tempfile
 import threading
 from pathlib import Path
@@ -166,6 +167,231 @@ class PruebasErrores(BasePruebaTrabajos):
         self.assertIn("query mal formada", lineas[-1])
 
 
+class PruebasSalidaConSysExit(BasePruebaTrabajos):
+    """Los CLI del proyecto terminan con sys.exit(...), y SystemExit no
+    hereda de Exception. Antes escapaba al except: el hilo moría en
+    silencio, sin error, y el tablero decía «terminó bien»."""
+
+    def test_sys_exit_con_mensaje_es_error(self):
+        def sale(log):
+            log("buscando la corrida")
+            sys.exit("No hay ninguna corrida del bronce terminada")
+
+        self.gestor.lanzar("flujo", sale)
+        self.esperar_fin()
+
+        estado = self.gestor.estado()
+        self.assertFalse(estado["activo"])
+        self.assertIn("SystemExit", estado["error"])
+        self.assertIn("No hay ninguna corrida", estado["error"])
+        self.assertIn("No hay ninguna corrida", estado["lineas"][-1]["texto"])
+        self.assertFalse(estado["cancelado"])
+
+    def test_sys_exit_con_codigo_distinto_de_cero_es_error(self):
+        self.gestor.lanzar("flujo", lambda log: sys.exit(2))
+        self.esperar_fin()
+
+        self.assertIn("código 2", self.gestor.estado()["error"])
+
+    def test_sys_exit_cero_o_sin_argumento_es_exito(self):
+        """La contraparte: una salida limpia no se puede pintar como falla."""
+        for salida in (SystemExit(0), SystemExit(None), SystemExit()):
+            def sale(log, e=salida):
+                raise e
+
+            self.gestor.lanzar("flujo", sale)
+            self.esperar_fin()
+
+            estado = self.gestor.estado()
+            self.assertIsNone(estado["error"], repr(salida))
+            self.assertIsNotNone(estado["terminado_en"])
+            self.assertFalse(estado["activo"])
+
+    def test_tras_un_sys_exit_el_gestor_acepta_otro_trabajo(self):
+        self.gestor.lanzar("flujo", lambda log: sys.exit("adios"))
+        self.esperar_fin()
+
+        self.gestor.lanzar("run", lambda log: {"ok": 1})
+        self.esperar_fin()
+        self.assertEqual(self.gestor.estado()["resultado"], {"ok": 1})
+
+
+# ----------------------------------------------------------------- cancelar
+
+class PruebasCancelar(BasePruebaTrabajos):
+    """Cancelar es cooperativo: el gestor enciende un evento y la función
+    hace caso. El gestor no sabe qué corre, así que decide si se canceló
+    por el evento y no por el tipo de la excepción."""
+
+    def test_cancelar_sin_trabajo_devuelve_false(self):
+        self.assertFalse(self.gestor.cancelar())
+
+    def test_un_trabajo_no_cancelable_no_se_cancela(self):
+        """Un run o un fulltext corren en el hilo y no miran ningún evento:
+        decir que se cancelaron sería mentir."""
+        arranco = threading.Event()
+        seguir = threading.Event()
+        self.addCleanup(seguir.set)
+        visto = {}
+
+        def bloqueado(log, **kw):
+            visto.update(kw)
+            arranco.set()
+            seguir.wait(ESPERA)
+
+        self.gestor.lanzar("run", bloqueado)
+        self.esperar_evento(arranco, "que arranque el trabajo")
+
+        self.assertFalse(self.gestor.cancelar())
+        self.assertNotIn("detener", visto)
+        estado = self.gestor.estado()
+        self.assertFalse(estado["cancelable"])
+        self.assertFalse(estado["cancelando"])
+
+        seguir.set()
+        self.esperar_fin()
+        estado = self.gestor.estado()
+        self.assertFalse(estado["cancelado"])
+        self.assertIsNone(estado["error"])
+
+    def test_un_trabajo_cancelable_recibe_detener_y_termina_cancelado(self):
+        arranco = threading.Event()
+        visto = {}
+
+        def largo(log, detener, corrida):
+            visto["detener"] = detener
+            log(f"flujo sobre la corrida {corrida}")
+            arranco.set()
+            # Lo que hace grn_comun.proceso: vigila el evento y, cuando se
+            # enciende, mata al hijo y lanza su propia excepción.
+            if detener.wait(ESPERA):
+                raise RuntimeError("Cancelado a petición: paso de prueba")
+            return {"pasos": "todos"}
+
+        self.gestor.lanzar("flujo", largo, cancelable=True, corrida=4)
+        self.esperar_evento(arranco, "que arranque el flujo")
+
+        self.assertIsInstance(visto["detener"], threading.Event)
+        estado = self.gestor.estado()
+        self.assertTrue(estado["cancelable"])
+        self.assertFalse(estado["cancelando"])
+
+        self.assertTrue(self.gestor.cancelar())
+        self.esperar_fin()
+
+        estado = self.gestor.estado()
+        self.assertFalse(estado["activo"])
+        self.assertTrue(estado["cancelado"])
+        self.assertFalse(estado["cancelando"])
+        self.assertEqual(estado["error"], "Cancelado a petición")
+        textos = [l["texto"] for l in estado["lineas"]]
+        self.assertEqual(textos[0], "flujo sobre la corrida 4")
+        self.assertTrue(any("Cancelación pedida" in t for t in textos))
+        self.assertEqual(textos[-1], "Cancelado a petición.")
+        # La excepción del hijo muerto es la consecuencia esperada de
+        # cancelar, no un error que gritar.
+        self.assertFalse([t for t in textos if t.startswith("ERROR")])
+        json.dumps(estado)
+
+        # Ya terminado, no hay nada que cancelar.
+        self.assertFalse(self.gestor.cancelar())
+
+    def test_mientras_se_detiene_dice_cancelando(self):
+        """Entre el clic y la muerte del proceso pasan segundos: el tablero
+        tiene que poder decir que ya se pidió, para que nadie insista."""
+        arranco = threading.Event()
+        soltar = threading.Event()
+        self.addCleanup(soltar.set)
+
+        def terco(log, detener):
+            arranco.set()
+            soltar.wait(ESPERA)
+
+        self.gestor.lanzar("flujo", terco, cancelable=True)
+        self.esperar_evento(arranco, "que arranque el trabajo")
+
+        self.assertTrue(self.gestor.cancelar())
+        # Pedirlo dos veces no es error ni repite el aviso.
+        self.assertTrue(self.gestor.cancelar())
+        estado = self.gestor.estado()
+        self.assertTrue(estado["activo"])
+        self.assertTrue(estado["cancelando"])
+        self.assertFalse(estado["cancelado"])
+        avisos = [l for l in estado["lineas"]
+                  if "Cancelación pedida" in l["texto"]]
+        self.assertEqual(len(avisos), 1)
+
+        soltar.set()
+        self.esperar_fin()
+        # Volvió sin lanzar, pero se le había pedido detenerse: una función
+        # puede hacer caso volviendo antes, y eso también es cancelar.
+        estado = self.gestor.estado()
+        self.assertTrue(estado["cancelado"])
+        self.assertEqual(estado["error"], "Cancelado a petición")
+
+    def test_el_evento_nunca_llega_a_los_parametros(self):
+        """estado() va tal cual al JSON del tablero: un threading.Event ahí
+        tronaría json.dumps en cada sondeo."""
+        en_curso = {}
+        arranco = threading.Event()
+        seguir = threading.Event()
+        self.addCleanup(seguir.set)
+
+        def trabajo(log, detener, corrida, pasos):
+            arranco.set()
+            seguir.wait(ESPERA)
+            return {"ok": 1}
+
+        self.gestor.lanzar("flujo", trabajo, cancelable=True, corrida=4,
+                           pasos=["bronce", "pares"])
+        self.esperar_evento(arranco, "que arranque el trabajo")
+        en_curso.update(self.gestor.estado())
+        seguir.set()
+        self.esperar_fin()
+
+        for estado in (en_curso, self.gestor.estado()):
+            self.assertEqual(estado["parametros"],
+                             {"corrida": 4, "pasos": ["bronce", "pares"]})
+            json.dumps(estado)
+
+    def test_el_detener_que_llega_de_fuera_se_pisa(self):
+        """Como 'con': el evento que cuenta es el que el gestor puede
+        encender. Uno ajeno dejaría el botón de cancelar sin efecto."""
+        ajeno = threading.Event()
+        visto = {}
+
+        def trabajo(log, detener):
+            visto["detener"] = detener
+
+        self.gestor.lanzar("flujo", trabajo, cancelable=True, detener=ajeno)
+        self.esperar_fin()
+
+        self.assertIsNot(visto["detener"], ajeno)
+        self.assertIsInstance(visto["detener"], threading.Event)
+
+    def test_el_siguiente_trabajo_no_hereda_la_cancelacion(self):
+        arranco = threading.Event()
+
+        def largo(log, detener):
+            arranco.set()
+            detener.wait(ESPERA)
+
+        self.gestor.lanzar("flujo", largo, cancelable=True)
+        self.esperar_evento(arranco, "que arranque el flujo")
+        self.gestor.cancelar()
+        self.esperar_fin()
+        self.assertTrue(self.gestor.estado()["cancelado"])
+
+        self.gestor.lanzar("run", lambda log: {"ok": 1})
+        self.esperar_fin()
+
+        estado = self.gestor.estado()
+        self.assertFalse(estado["cancelado"])
+        self.assertFalse(estado["cancelable"])
+        self.assertIsNone(estado["error"])
+        self.assertEqual(estado["resultado"], {"ok": 1})
+
+
 # ---------------------------------------------------------- captura del log
 
 class PruebasLineas(BasePruebaTrabajos):
@@ -268,6 +494,9 @@ class PruebasEstado(BasePruebaTrabajos):
         self.assertIsNone(estado["resultado"])
         self.assertEqual(estado["parametros"], {})
         self.assertEqual(estado["lineas"], [])
+        self.assertFalse(estado["cancelable"])
+        self.assertFalse(estado["cancelando"])
+        self.assertFalse(estado["cancelado"])
         json.dumps(estado)
 
     def test_los_parametros_no_serializables_no_llegan_al_json(self):

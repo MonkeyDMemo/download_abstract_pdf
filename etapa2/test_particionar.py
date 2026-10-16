@@ -144,6 +144,53 @@ class PruebasReparto(unittest.TestCase):
         self.assertEqual(sum(len(p) for p in partes), 30)
 
 
+class PruebasTablaClases(unittest.TestCase):
+
+    def _salida(self, partes):
+        lineas = []
+        P.tabla_clases(partes, ["train", "dev", "test"], salida=lineas.append)
+        return "\n".join(lineas)
+
+    def test_una_clase_que_falta_en_test_se_avisa(self):
+        """Su tupla de 4 ganaba el min() y el aviso no salia: el macro-F1 de
+        test se reportaba sin la clase y sin que nadie lo supiera."""
+        train = [fila("t%d" % i, e, pmid=i)
+                 for i, e in enumerate(P.ETIQUETAS * 3)]
+        dev = [fila("d%d" % i, e, pmid=100 + i)
+               for i, e in enumerate(P.ETIQUETAS * 2)]
+        test = [fila("x%d" % i, e, pmid=200 + i)
+                for i, e in enumerate(["activates", "no_relation",
+                                       "represses"] * 2)]
+        texto = self._salida([train, dev, test])
+        self.assertIn("AVISO: test no tiene ningun ejemplo de regulates", texto)
+        self.assertIn("validacion cruzada", texto)
+        self.assertIn("La celda mas flaca", texto)
+
+    def test_en_validacion_cruzada_tambien_se_avisa_fold_0(self):
+        """Con --folds no hay train y fold_0 es test de su pliegue; con
+        partes[1:] su clase vacía no se avisaba."""
+        nombres = ["fold_%d" % i for i in range(5)]
+        partes = []
+        for k in range(5):
+            etiquetas = [e for e in P.ETIQUETAS
+                         if not (k == 0 and e == "regulates")] * 3
+            partes.append([fila("f%d_%d" % (k, i), e, pmid=k * 100 + i)
+                           for i, e in enumerate(etiquetas)])
+        lineas = []
+        P.tabla_clases(partes, nombres, salida=lineas.append)
+        texto = "\n".join(lineas)
+        self.assertIn("AVISO: fold_0 no tiene ningun ejemplo de regulates",
+                      texto)
+
+    def test_sin_clases_vacias_sigue_la_celda_mas_flaca(self):
+        partes = [[fila("%s%d" % (n, i), e, pmid=k * 100 + i)
+                   for i, e in enumerate(P.ETIQUETAS * 6)]
+                  for k, n in enumerate(("t", "d", "x"))]
+        texto = self._salida(partes)
+        self.assertNotIn("no tiene ningun ejemplo", texto)
+        self.assertIn("La celda mas flaca", texto)
+
+
 class PruebasCasiDuplicados(unittest.TestCase):
 
     def test_detecta_una_ventana_contenida_en_otra(self):

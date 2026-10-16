@@ -195,9 +195,16 @@ def corrida(con, corrida_id):
                        (corrida_id,)).fetchone()
 
 
-def listar_corridas(con, limite=20):
+def listar_corridas(con, limite=20, paso=None):
+    """Las últimas corridas, o las de un paso. El filtro va en el SQL y no
+    después: desde que el paso 2 también deja filas en `corridas`, filtrar
+    las últimas N por paso dejaba fuera corridas del bronce más viejas."""
+    if paso is None:
+        return con.execute("SELECT * FROM corridas ORDER BY id DESC LIMIT ?",
+                           (limite,)).fetchall()
     return con.execute(
-        "SELECT * FROM corridas ORDER BY id DESC LIMIT ?", (limite,)).fetchall()
+        "SELECT * FROM corridas WHERE paso = ? ORDER BY id DESC LIMIT ?",
+        (paso, limite)).fetchall()
 
 
 def documentos_del_corpus(con, corpus_id=None):

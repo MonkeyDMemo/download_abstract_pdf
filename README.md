@@ -180,6 +180,7 @@ institucional.
 Lo mismo que hace el CLI, pero en el navegador: ver las consultas, buscar entre
 los documentos, corregir a mano un título o un año que llegó mal, revisar las
 descargas y lanzar un `run` o un `fulltext` viendo la bitácora avanzar en vivo.
+La pestaña «Pipeline» corre el flujo completo (ver más abajo).
 
 Al entrar explica qué es la herramienta y los cuatro pasos para usarla, así que
 alguien que llega nuevo al laboratorio puede abrirlo sin haber leído esto.
@@ -190,7 +191,10 @@ python3 servidor.py --abrir
 
 Arranca en <http://127.0.0.1:8765> y abre el navegador. Con `--puerto` se
 cambia el puerto y con `--email` se da el correo si no está en el entorno; sin
-correo el tablero arranca igual y deja ver y editar, pero no lanzar trabajos.
+correo el tablero arranca igual y deja ver y editar, pero no lanzar trabajos
+que salen a PubMed. Con `--datos` se le dice dónde están la base y el texto
+completo, con la misma precedencia que el resto del proyecto (`--datos`,
+luego `GRN_DATOS`, luego `./datos`).
 
 Dos cosas que conviene saber antes de usarlo:
 
@@ -314,14 +318,64 @@ Cómo se hizo el catálogo, fuente por fuente, con su diccionario de datos:
 `docs/catalogo-operones.md`. Por qué está hecho así: las secciones de operones
 de `docs/decisiones.md`.
 
+## El flujo de punta a punta: bronce, BioBERT y la capa
+
+`flujo.py` encadena los pasos que ya existen, cada uno con su propio CLI:
+
+```
+operones → bronce → pares → biobert → red → sintaxis → capa → evaluar
+```
+
+```bash
+python3 flujo.py --corrida 4                 # la corrida 4 del bronce, completa
+python3 flujo.py --corrida 4 --limite 200    # prueba rápida, en su propia carpeta
+python3 flujo.py --pasos capa,evaluar        # solo esos pasos
+```
+
+Todo queda en `salidas/flujo/corrida4_run22/`. Lo principal es
+`capa_pares.csv`: una fila por par que vio el clasificador, con la oración, sus
+funciones biológicas, sus operones (los de la oración y a cuáles pertenece el
+blanco), la predicción del BioBERT y, si corrió, lo que propone la sintaxis.
+`capa_leame.txt` explica cada columna, y `evaluacion.json` trae el 44 %
+recalculado con el clasificador conectado.
+
+- **Idempotente.** Correrlo dos veces seguidas no repite nada: cada paso se
+  salta si sus entradas (su código incluido) y sus salidas no cambiaron.
+  Cambiar un recurso rehace ese paso, y los de abajo solo si su salida
+  cambió.
+- **Reanudable.** `estado.json` se escribe después de cada paso.
+- **Barato.** Las predicciones del 27-ago se reutilizan cuando el texto marcado
+  y el checkpoint son los mismos (mismos pesos, no solo el mismo
+  `config.json`); el resto lo clasifica `etapa2/clasificar.py`.
+- **Nada de esto está verificado.** Es la propuesta del clasificador, entrenado
+  en *E. coli* y con umbrales sin calibrar.
+
+El paso de sintaxis necesita el entorno de spaCy en `.venv-nlp`
+(`docs/plan-sintaxis-bronce.md`); sin él se marca omitido. El clasificador
+necesita torch y transformers: se corre con el `.venv` del proyecto.
+
+Lo mismo se corre desde el tablero, en la pestaña **Pipeline**. Ahí se elige la
+corrida del bronce y los pasos, se ve cada paso con su estatus y su duración,
+se puede cancelar a media corrida (mata el paso en curso, incluido el
+clasificador) y se bajan las salidas. El flujo no necesita el correo de NCBI:
+todo es local.
+
+**Para la pestaña Pipeline, arranca el tablero con el Python del `.venv`**
+(`.venv/Scripts/python servidor.py --abrir`; en Linux, `.venv/bin/python`), o
+define `GRN_PYTHON_BERT` con ese intérprete. El paso BioBERT corre con el
+Python que arrancó el tablero, y sin torch falla en cuanto hay pares que no
+estaban clasificados.
+
 ## Pruebas
 
 ```bash
-python3 -m unittest discover     # desde la raíz del proyecto
+python3 -m unittest discover          # desde la raíz del proyecto
+python3 -m unittest discover etapa2   # etapa2 no es un paquete y va aparte
 ```
 
-349 pruebas con `unittest` de la biblioteca estándar, en `pruebas/`. **Ninguna
-toca la red.** Se inyecta `pruebas.falsos.ClienteFalso`, que devuelve XML o
+859 pruebas en la raíz (`pruebas/` y los paquetes `grn_*`) y 528 en `etapa2`
+al 8-oct-2026, con `unittest` de la biblioteca estándar. **Ninguna toca la
+red.** Se inyecta `pruebas.falsos.ClienteFalso`, que devuelve XML o
 JSON fijo y registra cada llamada; además, la clase base deja `urlopen`
 inutilizable, así que una prueba que arme un cliente de verdad falla en vez de
 salir a NCBI.
@@ -341,7 +395,12 @@ grn_etl/
   pubmed.py            clientes de E-utilities, PMC y Unpaywall
   trabajos.py          corre un trabajo en segundo plano, uno a la vez
 grn_operones/          la base de operones y el catálogo maestro
-pruebas/               349 pruebas; ninguna toca la red
+grn_bronce/            paso 1: menciones y oraciones candidatas (y la sintaxis)
+grn_verificacion/      paso 2: puente al BioBERT, capa y evaluación
+grn_comun/             lo que usan los tres pasos (huellas, procesos hijos)
+flujo.py               el flujo de punta a punta, idempotente por huella
+etapa2/                el clasificador heredado, congelado
+pruebas/               las del paso 0, del tablero y del flujo; ninguna toca la red
 datos/grn.db           la base (fuera del repositorio)
 datos/fulltext/        XML, texto derivado y PDF (fuera del repositorio)
 salidas/               exportaciones CSV y JSONL (fuera del repositorio)

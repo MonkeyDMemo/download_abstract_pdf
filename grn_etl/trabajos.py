@@ -26,6 +26,12 @@ Un solo trabajo a la vez, y eso no es pereza:
 
 Cuando exista el limitador compartido (token bucket) y la base sea
 Postgres, el tope se podra subir sin tocar a quien llama.
+
+Cancelar es cooperativo. Un trabajo lanzado con cancelable=True recibe un
+threading.Event en el kwarg 'detener', y cancelar() solo lo enciende: el
+gestor no mata nada, porque un hilo de Python no se puede matar. Quien
+hace caso es la función (flujo.correr se lo pasa a cada proceso hijo, que
+lo vigila cada medio segundo y mata el árbol entero).
 """
 
 import threading
@@ -37,9 +43,31 @@ from . import db
 # que el JSON de estado() crezca sin limite en una corrida de horas.
 MAX_LINEAS = 400
 
+# El error con el que queda un trabajo al que se le pidió detenerse. Es
+# texto para una persona: lo pinta el tablero.
+CANCELADO = "Cancelado a petición"
+
 
 class TrabajoEnCurso(RuntimeError):
     """Se pidio lanzar un trabajo mientras otro seguia corriendo."""
+
+
+def _describir_error(e):
+    """El texto del error para el tablero, o None si no fue error.
+
+    SystemExit entra aquí porque los CLI del proyecto terminan con
+    sys.exit("mensaje"), y no hereda de Exception: dentro del hilo escapaba
+    al except, el hilo moría en silencio y el tablero decía «terminó bien».
+    sys.exit() y sys.exit(0) sí son salidas limpias.
+    """
+    if isinstance(e, SystemExit):
+        codigo = e.code
+        if codigo is None or codigo == 0:
+            return None
+        if isinstance(codigo, int):
+            return f"SystemExit: terminó con código {codigo}"
+        return f"SystemExit: {codigo}"
+    return f"{type(e).__name__}: {e}"
 
 
 # Lo que sobrevive a json.dumps sin sorpresas. Los parametros que no
@@ -88,21 +116,32 @@ class Gestor:
         self._terminado_en = None
         self._error = None
         self._resultado = None
+        # El evento del trabajo actual si se lanzó cancelable, o None. Se
+        # guarda aunque el trabajo termine: estado() lo lee para decir si
+        # el último se canceló.
+        self._detener = None
+        self._cancelado = False
 
     # ------------------------------------------------------------ lanzar
 
-    def lanzar(self, tipo, funcion, /, **kw):
+    def lanzar(self, tipo, funcion, /, *, cancelable=False, **kw):
         """Arranca 'funcion' en un hilo daemon con los kwargs dados.
 
-        tipo es la etiqueta que ve el tablero ('run', 'fulltext'). La
-        funcion recibe ademas un kwarg 'log' que apunta a este gestor.
+        tipo es la etiqueta que ve el tablero ('run', 'fulltext', 'flujo').
+        La función recibe además un kwarg 'log' que apunta a este gestor.
         Lanza TrabajoEnCurso si ya hay uno corriendo.
+
+        cancelable: si es True, la función recibe también 'detener', un
+        threading.Event que cancelar() enciende. Pisa cualquier 'detener'
+        que venga en kw, igual que 'con': el evento que cuenta es el que el
+        gestor puede encender. No se publica en estado().
 
         La barra deja 'tipo' y 'funcion' como posicionales-only (Python
         3.8+). Sin ella no se puede lanzar etl.descargar_fulltext, que
-        tiene su propio parametro 'tipo' ('xml' / 'pdf'): la llamada
-        chocaria con el de aqui y saldria un TypeError. Un despachador
-        generico no puede reservarse nombres de uso comun.
+        tiene su propio parámetro 'tipo' ('xml' / 'pdf'): la llamada
+        chocaría con el de aquí y saldría un TypeError. Un despachador
+        genérico no puede reservarse nombres de uso común. 'cancelable' sí
+        queda reservado, y por eso es de solo palabra clave.
 
         El hilo es daemon para que un Ctrl-C en el servidor no se quede
         esperando a que termine una descarga de media hora.
@@ -113,9 +152,19 @@ class Gestor:
                     f"ya hay un trabajo '{self._tipo}' en curso; "
                     f"espera a que termine")
 
+            # Los parámetros se toman antes de inyectar el evento: no es
+            # un dato para quien mira el tablero, y json.dumps no lo sabe
+            # serializar.
+            parametros = {k: v for k, v in kw.items() if _publicable(v)}
+            detener = threading.Event() if cancelable else None
+            if detener is not None:
+                kw["detener"] = detener
+
             self._activo = True
             self._tipo = tipo
-            self._parametros = {k: v for k, v in kw.items() if _publicable(v)}
+            self._parametros = parametros
+            self._detener = detener
+            self._cancelado = False
             self._iniciado_en = db.ahora()
             self._terminado_en = None
             self._error = None
@@ -160,6 +209,27 @@ class Gestor:
         hilo.join(timeout)
         return not hilo.is_alive()
 
+    def cancelar(self):
+        """Pide detener el trabajo en curso. True si había uno cancelable.
+
+        No espera ni mata nada: enciende el evento que la función recibió
+        en 'detener' y vuelve. Quien quiera esperar a que se detenga llama
+        a esperar(). Pedirlo dos veces no es error: mientras el trabajo
+        siga vivo, la segunda también devuelve True.
+        """
+        with self._lock:
+            if not self._activo or self._detener is None:
+                return False
+            if not self._detener.is_set():
+                self._detener.set()
+                # Directo al deque y no por _anotar(): el candado ya está
+                # tomado y no es reentrante.
+                self._lineas.append({
+                    "t": db.ahora(),
+                    "texto": "Cancelación pedida; esperando a que el "
+                             "trabajo se detenga."})
+            return True
+
     # ------------------------------------------------------------- estado
 
     def estado(self):
@@ -168,11 +238,20 @@ class Gestor:
         Devuelve copias: el hilo del trabajo sigue escribiendo lineas
         mientras el del HTTP serializa lo que se lleva. Sin la copia, el
         deque puede mutar a media serializacion.
+
+        cancelable dice si el trabajo se lanzó cancelable (vale también
+        para el último, ya terminado); cancelando, que se pidió detenerlo y
+        sigue vivo; cancelado, que terminó después de pedirlo.
         """
         with self._lock:
+            detener = self._detener
             return {
                 "activo": self._activo,
                 "tipo": self._tipo,
+                "cancelable": detener is not None,
+                "cancelando": bool(self._activo and detener is not None
+                                   and detener.is_set()),
+                "cancelado": self._cancelado,
                 "parametros": {
                     k: (list(v) if isinstance(v, (list, tuple)) else v)
                     for k, v in self._parametros.items()
@@ -206,17 +285,35 @@ class Gestor:
                 kw["con"] = con
             kw["log"] = self._anotar
             resultado = funcion(**kw)
-        except Exception as e:
+        except (Exception, SystemExit) as e:
             # Un trabajo que truena no puede dejar el gestor apartado: si
             # se quedara activo, nadie del laboratorio podria lanzar nada
             # hasta reiniciar el servidor. De ahi el finally.
-            error = f"{type(e).__name__}: {e}"
-            self._anotar(f"ERROR: {error}")
+            error = _describir_error(e)
+            # Si se pidió cancelar, lo que la función lance al detenerse (el
+            # hijo muerto, su excepción de cancelado) es la consecuencia
+            # esperada y no un error que haya que gritar en la consola.
+            if error is not None and not self._se_pidio_cancelar():
+                self._anotar(f"ERROR: {error}")
         finally:
             if con is not None:
                 con.close()
             with self._lock:
+                # Se decide por el evento y no por el tipo de excepción: el
+                # gestor no sabe qué corre, y una función puede hacer caso
+                # de la cancelación volviendo antes en vez de lanzar.
+                cancelado = (self._detener is not None
+                             and self._detener.is_set())
+                if cancelado:
+                    error = CANCELADO
+                    self._lineas.append({"t": db.ahora(),
+                                         "texto": CANCELADO + "."})
                 self._resultado = resultado
                 self._error = error
+                self._cancelado = cancelado
                 self._terminado_en = db.ahora()
                 self._activo = False
+
+    def _se_pidio_cancelar(self):
+        with self._lock:
+            return self._detener is not None and self._detener.is_set()

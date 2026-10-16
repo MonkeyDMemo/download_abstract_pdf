@@ -3,7 +3,7 @@
 Levantada del servidor el 19 de agosto de 2026, en respuesta a las preguntas
 de [`traspaso-etapa-2.md`](traspaso-etapa-2.md).
 
-**Todas las rutas de este documento son relativas a `/home/user/pseudomonas-trn`
+**Todas las rutas de este documento son relativas a `~/pseudomonas-trn`
 en el servidor**, no a este repositorio. La carpeta es `04_modelling` (con
 doble L). No es repositorio git.
 
