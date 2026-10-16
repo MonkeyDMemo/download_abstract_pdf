@@ -5,8 +5,9 @@ Ficha con el formato de Mitchell et al. (2019). La evaluación sigue
 copiado en `docs/resultados-curada-v1.md`, y no se escriben a mano en ningún
 otro lado.
 
-**Estado:** esqueleto. Las secciones marcadas «(tramo 2)» se llenan cuando
-termine la corrida.
+**Estado:** completa con el tramo 2 del 16-oct-2026 (15:18 a 15:37 UTC,
+código y protocolo en el commit `27b18f5`). Las cifras de la sección 7 son
+pre-registradas: el protocolo se commiteó antes del primer entrenamiento.
 
 ## 1. Detalles del modelo
 
@@ -16,7 +17,10 @@ termine la corrida.
   conserva `regulates`, pero esta versión no la aprende.
 - **Receta:** el run 22 del barrido del asesor, sin cambios (protocolo,
   sección 3). Semilla 42, partición única por PMID 80/10/10.
-- **Quién y cuándo:** (tramo 2: fecha, commit del código y del protocolo).
+- **Quién y cuándo:** el 16-oct-2026, en el servidor del asesor (RTX 3070),
+  con `reentrenar` (commit `27b18f5`). Cada entrenamiento tardó cerca de un
+  minuto. El del modelo desplegable recorrió 5 épocas, con su mejor dev en la
+  3.
 - **Dónde vive:** en el servidor del asesor, en `<runs>/run_22_…` de la
   corrida `curada-v1`. No se distribuye: se entrenó con datos confidenciales
   del laboratorio.
@@ -40,8 +44,8 @@ termine la corrida.
   evaluación corta y remuestrea por artículo.
 - **Par ya visto o nuevo:** si el par regulador → blanco aparece en el
   entrenamiento. Separa memorizar de leer la oración.
-- **Longitud:** los ejemplos que pasan de 512 tokens se truncan (tramo 2:
-  cuántos).
+- **Longitud:** mediana de 79 tokens, p95 de 142 y máximo de 343. Ninguno
+  pasa de 512, así que ninguno se trunca.
 
 ## 4. Métricas
 
@@ -63,18 +67,32 @@ artículos y la diferencia pareada contra la línea base de memorización.
   (`grn_verificacion/entrenamiento.py`), con las reservas fuera.
 - **Conteos por clase y artículos:** los del protocolo, sección 2.
 
-## 7. Resultados (tramo 2)
+## 7. Resultados
+
+Son las predicciones fuera de pliegue: 928 ejemplos de 96 artículos, 5
+pliegues × 3 semillas.
 
 | cifra | valor |
 |---|---|
-| macro-F1 (media de 3 semillas), IC95 | |
-| sd entre semillas; mínimo y máximo | |
-| línea base de memorización, IC95 | |
-| modelo menos línea base, IC95 | |
-| regla del protocolo | |
-| macro-F1 en pares nuevos (modelo / línea base) | |
+| macro-F1 (media de 3 semillas), IC95 | **0.4917**, [0.445, 0.5338] |
+| sd entre semillas; mínimo y máximo | 0.0199; 0.4688 y 0.5047 |
+| línea base de memorización, IC95 | 0.3817, [0.3003, 0.4642] |
+| clase mayoritaria | 0.2232 |
+| modelo menos línea base, IC95 | **+0.1100**, [0.0221, 0.193] |
+| regla del protocolo | **supera a la línea base** |
+| macro-F1 en pares nuevos (831 ejemplos): modelo / línea base | 0.4798 / 0.2308 |
+| macro-F1 en pares ya vistos (97 ejemplos): modelo / línea base | 0.5014 / 1.0000 |
 
-Por clase y matrices: `docs/resultados-curada-v1.md`, sección 8.
+| clase | soporte | artículos | precisión | exhaustividad | F1 | F1 línea base |
+|---|---:|---:|---:|---:|---:|---:|
+| activates | 322 | 66 | 0.4970 | 0.4907 | 0.4937 | 0.3185 |
+| no_relation | 467 | 60 | 0.7343 | 0.6638 | 0.6966 | 0.7049 |
+| represses | 139 | 40 | 0.2498 | 0.3357 | 0.2848 | 0.1216 |
+
+Todo sale de `docs/resultados-curada-v1.md`, que trae también las matrices y
+las cifras por pliegue y semilla. Los 15 cotejos entre `clasificar.py` y el
+script cuadran, ningún modelo predice una sola clase y la corrida no se desvía
+del protocolo.
 
 ## 8. Consideraciones éticas y de datos
 
@@ -91,5 +109,15 @@ Por clase y matrices: `docs/resultados-curada-v1.md`, sección 8.
   humano (protocolo, sección 11).
 - En el flujo la proporción de pares sin relación es mucho mayor que aquí, así
   que la precisión será menor.
-- (tramo 2: lo que digan los estratos y la regla del protocolo, y si el modelo
-  reemplaza al de *E. coli*, que lo decide el asesor.)
+- **Lee algo de la oración, pero poco.** Supera a la línea base, y la
+  ventaja viene entera de los pares nuevos (0.48 contra 0.23), que son el 90 %
+  de los ejemplos y lo que importa para encontrar aristas nuevas. En los pares
+  ya vistos, recordar la etiqueta acierta todo y el modelo no: ahí la base
+  curada ya tiene la respuesta y no hace falta el modelo.
+- **El signo es lo débil.** `represses` tiene un F1 de 0.28, con precisión de
+  0.25: la mayor confusión es entre `activates` y `represses`, en las dos
+  direcciones. En `no_relation` el modelo empata con la línea base.
+- **Un macro-F1 de 0.49 no alcanza para dar aristas por buenas sin
+  revisión.** Sirve para priorizar candidatas.
+- **Si reemplaza al modelo de *E. coli* lo decide el asesor**, igual que la
+  evaluación externa (el 44 %, sección 5).
