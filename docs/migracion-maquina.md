@@ -50,6 +50,16 @@ El repositorio son 2 MB. Lo pesado está fuera de git a propósito.
 **Total: ~1.15 GB.** En una copia por red conviene comprimir `datos/fulltext`,
 que son archivos de texto y bajan mucho.
 
+> **Nota del 16-oct-2026: la base de operones.**
+> `grn_bronce/recursos/operones_base.tsv` no está en git, porque lleva datos
+> de BioCyc.
+> - Las tablas de operones viajan dentro de `datos/grn.db`, y con ellas se
+>   regenera sin red: `python -m grn_operones.cli catalogo --paso1`.
+> - `datos/operones_crudo/` (13 MB) solo hace falta para `reparsear`.
+>
+> Las tres vías para regenerarlo están en
+> [`guia-operones.md`](guia-operones.md) §8.
+
 ### Si el ancho de banda aprieta
 
 `datos/fulltext/` trae el JATS crudo (`.xml`) **y** el texto derivado (`.txt`).
