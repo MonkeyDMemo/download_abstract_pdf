@@ -6,7 +6,7 @@ copiado en `docs/resultados-curada-v1.md`, y no se escriben a mano en ningún
 otro lado.
 
 **Estado:** completa con el tramo 2 del 16-oct-2026 (15:18 a 15:37 UTC,
-código y protocolo en el commit `27b18f5`). Las cifras de la sección 7 son
+código y protocolo en el commit `c48eeae`, antes `27b18f5`). Las cifras de la sección 7 son
 pre-registradas: el protocolo se commiteó antes del primer entrenamiento.
 
 ## 1. Detalles del modelo
@@ -18,7 +18,7 @@ pre-registradas: el protocolo se commiteó antes del primer entrenamiento.
 - **Receta:** el run 22 del barrido del asesor, sin cambios (protocolo,
   sección 3). Semilla 42, partición única por PMID 80/10/10.
 - **Quién y cuándo:** el 16-oct-2026, en el servidor del asesor (RTX 3070),
-  con `reentrenar` (commit `27b18f5`). Cada entrenamiento tardó cerca de un
+  con `reentrenar` (commit `c48eeae`). Cada entrenamiento tardó cerca de un
   minuto. El del modelo desplegable recorrió 5 épocas, con su mejor dev en la
   3.
 - **Dónde vive:** en el servidor del asesor, en `<runs>/run_22_…` de la

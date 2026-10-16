@@ -106,6 +106,33 @@ Abierto:
     tiene que correr en el servidor.
 - **Se borró** `~/grn-guillermo/ensayo` (datos sintéticos del ensayo).
 
+### Los hashes de esta entrada cambiaron (16-oct, noche)
+
+Los 14 commits hechos en el servidor quedaron firmados con la identidad del
+`~/.gitconfig` de la cuenta compartida, que es de otra persona. Antes de
+empujarlos se les puso el autor correcto con `git filter-branch`. Contenido,
+mensajes y fechas no cambiaron: se comprobó con `git diff` vacío entre la
+punta vieja y la nueva. Desde entonces el clon del servidor lleva la identidad
+en su `.git/config`.
+
+Cambiaron los hashes. Esta entrada, el protocolo y `resultados-curada-v1.md`
+citan los viejos; equivalen a estos:
+
+| viejo | nuevo | commit |
+|---|---|---|
+| `7a8b01b` | `a8c43b7` | validacion: el origen por palabra clave |
+| `0c81488` | `2ecf620` | la base conciliada, 309 PMIDs y 1 DOI |
+| `3ffb790` | `30f5f37` | el protocolo de evaluación (código) |
+| `53f2d06` | `3c3a3be` | la guía, las decisiones y CLAUDE.md |
+| `6f924e3` | `818537d` | el informe del tramo 1 con pliegues (tramo 1 bis) |
+| `27b18f5` | `c48eeae` | el protocolo y la ficha (código del tramo 2) |
+| `8e4f838` | `633b08f` | los resultados, la ficha y la bitácora |
+| `7b0df11` | `646a426` | la prueba en el flujo |
+
+El pre-registro no cambia: se comprueba por fecha, y la del commit del
+protocolo sigue siendo 2026-10-16T09:17:56-06:00, anterior al primer
+entrenamiento (15:18:06 UTC).
+
 ---
 
 ## 13 de octubre de 2026 — el paso 0 vuelve a abrirse: tramos por fecha, guardado por lote y exportación
