@@ -77,12 +77,18 @@ Todo vive en la carpeta propia, fuera del clon:
   pares.jsonl, reservas.tsv             entradas, no confidenciales
   entorno.sh                            las variables (paso 1)
   download_abstract_pdf/                el clon
-  datos/curada-v1/                700   CONFIDENCIAL: entity_marked_*, conteos.json, por_pmid/
-  runs/curada-v1/                 700   CONFIDENCIAL: el modelo entrenado, y barrido/
-                                        con lo que escribe barrido.py (lleva rutas)
+  datos/curada-v1/                700   CONFIDENCIAL: entity_marked_*, conteos.json,
+                                        sin_regulates/ (sin la clase excluida), por_pmid/
+                                        y por_pmid_k5/ (los pliegues)
+  runs/curada-v1/                 700   CONFIDENCIAL: el modelo entrenado; barrido/ con lo
+                                        que escribe barrido.py (lleva rutas); prediccion/ y
+                                        cv/fold_i/ con resultados y predicciones por semilla
+                                        (las predicciones llevan tf y target; los modelos de
+                                        pliegue se borran después de predecir)
   resultados/curada-v1/           700   lo que se lee: RESULTADOS.md, estado.json,
-                                        reentrenar.log (filtrado), entrenamiento.json
-                                        y curva.json (solo números)
+                                        reentrenar.log (filtrado) y, solo con números,
+                                        entrenamiento.json, curva.json, prediccion.json,
+                                        entrenamiento_cv.json y evaluacion.json
 ```
 
 `curada-v1` es el `--nombre` de la corrida. Otro nombre arma otras tres
@@ -192,11 +198,14 @@ Tiene que terminar en `OK`.
 cd ~/grn-guillermo/download_abstract_pdf && source ~/grn-guillermo/entorno.sh
 $PY -m grn_verificacion.cli reentrenar correr --raiz "$RAIZ" --nombre curada-v1 \
     --pares "$RAIZ/pares.jsonl" --reservar "$RAIZ/reservas.tsv" \
-    --ciego etapa2/auditoria_signo.tsv --hasta particion
+    --ciego etapa2/auditoria_signo.tsv --hasta particion --folds 5
 ```
 
-`--base` y `--script` salen de `BASE_CURADA` y `SCRIPT_ASESOR`. Al terminar se
-lee `~/grn-guillermo/resultados/curada-v1/RESULTADOS.md`. Qué revisar ahí:
+`--base` y `--script` salen de `BASE_CURADA` y `SCRIPT_ASESOR`. `regulates`
+queda fuera por omisión (`--excluir-etiqueta`, ver el protocolo). Con
+`--folds 5` arma también los pliegues de la validación cruzada y su línea
+base, sin entrenar. Al terminar se lee
+`~/grn-guillermo/resultados/curada-v1/RESULTADOS.md`. Qué revisar ahí:
 
 1. **La base contra PLAN.md 2.4** (sección 3). Se coteja contra lo medido el
    10-sep:
@@ -230,11 +239,30 @@ lee `~/grn-guillermo/resultados/curada-v1/RESULTADOS.md`. Qué revisar ahí:
      empate nombra dev. Que diga «dev» no quiere decir que test esté bien.
    - Un `casi-dup` distinto de cero no tumba la partición, pero es fuga real
      que el corte por PMID no evita: la cifra de test va con esa salvedad.
-4. **La fuga por par** (sección 6): qué parte de dev y de test tiene su par
+   - Que `regulates` falte en dev y en test no es un aviso: quedó fuera antes
+     de particionar, y la sección lo dice con sus ejemplos y artículos.
+4. **Los pliegues** (sección 5.1): artículos y ejemplos por clase del test de
+   cada pliegue, y la línea base de memorización fuera de pliegue, que es la
+   cifra contra la que se compara el modelo. Se conoce antes de entrenar y va
+   al protocolo.
+5. **La fuga por par** (sección 6): qué parte de dev y de test tiene su par
    ya visto en train, y cuánto acierta una línea base que solo recuerda el
    par. Ver el paso 5.
 
 El tramo 1 se puede repetir: lo que no cambió se salta.
+
+## Paso 2b. El protocolo, antes del tramo 2
+
+`docs/protocolo-curada-v1.md` fija qué se mide, la regla de decisión, las
+semillas y los pliegues. Su sección 2 se llena con los conteos de las
+secciones 4, 5 y 5.1 del `RESULTADOS.md` del tramo 1. Después se commitea, y
+el usuario lo aprueba **antes** de lanzar el tramo 2. Al asesor se le avisa
+por escrito de la exclusión de `regulates`.
+
+El informe del tramo 2 dice el commit del protocolo y si es anterior al inicio
+de la corrida. Si no lo es, o si el archivo tiene cambios sin commitear, la
+sección 10 avisa que las cifras de la sección 8 no son pre-registradas. Una
+vez commiteado, el protocolo cambia solo por enmienda fechada (su sección 12).
 
 ## Paso 3. Tramo 2: entrenar (en segundo plano)
 
@@ -242,8 +270,23 @@ El tramo 1 se puede repetir: lo que no cambió se salta.
 cd ~/grn-guillermo/download_abstract_pdf && source ~/grn-guillermo/entorno.sh
 $PY -m grn_verificacion.cli reentrenar correr --raiz "$RAIZ" --nombre curada-v1 \
     --pares "$RAIZ/pares.jsonl" --reservar "$RAIZ/reservas.tsv" \
-    --ciego etapa2/auditoria_signo.tsv --desprender      # más --folds 5 si el tramo 1 lo pidió
+    --ciego etapa2/auditoria_signo.tsv --folds 5 --semillas 42,43,44 --desprender
 ```
+
+Es la corrida del protocolo, con su commit anterior a este comando (paso 2b).
+Entrena 16 modelos, en este orden:
+
+1. **El desplegable** (partición única, semilla 42). Predice su test con
+   `etapa2/clasificar.py`, en CPU, y coteja la accuracy contra la del script.
+   Si no cuadran, se detiene (`cotejo_clasificar`).
+2. **Los 15 de la validación cruzada**, semilla por semilla (42, 43, 44) y
+   pliegue por pliegue. Cada uno entrena, predice su test en CPU y se borra.
+   Sus predicciones se quedan en `runs/`.
+3. **La evaluación**: el bootstrap del protocolo, en segundos.
+
+Con los 446 s que tardó el run 22, son entre 1 h y 1 h 40 min de GPU, más
+entre 10 y 25 min de predicción en CPU. Mientras corre, se mira el avance con
+`estado`, no las métricas (protocolo, sección 9).
 
 `--desprender` lo deja corriendo en su propia sesión: no hace falta tmux, que
 el servidor no tiene, y un corte de SSH o el cierre de la sesión de Claude no
@@ -278,16 +321,25 @@ Detalles de cómo entrena:
   `id2label` sea activates, no_relation, regulates, represses. Los
   `checkpoint-*` se borran.
 - Si el entrenamiento se corta (`detener`, el tope de 4 h, un corte de luz),
-  relanzar el mismo comando lo repite desde cero. El script del asesor no
-  puede reanudar a mitad, pero el run 22 tardó 446 s con 1 242 ejemplos, así
-  que rehacerlo cuesta poco. Antes de repetirlo, `reentrenar` borra el intento
-  a medias.
+  relanzar el mismo comando repite solo el modelo que se cortó. Los que ya
+  tienen resultado y predicciones se saltan, aunque sus modelos de pliegue ya
+  no estén. El script del asesor no puede reanudar a mitad de un
+  entrenamiento, pero el run 22 tardó 446 s con 1 242 ejemplos, así que
+  rehacerlo cuesta poco. Antes de repetirlo, `reentrenar` borra el intento a
+  medias.
+- Un modelo de pliegue se borra solo después de predecir. Si `clasificar.py`
+  falla, el modelo se queda, y al relanzar solo se predice.
+- Agregar una semilla después (`--semillas 42,43,44,45`) entrena solo la
+  nueva, pero es una desviación del protocolo y el informe la lista.
 - Si `barrido.py` falla, sale con 0 de todos modos. `reentrenar` no se fía del
   código de salida: sin el JSON del resultado no hay éxito.
 - Relanzar cuando ya está todo entrenado (para agregar `--ciego`, o para
   rehacer el informe) no pide GPU, y `RESULTADOS.md` conserva las métricas del
   run 22, marcadas como de una corrida anterior. Lo mismo vale para el tramo 1
-  después de entrenar, mientras la partición no cambie.
+  después de entrenar, mientras la partición no cambie. Las de la validación
+  cruzada se conservan solo con los mismos `--folds` y `--semillas`: con
+  otros, el informe diría unos parámetros y mostraría cifras de otros. La
+  evaluación se recalcula en cada corrida completa: son segundos.
 - Con `--desprender`, la ruta de la base viaja en el entorno del proceso y no
   en su línea de comandos, que cualquier cuenta de la máquina ve con `ps`. Lo
   que se puede comprobar antes de lanzar (archivos, nombre, otra corrida en
@@ -315,8 +367,9 @@ git add docs/resultados-curada-v1.md && git commit -m "docs: resultados del reen
 ```
 
 En `docs/bitacora.md` va una entrada fechada con el commit, las cifras
-principales y lo que quede por decidir. Las cifras se toman del
-`RESULTADOS.md`, que ya va en el repositorio, y no de la terminal.
+principales y lo que quede por decidir. Con las mismas cifras se llena la
+ficha, `docs/modelo-curada-v1.md`. Las cifras se toman del `RESULTADOS.md`,
+que ya va en el repositorio, y no de la terminal.
 
 **Nunca salen del servidor:** la base, los `entity_marked_*.jsonl` (ni los de
 `datos/` ni los de `por_pmid/`), el modelo y sus checkpoints. Tampoco
@@ -349,23 +402,31 @@ errores del propio orquestador), y `estado` lo muestra filtrado.
   mayoría no citados por la base), y ahí los pares sin relación son muchos
   más. Con la misma tasa de falsos positivos, la precisión de las tres clases
   de relación será menor que en test.
-- **El F1 es macro sobre las cuatro clases**, `no_relation` incluida. Una
-  clase ausente en test cambia el promedio entero, no solo su F1.
+- **La cifra principal es el macro-F1 sobre tres clases fijas**
+  (`activates`, `no_relation`, `represses`; protocolo, sección 5). El script
+  del asesor promedia sobre las clases presentes en cada test, que cambian de
+  un pliegue a otro. Su cifra sale por pliegue en la sección 8.5, para
+  compararla con su barrido, pero no es la principal.
 - **La base está concentrada.** Cinco PMIDs sostienen el 32 % de las filas
   exigibles (PLAN.md 2.4). El tope de tres oraciones por artículo y par lo
   amortigua, y `RESULTADOS.md` dice cuántos ejemplos reúnen los cinco
   artículos con más. Aun así, al partir por PMID el test puede quedar en manos
   de pocos artículos.
-- **Validación cruzada**, si el tramo 1 la pidió:
-  - Cada pliegue entrena con el 60 % del corpus (dev y test son 20 % cada
-    uno), así que su cifra no se compara punto a punto con la del reparto
+- **La validación cruzada es la cifra** (sección 8 de `RESULTADOS.md`):
+  - Se juntan las predicciones de test de los 5 pliegues de cada semilla. Cada
+    ejemplo aparece una vez, predicho por un modelo que no vio su artículo. Se
+    calcula el macro-F1 de cada semilla y se reporta la media de las tres, con
+    su desviación.
+  - El intervalo al 95 % es un bootstrap que remuestrea artículos, no
+    ejemplos.
+  - Lo que decide es la diferencia contra la línea base de memorización,
+    pareada en las mismas réplicas. El modelo la supera solo si el límite
+    inferior de su intervalo es mayor que 0.
+  - Cada pliegue entrena con el 60 % de los artículos (dev y test son 20 %
+    cada uno), así que su cifra no se compara punto a punto con la del reparto
     80/10/10.
-  - La cifra honesta es la media ± desviación del macro-F1 de test de los
-    pliegues, al lado de la de la línea base. `RESULTADOS.md` la calcula.
-  - Una sola semilla: la desviación mezcla la partición con el azar del
-    entrenamiento.
   - Los pliegues no conservan su modelo; el que queda es el de la partición
-    única.
+    única, y su test (sección 7.1) es descriptivo.
 - **No se añaden `<e1>`/`<e2>` como tokens especiales.** El script del asesor
   no lo hace, y `etapa2/clasificar.py` rechaza un tokenizador que los traiga:
   las piezas serían otras y las probabilidades no se compararían con las del
@@ -398,6 +459,12 @@ errores del propio orquestador), y `estado` lo muestra filtrado.
 | `script_fallo`, `matado` | el log (`estado --lineas 60`) muestra el final de la salida del script |
 | `id2label` | el modelo quedó con otro orden de etiquetas: no se usa |
 | `sin_modelo` | el entrenamiento terminó sin pesos: relanzar lo repite (un resultado sin modelo no se reusa) |
+| `test_invalido` | algún ejemplo de test no tiene el marcado que exige `clasificar.py`; el estado dice cuántos, nunca cuáles. Sale en el tramo 1, al particionar, antes de gastar GPU. Es un defecto de `datos-entrenamiento`: se corrige antes de seguir |
+| `prediccion_fallo` | `clasificar.py` no dejó predicciones válidas: el log dice por qué. Relanzar solo predice, porque el modelo se queda |
+| `cotejo_clasificar` | la accuracy de `clasificar.py` y la del script no cuadran en el modelo desplegable: la unión de predicciones con ejemplos, o el orden de etiquetas, está mal. No se lee ninguna cifra hasta corregirlo (protocolo, sección 9) |
+| `parametros_distintos` | ya hay un resultado de esta partición con otro `max_length`: usar otro `--nombre` |
+| `disco`, `gpu_no_disponible` | falta disco libre, o `nvidia-smi` no respondió: resolverlo y relanzar |
+| `inesperado` | un error del orquestador: el traceback, filtrado, está en el log |
 | `otra_corrida` | otra corrida viva usa las mismas carpetas sin el candado (alguien borró `.candado`): `estado` y `detener` |
 | `informe_no_publicable` | `RESULTADOS.md` traía algo que no se puede publicar y no se escribió; el estado dice qué patrón y en qué línea |
 | `estado` dice «quedan N procesos de esta corrida sin orquestador» | el orquestador murió a la fuerza (`kill -9`) y el entrenamiento siguió sin tope: `reentrenar detener` |

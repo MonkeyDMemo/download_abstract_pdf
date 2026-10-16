@@ -1372,6 +1372,60 @@ prueba con unittest. Cuatro piezas que no son obvias:
   sus seis pares, que tienen nombre público, diría qué signo les da la base o
   si los registra. Eso ya no es «esquema y conteos».
 
+## La curada v1 se evalúa con un protocolo escrito antes de entrenar
+
+El tramo 1 real (15-oct) mostró tres cosas que el diseño de la pista D no
+tenía resueltas. `regulates` tiene 6 ejemplos de 2 artículos y ninguno en dev
+ni en test. El test de la partición única tiene 4 artículos. Y ningún código
+daba métricas por clase, matrices ni un intervalo para el F1. El 16-oct el
+usuario decidió excluir `regulates` en esta versión y aplicar el protocolo
+completo (`docs/protocolo-curada-v1.md`).
+
+- **Excluir, no fusionar.** `regulates` es una relación sin signo. Pasarla a
+  `activates` o a `represses` le pondría un signo que la base no da, y pasarla
+  a `no_relation` sería falso. Se quita antes de particionar y el mapa sigue
+  con cuatro etiquetas, así que `clasificar.py` y el flujo no cambian. El
+  script del asesor le daría el peso mayor (60 veces el de `no_relation`), y
+  con *E. coli* el modelo ya se refugiaba en esa clase. Sin ejemplos, ese
+  peso no entra en la pérdida: `CrossEntropyLoss` pondera por la clase
+  verdadera.
+- **El protocolo se commitea antes del tramo 2, y el informe lo comprueba.**
+  Con 96 artículos, elegir después de ver una cifra (otra semilla, otra
+  métrica, otro corte) mueve el resultado más que el modelo. `RESULTADOS.md`
+  dice el commit del protocolo, si es anterior al inicio de la corrida, y
+  lista cada parámetro que se aparta de él.
+- **Validación cruzada por artículo con tres semillas, y las predicciones
+  juntas.** Con unos 19 artículos por pliegue, el F1 de cada pliegue es ruido,
+  y la regla del script cambia de clases de un pliegue a otro. Se juntan las
+  predicciones fuera de pliegue de cada semilla y se calcula un macro-F1 sobre
+  un conjunto fijo de clases. La media por pliegue con la regla del script
+  sigue en el informe, para compararla con el barrido del asesor.
+- **Bootstrap por artículo, con los modelos fijos.** Remuestrear ejemplos
+  sueltos daría un intervalo demasiado angosto, porque los de un artículo no
+  son independientes. Reentrenar en cada réplica costaría 2000 veces la
+  corrida. Lo que el intervalo no recoge del entrenamiento lo muestran, en
+  parte, las tres semillas.
+- **La línea base se fija al particionar.** No depende del modelo, así que el
+  tramo 1 ya la reporta (sección 5.1) y va al protocolo antes de entrenar. La
+  evaluación la recalcula, y si no da lo mismo se detiene: querría decir que
+  las predicciones no están unidas a los ejemplos de su pliegue.
+- **Las predicciones por ejemplo salen de `etapa2/clasificar.py`, sin tocar
+  nada congelado.** El script del asesor solo escribe métricas agregadas; es
+  suyo y no se modifica, y `etapa2` está congelada. `clasificar.py` es además
+  la vía de inferencia que usa el flujo, así que también se prueba el
+  artefacto. Corre en CPU: son unos cientos de oraciones, y así no compite por
+  la GPU compartida. La accuracy por argmax se coteja contra la del script:
+  si no cuadra, la unión entre predicciones y ejemplos está mal y no se
+  evalúa.
+- **Los modelos de pliegue se borran después de predecir.** Son 15, de unos
+  400 MB cada uno sin checkpoints. Lo que queda de ellos son sus predicciones
+  y su resultado, y con eso basta para retomar sin reentrenar.
+- **Un modelo que predice una sola clase es un resultado, no un error.**
+  `clasificar.py` se niega a escribir en ese caso, desde 20 filas, porque a
+  escala de corpus casi siempre es un modelo mal cargado. Aquí se acepta su
+  `.parcial` si todo lo demás cuadra, y el informe lo marca. La marca sale de
+  las predicciones, también con menos de 20 filas.
+
 ## El tablero corre el flujo: qué se toma de la petición y qué no
 
 `POST /api/trabajo {tipo: "flujo"}` acepta **qué** correr: corrida, pasos,

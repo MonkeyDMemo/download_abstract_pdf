@@ -503,8 +503,9 @@ python3 flujo.py --pasos capa,evaluar --forzar capa
 
 # en el servidor, con el python de pseudoRE; ver docs/entrenamiento-curada.md
 $PY -m grn_verificacion.cli reentrenar correr --raiz ~/grn-guillermo --pares P \
-    --reservar R --hasta particion        # tramo 1: datos y particion, sin GPU
-$PY -m grn_verificacion.cli reentrenar correr ... --desprender   # tramo 2
+    --reservar R --hasta particion --folds 5   # tramo 1: datos, pliegues y linea base, sin GPU
+$PY -m grn_verificacion.cli reentrenar correr ... --folds 5 --semillas 42,43,44 \
+    --desprender                          # tramo 2, con docs/protocolo-curada-v1.md ya commiteado
 $PY -m grn_verificacion.cli reentrenar estado|detener --raiz ~/grn-guillermo
 ```
 
