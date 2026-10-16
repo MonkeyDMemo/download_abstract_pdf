@@ -101,6 +101,11 @@ BASE_ESPERADA = collections.OrderedDict([
 HASTA = ("datos", "particion", "entrenamiento")
 # La variable que marca a los hijos de una corrida (ver `procesos_con`).
 MARCA_ENTORNO = "GRN_REENTRENAR"
+# Las que pone `desprender` para el proceso en segundo plano: que lo es, y el
+# nombre de la hoja, que no va en la línea de comandos (la ve cualquiera con
+# `ps`). La ruta de la base viaja igual, en BASE_CURADA.
+DESPRENDIDO = "GRN_REENTRENAR_DESPRENDIDO"
+HOJA_ENTORNO = "GRN_REENTRENAR_HOJA"
 NOMBRE_VALIDO = re.compile(r"^[A-Za-z0-9_.-]{1,40}$")
 
 # Sin red y sin barras de progreso a cada segundo: cada refresco de tqdm es
@@ -165,6 +170,8 @@ MOTIVOS = {
     "id2label": "el orden de etiquetas del modelo no es el esperado",
     "tope": "se alcanzó el tope de horas",
     "detenido": "se pidió detener",
+    "otra_corrida": "otra corrida viva usa estas carpetas",
+    "informe_no_publicable": "RESULTADOS.md no pasó la verificación",
     "inesperado": "error inesperado del orquestador",
 }
 
@@ -385,13 +392,19 @@ def tomar_candado(ruta):
     """
     import fcntl
     f = open(ruta, "a+")
-    try:
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        f.seek(0)
-        pid = f.read().strip()
-        f.close()
-        raise Ocupado(pid or "?")
+    # Unos intentos: un `estado` o un `detener` sondean el candado un
+    # instante (`quien_corre`), y coincidir con ellos no es estar ocupado.
+    for intento in range(3):
+        try:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError:
+            if intento == 2:
+                f.seek(0)
+                pid = f.read().strip()
+                f.close()
+                raise Ocupado(pid or "?")
+            time.sleep(0.2)
     f.seek(0)
     f.truncate()
     f.write(str(os.getpid()))
@@ -408,17 +421,27 @@ def soltar_candado(f):
 
 
 def quien_corre(ruta):
-    """El PID que tiene el candado, o None si nadie lo tiene."""
+    """El PID que tiene el candado, o None si nadie lo tiene.
+
+    Sondea con un candado compartido, que no choca con otro sondeo. Entre el
+    `flock` y la escritura del PID hay un instante en que el archivo está
+    vacío: se relee un par de veces antes de devolver -1 («alguien, sin
+    PID»).
+    """
     if not os.path.exists(ruta):
         return None
     import fcntl
     with open(ruta, "a+") as f:
         try:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(f.fileno(), fcntl.LOCK_SH | fcntl.LOCK_NB)
         except OSError:
-            f.seek(0)
-            texto = f.read().strip()
-            return int(texto) if texto.isdigit() else -1
+            for _ in range(5):
+                f.seek(0)
+                texto = f.read().strip()
+                if texto.isdigit():
+                    return int(texto)
+                time.sleep(0.1)
+            return -1
         fcntl.flock(f.fileno(), fcntl.LOCK_UN)
     return None
 
@@ -850,14 +873,52 @@ def procesos_con(marca):
     return sorted(encontrados)
 
 
+def _padre(pid):
+    try:
+        with open("/proc/%d/stat" % pid) as f:
+            campos = f.read().rsplit(")", 1)[-1].split()
+        return int(campos[1])
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def _es_orquestador(pid):
+    """Si `pid` es un `grn_verificacion.cli reentrenar correr` vivo."""
+    try:
+        with open("/proc/%d/cmdline" % pid, "rb") as f:
+            partes = f.read().split(b"\0")
+    except OSError:
+        return False
+    return (_vivo(pid) and b"grn_verificacion.cli" in partes
+            and b"reentrenar" in partes and b"correr" in partes)
+
+
+def orquestador_vivo(marca):
+    """El PID de otro orquestador vivo que tiene hijos con la marca, o None.
+
+    El candado debería bastar, pero es un archivo: si alguien lo borra con
+    una corrida viva, la siguiente lo crea de nuevo, lo toma, y habría matado
+    el entrenamiento vivo creyéndolo huérfano. Un huérfano de verdad ya no
+    tiene a su orquestador de padre (lo adoptó init).
+    """
+    for pid in procesos_con(marca):
+        padre = _padre(pid)
+        if padre and padre != os.getpid() and _es_orquestador(padre):
+            return padre
+    return None
+
+
 def matar_huerfanos(marca, log=_nada, espera=5.0):
     """Mata los procesos de una corrida anterior que quedaron vivos.
 
     Pasa si este orquestador murió por SIGKILL o por el OOM-killer: no pudo
     matar el árbol, y `barrido.py` con el script del asesor siguen con la GPU.
-    Se llama con el candado tomado, así que todo lo que encuentra es de una
-    corrida muerta y no de una viva. Devuelve cuántos encontró.
+    Lanza Ocupado si esos procesos tienen todavía a su orquestador vivo: no
+    son huérfanos. Devuelve cuántos encontró.
     """
+    otro = orquestador_vivo(marca)
+    if otro:
+        raise Ocupado(otro)
     pids = [p for p in procesos_con(marca) if _vivo(p)]
     if not pids:
         return 0
@@ -865,8 +926,8 @@ def matar_huerfanos(marca, log=_nada, espera=5.0):
         % len(pids))
     propio = os.getpgrp()
 
-    def senal(sig):
-        for pid in pids:
+    def senal(sig, cuales):
+        for pid in cuales:
             try:
                 grupo = os.getpgid(pid)
                 if grupo != propio:
@@ -876,12 +937,17 @@ def matar_huerfanos(marca, log=_nada, espera=5.0):
             except (ProcessLookupError, PermissionError):
                 pass
 
-    senal(signal.SIGTERM)
+    senal(signal.SIGTERM, pids)
     limite = time.monotonic() + espera
     while time.monotonic() < limite and any(_vivo(p) for p in pids):
         time.sleep(0.2)
-    if any(_vivo(p) for p in pids):
-        senal(signal.SIGKILL)
+    # Solo a los que siguen vivos Y marcados: un PID muerto pudo reusarse.
+    quedan = [p for p in procesos_con(marca) if p in pids and _vivo(p)]
+    if quedan:
+        senal(signal.SIGKILL, quedan)
+        limite = time.monotonic() + 2
+        while time.monotonic() < limite and any(_vivo(p) for p in quedan):
+            time.sleep(0.1)
     return len(pids)
 
 
@@ -911,16 +977,21 @@ def nombre_run():
 
 
 def _codigo():
-    """El commit del repositorio y si hay cambios sin commitear."""
+    """El commit del repositorio y si hay cambios sin commitear.
+
+    `GIT_OPTIONAL_LOCKS=0`: `git status` refresca el índice y para eso toma
+    `index.lock`, que chocaría con un `git commit` hecho al mismo tiempo.
+    """
+    entorno = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
     try:
         commit = subprocess.run(
             ["git", "-C", RAIZ_REPO, "rev-parse", "--short=10", "HEAD"],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=entorno,
             universal_newlines=True, timeout=10).stdout.strip()
         cambios = subprocess.run(
             ["git", "-C", RAIZ_REPO, "status", "--porcelain",
              "--untracked-files=no"],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=entorno,
             universal_newlines=True, timeout=10).stdout.strip()
     except (OSError, subprocess.TimeoutExpired):
         return {"commit": None, "limpio": None}
@@ -939,6 +1010,11 @@ def _correr(argv, log, detener, cwd, entorno=None):
                               entorno=entorno)["codigo"]
     except proceso.ErrorProceso as e:
         return e.codigo
+
+
+def _hay_pesos(run):
+    return any(os.path.isfile(os.path.join(run, n))
+               for n in ("pytorch_model.bin", "model.safetensors"))
 
 
 def _metricas_validas(r):
@@ -960,20 +1036,11 @@ def _metricas(r):
     return m
 
 
-def ejecutar(raiz, nombre, base, pares, reservas, script, python=None,
-             ciego=None, folds=None, hasta="entrenamiento",
-             aceptar_base_distinta=False, horas=HORAS,
-             gpu_min_mib=GPU_MIN_MIB, max_length=MAX_LENGTH,
-             conservar_checkpoints=False, hoja=None, log=_nada,
-             detener=None):
-    """Corre la pista D y devuelve el estado final (el de `estado.json`).
-
-    Los errores de un paso no se lanzan: quedan en el estado (`estatus`
-    error o cancelado, con su `motivo`) y en RESULTADOS.md, que se escribe
-    siempre. Lanza Ocupado si otra corrida con ese nombre tiene el candado,
-    ErrorReentreno si las carpetas caen en un repositorio y ValueError si los
-    argumentos no sirven.
-    """
+def validar_entradas(nombre, base, pares, reservas, script, ciego=None,
+                     folds=None, hasta="entrenamiento"):
+    """ValueError si los argumentos no sirven. Va aparte para que
+    `--desprender` lo compruebe ANTES de lanzar: en segundo plano, el error
+    se perdería y quien lanzó vería el estado de la corrida anterior."""
     if os.name == "nt":
         raise ValueError("reentrenar es para el servidor (POSIX).")
     validar_nombre(nombre)
@@ -994,6 +1061,26 @@ def ejecutar(raiz, nombre, base, pares, reservas, script, python=None,
     if not reservas:
         raise ValueError("Falta --reservar: sin reservas, el 44 % "
                          "recalculado mediría memoria.")
+
+
+def ejecutar(raiz, nombre, base, pares, reservas, script, python=None,
+             ciego=None, folds=None, hasta="entrenamiento",
+             aceptar_base_distinta=False, horas=HORAS,
+             gpu_min_mib=GPU_MIN_MIB, max_length=MAX_LENGTH,
+             conservar_checkpoints=False, hoja=None, log=_nada,
+             detener=None):
+    """Corre la pista D y devuelve el estado final (el de `estado.json`).
+
+    Los errores de un paso no se lanzan: quedan en el estado (`estatus`
+    error o cancelado, con su `motivo`) y en RESULTADOS.md, que se escribe
+    siempre. Lanza Ocupado si otra corrida con ese nombre tiene el candado,
+    ErrorReentreno si las carpetas caen en un repositorio y ValueError si los
+    argumentos no sirven.
+    """
+    if isinstance(reservas, str):
+        reservas = [reservas]
+    validar_entradas(nombre, base, pares, reservas, script, ciego, folds,
+                     hasta)
     r = rutas(raiz, nombre)
     detener = detener or threading.Event()
     viejo = os.umask(0o077)
@@ -1001,6 +1088,9 @@ def ejecutar(raiz, nombre, base, pares, reservas, script, python=None,
         avisos = preparar_carpetas(r)
         candado = tomar_candado(r["candado"])
         try:
+            otro = orquestador_vivo(r["runs"])
+            if otro:
+                raise Ocupado(otro)
             corrida = _Corrida(
                 r, nombre, os.path.abspath(os.path.expanduser(base)),
                 os.path.abspath(os.path.expanduser(pares)),
@@ -1085,7 +1175,14 @@ class _Corrida:
         if self.archivo_log is not None:
             self.archivo_log.write("%s %s\n" % (_hora(), limpia))
             self.archivo_log.flush()
-        self.salida(limpia)
+        try:
+            self.salida(limpia)
+        except OSError:
+            # La terminal se fue (un corte de SSH sin --desprender, con la
+            # salida sin redirigir): el primer print daba EIO, y proceso.correr
+            # lo tomaba por un error y mataba el entrenamiento. Se sigue solo
+            # con el log de archivo.
+            self.salida = _nada
 
     def guardar(self):
         escribir_estado(self.r["estado"], self.estado)
@@ -1140,6 +1237,10 @@ class _Corrida:
         self.archivo_log.write("\n=== %s inicio (PID %d)\n"
                                % (_ahora(), os.getpid()))
         self.guardar()
+        # El RESULTADOS.md de la corrida anterior deja de valer: si esta muere
+        # sin cerrar (SIGKILL), no debe quedar uno que diga «ok» con un modelo
+        # que ya no está.
+        escribir_informe(self.r, self.estado, self.san)
         try:
             self.paso("reservas", self._paso_reservas)
             conteos = self.paso("datos", self._paso_datos)
@@ -1221,18 +1322,28 @@ class _Corrida:
             except Exception as e:
                 self.registrar("No pude leer el entrenamiento anterior (%s)."
                                % type(e).__name__)
+        # BaseException: un segundo Ctrl-C aquí no puede dejar el estado en
+        # «corriendo» ni el entrenamiento huérfano.
         try:
             self.estado["huerfanos_al_cerrar"] = matar_huerfanos(
                 self.r["runs"], self.registrar)
-        except Exception:
+        except BaseException:
             pass
-        for intento in (self.guardar,
-                        lambda: escribir_informe(self.r, self.estado,
-                                                 self.san),
-                        self.guardar):
+
+        def informe_():
+            escribir_informe(self.r, self.estado, self.san)
+            inf = self.estado.get("informe") or {}
+            if (inf.get("estatus") == "no_publicable"
+                    and self.estado["estatus"] == "ok"):
+                # La corrida no sirve si su resultado no se puede publicar.
+                self.estado["estatus"] = "error"
+                self.estado["motivo"] = "informe_no_publicable"
+                self.estado["detalle"] = inf.get("detalle")
+
+        for intento in (self.guardar, informe_, self.guardar):
             try:
                 intento()
-            except Exception as e:
+            except BaseException as e:
                 self.estado["error_al_cerrar"] = type(e).__name__
         motivo = self.estado.get("motivo")
         self.registrar("=== fin: %s%s" % (self.estado["estatus"],
@@ -1356,7 +1467,8 @@ class _Corrida:
         argv = [sys.executable, "-u", PARTICIONAR,
                 "--entrada", self.r["datos"], "--salida", salida,
                 "--por", "pmid", "--semilla", str(SEMILLA_PARTICION)] + extra
-        codigo = _correr(argv, capturar, self.detener, cwd=self.r["datos"])
+        codigo = _correr(argv, capturar, self.detener, cwd=self.r["datos"],
+                         entorno=self._entorno_hijos())
         _escribir_texto(archivo_txt, "\n".join(lineas) + "\n")
         return codigo, lineas
 
@@ -1473,9 +1585,7 @@ class _Corrida:
             if not (_metricas_validas(r) and r.get("huella") == hue
                     and str(r.get("max_length")) == self.max_length):
                 return False
-        run = os.path.join(self.r["runs"], nombre)
-        return any(os.path.isfile(os.path.join(run, n))
-                   for n in ("pytorch_model.bin", "model.safetensors"))
+        return _hay_pesos(os.path.join(self.r["runs"], nombre))
 
     def _paso_entorno(self, info):
         # Relanzar con todo entrenado (para agregar --ciego, para rehacer el
@@ -1488,7 +1598,15 @@ class _Corrida:
                             "partición; no hace falta la GPU")
             self.registrar("entorno: %s." % info["nota"])
             return
-        info["huerfanos"] = matar_huerfanos(self.r["runs"], self.registrar)
+        try:
+            info["huerfanos"] = matar_huerfanos(self.r["runs"],
+                                                self.registrar)
+        except Ocupado as e:
+            raise ErrorReentreno(
+                "otra_corrida",
+                "Otra corrida viva (PID %s) usa <runs> sin el candado (¿se "
+                "borró .candado?). No se toca: detenla con `reentrenar "
+                "detener` o espera a que termine." % e.pid)
         gpu = leer_gpu()
         info["gpu"] = gpu
         self.registrar("GPU: %d MiB libres de %d (mínimo %d)."
@@ -1554,7 +1672,9 @@ class _Corrida:
         os.makedirs(resultados, 0o700, exist_ok=True)
         os.makedirs(trabajo, 0o700, exist_ok=True)
         destino = os.path.join(resultados, nombre + ".json")
+        run = os.path.join(trabajo, nombre)
         anterior = _leer_json(destino)
+        apartar = None
         if anterior is not None:
             if anterior.get("huella") == hue:
                 if str(anterior.get("max_length")) != self.max_length:
@@ -1563,7 +1683,11 @@ class _Corrida:
                         "Hay un resultado de esta partición con max_length %s "
                         "y se pidió %s: usa otro --nombre."
                         % (anterior.get("max_length"), self.max_length))
-                if _metricas_validas(anterior):
+                # Con --conservar el resultado vale si están los pesos: un
+                # JSON sin modelo dejaba la corrida atascada en sin_modelo
+                # para siempre, sin volver a entrenar.
+                if _metricas_validas(anterior) and (not conservar
+                                                    or _hay_pesos(run)):
                     info["estatus"] = "saltado"
                     info["huella"] = hue
                     # Los tokens no van en el JSON de barrido.py: van aparte,
@@ -1574,15 +1698,26 @@ class _Corrida:
                     self.registrar("%s: ya estaba entrenado con esta "
                                    "partición; se reusa." % nombre)
                     return anterior
-            # De otra partición: barrido.py se negaría a seguir. Se aparta.
+                apartar = "sin_pesos"
+            else:
+                apartar = "anterior"
+        if apartar == "anterior":
+            # De otra partición: barrido.py se negaría a seguir. Se aparta el
+            # resultado y también su modelo, que es bueno: borrarlo antes de
+            # reentrenar dejaba sin ninguno si el reentrenamiento fallaba.
             os.replace(destino, destino + ".anterior")
-        run = os.path.join(trabajo, nombre)
+            if os.path.isdir(run):
+                if os.path.isdir(run + ".anterior"):
+                    shutil.rmtree(run + ".anterior")
+                os.replace(run, run + ".anterior")
+                self.registrar("El modelo de la partición anterior quedó en "
+                               "%s.anterior." % nombre)
+        elif apartar:
+            os.replace(destino, destino + "." + apartar)
         if os.path.isdir(run):
-            # Sin resultado no hay modelo bueno ahí: son los checkpoint-* de un
-            # intento cortado, que save_total_limit mezclaría con los nuevos.
-            if os.path.dirname(os.path.abspath(run)) != os.path.abspath(
-                    trabajo):
-                raise ErrorReentreno("inesperado", "run fuera de <runs>")
+            # Sin resultado válido no hay modelo bueno ahí: son los
+            # checkpoint-* de un intento cortado, que save_total_limit
+            # mezclaría con los nuevos.
             shutil.rmtree(run)
             self.registrar("Se borró un %s a medias de un intento anterior."
                            % nombre)
@@ -1605,7 +1740,11 @@ class _Corrida:
                 longitud.append(linea)
             self.registrar(linea)
 
+        por_tope = []
+
         def disparar():
+            if not self.detener.is_set():
+                por_tope.append(True)
             self.tope.set()
             self.detener.set()
 
@@ -1621,6 +1760,12 @@ class _Corrida:
         info["huella"] = hue
         resultado = _leer_json(destino)
         if (_metricas_validas(resultado) and resultado.get("huella") == hue):
+            if self.tope.is_set():
+                # El tope disparó justo cuando barrido.py terminaba: el
+                # resultado está y vale, y el resto de la corrida sigue.
+                self.tope.clear()
+                if por_tope:
+                    self.detener.clear()
             # `.json.tokens` no lo recoge el resumen de barrido.py, que busca
             # `*.json` y `*.json.error`.
             _escribir_texto(destino + ".tokens", json.dumps(
@@ -1653,8 +1798,7 @@ class _Corrida:
 
     def _paso_modelo(self, info):
         run = os.path.join(self.r["runs"], nombre_run())
-        if not any(os.path.isfile(os.path.join(run, n))
-                   for n in ("pytorch_model.bin", "model.safetensors")):
+        if not _hay_pesos(run):
             raise ErrorReentreno("sin_modelo",
                                  "No hay pesos en la carpeta del run.")
         # `trainer.save_model()` no escribe el mapa de etiquetas, y
@@ -2108,7 +2252,15 @@ def resumen_estado(raiz, nombre, lineas=15):
                   "el candado)"
     salida.append("Corrida %s: %s%s%s" % (
         nombre, estatus, " (%s)" % motivo if motivo else "",
-        "; corre en el PID %d" % pid if pid else ""))
+        "; corre en el PID %d" % pid if pid and pid > 0 else ""))
+    if not pid and os.path.isdir("/proc"):
+        # Un `kill -9` al orquestador deja el entrenamiento vivo, sin tope y
+        # con la GPU: que se vea aquí, que es lo que lee la sesión.
+        vivos = [p for p in procesos_con(r["runs"]) if _vivo(p)]
+        if vivos:
+            salida.append("  AVISO: quedan %d procesos de esta corrida sin "
+                          "orquestador; detenlos con `reentrenar detener`."
+                          % len(vivos))
     salida.append("  inicio %s; actualizado %s; fin %s" % (
         estado.get("inicio"), estado.get("actualizado"),
         estado.get("fin") or "—"))
@@ -2150,23 +2302,37 @@ def detener_corrida(raiz, nombre, esperar=60.0):
     validar_nombre(nombre)
     r = rutas(raiz, nombre)
     pid = quien_corre(r["candado"])
+    if pid is None and os.path.isdir("/proc"):
+        # Sin candado (alguien lo borró) pero con el orquestador vivo.
+        pid = orquestador_vivo(r["runs"])
     forzado = False
+
+    def vive():
+        return quien_corre(r["candado"]) or (pid and pid > 0 and _vivo(pid))
+
     if pid and pid > 0:
         try:
             os.kill(pid, signal.SIGTERM)
         except ProcessLookupError:
             pass
         limite = time.monotonic() + esperar
-        while time.monotonic() < limite and quien_corre(r["candado"]):
+        while time.monotonic() < limite and vive():
             time.sleep(0.5)
-        if quien_corre(r["candado"]):
+        if vive():
             forzado = True
             try:
                 os.kill(pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            time.sleep(1)
-    huerfanos = matar_huerfanos(r["runs"]) if os.path.isdir("/proc") else 0
+            limite = time.monotonic() + 5
+            while time.monotonic() < limite and _vivo(pid):
+                time.sleep(0.2)
+    huerfanos = 0
+    if os.path.isdir("/proc"):
+        try:
+            huerfanos = matar_huerfanos(r["runs"])
+        except Ocupado:
+            pass
     estado = leer_estado(r["estado"])
     if estado.get("estatus") == "corriendo" and not quien_corre(r["candado"]):
         estado["estatus"] = "cancelado"
@@ -2175,17 +2341,24 @@ def detener_corrida(raiz, nombre, esperar=60.0):
                              if forzado else "detenido sin que cerrara")
         estado["fin"] = _ahora()
         escribir_estado(r["estado"], estado)
+        # El RESULTADOS.md tiene que decir lo mismo que el estado.
+        try:
+            escribir_informe(r, estado)
+            escribir_estado(r["estado"], estado)
+        except Exception:
+            pass
     return {"pid": pid, "forzado": forzado, "huerfanos": huerfanos}
 
 
-def desprender(argv_cli, raiz, nombre, base=None):
+def desprender(argv_cli, raiz, nombre, base=None, hoja=None):
     """Lanza `python -m grn_verificacion.cli <argv_cli>` en su propia sesión.
 
     Sin tmux en el servidor, es lo que hace que un corte de SSH o el cierre
     de la sesión de Claude no maten el entrenamiento: sin terminal que cuelgue
-    no hay SIGHUP. La salida estándar va a /dev/null porque el orquestador
-    escribe su propio log filtrado; los errores que no alcance a atrapar van
-    a `reentrenar.err`, que `estado` muestra también por el filtro.
+    no hay SIGHUP. Lo que imprime el orquestador ya está en su log filtrado,
+    así que su salida estándar va a /dev/null. Los errores van a
+    `reentrenar.err`: los `ERROR:` de la CLI, que en segundo plano salen por
+    stderr, y lo que no alcance a atrapar. `estado` lo muestra por el filtro.
 
     La ruta de la base viaja en el entorno (`BASE_CURADA`) y no en `argv_cli`:
     la línea de comandos de un proceso la ve cualquier cuenta de la máquina
@@ -2194,9 +2367,11 @@ def desprender(argv_cli, raiz, nombre, base=None):
     """
     validar_nombre(nombre)
     r = rutas(raiz, nombre)
-    entorno = dict(os.environ)
+    entorno = dict(os.environ, **{DESPRENDIDO: "1"})
     if base:
         entorno["BASE_CURADA"] = os.path.abspath(os.path.expanduser(base))
+    if hoja is not None:
+        entorno[HOJA_ENTORNO] = hoja
     viejo = os.umask(0o077)
     try:
         for carpeta in (r["raiz"], os.path.dirname(r["resultados"]),

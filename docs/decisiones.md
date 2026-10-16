@@ -1343,6 +1343,16 @@ prueba con unittest. Cuatro piezas que no son obvias:
   y la revisión del 15-oct encontró por qué no sirve: `flujo.py --modelo` y
   `clasificar.py` nombran la misma carpeta al usar el modelo recién
   entrenado, y una corrida nueva los habría matado.
+- **`matar_arbol` espera al grupo, no al hijo** (`grn_comun/proceso.py`,
+  lo usa también el flujo). Antes solo mandaba SIGKILL si el hijo directo
+  tardaba en morir. Si `barrido.py` moría con SIGTERM y el script del asesor
+  no, el nieto seguía con la GPU y con la tubería abierta, y quien leía la
+  salida se quedaba esperando: así se saltaba el tope de 4 horas. Ahora lo
+  que quede del grupo a los 5 s muere con SIGKILL.
+- **El candado no basta si alguien borra el archivo.** Antes de tocar nada,
+  una corrida nueva busca si los procesos marcados tienen todavía a su
+  orquestador vivo de padre (un huérfano de verdad lo perdió). Si es así, se
+  detiene con `otra_corrida` en vez de matar el entrenamiento ajeno.
 - **El paso de datos corre dentro del proceso**, no como subproceso. Así sus
   conteos llegan estructurados, y una excepción que no sea `ValueError` (que
   podría traer el valor de una celda en su mensaje) se registra solo por su

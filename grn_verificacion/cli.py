@@ -169,8 +169,8 @@ def _ruta(valor):
 
 def _argv_correr(args):
     """La misma corrida para relanzarla desprendida: rutas absolutas, porque
-    el proceso nuevo arranca en la raíz del repositorio. Sin `--base`: viaja
-    en el entorno (ver `reentrenar.desprender`)."""
+    el proceso nuevo arranca en la raíz del repositorio. Sin `--base` ni
+    `--hoja`: viajan en el entorno (ver `reentrenar.desprender`)."""
     argv = ["reentrenar", "correr", "--raiz", _ruta(args.raiz),
             "--nombre", args.nombre,
             "--pares", _ruta(args.pares), "--script", _ruta(args.script),
@@ -180,13 +180,14 @@ def _argv_correr(args):
     for ruta in args.reservar:
         argv += ["--reservar", _ruta(ruta)]
     if args.python:
-        argv += ["--python", args.python]
+        # Un nombre suelto se busca en el PATH; una ruta relativa se rompía al
+        # arrancar el hijo en otra carpeta.
+        argv += ["--python", _ruta(args.python) if os.sep in args.python
+                 else args.python]
     if args.ciego:
         argv += ["--ciego", _ruta(args.ciego)]
     if args.folds is not None:
         argv += ["--folds", str(args.folds)]
-    if args.hoja is not None:
-        argv += ["--hoja", args.hoja]
     if args.aceptar_base_distinta:
         argv.append("--aceptar-base-distinta")
     if args.conservar_checkpoints:
@@ -229,6 +230,67 @@ def cmd_reentrenar(args):
         return 1
 
 
+def _nada(_):
+    pass
+
+
+def _a_stderr(linea):
+    print(linea, file=sys.stderr, flush=True)
+
+
+def _desprender(args, R, subprocess):
+    """Lanza la corrida en segundo plano y espera unos segundos.
+
+    Lo que se puede comprobar antes se comprueba aquí: en segundo plano, un
+    error se perdía y quien lanzó veía el estado de la corrida ANTERIOR.
+    """
+    try:
+        R.validar_entradas(args.nombre, args.base, args.pares, args.reservar,
+                           args.script, args.ciego, args.folds, args.hasta)
+    except ValueError as e:
+        log("ERROR: %s" % e)
+        return 2
+    r = R.rutas(args.raiz, args.nombre)
+    pid = R.quien_corre(r["candado"])
+    if pid:
+        log("ERROR: ya corre una corrida %s (PID %s). Mírala con "
+            "`reentrenar estado` o detenla con `reentrenar detener`."
+            % (args.nombre, pid))
+        return 4
+    desde = os.path.getsize(r["err"]) if os.path.isfile(r["err"]) else 0
+    proc = R.desprender(_argv_correr(args), args.raiz, args.nombre,
+                        base=args.base, hoja=args.hoja)
+    seguir = ("  python -m grn_verificacion.cli reentrenar %%s --raiz %s "
+              "--nombre %s" % (_raiz_mostrable(args.raiz), args.nombre))
+    try:
+        codigo = proc.wait(timeout=ESPERA_DESPRENDER)
+    except subprocess.TimeoutExpired:
+        log("Lanzada la corrida %s en segundo plano (PID %d). Sobrevive "
+            "a un corte de SSH. Sigue con:" % (args.nombre, proc.pid))
+        log(seguir % "estado")
+        return 0
+    except KeyboardInterrupt:
+        # Ctrl-C aquí no detiene nada: el proceso ya está en su propia sesión.
+        log("La corrida %s sigue en segundo plano (PID %d). Para detenerla:"
+            % (args.nombre, proc.pid))
+        log(seguir % "detener")
+        return 3
+    if codigo == 0:
+        for linea in R.resumen_estado(args.raiz, args.nombre):
+            log(linea)
+        return 0
+    log("La corrida %s terminó al arrancar, con código %d. Lo que dijo:"
+        % (args.nombre, codigo))
+    san = R.Saneador(r)
+    with open(r["err"], encoding="utf-8", errors="replace") as f:
+        f.seek(desde)
+        for linea in f.read().splitlines()[-20:]:
+            limpia = san.linea(linea)
+            if limpia:
+                log("  " + limpia)
+    return codigo
+
+
 def _cmd_reentrenar(args, R):
     import signal
     import subprocess
@@ -249,26 +311,19 @@ def _cmd_reentrenar(args, R):
             log("Además se detuvieron %d procesos huérfanos." % r["huerfanos"])
         return 0
 
+    # En segundo plano la salida estándar va a /dev/null y lo que cuenta ya
+    # está en el log filtrado; los ERROR van a stderr, que es reentrenar.err.
+    desprendido = os.environ.get(R.DESPRENDIDO) == "1"
+    error = _a_stderr if desprendido else log
+
     faltan = [f for f, v in (("--base", args.base), ("--script", args.script))
               if not v]
     if faltan:
-        log("ERROR: falta %s (o BASE_CURADA / SCRIPT_ASESOR en el entorno)."
-            % " y ".join(faltan))
+        error("ERROR: falta %s (o BASE_CURADA / SCRIPT_ASESOR en el entorno)."
+              % " y ".join(faltan))
         return 2
     if args.desprender:
-        proc = R.desprender(_argv_correr(args), args.raiz, args.nombre,
-                            base=args.base)
-        try:
-            codigo = proc.wait(timeout=ESPERA_DESPRENDER)
-        except subprocess.TimeoutExpired:
-            log("Lanzada la corrida %s en segundo plano (PID %d). Sobrevive "
-                "a un corte de SSH. Sigue con:" % (args.nombre, proc.pid))
-            log("  python -m grn_verificacion.cli reentrenar estado --raiz %s "
-                "--nombre %s" % (_raiz_mostrable(args.raiz), args.nombre))
-            return 0
-        for linea in R.resumen_estado(args.raiz, args.nombre):
-            log(linea)
-        return codigo
+        return _desprender(args, R, subprocess)
 
     detener = threading.Event()
     senales = {"n": 0}
@@ -286,6 +341,11 @@ def _cmd_reentrenar(args, R):
     for nombre in ("SIGTERM", "SIGINT", "SIGHUP"):
         if hasattr(signal, nombre):
             numero = getattr(signal, nombre)
+            # Lo que llegó ignorado se queda ignorado: `nohup` ignora SIGHUP,
+            # y capturarla anulaba el nohup y cancelaba la corrida al cortarse
+            # el SSH.
+            if signal.getsignal(numero) is signal.SIG_IGN:
+                continue
             anteriores[numero] = signal.signal(numero, al_recibir)
     try:
         estado = R.ejecutar(
@@ -296,17 +356,17 @@ def _cmd_reentrenar(args, R):
             horas=args.horas, gpu_min_mib=args.gpu_min_mib,
             max_length=args.max_length,
             conservar_checkpoints=args.conservar_checkpoints, hoja=args.hoja,
-            log=log, detener=detener)
+            log=_nada if desprendido else log, detener=detener)
     except R.Ocupado as e:
-        log("ERROR: ya corre una corrida %s (PID %s). Mírala con "
-            "`reentrenar estado` o detenla con `reentrenar detener`."
-            % (args.nombre, e.pid))
+        error("ERROR: ya corre una corrida %s (PID %s). Mírala con "
+              "`reentrenar estado` o detenla con `reentrenar detener`."
+              % (args.nombre, e.pid))
         return 4
     except R.ErrorReentreno as e:
-        log("ERROR: %s" % e.detalle)
+        error("ERROR: %s" % e.detalle)
         return 1
     except ValueError as e:
-        log("ERROR: %s" % e)
+        error("ERROR: %s" % e)
         return 2
     finally:
         for numero, anterior in anteriores.items():
@@ -351,7 +411,8 @@ def _sub_reentrenar(sub):
     co.add_argument("--ciego", default=None,
                     help="TSV del conjunto ciego (columnas tf y blanco): "
                          "cuenta cuánto de sus pares entró.")
-    co.add_argument("--hoja", default=None,
+    co.add_argument("--hoja", default=os.environ.get(
+                        "GRN_REENTRENAR_HOJA"),
                     help="Nombre de la hoja de la base; por omisión la "
                          "primera.")
     co.add_argument("--folds", type=int, default=None,

@@ -287,7 +287,15 @@ Detalles de cómo entrena:
   run 22, marcadas como de una corrida anterior. Lo mismo vale para el tramo 1
   después de entrenar, mientras la partición no cambie.
 - Con `--desprender`, la ruta de la base viaja en el entorno del proceso y no
-  en su línea de comandos, que cualquier cuenta de la máquina ve con `ps`.
+  en su línea de comandos, que cualquier cuenta de la máquina ve con `ps`. Lo
+  que se puede comprobar antes de lanzar (archivos, nombre, otra corrida en
+  marcha) se comprueba en primer plano; si el proceso muere al arrancar, la
+  terminal dice por qué.
+- Si cambia la partición, el modelo anterior no se borra antes de
+  reentrenar: queda en `run_22_….anterior`, por si el reentrenamiento falla.
+- Para detener, `reentrenar detener`, nunca `kill -9`. Un `kill -9` al
+  orquestador deja el entrenamiento vivo y sin tope; `estado` lo avisa y
+  `detener` lo limpia.
 
 ## Paso 4. Lo que se trae y se publica
 
@@ -387,6 +395,10 @@ errores del propio orquestador), y `estado` lo muestra filtrado.
 | `tope` | pasó de 4 h: anotarlo en la bitácora; no se relanza sin decidirlo |
 | `script_fallo`, `matado` | el log (`estado --lineas 60`) muestra el final de la salida del script |
 | `id2label` | el modelo quedó con otro orden de etiquetas: no se usa |
+| `sin_modelo` | el entrenamiento terminó sin pesos: relanzar lo repite (un resultado sin modelo no se reusa) |
+| `otra_corrida` | otra corrida viva usa las mismas carpetas sin el candado (alguien borró `.candado`): `estado` y `detener` |
+| `informe_no_publicable` | `RESULTADOS.md` traía algo que no se puede publicar y no se escribió; el estado dice qué patrón y en qué línea |
+| `estado` dice «quedan N procesos de esta corrida sin orquestador» | el orquestador murió a la fuerza (`kill -9`) y el entrenamiento siguió sin tope: `reentrenar detener` |
 | `ruta_en_repositorio` | `--raiz` cae dentro de una copia de git: usa una carpeta fuera |
 | ya corre una corrida (código 4) | `estado` para verla; `detener` si quedó colgada |
 

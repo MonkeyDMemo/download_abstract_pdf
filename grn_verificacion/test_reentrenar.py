@@ -8,7 +8,6 @@ lo que ve la sesión (estado, log, informe) lleva contenido de la base.
 """
 
 import ast
-import collections
 import json
 import os
 import re
@@ -24,8 +23,8 @@ from unittest import mock
 from grn_verificacion import cli
 from grn_verificacion import entrenamiento as E
 from grn_verificacion import reentrenar as R
-from grn_verificacion.test_entrenamiento import (CODIGOS, PMID_BASE, _corpus,
-                                                 par)
+from grn_verificacion.test_entrenamiento import (CODIGOS, PMID_AJENO,
+                                                 PMID_BASE, _corpus, par)
 from grn_verificacion.test_validacion import construir_xlsx
 
 POSIX = os.name != "nt" and os.path.isdir("/proc")
@@ -79,10 +78,18 @@ for flag in ("--train_jsonl", "--dev_jsonl", "--test_jsonl", "--labels_json",
     ap.add_argument(flag)
 args, _ = ap.parse_known_args()
 modo = os.environ.get("FALSO_MODO", "ok")
+if modo == "terco":
+    import signal
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    modo = "lento"
 if os.environ.get("FALSO_CUENTA"):
     with open(os.environ["FALSO_CUENTA"], "a") as f:
         f.write("x\\n")
 os.makedirs(args.out_dir, exist_ok=True)
+# Como un traceback del script real que trajera un ejemplo: si el filtro se
+# desconecta, esto llega a lo que ve la sesión.
+print("Ejemplo: <e1> QzaaR </e1> regula <e2> wvaaA </e2> (PMID 30000001, "
+      "PA1000) en " + args.train_jsonl, flush=True)
 if modo == "oom":
     print("torch.OutOfMemoryError: CUDA out of memory. Tried to allocate "
           "20.00 MiB", flush=True)
@@ -192,9 +199,28 @@ class _Escenario(unittest.TestCase):
         parche = mock.patch.dict(os.environ, self.entorno)
         parche.start()
         self.addCleanup(parche.stop)
-        for llave in ("HF_HOME", "GRN_PYTHON_BERT"):
+        for llave in ("HF_HOME", "GRN_PYTHON_BERT", R.DESPRENDIDO,
+                      R.HOJA_ENTORNO):
             os.environ.pop(llave, None)
+        # /tmp puede ser un tmpfs chico; el disco se prueba aparte.
+        disco = mock.patch.object(R, "DISCO_MIN_GIB", 0)
+        disco.start()
+        self.addCleanup(disco.stop)
         self.r = R.rutas(self.raiz, "curada-v1")
+        # Si una prueba falla a la mitad, barrido.py, el script falso y su
+        # nieto llevan la marca: se matan aquí, antes del rmtree del temporal
+        # (los addCleanup corren al revés).
+        self.addCleanup(self._limpiar)
+
+    def _limpiar(self):
+        try:
+            R.matar_huerfanos(self.r["runs"])
+        except R.Ocupado as e:
+            R.detener_corrida(self.raiz, "curada-v1", esperar=5)
+            try:
+                os.kill(int(e.pid), signal.SIGKILL)
+            except (OSError, ValueError):
+                pass
 
     def correr(self, **kwargs):
         kwargs.setdefault("aceptar_base_distinta", True)
@@ -215,6 +241,29 @@ class _Escenario(unittest.TestCase):
     def leer(self, ruta):
         with open(ruta, encoding="utf-8") as f:
             return f.read()
+
+    def popen_cli(self, *extra, **kwargs):
+        """La CLI como proceso, con SIGINT y SIGHUP en su valor por omisión:
+        si el proceso de pruebas los ignora, el hijo los heredaría ignorados
+        y la CLI los respetaría (es lo que hace con `nohup`)."""
+        def preparar():
+            for sig in (signal.SIGINT, signal.SIGHUP):
+                signal.signal(sig, signal.SIG_DFL)
+            if kwargs.get("ignorar_sighup"):
+                signal.signal(signal.SIGHUP, signal.SIG_IGN)
+        proc = subprocess.Popen(self.argv_cli(*extra), cwd=E.RAIZ_REPO,
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                                preexec_fn=preparar)
+        self.addCleanup(proc.wait)
+        self.addCleanup(proc.kill)
+        return proc
+
+    def correr_cli(self, *extra):
+        return subprocess.run(self.argv_cli(*extra), cwd=E.RAIZ_REPO,
+                              stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT,
+                              universal_newlines=True, timeout=60)
 
     def argv_cli(self, *extra):
         return [sys.executable, "-m", "grn_verificacion.cli", "reentrenar",
@@ -465,17 +514,37 @@ class PruebasCorrida(_Escenario):
             self.assertIn(seccion, informe)
         self.assertEqual("ok", estado["informe"]["estatus"])
         self.assertEqual(0, estado["huerfanos_al_cerrar"])
-        # Los permisos: lo confidencial solo para la cuenta.
+        # Los permisos: lo confidencial, solo para la cuenta.
         for carpeta in (self.r["datos"], self.r["runs"],
                         self.r["resultados"]):
             self.assertEqual(0o700, os.stat(carpeta).st_mode & 0o777)
+        self.assertEqual(0o600, os.stat(os.path.join(
+            self.r["datos"], E.ARCHIVOS[0])).st_mode & 0o777)
+
+    def test_una_raiz_abierta_se_cierra_y_se_avisa(self):
+        os.makedirs(self.raiz)
+        os.chmod(self.raiz, 0o775)
+        estado, _ = self.correr(hasta="datos")
+        self.assertEqual(0o700, os.stat(self.raiz).st_mode & 0o777)
+        self.assertTrue(estado["avisos"])
+        self.assertIn("se cerró a 700", self.leer(self.r["informe"]))
 
     def test_nada_de_contenido_en_lo_que_ve_la_sesion(self):
         estado, lineas = self.correr(folds=3)
         self.assertEqual("ok", estado["estatus"])
+        # El script falso imprime un ejemplo en cada entrenamiento: el filtro
+        # tuvo algo que quitar (sin esto, la prueba solo mide que nadie
+        # imprimió contenido).
+        self.assertGreaterEqual(estado.get("lineas_omitidas", 0), 4)
         textos = {
             "salida": "\n".join(lineas),
             "estado": "\n".join(R.resumen_estado(self.raiz, "curada-v1", 400)),
+            "cli estado": subprocess.run(
+                [sys.executable, "-m", "grn_verificacion.cli", "reentrenar",
+                 "estado", "--raiz", self.raiz, "--lineas", "400"],
+                cwd=E.RAIZ_REPO, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, universal_newlines=True,
+                timeout=60).stdout,
         }
         # Todo lo que hay en <resultados>, no una lista: el JSON de barrido.py
         # vivía ahí con la ruta absoluta de la partición y nadie lo miraba.
@@ -487,6 +556,10 @@ class PruebasCorrida(_Escenario):
         self.assertIn("RESULTADOS.md", textos)
         self.assertIn("entrenamiento.json", textos)
         pmids = [str(PMID_BASE + i) for i in range(len(CODIGOS))]
+        pmids.append(str(PMID_AJENO))
+        # El nombre único del temporal sobrevive a «~» (si TMPDIR cae bajo el
+        # home) y a <raiz>: una ruta de entrada escapada lo lleva siempre.
+        unico = os.path.basename(self.tmp)
         for nombre, texto in textos.items():
             for pmid in pmids:
                 self.assertNotIn(pmid, texto, nombre)
@@ -495,6 +568,7 @@ class PruebasCorrida(_Escenario):
             self.assertNotIn("florbination", texto, nombre)
             self.assertIsNone(re.search(r"PA[0-9]{4}", texto), nombre)
             self.assertNotIn(self.tmp, texto, nombre)
+            self.assertNotIn(unico, texto, nombre)
             self.assertNotIn("<e1>", texto, nombre)
         R.verificar_publicable(textos["RESULTADOS.md"])
 
@@ -534,6 +608,16 @@ class PruebasCorrida(_Escenario):
         self.assertNotIn("particion", estado["pasos"])
         self.assertIn("DIFIERE", self.leer(self.r["informe"]))
 
+    def test_hasta_datos_no_particiona(self):
+        os.environ["FALSO_GPU_FALLA"] = "1"
+        estado, _ = self.correr(hasta="datos")
+        self.assertEqual("ok", estado["estatus"], estado.get("detalle"))
+        self.assertEqual(["reservas", "datos", "base"], list(estado["pasos"]))
+        self.assertFalse(os.path.exists(self.r["particion"]))
+        self.assertFalse(os.path.exists(self.r["particion_txt"]))
+        self.assertEqual(0, self.llamadas())
+        self.assertIn("## 3. La base", self.leer(self.r["informe"]))
+
     def test_hasta_particion_no_toca_la_gpu(self):
         os.environ["FALSO_GPU_FALLA"] = "1"
         estado, _ = self.correr(hasta="particion")
@@ -551,29 +635,83 @@ class PruebasCorrida(_Escenario):
         self.assertNotIn("modelo", estado["pasos"])
 
     def test_un_run_a_medias_se_borra_antes_de_repetir(self):
-        basura = os.path.join(self.r["runs"], R.nombre_run(), "checkpoint-9")
-        os.makedirs(basura)
+        run = os.path.join(self.r["runs"], R.nombre_run())
+        # Un archivo que el paso modelo no borra: si sobrevive, nadie borró
+        # el run a medias (el checkpoint-9 solo no lo prueba, porque el paso
+        # modelo borra todo checkpoint-* al final).
+        resto = _escribir(os.path.join(run, "resto_del_intento.txt"), "x")
+        os.makedirs(os.path.join(run, "checkpoint-9"))
         estado, lineas = self.correr()
         self.assertEqual("ok", estado["estatus"])
         self.assertTrue(any("a medias" in l for l in lineas))
-        self.assertFalse(os.path.exists(basura))
+        self.assertFalse(os.path.exists(resto))
+        self.assertEqual(2, estado["pasos"]["modelo"]["checkpoints_borrados"])
+
+    def test_sin_pesos_se_vuelve_a_entrenar(self):
+        """Antes, un resultado sin modelo dejaba la corrida en sin_modelo
+        para siempre, sin volver a entrenar."""
+        self.correr()
+        os.remove(os.path.join(self.r["runs"], R.nombre_run(),
+                               "pytorch_model.bin"))
+        estado, _ = self.correr()
+        self.assertEqual("ok", estado["estatus"], estado.get("detalle"))
+        self.assertEqual("ok", estado["pasos"]["entrenamiento"]["estatus"])
+        self.assertEqual(2, self.llamadas())
+
+    def test_si_cambia_la_particion_el_modelo_anterior_se_aparta(self):
+        """Antes se borraba antes de reentrenar: si el reentrenamiento
+        fallaba, no quedaba ningún modelo."""
+        self.correr()
+        E.escribir_reservas(self.reservas[1], [PMID_BASE + 29, PMID_BASE + 28],
+                            [ORACION_RESERVADA])
+        os.environ["FALSO_MODO"] = "oom"
+        estado, _ = self.correr()
+        self.assertEqual(("error", "sin_memoria_gpu"),
+                         (estado["estatus"], estado["motivo"]))
+        anterior = os.path.join(self.r["runs"], R.nombre_run() + ".anterior")
+        self.assertTrue(os.path.isfile(os.path.join(anterior,
+                                                    "pytorch_model.bin")))
+        self.assertTrue(os.path.isfile(os.path.join(
+            self.r["barrido"], R.nombre_run() + ".json.anterior")))
 
     def test_el_tope_mata_al_hijo_y_al_nieto(self):
         os.environ["FALSO_MODO"] = "lento"
+        t0 = time.monotonic()
         estado, _ = self.correr(horas=4.0 / 3600)
+        self.assertLess(time.monotonic() - t0, 60,
+                        "no los mató el tope: el árbol terminó solo")
+        self.assertEqual(("cancelado", "tope"),
+                         (estado["estatus"], estado["motivo"]))
+        # Si los hubiera matado la barrida final por la marca, el tope no
+        # alcanzó al grupo.
+        self.assertEqual(0, estado["huerfanos_al_cerrar"])
+        self.assertMuertos(self.esperar_pids(1))
+
+    def test_el_tope_alcanza_a_un_script_que_ignora_sigterm(self):
+        """El hijo directo (barrido.py) muere con SIGTERM y el script no: sin
+        SIGKILL al grupo, el tope esperaba a que terminara solo."""
+        os.environ["FALSO_MODO"] = "terco"
+        t0 = time.monotonic()
+        estado, _ = self.correr(horas=4.0 / 3600)
+        self.assertLess(time.monotonic() - t0, 60)
         self.assertEqual(("cancelado", "tope"),
                          (estado["estatus"], estado["motivo"]))
         self.assertMuertos(self.esperar_pids(1))
 
-    def test_gpu_ocupada_sin_cuda_y_sin_modelo_no_entrenan(self):
+    def test_gpu_ocupada_sin_cuda_sin_modelo_y_sin_disco_no_entrenan(self):
         for variable, valor, motivo in (
                 ("FALSO_GPU_LIBRE", "1000", "gpu_ocupada"),
                 ("FALSO_CUDA", "0", "sin_cuda"),
-                ("FALSO_SIN_MODELO", "1", "modelo_no_en_cache")):
+                ("FALSO_SIN_MODELO", "1", "modelo_no_en_cache"),
+                ("FALSO_GPU_FALLA", "1", "gpu_no_disponible")):
             with mock.patch.dict(os.environ, {variable: valor}):
                 estado, _ = self.correr()
             self.assertEqual(("error", motivo),
                              (estado["estatus"], estado["motivo"]))
+        with mock.patch.object(R, "DISCO_MIN_GIB", 10 ** 9):
+            estado, _ = self.correr()
+        self.assertEqual(("error", "disco"),
+                         (estado["estatus"], estado["motivo"]))
         self.assertEqual(0, self.llamadas())
 
     def test_id2label_al_reves_es_error(self):
@@ -581,6 +719,13 @@ class PruebasCorrida(_Escenario):
         estado, _ = self.correr()
         self.assertEqual(("error", "id2label"),
                          (estado["estatus"], estado["motivo"]))
+
+    def test_otro_max_length_con_la_misma_particion_se_detiene(self):
+        self.correr()
+        estado, _ = self.correr(max_length="256")
+        self.assertEqual(("error", "parametros_distintos"),
+                         (estado["estatus"], estado["motivo"]))
+        self.assertEqual(1, self.llamadas())
 
     def test_candado_ocupado(self):
         os.makedirs(self.r["resultados"])
@@ -590,9 +735,7 @@ class PruebasCorrida(_Escenario):
             self.correr()
         self.assertEqual(str(os.getpid()), str(ctx.exception.pid))
         self.assertEqual(os.getpid(), R.quien_corre(self.r["candado"]))
-        r = subprocess.run(self.argv_cli(), cwd=E.RAIZ_REPO,
-                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                           universal_newlines=True, timeout=60)
+        r = self.correr_cli()
         self.assertEqual(4, r.returncode, r.stdout)
 
     def test_un_huerfano_de_otra_corrida_muere_antes_de_entrenar(self):
@@ -602,6 +745,7 @@ class PruebasCorrida(_Escenario):
         huerfano = subprocess.Popen(
             dormir, start_new_session=True,
             env=dict(os.environ, **{R.MARCA_ENTORNO: self.r["runs"]}))
+        self.addCleanup(huerfano.wait)
         self.addCleanup(huerfano.kill)
         # ...y quien solo USA el modelo (flujo.py --modelo, clasificar.py)
         # nombra la misma carpeta en su línea de comandos, pero no es nuestro.
@@ -611,8 +755,9 @@ class PruebasCorrida(_Escenario):
         estado, _ = self.correr()
         self.assertEqual("ok", estado["estatus"])
         self.assertEqual(1, estado["pasos"]["entorno"]["huerfanos"])
+        # Lo mató el paso entorno y no la barrida del cierre.
+        self.assertEqual(0, estado["huerfanos_al_cerrar"])
         self.assertMuertos([huerfano.pid])
-        huerfano.wait(5)
         self.assertIsNone(usuario.poll(), "mató a quien usaba el modelo")
 
     def test_validacion_cruzada(self):
@@ -628,6 +773,42 @@ class PruebasCorrida(_Escenario):
         self.assertFalse([d for _, ds, _ in os.walk(cv_runs) for d in ds
                           if d.startswith("run_")])
         self.assertIn("media ± sd", self.leer(self.r["informe"]))
+
+    def test_un_pliegue_rechazado_no_entrena(self):
+        real = R._Corrida._particionar
+
+        def con_fuga(corrida, salida, extra, archivo_txt):
+            codigo, lineas = real(corrida, salida, extra, archivo_txt)
+            if "--folds" in extra:
+                lineas = lineas + ["--- pliegue 1: train=1 dev=1 test=1",
+                                   "     FALLA: 1 PMIDs de test tambien en "
+                                   "train"]
+            return codigo, lineas
+
+        with mock.patch.object(R._Corrida, "_particionar", con_fuga):
+            estado, _ = self.correr(folds=3)
+        self.assertEqual(("error", "particion_rechazada"),
+                         (estado["estatus"], estado["motivo"]))
+        self.assertNotIn("entorno", estado["pasos"])
+        self.assertEqual(0, self.llamadas())
+
+    def test_un_informe_no_publicable_no_queda_escrito(self):
+        self.correr(hasta="datos")
+        self.assertTrue(os.path.exists(self.r["informe"]))
+        real = R.informe
+        with mock.patch.object(R, "informe", lambda estado, r=None:
+                               real(estado, r) + "\nver /srv/lab/x\n"):
+            estado, _ = self.correr(hasta="datos")
+        self.assertEqual("no_publicable", estado["informe"]["estatus"])
+        self.assertIn("ruta absoluta", estado["informe"]["detalle"])
+        # Una corrida cuyo resultado no se puede publicar no terminó bien.
+        self.assertEqual(("error", "informe_no_publicable"),
+                         (estado["estatus"], estado["motivo"]))
+        self.assertFalse(os.path.exists(self.r["informe"]))
+        self.assertNotIn("/srv/lab", json.dumps(R.leer_estado(
+            self.r["estado"])))
+        self.assertIn("no publicable", "\n".join(
+            R.resumen_estado(self.raiz, "curada-v1")))
 
     def test_el_ciego_va_sin_desglose_por_etiqueta(self):
         estado, _ = self.correr()
@@ -653,15 +834,46 @@ class PruebasCorrida(_Escenario):
 class PruebasProcesos(_Escenario):
     """La CLI como proceso aparte: señales, desprender y detener."""
 
-    def test_sigterm_detiene_y_mata_el_arbol(self):
-        os.environ["FALSO_MODO"] = "lento"
-        proc = subprocess.Popen(self.argv_cli(), cwd=E.RAIZ_REPO,
-                                stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL)
-        self.addCleanup(proc.kill)
+    def _detener_con(self, sig, modo="lento"):
+        os.environ["FALSO_MODO"] = modo
+        if os.path.exists(self.pids):
+            os.remove(self.pids)
+        proc = self.popen_cli()
         pids = self.esperar_pids()
+        proc.send_signal(sig)
+        return proc, pids
+
+    def test_sigterm_sighup_y_sigint_detienen_y_matan_el_arbol(self):
+        """SIGHUP es el corte de SSH de una corrida sin --desprender."""
+        for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+            with self.subTest(sig=sig):
+                proc, pids = self._detener_con(sig)
+                self.assertEqual(3, proc.wait(60))
+                self.assertMuertos(pids)
+                estado = R.leer_estado(self.r["estado"])
+                self.assertEqual(("cancelado", "detenido"),
+                                 (estado["estatus"], estado["motivo"]))
+                self.assertEqual(0, estado["huerfanos_al_cerrar"])
+
+    def test_con_sighup_ignorado_un_corte_de_ssh_no_la_detiene(self):
+        """Así la deja `nohup`: capturar SIGHUP anulaba el nohup."""
+        os.environ["FALSO_MODO"] = "lento"
+        proc = self.popen_cli(ignorar_sighup=True)
+        pids = self.esperar_pids()
+        proc.send_signal(signal.SIGHUP)
+        time.sleep(2)
+        self.assertIsNone(proc.poll(), "un SIGHUP ignorado la detuvo")
         proc.send_signal(signal.SIGTERM)
         self.assertEqual(3, proc.wait(60))
+        self.assertMuertos(pids)
+
+    def test_la_segunda_senal_corta_aunque_el_script_ignore_sigterm(self):
+        proc, pids = self._detener_con(signal.SIGTERM, modo="terco")
+        time.sleep(2)
+        self.assertIsNone(proc.poll(), "con el script terco, a los 2 s la "
+                                       "primera señal todavía no alcanza")
+        proc.send_signal(signal.SIGTERM)
+        self.assertEqual(3, proc.wait(30))
         self.assertMuertos(pids)
         estado = R.leer_estado(self.r["estado"])
         self.assertEqual(("cancelado", "detenido"),
@@ -670,9 +882,10 @@ class PruebasProcesos(_Escenario):
     def test_desprender_estado_y_detener(self):
         os.environ["FALSO_MODO"] = "lento"
         t0 = time.monotonic()
-        r = subprocess.run(self.argv_cli("--desprender"), cwd=E.RAIZ_REPO,
-                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                           universal_newlines=True, timeout=60)
+        r = self.correr_cli("--desprender")
+        # Pase lo que pase después, el orquestador desprendido no sobrevive a
+        # la prueba (la barrida de la marca no lo alcanza: él no la lleva).
+        self.addCleanup(R.detener_corrida, self.raiz, "curada-v1", 5)
         self.assertEqual(0, r.returncode, r.stdout)
         self.assertLess(time.monotonic() - t0, 30)
         self.assertIn("segundo plano", r.stdout)
@@ -695,7 +908,100 @@ class PruebasProcesos(_Escenario):
         self.assertIsNone(R.quien_corre(self.r["candado"]))
         estado = R.leer_estado(self.r["estado"])
         self.assertEqual("cancelado", estado["estatus"])
+        self.assertEqual(0, estado["huerfanos_al_cerrar"])
+        # reentrenar.err vive en <resultados>, crudo.
+        err = self.leer(self.r["err"])
+        self.assertNotIn(self.tmp, err)
+        self.assertNotIn("Traceback", err)
 
+    def test_desprender_valida_antes_de_lanzar(self):
+        argv = self.argv_cli("--desprender")
+        argv[argv.index("--reservar") + 1] = os.path.join(self.tmp, "no.tsv")
+        r = subprocess.run(argv, cwd=E.RAIZ_REPO, stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, universal_newlines=True,
+                           timeout=60)
+        self.assertEqual(2, r.returncode, r.stdout)
+        self.assertIn("No encuentro el archivo de --reservar", r.stdout)
+        self.assertFalse(os.path.exists(self.r["estado"]))
+
+    def test_desprender_que_muere_al_arrancar_dice_por_que(self):
+        """Antes el error se perdía en /dev/null y se mostraba el estado de
+        la corrida anterior."""
+        dentro = os.path.join(self.tmp, "copia_git")
+        os.makedirs(os.path.join(dentro, ".git"))
+        argv = self.argv_cli("--desprender")
+        argv[argv.index("--raiz") + 1] = os.path.join(dentro, "raiz")
+        r = subprocess.run(argv, cwd=E.RAIZ_REPO, stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, universal_newlines=True,
+                           timeout=60)
+        self.assertNotEqual(0, r.returncode, r.stdout)
+        self.assertIn("terminó al arrancar", r.stdout)
+        self.assertIn("repositorio", r.stdout)
+        self.assertNotIn(self.tmp, r.stdout)
+
+    def test_un_kill_9_al_orquestador_se_ve_en_estado_y_detener_limpia(self):
+        os.environ["FALSO_MODO"] = "lento"
+        proc = self.popen_cli()
+        pids = self.esperar_pids()
+        proc.kill()
+        proc.wait(10)
+        resumen = "\n".join(R.resumen_estado(self.raiz, "curada-v1"))
+        self.assertIn("murió sin cerrar", resumen)
+        # barrido.py, el script y su nieto.
+        self.assertIn("quedan 3 procesos", resumen)
+        # El RESULTADOS.md de una corrida anterior no queda diciendo «ok».
+        self.assertIn("**corriendo**", self.leer(self.r["informe"]))
+        r = R.detener_corrida(self.raiz, "curada-v1", esperar=5)
+        self.assertEqual(3, r["huerfanos"])
+        self.assertMuertos(pids)
+        self.assertIn("**cancelado**", self.leer(self.r["informe"]))
+
+    def test_con_el_candado_borrado_no_se_mata_la_corrida_viva(self):
+        """Si alguien borra .candado, la siguiente corrida tomaba uno nuevo y
+        mataba el entrenamiento vivo creyéndolo huérfano."""
+        os.environ["FALSO_MODO"] = "lento"
+        proc = self.popen_cli()
+        pids = self.esperar_pids()
+        os.remove(self.r["candado"])
+        with self.assertRaises(R.Ocupado) as ctx:
+            self.correr()
+        self.assertEqual(proc.pid, int(ctx.exception.pid))
+        self.assertFalse([p for p in pids if not R._vivo(p)],
+                         "mató a la corrida viva")
+        r = R.detener_corrida(self.raiz, "curada-v1", esperar=30)
+        self.assertEqual(proc.pid, r["pid"])
+        self.assertEqual(3, proc.wait(30))
+        self.assertMuertos(pids)
+
+    def test_detener_fuerza_con_sigkill_si_no_suelta_el_candado(self):
+        os.makedirs(self.r["resultados"])
+        R.escribir_estado(self.r["estado"], {"estatus": "corriendo",
+                                             "pasos": {}})
+        terco = subprocess.Popen(
+            [sys.executable, "-c",
+             "import signal, sys, time\n"
+             "from grn_verificacion import reentrenar as R\n"
+             "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+             "c = R.tomar_candado(sys.argv[1])\n"
+             "print('listo', flush=True)\n"
+             "time.sleep(600)\n", self.r["candado"]],
+            cwd=E.RAIZ_REPO, stdout=subprocess.PIPE,
+            universal_newlines=True)
+        self.addCleanup(terco.stdout.close)
+        self.addCleanup(terco.wait)
+        self.addCleanup(terco.kill)
+        self.assertEqual("listo", terco.stdout.readline().strip())
+        r = R.detener_corrida(self.raiz, "curada-v1", esperar=1)
+        self.assertEqual((terco.pid, True), (r["pid"], r["forzado"]))
+        self.assertEqual(-signal.SIGKILL, terco.wait(10))
+        self.assertIsNone(R.quien_corre(self.r["candado"]))
+        estado = R.leer_estado(self.r["estado"])
+        self.assertEqual(("cancelado", "detenido"),
+                         (estado["estatus"], estado["motivo"]))
+        self.assertIn("a la fuerza", estado["detalle"])
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0,
+                     "root escribe aunque la carpeta sea 500")
     def test_un_error_de_la_cli_no_sale_como_traceback(self):
         """Una --raiz donde no se puede escribir: antes salía el traceback de
         Python, con rutas del repositorio y la que falló."""
