@@ -220,8 +220,9 @@ de las reglas del proyecto (CLAUDE.md: «no implementar nada que evada muros
 de pago ni controles de acceso»). No se hizo.
 
 **Cómo se llegó a los mismos datos por otra vía:**
-1. **Qué alimenta la vista.** Una captura de 2024 de la página de operones de
-   `oprM` enseña dos orígenes:
+1. **Qué alimenta la vista.** La captura de la página de operones de `oprM`
+   (25-nov-2017, la única que tiene el Internet Archive; aquí se decía «de
+   2024» por error) enseña dos orígenes:
    - predicciones de **DOOR** (Database of Prokaryotic Operons; Mao et al.
      2009, PMID 18988623), con evidencia «Computationally-predicted»;
    - operones de literatura de **PseudoCAP**, cada uno con su artículo.
@@ -655,6 +656,9 @@ menos un operón.
 
 ## 9. Dónde sigue
 
+- [`fuentes-operones.md`](fuentes-operones.md) tiene la liga exacta de cada
+  fuente: la que pidió el encargo, de la que de verdad se bajó y por qué, con
+  la cadena de evidencia de Pseudomonas Genome DB.
 - [`guia-operones.md`](guia-operones.md) explica cómo se mantiene todo esto:
   - cómo se regenera `operones_base.tsv` en otra máquina;
   - el paso `operones` de `flujo.py`;

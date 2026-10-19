@@ -8,6 +8,40 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 18 de octubre de 2026 — las ligas de las cuatro fuentes de operones
+
+El usuario pidió una documentación oficial de las ligas de donde se tomó cada
+fuente, con el detalle de Pseudomonas Genome DB. Sus operones salieron de otro
+sitio, el GitHub del laboratorio Greene, que publica la misma información.
+Queda en un documento propio, **`docs/fuentes-operones.md`**:
+- de cada fuente: la liga que pidió el encargo, la liga de la que de verdad se
+  bajó, por qué, la fecha y el archivo con su tamaño;
+- la cadena de evidencia de PGD, eslabón por eslabón con su liga: el desafío
+  de Cloudflare, las capturas de Wayback, Lee et al. 2023, el repositorio y el
+  commit, la comprobación con *metG* y las direcciones muertas de DOOR;
+- las fuentes de apoyo: el GFF de RefSeq, KEGG y UniProt.
+
+Las capturas de Wayback no estaban en el repositorio: se recuperaron de los
+registros de la sesión del 27-sep.
+
+**Lo que se verificó:**
+- se recalcularon los bytes y la huella de los cinco crudos, y coinciden con
+  la hoja de fuentes del catálogo del 27-sep;
+- no se pidió nada a pseudomonas.com, operondb, BioCyc ni el IIMAS;
+- solo se consultó el índice del Internet Archive.
+
+**Una corrección.** La página de operones de *oprM* tiene una sola captura en
+el Internet Archive, del 25-nov-2017. `catalogo-operones.md` §3.3 decía «una
+captura de 2024»: el 27-sep se pidió «la más cercana a 2024», y el archivo
+devolvió la de 2017. La conclusión no cambia: la captura actual de *metG* que
+mandó el usuario dice lo mismo sobre el origen de los datos.
+
+**Lo que no quedó:** la liga exacta del archivo de CDBProm. Se bajó a mano el
+18-sep y no se registró, y el sitio prohíbe buscarla con un programa. Queda
+identificado por su nombre, su tamaño y su huella.
+
+---
+
 ## 16 de octubre de 2026 — los operones, documentados para el asesor y para quien los mantenga
 
 **Dónde estábamos.**

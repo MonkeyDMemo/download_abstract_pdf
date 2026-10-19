@@ -8,6 +8,8 @@ Para quien mantenga los operones del proyecto. Sirve para:
 Estado al 16 de octubre de 2026. Otros dos documentos completan este:
 - [`catalogo-operones.md`](catalogo-operones.md) tiene el detalle de cada
   fuente y el diccionario de datos, y aquí no se repite;
+- [`fuentes-operones.md`](fuentes-operones.md) tiene la liga exacta de cada
+  fuente y la cadena de evidencia de Pseudomonas Genome DB;
 - [`operones-asesor.md`](operones-asesor.md) da el estado y las decisiones
   abiertas, en corto.
 

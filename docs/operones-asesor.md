@@ -54,6 +54,10 @@ Los dos son predicción en su mayor parte. Coinciden exactamente en genes en
 | Pseudomonas Genome DB | predicciones de DOOR y operones de literatura de PseudoCAP | la exportación de su curador, publicada por el laboratorio Greene y fijada a una versión | 1 290 operones, foto del 19 de julio de 2021 |
 | CDBProm (IIMAS) | promotores predichos | el archivo por organismo que ofrece el sitio, bajado a mano | 1 950 promotores; marca operones, no los crea |
 
+Las ligas exactas de cada fuente están en
+[`fuentes-operones.md`](fuentes-operones.md): la que pidió el encargo, de la
+que de verdad se bajó y por qué.
+
 Del sitio de Pseudomonas Genome DB no se pudo sacar nada. Está detrás de un
 desafío de Cloudflare, su `robots.txt` prohíbe la recolección automatizada y no
 ofrece un archivo de operones. La exportación de su curador es la tabla que

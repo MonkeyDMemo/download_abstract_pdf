@@ -445,6 +445,7 @@ queries/               las queries booleanas que se registran con `query add`
 | `docs/decisiones.md` | las decisiones de diseño y por qué se tomaron así |
 | `docs/operones-asesor.md` | **los operones en corto, para el asesor**: qué se hizo, las cifras y las decisiones pendientes con nuestra recomendación |
 | `docs/guia-operones.md` | **cómo se mantienen los operones**: los dos catálogos, los comandos, el paso del flujo y cómo regenerar `operones_base.tsv` |
+| `docs/fuentes-operones.md` | **de dónde salió cada fuente de operones**: la liga que pidió el encargo, de la que se bajó y por qué, con la evidencia de Pseudomonas Genome DB |
 | `docs/catalogo-operones.md` | **cómo se hizo el catálogo de operones**: cada fuente, qué se tomó y qué no, el modelo y el diccionario de datos |
 | `docs/CONTEXTO_OPERONES.md` | el encargo original de la base de operones (18-sep); histórico, ya no describe el código |
 | `docs/traspaso-maquina-nueva.md` | **cómo levantar el proyecto en otra computadora**: qué copiar, qué instalar y cómo comprobarlo |
