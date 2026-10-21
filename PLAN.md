@@ -134,6 +134,27 @@ La regla b) mide si el paso 1 recupera la evidencia citada; la a) mide lo que el
 Lo que está abierto en todo el proyecto, no solo en estas tablas, está junto y
 con sus fuentes en [`docs/pendientes.md`](docs/pendientes.md), al 28-sep-2026.
 
+### 3.0 Calendario del cierre técnico — propuesto, por validar el 23-oct-2026
+
+Del Documento de Tesis v1 (20-oct-2026), marcado **[Nuestro]**: es propuesta
+del autor y no acuerdo con el asesor hasta el viernes 23. La parte técnica del
+servicio social cierra en 15 días, en cuatro carriles paralelos; noviembre
+queda para el informe, diciembre para la revisión, y el cierre es el
+29-dic-2026.
+
+| Carril | Fechas | Qué |
+|---|---|---|
+| Decisiones con el Dr. Galán | 23-oct | rúbrica, nube, CollecTF, calendario |
+| Claude Code: código | 21 al 27-oct | alineación v2 de la sintaxis, contraste con la base curada, la red versionada |
+| Servidor: BioBERT | 21 al 30-oct | métricas y 5 pliegues por PMID (cumplido el 16-oct con curada-v1) |
+| Anotación con ayudantes | 24-oct al 2-nov | muestra ciega y candidatas nuevas; arranca con la rúbrica ya validada |
+| Claude Code: plata y oro | 28-oct al 3-nov | LLM sobre el residuo, consolidación |
+| Cierre técnico | 4-nov | |
+
+Si una fase se atrasa, se recorta en este orden: el agente revisor con
+Strands, las pruebas del tablero con Playwright y el NER complementario. El
+contraste con la base curada y la red no se recortan.
+
 ### 3.1 Crítico — integridad y reproducibilidad
 
 | # | Qué | Por qué | Estado |
