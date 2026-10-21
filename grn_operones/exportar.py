@@ -211,6 +211,64 @@ def filas_conflictos(con, db):
     return filas
 
 
+# ------------------------------------------------- lista de revisión (D2)
+
+COLUMNAS_REVISION = [
+    "clave_genes", "nombre", "locus_tags", "genes", "motivo", "pmid",
+    "titulo", "anio", "revista", "tipos_publicacion",
+]
+ENCABEZADOS_REVISION = [
+    "Clave (locus tags ordenados)", "Nombre", "Locus tags",
+    "Genes (símbolo de genes_pao1.tsv)", "Motivo", "PMID", "Título", "Año",
+    "Revista", "Tipo de publicación",
+]
+
+
+def filas_revision(con, db, anotacion, traer):
+    """La lista que el asesor necesita para decidir las unidades de BioCyc
+    `pendiente_revision` (cita, pero ningún código de evidencia): una fila por
+    unidad y PMID, con el título, el año, la revista y el tipo de cada
+    artículo.
+
+    La del 24-sep-2026 salió de un script de sesión que no quedó versionado
+    (pendiente 4.5). `traer(pmids)` devuelve una lista de dicts con `pmid`,
+    `titulo`, `anio`, `revista` y `tipos_publicacion`: en el CLI es
+    `grn_etl.pubmed.traer_articulos` con su cliente, y llega inyectado para
+    que este módulo no salga a la red y sus pruebas tampoco.
+    """
+    unidades = []
+    for s in db.silver_de(con):
+        marcas = [m for m in (s["revisar"] or "").split(";") if m]
+        if "pendiente_revision" in marcas:
+            pmids = [p for p in (s["pmids"] or "").split(";") if p]
+            unidades.append((s, marcas, pmids))
+    todos = sorted(set(p for _s, _m, ps in unidades for p in ps),
+                   key=lambda p: (len(p), p))
+    articulos = dict((a["pmid"], a) for a in (traer(todos) if todos else []))
+
+    filas = []
+    for s, marcas, pmids in unidades:
+        locus = [x for x in (s["locus_tags"] or "").split("|") if x]
+        orden = orden_transcripcion(locus, s["cadena"] or "")
+        for pmid in pmids or [""]:
+            a = articulos.get(pmid, {})
+            filas.append({
+                "clave_genes": s["clave_genes"],
+                "nombre": s["nombre"] or "",
+                "locus_tags": "|".join(orden),
+                "genes": " ".join(anotacion.get(l, {}).get("simbolo") or l
+                                  for l in orden),
+                "motivo": "; ".join(MOTIVOS.get(m, m) for m in marcas),
+                "pmid": pmid,
+                "titulo": a.get("titulo", ""),
+                "anio": a.get("anio", "") or "",
+                "revista": a.get("revista", ""),
+                "tipos_publicacion": "; ".join(a.get("tipos_publicacion")
+                                               or []),
+            })
+    return filas
+
+
 # ------------------------------------------------------- catálogo maestro
 
 COLUMNAS_CATALOGO = [

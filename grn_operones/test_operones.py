@@ -1747,6 +1747,70 @@ class PruebasExportacion(unittest.TestCase):
         self.assertFalse(os.path.exists(ruta + ".tmp"))
 
 
+class PruebasListaDeRevision(unittest.TestCase):
+    """`exportar --pendientes`: la lista de las unidades de BioCyc con cita y
+    sin código de evidencia, con los datos de cada artículo. La del 24-sep no
+    se podía reproducir (pendiente 4.5). PubMed llega por `traer`, falso aquí:
+    ninguna prueba sale a la red."""
+
+    def setUp(self):
+        self.con = _con()
+        self.addCleanup(self.con.close)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        ruta = os.path.join(self.tmp.name, "genes.tsv")
+        with io.open(ruta, "w", encoding="utf-8", newline="") as f:
+            f.write(GENES_TSV)
+        self.anotacion = E.cargar_anotacion(ruta)
+        _bronce(self.con, [
+            # Cita y ningún código: el único caso ambiguo de BioCyc.
+            _fila("biocyc", "TU-9", "PA0426|PA0425", pmid="222;111"),
+            _fila("odb", "op1", "PA2493|PA2494", pmid="333")])
+        C.curar(self.con, diccionario=C.cargar_diccionario(ruta),
+                hebras={"PA0425": "+", "PA0426": "+", "PA2493": "+",
+                        "PA2494": "+"})
+        self.pedidos = []
+
+    def _traer(self, pmids):
+        self.pedidos.append(list(pmids))
+        return [{"pmid": "111", "titulo": "Un artículo", "anio": 2001,
+                 "revista": "J Bacteriol",
+                 "tipos_publicacion": ["Journal Article", "Review"]}]
+
+    def test_una_fila_por_unidad_y_pmid_con_los_datos_del_articulo(self):
+        filas = E.filas_revision(self.con, D, self.anotacion, self._traer)
+
+        self.assertEqual([f["pmid"] for f in filas], ["111", "222"])
+        self.assertEqual(set(f["clave_genes"] for f in filas),
+                         {"PA0425|PA0426"})
+        primera = filas[0]
+        self.assertEqual((primera["titulo"], primera["anio"],
+                          primera["revista"]),
+                         ("Un artículo", 2001, "J Bacteriol"))
+        self.assertEqual(primera["tipos_publicacion"],
+                         "Journal Article; Review")
+        self.assertEqual(primera["genes"], "mexA mexB")
+        self.assertEqual(filas[1]["titulo"], "",
+                         "un PMID que PubMed no devolvió queda en blanco")
+
+    def test_pide_todos_los_pmids_de_una_vez(self):
+        E.filas_revision(self.con, D, self.anotacion, self._traer)
+
+        self.assertEqual(self.pedidos, [["111", "222"]])
+
+    def test_sin_pendientes_no_pregunta_nada(self):
+        con = _con()
+        self.addCleanup(con.close)
+
+        self.assertEqual(E.filas_revision(con, D, self.anotacion,
+                                          self._traer), [])
+        self.assertEqual(self.pedidos, [])
+
+    def test_encabezados_y_columnas_van_parejos(self):
+        self.assertEqual(len(E.COLUMNAS_REVISION),
+                         len(E.ENCABEZADOS_REVISION))
+
+
 class PruebasVistaPgd(unittest.TestCase):
     """El CSV con las columnas de la página de operones de pseudomonas.com."""
 

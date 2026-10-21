@@ -4,7 +4,9 @@
     python -m grn_operones.cli extraer [--fuente odb|biocyc|pgd|cdbprom|todo]
     python -m grn_operones.cli reparsear [--fuente ...]
     python -m grn_operones.cli curar
-    python -m grn_operones.cli exportar
+    python -m grn_operones.cli exportar [--pendientes]   # con --pendientes,
+                                                        # la lista de revisión
+                                                        # (una petición a PubMed)
     python -m grn_operones.cli catalogo [--paso1]   # catálogo maestro; con
                                                     # --paso1, también el
                                                     # recurso del bronce
@@ -25,7 +27,7 @@ sys.path.insert(0, _RAIZ)
 
 from grn_bronce import operones as _operones_paso1              # noqa: E402
 from grn_bronce import rutas                                    # noqa: E402
-from grn_etl import credenciales                                # noqa: E402
+from grn_etl import credenciales, pubmed                        # noqa: E402
 from grn_operones import curar as _curar                        # noqa: E402
 from grn_operones import db, exportar, fuentes, red             # noqa: E402
 
@@ -296,12 +298,31 @@ def cmd_curar(args):
 
 
 def cmd_exportar(args):
+    traer = None
+    if args.pendientes:
+        # La unica parte de `exportar` que sale a la red: una peticion a
+        # PubMed por los PMIDs de la lista. Se pide el correo antes de abrir
+        # nada, como `extraer`.
+        correo = credenciales.correo()
+        if not correo:
+            sys.exit("--pendientes consulta PubMed y NCBI exige un correo de "
+                     "contacto: ponlo en NCBI_EMAIL o en el archivo .correo.")
+        cliente = pubmed.Cliente(correo, credenciales.llave())
+
+        def traer(pmids):
+            return pubmed.traer_articulos(cliente, pmids)
+
+    anotacion = exportar.cargar_anotacion(_curar.RUTA_GENES)
     con = _conectar(args)
     try:
         silver = exportar.filas_silver(con, db, args.sin_monocistronicos)
         conflictos = exportar.filas_conflictos(con, db)
-        pgd = exportar.filas_pgd(
-            con, db, exportar.cargar_anotacion(_curar.RUTA_GENES))
+        pgd = exportar.filas_pgd(con, db, anotacion)
+        revision = (exportar.filas_revision(con, db, anotacion, traer)
+                    if traer else None)
+    except pubmed.ErrorPubMed as e:
+        sys.exit("No se pudo consultar PubMed para la lista de revisión: %s"
+                 % e)
     finally:
         con.close()
     if not silver:
@@ -317,6 +338,14 @@ def cmd_exportar(args):
     if pgd:
         exportar.escribir_csv(base + "_pgd.csv", exportar.COLUMNAS_PGD, pgd,
                               log, encabezados=exportar.ENCABEZADOS_PGD)
+    if revision is not None:
+        exportar.escribir_csv(base + "_pendiente_revision.csv",
+                              exportar.COLUMNAS_REVISION, revision, log,
+                              encabezados=exportar.ENCABEZADOS_REVISION,
+                              bom=True)
+        log("  Lista de revisión: %d unidades pendiente_revision, %d PMIDs."
+            % (len(set(f["clave_genes"] for f in revision)),
+               len(set(f["pmid"] for f in revision if f["pmid"]))))
     log("")
     log("  %d operones curados, %d para revisar a mano." % (len(silver),
                                                             len(conflictos)))
@@ -466,6 +495,12 @@ def main():
                      dest="sin_monocistronicos",
                      help="Dejar fuera las unidades de un solo gen. Apagado "
                           "por omision: se conservan marcadas.")
+    ex2.add_argument("--pendientes", action="store_true",
+                     help="Escribir además la lista para que el asesor "
+                          "decida las unidades de BioCyc pendiente_revision, "
+                          "con título, año, revista y tipo de cada PMID. "
+                          "Consulta PubMed (una petición) con el correo de "
+                          "NCBI_EMAIL o .correo.")
     ex2.set_defaults(func=cmd_exportar)
 
     ca = sub.add_parser(
