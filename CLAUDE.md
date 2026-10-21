@@ -246,6 +246,10 @@ grn_verificacion/      paso 2, en construccion
   reentrenar.py          la pista D de punta a punta en el servidor: datos,
                          particion por PMID y run 22, desprendible, con informe
   sin_pesos.py           el script del asesor sin --use_class_weights (la v2)
+  verificar.py           los invariantes de una carpeta del flujo, con la base
+                         en solo lectura, y su reporte JSON y HTML
+  contraste.py           cobertura del bronce y recall de la red contra la base
+                         curada (ruta por argumento, informe filtrado)
 flujo.py               el flujo de punta a punta; idempotente por huella
 grn_comun/             lo que usan los tres pasos
   rutas.py               la precedencia de GRN_DATOS; grn_bronce/rutas.py es
@@ -528,6 +532,11 @@ python3 flujo.py --corrida 4            # operones -> bronce -> BioBERT -> capa 
 python3 flujo.py --corrida 4 --limite 200   # prueba rapida en su propia carpeta
 python3 flujo.py --pasos capa,evaluar --forzar capa
 python3 flujo.py --pasos operones --rehacer-operones   # operones_base.tsv, sin red; corre siempre
+python3 -m grn_verificacion.cli verificar --carpeta salidas/flujo/corrida4_run22 [--contra J] [--html H]
+python3 -m grn_bronce.cli sintaxis --comparar ANTES --salida DESPUES [--json R]   # sin spaCy
+# donde viva la base; ver docs/contraste-curada.md
+python3 -m grn_verificacion.cli contraste --base X --carpeta C --excluir-pmids A \
+    --informe M --confidencial D
 
 # en el servidor, con el python de pseudoRE; ver docs/entrenamiento-curada.md
 $PY -m grn_verificacion.cli reentrenar correr --raiz ~/grn-guillermo --pares P \

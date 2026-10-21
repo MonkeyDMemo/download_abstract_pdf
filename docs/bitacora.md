@@ -8,6 +8,69 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 21 de octubre de 2026 — los dos bundles del servidor en main, la alineación v2, verificar-corrida, el contraste y los documentos del viernes
+
+Es el primer día del cierre técnico del Documento de Tesis v1: el calendario
+quedó en PLAN §3.0. El trabajo arrancó la noche del 20 y se cortó a la 1:20 por
+el límite de sesión; se retomó a las 10:00.
+
+**Integración, sin push.**
+- El primer bundle del servidor se fusionó como `servidor/main` (`2802870`),
+  junto con un arreglo para Windows de `test_el_filtro` (`ad9a748`).
+- El segundo bundle, con la v2 (entrada de abajo), entró en `f05951a`.
+- Antes de traer cada uno se revisó en memoria: autor y committer son el
+  usuario en los 26 commits, y no hay rutas, host, IP, filas, locus ni números
+  con forma de PMID.
+- La bitácora del 20-oct decía que el bundle estaba «sin fusionar»: ya no.
+
+**Lo que entró a main**, cada pieza en su rama y su worktree:
+- **`sintaxis-v2`.** La mención que pierde en `filter_spans` se alinea a su
+  contenedor, y el par interno sale con la voz nueva `mismo_token`. No se parte
+  el token: el porqué está en `plan-sintaxis-bronce.md` §7. El criterio se
+  commiteó antes del código y **se cumplió**: los pares `sin_alineacion` bajan
+  de 8 485 a 0, sin cambiar ninguna otra línea ni ninguna cifra de
+  `evaluacion.json`. Ahora 600 pares se orientan. D1 sigue en 1 de 4.
+- **`verificar-corrida`.** `cli verificar` revisa los invariantes I1 a I5 de una
+  carpeta del flujo, con la base abierta de solo lectura, y escribe un JSON y un
+  HTML autocontenido. Sobre `corrida4_run22` sale con código 0, antes y después
+  de la v2:
+  - normalización 95.07 %;
+  - 14 de 14 comprobaciones de la cadena;
+  - partición de *E. coli* sin fuga;
+  - corpus v0-agosto verificado.
+- **`contraste-curada`.** `cli contraste` reproduce PLAN 2.4 y mide el recall de
+  la red con el estrato BioBERT aparte. Solo se probó con bases sintéticas: no
+  se ha corrido contra la base real. El PMID B llega por un archivo de
+  exclusiones, nunca nombrado. Ver `contraste-curada.md`.
+- **`docs-viernes`.** `reunion-asesor-23oct.md`, con la fe de erratas de la
+  tesis v1 y nueve decisiones, y `rubrica-anotacion.md`.
+- **Decisiones del 20-oct** en `decisiones.md`: CollecTF fuera de la base de
+  conocimiento y de `es_tf` (ninguna de las 29 marcas con `collectf` depende
+  solo de él), y la base de conocimiento sin base vectorial.
+
+**Corridas** (respaldo y registros en `salidas/respaldos/`):
+- R2a, bronce + pares + BioBERT. Las huellas de `pares.jsonl` (`3cba785069ad9998`)
+  y `predicciones.jsonl` (`53fca7ac6c775844`) no cambian, y BioBERT dice «ya
+  están hechas», sin reclasificar.
+- R2b, la línea base. Reproduce exactamente la del 20-oct.
+- R2c, la v2.
+- La tercera corrida del flujo sale toda «saltado».
+
+**Suites:** la raíz da 1 110 en verde antes de la v2. etapa2 da 528. La
+sintaxis en `.venv-nlp` da 59.
+
+**Abierto:**
+- **`grn-red-paquete`** está hecho (2 commits; raíz 1 101, etapa2 528), pero
+  falta un commit: `servidor.py`, `test_servidor.py` y `web/index.html`, para
+  el `graphml`. La regla `Bash(*servidor.py*)` de los permisos de la noche negó
+  el `git add`. Lo commitea el usuario, o se afina la regla. Hasta entonces la
+  rama no se fusiona, y CLAUDE.md sigue listando `grn_red/` como fuera de
+  alcance.
+- **El push** lo hace el usuario. `main` contiene el `main` del servidor
+  (`a2e8d02`), así que el servidor podrá hacer `pull --ff-only`.
+- **Para el viernes 23:** las nueve decisiones de `reunion-asesor-23oct.md`, y la
+  pregunta escrita de la decisión 3 de operones, que sigue sin mandarse.
+
 ## 20 y 21 de octubre de 2026 — la v2 sin pesos de clase, y ninguna reemplaza al modelo de *E. coli*
 
 La v1 salió sesgada a la represión en el flujo, y la hipótesis fue que venía de

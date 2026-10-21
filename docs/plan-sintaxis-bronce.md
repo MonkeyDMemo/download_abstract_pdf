@@ -210,7 +210,32 @@ sha256 de `sintaxis.jsonl` tiene que volver a ser el del respaldo v1.
 
 ### Resultado
 
-(pendiente: se llena tras la corrida del 21-oct)
+Corrida del 21-oct-2026 sobre la corrida 4, con `flujo.py --corrida 4`. La v1
+de la comparación es la salida de la línea base de esa misma mañana, que tiene
+la misma huella que la del 20-oct (`9bbb34c9b5c6115f`). La comparación se hizo
+con `grn_bronce.cli sintaxis --comparar`, y su JSON quedó en
+`salidas/respaldos/corrida4_run22_v1_20261021/comparacion_v1_v2.json`.
+
+| criterio | umbral | v1 | v2 | |
+|---|---|---:|---:|---|
+| C1, pares `sin_alineacion` | ≤ 849 | 8 485 | 0 | cumple |
+| C1, menciones sin alinear | ≤ 487 | 4 874 | 0 | cumple |
+| C2, relaciones `si` que se romperían (D2) | 0 de 22 | 0 | 0 | cumple |
+| C3, líneas cambiadas fuera de `sin_alineacion` | 0 | — | 0 | cumple |
+| C4, claves (pmid, fuente, oración, a, b) | 76 453 iguales | 76 453 | 76 453, sin repetidas | cumple |
+
+**La v2 queda en el flujo.** Lo que se reporta sin decidir:
+
+- **Las 8 485 líneas que antes no se alineaban:**
+  - 4 646 salen `mismo_token`, porque son el par de las dos menciones de un mismo token;
+  - 3 041 salen `indeterminada`;
+  - 600 quedan orientadas (382 activa, 90 pasiva, 128 nominal);
+  - 198 son `mutante`.
+  Las 4 874 menciones que perdían en `filter_spans` se alinean ahora a su contenedor.
+- **D1 sigue en 1 de 4** (la línea 20), como se esperaba: las líneas 8, 11 y 41 no fallaban por alineación.
+- **El punto 18 no se mueve:** la sintaxis sigue con 166 pares de signo único y 47 contradictorios, sobre 1 186 dirigidos.
+- **El 44 % no cambia:** `evaluacion.json` da lo mismo que con la v1 en todas las métricas D y de precisión.
+- **verificar-corrida sale con código 0 antes y después.** Una tercera corrida del flujo sale toda «saltado».
 
 ---
 
