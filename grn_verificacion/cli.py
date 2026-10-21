@@ -4,6 +4,7 @@
     python -m grn_verificacion.cli biobert --carpeta DIR --modelo DIR [--reusar-de DIR]
     python -m grn_verificacion.cli capa --carpeta DIR --bronce CSV [--sintaxis JSONL]
     python -m grn_verificacion.cli evaluar --carpeta DIR --bronce CSV
+    python -m grn_verificacion.cli verificar --carpeta DIR [--datos D] [--particion P] [--contra J] [--json J] [--html H]
     python -m grn_verificacion.cli datos-entrenamiento --pares JSONL --base XLSX ...
     python -m grn_verificacion.cli reentrenar correr|estado|detener --raiz DIR ...
 
@@ -119,6 +120,18 @@ def cmd_evaluar(args):
     from grn_verificacion import evaluar
     evaluar.evaluar_carpeta(args.carpeta, args.bronce, log=log)
     return 0
+
+
+def cmd_verificar(args):
+    """El código de salida es el de la verificación: 0 cumple, 1 falla un
+    invariante, 2 no se pudo verificar. Así un script que lo llame no tiene
+    que leer el JSON para saber si puede citar las cifras."""
+    from grn_verificacion import verificar
+    resultado = verificar.ejecutar(
+        args.carpeta, datos=args.datos, particion=args.particion,
+        contra=args.contra, salida_json=args.json, salida_html=args.html,
+        log=log)
+    return resultado["codigo"]
 
 
 def cmd_datos_entrenamiento(args):
@@ -524,6 +537,28 @@ def main(argv=None):
     ev.add_argument("--carpeta", required=True)
     ev.add_argument("--bronce", required=True)
     ev.set_defaults(func=cmd_evaluar)
+
+    vf = sub.add_parser(
+        "verificar",
+        help="Verifica una carpeta del flujo contra la base, en solo lectura: "
+             "cinco invariantes, el embudo y las métricas, en un JSON y un "
+             "HTML que se pueden publicar.")
+    vf.add_argument("--carpeta", required=True,
+                    help="La carpeta del flujo (salidas/flujo/corridaN_...).")
+    vf.add_argument("--datos", default=None,
+                    help="Raíz de datos; gana sobre GRN_DATOS.")
+    vf.add_argument("--particion", default=None,
+                    help="Carpeta con los entity_marked_{train,dev,test}.jsonl "
+                         "con que se entrenó el checkpoint: comprueba que no "
+                         "haya fuga hacia train (I3).")
+    vf.add_argument("--contra", default=None,
+                    help="Otro verificacion.json, para decir qué cambió.")
+    vf.add_argument("--json", default=None,
+                    help="Dónde escribir el JSON; por omisión, "
+                         "verificacion.json en la carpeta.")
+    vf.add_argument("--html", default=None,
+                    help="Dónde escribir el informe HTML autocontenido.")
+    vf.set_defaults(func=cmd_verificar)
 
     from grn_verificacion import entrenamiento
     de = sub.add_parser("datos-entrenamiento",
