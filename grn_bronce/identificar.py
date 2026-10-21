@@ -125,6 +125,28 @@ def cargar_lexico():
     return Lexico.cargar(rutas["genes_pao1.tsv"], rutas["operones_pao1.tsv"])
 
 
+def cargar_entidades_sin_locus():
+    """Los símbolos del diccionario que no tienen locus tag.
+
+    Son las entradas manuales de tipo complejo o familia (IHF, PrrF, PrrH):
+    entidades de verdad, sin un locus propio porque son varios genes. Quien
+    decide «no tiene locus, entonces es un operón» las tiene que descontar;
+    la capa las contaba como operones.
+    """
+    ruta = os.path.join(AQUI, "recursos", "genes_pao1.tsv")
+    salida = set()
+    with io.open(ruta, encoding="utf-8") as f:
+        cols = f.readline().rstrip("\n").split("\t")
+        for linea in f:
+            if not linea.strip():
+                continue
+            d = dict(zip(cols, linea.rstrip("\n").split("\t")))
+            simbolo = (d.get("simbolo") or "").strip()
+            if simbolo and not (d.get("locus_tag") or "").strip():
+                salida.add(simbolo)
+    return frozenset(salida)
+
+
 def cargar_locus_tags():
     """{id_canonico: locus_tag}.
 

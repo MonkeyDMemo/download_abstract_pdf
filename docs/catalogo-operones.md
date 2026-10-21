@@ -48,8 +48,8 @@ Salen **tres productos**:
 | conocidos / curados / predichos | 145 / 3 / 4 102 (96.5 % predicción) |
 | con dos o más fuentes | 738 (717 de ellos BioCyc + PGD) |
 | con promotor CDBProm | 1 574 |
-| sin nombre | 2 992 (los de BioCyc: su parser no toma el nombre) |
-| para revisar a mano | 117 |
+| sin nombre | 2 992 (los de BioCyc: su parser no tomaba el nombre); 2 953 desde el 20-oct-2026: BioCyc nombra 93 unidades, 39 de ellas antes sin nombre |
+| para revisar a mano | 117; 81 desde el 20-oct-2026, al contar el sufijo `.N` en la adyacencia |
 
 **Casi todo el catálogo es predicción.** Hay que leer el nivel de evidencia
 antes de citar un operón.
@@ -80,7 +80,8 @@ antes de citar un operón.
   (`reparsear --fuente X`).
 - **Los parsers exigen su contrato** (encabezado, columnas, valores de hebra)
   y, si no se cumple, lanzan `FormatoDesconocido` en vez de leer columnas
-  corridas. BioCyc todavía no lo hace del todo: un XML sin TUs da cero filas.
+  corridas. Desde el 20-oct-2026 BioCyc también: si ninguna TU llega a locus
+  tag, o el cuerpo no es XML, es formato desconocido y no una foto vacía.
 
 ---
 
@@ -159,7 +160,7 @@ que no significan nada fuera de BioCyc. **El puente es `genes.xml`**: cada
 | todos los frameids | `registro_raw.frameids` | |
 | `Evidence-Code@frameid` | `tipo_evidencia` | conjunto ordenado, unido con `;`, de **todo** el subárbol de la TU, incluido su promotor |
 | `pubmed-id` | `pmid` | de **todo** el subárbol de la TU, no de los `dblink`: 64 TUs con PMID (77 PMIDs). Solo 41 lo traen en su `citation`; 16 lo traen únicamente por su `component/Promoter` (ver §8) |
-| `common-name` | **no se toma** | lo traen 94 TUs (`mexEF-oprN`, `carAB`, `fleSR`…). Pendiente |
+| `common-name` | `registro_raw.name` | solo el hijo directo de la TU: lo traen 94 (`mexEF-oprN`, `carAB`, `fleSR`…). Se toma desde el 20-oct-2026 |
 | el promotor como entidad, dirección, comentarios, `dblink` | **no se toman** | aunque las citas y los códigos de evidencia del promotor sí entran, como se dice arriba |
 
 **Resultado.**
@@ -366,9 +367,9 @@ python -m grn_operones.cli estado                     # qué hay
 2. Se guarda cada archivo con url, ruta, bytes, sha256 y fecha.
 3. Se parsea y se inserta en el bronce. El bronce **solo inserta**; una
    versión nueva convive con la anterior. La única excepción es `reparsear`:
-   borra y vuelve a insertar las filas de la última extracción completa de esa
-   fuente (mismos bytes, parser corregido). Las extracciones anteriores no se
-   tocan.
+   borra y vuelve a insertar las filas de la foto vigente de esa fuente y, si
+   la hay, de la completa y vacía más nueva (mismos bytes, parser corregido).
+   Las demás extracciones no se tocan.
 4. Se cierra con `completa = 1`. Sin archivos, la extracción queda
    incompleta; un parseo fallido la cierra completa con 0 filas.
 
@@ -380,9 +381,12 @@ Detalles:
   más nueva que haya entrado por `--archivo`.
 
 ### 4.2 La foto vigente
-El catálogo se cura sobre **la última extracción completa de cada fuente**
-(`bronze_vigente`). Una fuente sin ninguna extracción completa queda fuera y
-se nombra; los operones que una fuente retira entre fotos se reportan.
+El catálogo se cura sobre **la foto vigente de cada fuente: su última
+extracción completa que dejó filas** (`db.foto_vigente`, `bronze_vigente`).
+Desde el 20-oct-2026, una completa y vacía (un formato que no se supo leer)
+no desplaza a la anterior: `curar` la nombra y la hoja de fuentes la dice.
+Una fuente sin ninguna extracción completa con filas queda fuera y se nombra;
+los operones que una fuente retira entre fotos se reportan.
 
 ### 4.3 `curar`: de bronce a silver
 Silver se rehace desde cero en cada corrida.
@@ -397,15 +401,16 @@ Silver se rehace desde cero en cada corrida.
    transcripción colapsan en una.
 3. **Alternativas:** una unidad cuyo conjunto de genes está contenido en el de
    otra se marca `es_alternativa`; no se fusiona.
-4. **Adyacencia:** los números de locus tienen que ir de uno en uno.
-   **Límite:** el sufijo `.N` se ignora, así que `PA0668.1|PA0668.2` cuenta
-   como paso 0 y sale no adyacente. 38 de los 55 no adyacentes tienen algún
-   locus `.N`; cuántos son falsos positivos no se ha revisado uno por uno.
-5. **Hebra:** sale del GFF de RefSeq. Primero se busca el caché local
-   (`datos_etapa2/cache_diccionario/`, ignorado por git) y, si falta, la
-   copia versionada (`construir_diccionario/diccionario_independiente/cache/
-   refseq.gff.gz`). Solo si faltan las dos la fila se marca
-   `hebra_no_verificada`.
+4. **Adyacencia:** los locus tienen que ser consecutivos, en un sentido o en
+   el otro. El sufijo `.N` cuenta (desde el 20-oct-2026): `PA0668` →
+   `PA0668.1` → `PA0668.2` → `PA0669`. Antes se ignoraba, y los clusters
+   `PA####.N` salían no adyacentes.
+5. **Hebra:** sale del GFF de RefSeq. Primero se busca la copia versionada
+   (`construir_diccionario/diccionario_independiente/cache/refseq.gff.gz`),
+   que es la misma en todo clon, y si falta, el caché local
+   (`datos_etapa2/cache_diccionario/`, ignorado por git). `curar` dice cuál
+   usó y con qué huella. La fila se marca `hebra_no_verificada` si faltan las
+   dos, o si ninguno de sus genes está en el GFF; hoy ninguna lleva la marca.
 6. **Nivel de evidencia**, por fila y no por fuente:
    - BioCyc: EV-EXP con PMID → conocido; EV-EXP sin PMID → curado; el resto →
      predicho, con marca si trae cita (`comp_con_cita`) o no declara código
@@ -421,7 +426,9 @@ Silver se rehace desde cero en cada corrida.
    el mayor en −. Hay que calcularlo porque BioCyc lista al revés en las dos
    hebras, y usar el primero de la lista ponía el gen equivocado en 515 de
    1 082 operones.
-9. **Nombre:** el más corto que dé alguna fuente.
+9. **Nombre:** el más corto que dé alguna fuente. En un empate gana la forma
+   de gen sobre la de proteína (`mexAB-oprM` y no `MexAB-OprM`), que es la que
+   busca el bronce.
 
 ### 4.4 Las marcas de «para revisar»
 
@@ -429,7 +436,7 @@ Silver se rehace desde cero en cada corrida.
 |---|---|
 | `no_adyacente` | los genes no son consecutivos en el genoma |
 | `hebras_distintas` | los genes no comparten hebra, así que no comparten promotor |
-| `hebra_no_verificada` | sin GFF en caché, la hebra no se comprobó |
+| `hebra_no_verificada` | no hay GFF, o ninguno de sus genes está en él: la hebra no se comprobó |
 | `genes_sin_resolver` | algún nombre no se pudo llevar a locus tag |
 | `locus_sufijo_excluido` | un locus con sufijo de letra no está en el diccionario |
 | `nombre_ambiguo` | un nombre corresponde a varios parálogos |
@@ -478,7 +485,7 @@ el bronce la hereda por su descarga y no puede contradecirla.
 | `fuente` | TEXT NOT NULL | `odb`, `biocyc`, `pgd`, `cdbprom` |
 | `inicio` | TEXT NOT NULL | ISO 8601 UTC |
 | `fin` | TEXT | ISO 8601 UTC |
-| `completa` | INTEGER NOT NULL DEFAULT 0 | 1 solo si terminó sin error |
+| `completa` | INTEGER NOT NULL DEFAULT 0 | 1 si la descarga terminó, aunque el parseo falle (entonces sin filas) |
 
 **`operones_descargas`**: un archivo de una foto. Clave `(extraccion_id, url)`.
 
@@ -487,7 +494,7 @@ el bronce la hereda por su descarga y no puede contradecirla.
 | `id` | INTEGER PK | |
 | `extraccion_id` | INTEGER NOT NULL | → `operones_extracciones` |
 | `url` | TEXT NOT NULL | o `archivo-local:<nombre>` |
-| `ruta` | TEXT NOT NULL | ruta local; nunca se publica |
+| `ruta` | TEXT NOT NULL | ruta local, relativa a la raíz de datos desde el 20-oct-2026; nunca se publica |
 | `bytes` | INTEGER NOT NULL | |
 | `sha256` | TEXT NOT NULL | huella del contenido |
 | `descargado_en` | TEXT NOT NULL | ISO 8601 UTC |
@@ -551,7 +558,7 @@ Una fila por operón curado. Los valores sí/no se escriben «sí»/«no».
 | `fuentes` | Fuentes de operones | solo odb, biocyc, pgd |
 | `n_fuentes` | Número de fuentes | |
 | `id_odb`, `nombre_odb` | ID / Nombre en ODB | |
-| `id_biocyc` | ID en BioCyc | |
+| `id_biocyc`, `nombre_biocyc` | ID / Nombre en BioCyc | el nombre es el `common-name` de la TU, si lo trae |
 | `id_door`, `nombre_door` | ID / Nombre en PGD (DOOR) | |
 | `id_pseudocap`, `nombre_pseudocap` | ID / Nombre en PGD (PseudoCAP) | un ID por artículo |
 | `promotor_cdbprom` | Promotor CDBProm | |
@@ -565,9 +572,11 @@ Una fila por operón curado. Los valores sí/no se escriben «sí»/«no».
 | `revisar`, `motivo` | Para revisar / Motivo | marcas y su prosa |
 
 La **hoja de fuentes** (`_catalogo_fuentes.csv`) tiene una fila por archivo de
-la foto vigente de cada fuente:
+la foto vigente de cada fuente, y otra por archivo de cada extracción completa
+y vacía posterior:
 - qué aporta, qué es y su estado (vigente, más nueva que la curación, fuera
-  de la curación);
+  de la curación; o, en una vacía, «no dejó filas» y qué foto se cura en su
+  lugar, si hay alguna);
 - la fecha de los datos cuando se conoce, y la de descarga;
 - origen, huella SHA-256 y bytes;
 - las filas vigentes y las unidades que respalda (en CDBProm, las que marca).
@@ -617,7 +626,7 @@ menos un operón.
 | fuente | se tomó | no se tomó, y por qué |
 |---|---|---|
 | ODB | `koid`, operón (`op`), nombre, definición, PMIDs | los otros organismos (filtro por taxid) |
-| BioCyc | TUs con sus genes (vía `accession-1`), códigos de evidencia, PMIDs de la cita | **`common-name` (94 TUs): pendiente**; promotores (25) y dirección; `dblink`, comentarios. Las TUs sin ningún gen resoluble se descartan |
+| BioCyc | TUs con sus genes (vía `accession-1`), códigos de evidencia, PMIDs de la cita, y el `common-name` de la TU (desde el 20-oct-2026: 94 TUs, que quedan en 93 unidades porque `argF mRNA-1` y `argF mRNA-2` son el mismo gen) | promotores (25) y dirección; `dblink`, comentarios. Las TUs sin ningún gen resoluble se descartan |
 | PGD | los 1 290 operones con sus genes, coordenadas, hebra, origen y PMIDs | la cita de DOOR como evidencia (va a `referencia_metodo`); la descripción de cada gen (no viene en la tabla); **el release 22.1** (el sitio no lo ofrece: está tras Cloudflare) |
 | CDBProm | locus, cadena, coordenadas, score, secuencia y anotación, como marca de promotor | 22 locus con sufijo de letra; crear operones con él; la cadena del bronce en la curación |
 | pseudomonas.com | nada del sitio | todo, por el desafío de Cloudflare y el `robots.txt`; sus operones entran por la exportación del curador |
@@ -635,11 +644,13 @@ menos un operón.
   2. La pregunta está en [`operones-asesor.md`](operones-asesor.md) §8.
 - **Contar la literatura por PMID único:** hoy dos fuentes que citan el mismo
   artículo cuentan como dos.
-- **PGD es de 2021:** hay que pedir la tabla del release 22.1.
-- **BioCyc:** tomar `common-name` (94 TUs), y decidir las 16 TUs
-  `pendiente_revision`.
-- **Adyacencia con sufijo `.N`:** 38 de los 55 «no adyacente» tienen algún
-  locus `.N`, y hay que revisar cuántos son falsos.
+- **PGD es de 2021:** hay que pedir la tabla del release 22.1. El correo al
+  curador está redactado desde el 20-oct-2026 y falta mandarlo.
+- **BioCyc:** falta decidir las 16 TUs `pendiente_revision`. Su lista, con el
+  título, el año y la revista de cada PMID, sale con `exportar --pendientes`.
+- **Adyacencia:** con el sufijo `.N` contado, las «no adyacente» bajaron de 55
+  a 17. Esas 17 siguen marcadas para revisar: la numeración de locus no las da
+  por consecutivas.
 - **BioCyc toma PMIDs y códigos de evidencia de todo el subárbol de la TU**,
   incluido su promotor. 16 TUs tienen PMID solo por su promotor, que es
   evidencia del promotor y no de la unidad. Restringirlo a la `citation` de la
@@ -667,6 +678,8 @@ menos un operón.
 - [`operones-asesor.md`](operones-asesor.md) da el estado en corto, las
   decisiones pendientes con nuestra recomendación y la pregunta de la
   decisión 3.
-- Las cifras de este documento son las del 27-sep y siguen vigentes al
-  16-oct-2026. La base no ha cambiado desde entonces: su huella sigue siendo
-  `f399bd89da7d558d`.
+- Las cifras de este documento son las del 27-sep. Lo que cambió el
+  20-oct-2026 va marcado en su lugar: los nombres de BioCyc (2 953 unidades
+  sin nombre), la adyacencia (17 no adyacentes) y la lista para revisar (81).
+  La base se regeneró ese día y su huella pasó de `f399bd89da7d558d` a
+  `66b594bba16236d9`.

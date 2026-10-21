@@ -440,22 +440,62 @@ def versiones_de(con, fuente, id_fuente):
 
 
 # La ultima extraccion COMPLETA de cada fuente. Una incompleta no cuenta: es
-# media foto, y media foto no dice que se retiro ni que sigue.
+# media foto, y media foto no dice que se retiro ni que sigue. Es la que
+# `reparsear` repara, tenga filas o no.
 SQL_ULTIMA_COMPLETA = """
 SELECT fuente, MAX(id) AS extraccion_id
   FROM operones_extracciones WHERE completa = 1 GROUP BY fuente
 """
 
+# Una extracción que dejó filas en el bronce. Un parseo fallido cierra la
+# extracción completa (la descarga sí terminó), pero sin filas, y "completa"
+# no basta para curarla.
+_CON_FILAS = """EXISTS (SELECT 1 FROM operones_descargas d
+                         JOIN operones_bronze b ON b.descarga_id = d.id
+                        WHERE d.extraccion_id = %s.id)"""
+
+# La FOTO VIGENTE de cada fuente: la última extracción completa que dejó
+# filas. Una completa y vacía (un formato que no se supo leer) no desplaza a
+# la anterior: antes la fuente entera salía de la curación y todos sus
+# operones se reportaban como retirados.
+SQL_FOTO_VIGENTE = """
+SELECT e.fuente, MAX(e.id) AS extraccion_id
+  FROM operones_extracciones e
+ WHERE e.completa = 1 AND %s
+ GROUP BY e.fuente
+""" % (_CON_FILAS % "e")
+
 SQL_BRONZE_VIGENTE = SQL_BRONZE + """
   JOIN (%s) u ON u.fuente = e.fuente AND u.extraccion_id = e.id
  ORDER BY e.fuente, b.id_fuente
-""" % SQL_ULTIMA_COMPLETA
+""" % SQL_FOTO_VIGENTE
 
 
 def ultima_extraccion_completa(con):
     """{fuente: extraccion_id}. Sin entrada para una fuente sin foto buena."""
     return dict((f["fuente"], f["extraccion_id"])
                 for f in con.execute(SQL_ULTIMA_COMPLETA))
+
+
+def foto_vigente(con):
+    """{fuente: extraccion_id} de la foto que se cura: completa y con filas."""
+    return dict((f["fuente"], f["extraccion_id"])
+                for f in con.execute(SQL_FOTO_VIGENTE))
+
+
+def extracciones_vacias(con):
+    """{fuente: [extraccion_id]} completas y sin filas, posteriores a la foto
+    vigente (o todas, si la fuente no tiene foto). Son las que la curación
+    ignora, y por eso el informe de `curar` las nombra."""
+    vigente = foto_vigente(con)
+    salida = {}
+    for f in con.execute(
+            """SELECT e.fuente, e.id FROM operones_extracciones e
+                WHERE e.completa = 1 AND NOT %s ORDER BY e.id"""
+            % (_CON_FILAS % "e")):
+        if f["id"] > vigente.get(f["fuente"], 0):
+            salida.setdefault(f["fuente"], []).append(f["id"])
+    return salida
 
 
 def edad_de_la_foto(con):
@@ -465,16 +505,19 @@ def edad_de_la_foto(con):
     tiene un modo de fallo lento: si las extracciones fallan varias veces
     seguidas, se cura una foto vieja **indefinidamente y sin ruido**, porque
     todo sigue funcionando. `incompletas_despues` es lo que lo delata: un
-    numero que sube corrida tras corrida mientras la fecha no se mueve.
+    número que sube corrida tras corrida mientras la fecha no se mueve. Cuenta
+    las incompletas y las completas que no dejaron filas: las dos son una foto
+    que no se pudo tomar.
     """
     salida = {}
-    for f in con.execute(SQL_ULTIMA_COMPLETA):
+    for f in con.execute(SQL_FOTO_VIGENTE):
         fila = con.execute(
             "SELECT fin, inicio FROM operones_extracciones WHERE id = ?",
             (f["extraccion_id"],)).fetchone()
         fallidas = con.execute(
-            """SELECT COUNT(*) FROM operones_extracciones
-                WHERE fuente = ? AND id > ? AND completa = 0""",
+            """SELECT COUNT(*) FROM operones_extracciones e
+                WHERE e.fuente = ? AND e.id > ?
+                  AND (e.completa = 0 OR NOT %s)""" % (_CON_FILAS % "e"),
             (f["fuente"], f["extraccion_id"])).fetchone()[0]
         salida[f["fuente"]] = {
             "extraccion_id": f["extraccion_id"],
@@ -485,14 +528,15 @@ def edad_de_la_foto(con):
 
 
 def fuentes_sin_foto(con):
-    """Fuentes con bronce pero sin ninguna extraccion completa.
+    """Fuentes con bronce pero sin foto vigente: ninguna extracción completa
+    que haya dejado filas.
 
     **Quedan fuera de la curacion entera**, y por eso hay que nombrarlas: una
     fuente que desaparece del catalogo porque su unica descarga se corto es
     indistinguible de una fuente que no trajo nada, y las dos piden acciones
     distintas. El informe de `curar` las lista.
     """
-    con_foto = set(ultima_extraccion_completa(con))
+    con_foto = set(foto_vigente(con))
     con_bronce = set(f["fuente"] for f in con.execute(
         """SELECT DISTINCT e.fuente FROM operones_bronze b
              JOIN operones_descargas d    ON d.id = b.descarga_id
@@ -501,7 +545,8 @@ def fuentes_sin_foto(con):
 
 
 def bronze_vigente(con):
-    """Las filas de la ULTIMA EXTRACCION COMPLETA de cada fuente.
+    """Las filas de la FOTO VIGENTE de cada fuente: su última extracción
+    completa que dejó filas (`SQL_FOTO_VIGENTE`).
 
     No es "la fila mas reciente de cada (fuente, id_fuente)", que tenia dos
     fallas que no se ven hasta que muerden:
@@ -534,7 +579,7 @@ def retirados(con):
     simplemente no hay con que comparar.
     """
     vigentes = set((f["fuente"], f["id_fuente"]) for f in bronze_vigente(con))
-    ultima = ultima_extraccion_completa(con)
+    ultima = foto_vigente(con)
     salida = {}
     for f in con.execute(
             """SELECT DISTINCT e.fuente, b.id_fuente FROM operones_bronze b

@@ -103,6 +103,19 @@ class PruebasCapa(unittest.TestCase):
         self.assertFalse(capa.es_operon("mexE", self.locus))
         self.assertFalse(capa.es_operon("PA9999", self.locus))
 
+    def test_una_entidad_sin_locus_no_es_operon(self):
+        """IHF, PrrF y PrrH no tienen locus porque son un complejo y dos
+        familias: contaban como «blanco que es operón» (183 pares en la
+        corrida 4)."""
+        self.assertFalse(capa.es_operon("IHF", self.locus, {"IHF"}))
+        self.assertFalse(capa.es_operon("prrF", self.locus, {"PrrF"}))
+        self.assertTrue(capa.es_operon("exoSTY", self.locus, {"IHF"}))
+
+    def test_el_diccionario_trae_sus_entidades_sin_locus(self):
+        from grn_bronce import identificar
+        self.assertLessEqual({"IHF", "PrrF", "PrrH"},
+                             identificar.cargar_entidades_sin_locus())
+
     def test_direccion_de_la_sintaxis(self):
         self.assertEqual(capa.direccion(None, "a", "b"), "sin_dato")
         self.assertEqual(capa.direccion({"regulador_sintactico": "a"},
@@ -207,6 +220,92 @@ class PruebasCapaExigeLasPrediccionesDeEsosPares(unittest.TestCase):
                 json.dump({"huella_pares": procedencia.huella(pares)}, f)
             with self.assertRaises(OSError):
                 capa.escribir_capa(carpeta, os.path.join(carpeta, "no.csv"))
+
+
+class PruebasCapaConLaMismaBase(unittest.TestCase):
+    """`operones_en_oracion` viene del bronce y `operones_del_blanco` de la
+    base de hoy. Corrida a mano después de regenerar la base, la capa mezclaba
+    dos versiones sin decirlo (pendiente 4.19)."""
+
+    def setUp(self):
+        import json
+        import tempfile
+        from grn_comun import procedencia
+        from unittest import mock
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.carpeta = tmp.name
+        prefijo = os.path.join(self.carpeta,
+                               "bronce_identificacion_corrida4_20261020")
+        self.bronce = prefijo + "_oraciones_candidatas.csv"
+        self.resumen = prefijo + "_resumen.csv"
+        columnas = sorted(_candidata().keys())
+        with open(self.bronce, "w", encoding="utf-8", newline="") as f:
+            f.write(",".join(columnas) + "\n")
+            f.write(",".join(_candidata()[c] for c in columnas) + "\n")
+        pares = os.path.join(self.carpeta, "pares.jsonl")
+        with open(pares, "w", encoding="utf-8") as f:
+            f.write(json.dumps(_par("a")) + "\n")
+        with open(os.path.join(self.carpeta, "predicciones.jsonl"), "w",
+                  encoding="utf-8") as f:
+            f.write(json.dumps(_pred("a", "activates")) + "\n")
+        with open(os.path.join(self.carpeta, "predicciones_meta.json"), "w",
+                  encoding="utf-8") as f:
+            json.dump({"huella_pares": procedencia.huella(pares)}, f)
+        self.base = os.path.join(self.carpeta, "operones_base.tsv")
+        with open(self.base, "w", encoding="utf-8", newline="\n") as f:
+            f.write("\t".join(operones.COLUMNAS_BASE) + "\n")
+            f.write("PA2493|PA2494\tmexEF\tPA2493|PA2494\tmexE mexF\t"
+                    "conocido\tno\tno\n")
+        self.huella = procedencia.huella_texto(self.base)
+        parche = mock.patch.object(operones, "RUTA_BASE", self.base)
+        parche.start()
+        self.addCleanup(parche.stop)
+
+    def _resumen(self, valor):
+        with open(self.resumen, "w", encoding="utf-8", newline="") as f:
+            f.write('concepto,valor\n"%s","%s"\n'
+                    % (operones.CONCEPTO_BASE, valor))
+
+    def test_lee_la_huella_que_dejo_el_bronce(self):
+        self._resumen("operones_base.tsv, huella abcdef0123456789, 1 unidades")
+        self.assertEqual(capa.base_del_bronce(self.bronce,
+                                              operones.CONCEPTO_BASE),
+                         (True, "abcdef0123456789"))
+
+    def test_recurso_ausente_y_sin_resumen(self):
+        self._resumen("recurso ausente (operones_base.tsv): operones_en_oracion "
+                      "solo trae los operones nombrados")
+        self.assertEqual(capa.base_del_bronce(self.bronce,
+                                              operones.CONCEPTO_BASE),
+                         (True, None))
+        os.remove(self.resumen)
+        self.assertEqual(capa.base_del_bronce(self.bronce,
+                                              operones.CONCEPTO_BASE),
+                         (False, None))
+
+    def test_con_otra_base_la_capa_se_niega(self):
+        self._resumen("operones_base.tsv, huella abcdef0123456789, 1 unidades")
+        with self.assertRaises(ValueError) as ctx:
+            capa.escribir_capa(self.carpeta, self.bronce)
+        self.assertIn("dos versiones", str(ctx.exception))
+
+    def test_un_bronce_sin_base_tampoco_se_mezcla(self):
+        self._resumen("recurso ausente (operones_base.tsv): operones_en_oracion "
+                      "solo trae los operones nombrados")
+        with self.assertRaises(ValueError):
+            capa.escribir_capa(self.carpeta, self.bronce)
+
+    def test_con_la_misma_base_pasa(self):
+        self._resumen("operones_base.tsv, huella %s, 1 unidades" % self.huella)
+        resumen = capa.escribir_capa(self.carpeta, self.bronce)
+        self.assertEqual(resumen["operones"]["huella_operones_base"],
+                         self.huella)
+
+    def test_sin_resumen_avisa_y_sigue(self):
+        avisos = []
+        capa.escribir_capa(self.carpeta, self.bronce, log=avisos.append)
+        self.assertTrue(any("AVISO" in a for a in avisos))
 
 
 class PruebasEvaluacion(unittest.TestCase):

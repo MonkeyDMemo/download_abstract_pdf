@@ -1,6 +1,6 @@
 # Operones: qué se hizo y qué falta decidir
 
-Para el Dr. Edgardo Galán-Vásquez. Estado al 16 de octubre de 2026.
+Para el Dr. Edgardo Galán-Vásquez. Estado al 20 de octubre de 2026.
 
 Este documento resume el trabajo de operones y lista lo que queda por decidir.
 Lo técnico está en otros dos:
@@ -73,12 +73,12 @@ cada gen: esos no vienen en la tabla y salen de RefSeq.
 | conocidas / curadas / predichas | 145 / 3 / 4 102 |
 | con dos o más fuentes | 738 (717 de ellas, BioCyc y Pseudomonas Genome DB) |
 | con promotor de CDBProm en el primer gen transcrito | 1 574 |
-| marcadas para revisar a mano | 117 |
+| marcadas para revisar a mano | 81 (eran 117; ver la nota de abajo) |
 | alternativas (contenidas en otra unidad) | 1 072 |
 | usadas para anotar el bronce | 1 219 |
 | iguales en genes a un operón del catálogo del paso 1 | 325 |
 
-Dos cautelas al leerlas:
+Tres cautelas al leerlas:
 
 - **«Dos o más fuentes» no es «dos confirmaciones independientes».** DOOR y
   Pathway Tools son predictores distintos, pero los dos parten de la distancia
@@ -86,6 +86,10 @@ Dos cautelas al leerlas:
 - **Las 1 219 unidades que anotan** son las de más de un gen que no están
   contenidas en otra, más 32 alternativas de más de un gen cuya evidencia no
   es solo predicción.
+- **Las que hay que revisar bajaron de 117 a 81 el 20 de octubre.** La
+  revisión de adyacencia ignoraba el sufijo de los genes anotados después
+  (`PA4277.1`, `PA4277.2`…), y marcaba como «no consecutivos» a 38 grupos que
+  sí lo son. No cambió ninguna unidad, solo la marca.
 
 ## 5. Cómo entran al pipeline
 
@@ -100,10 +104,11 @@ Dos cautelas al leerlas:
   - 23 445 candidatas tienen al menos uno. Solo nombrando operones eran 3 603.
   - No cambia lo que se detecta: las 28 columnas que ya existían salieron
     idénticas.
-- **Capa del paso 2, del 8 de octubre.** De los 72 969 pares que vio el
-  clasificador, 3 605 tienen como blanco un operón y 38 307 tienen el blanco
-  dentro de un operón de la base. De sus 22 267 oraciones, 17 326 tienen
-  operón.
+- **Capa del paso 2, rehecha el 20 de octubre.** De los 72 969 pares que vio
+  el clasificador, 3 422 tienen como blanco un operón y 38 307 tienen el
+  blanco dentro de un operón de la base. De sus 22 267 oraciones, 17 326
+  tienen operón. Antes decía 3 605: contaba como operón a IHF, PrrF y PrrH,
+  que no tienen locus tag en el diccionario.
 - **Entrenamiento con la base curada.** Si el blanco de un par es un operón
   del catálogo del paso 1, el par se compara con la base curada gen por gen.
   La base de operones no interviene.
@@ -272,7 +277,7 @@ saldría igual de bien presentada y mediría otra cosa.
 - **La base no va a sustituir al catálogo del paso 1.** Ese día se dijo que
   convivían «todavía»; se midió y no conviene (sección 6).
 - **La hebra se comprueba también en un clon limpio.** Ese día se dijo que no.
-  Hoy, si falta la copia local del genoma, se usa la versionada, y las dos son
-  idénticas.
+  Desde el 20 de octubre sale primero de la copia versionada del genoma, que
+  está en todo clon; la local queda de respaldo, y hoy las dos son idénticas.
 - **La decisión 3 se reformuló** para incluir Pseudomonas Genome DB y para
   preguntar por la ampliación por operón (sección 8).

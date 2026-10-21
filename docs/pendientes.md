@@ -45,6 +45,22 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
   - mover `rutas` a `grn_comun` (4.8) pesa más ahora: la importan también el
     CLI del paso 0 y el tablero.
 
+**Lo que cambió el 20-oct-2026** (detalle en la bitácora de ese día). Se
+cerró todo lo de operones que no depende del asesor:
+- **Cerrados:** 3.14, 4.1, 4.2, 4.4 a 4.8 y 4.10 a 4.19. El 4.17 se cerró
+  medido y sin cambio de código.
+- **Avanzado:** 4.3, con el borrador del correo al curador de PGD listo; lo
+  manda el usuario.
+- **Encontrado y arreglado:**
+  - la capa contaba como «blanco que es operón» a IHF, PrrF y PrrH, que no
+    tienen locus en el diccionario: IHF es un complejo, y PrrF y PrrH son ARN
+    pequeños;
+  - la revisión independiente de la rama encontró que `foto_sana` y
+    `reparsear` no miraban la foto vigente, y que el aviso del paso
+    `operones` salía una sola vez. Los dos quedaron arreglados con sus
+    pruebas; el detalle está en `guia-operones.md` §12.
+- **Sigue igual:** lo de la sección 1, que es del asesor.
+
 **Lo que cambió el 16-oct-2026** (detalle en la bitácora de ese día). Los
 operones quedaron documentados en dos documentos nuevos: `operones-asesor.md`,
 para el asesor, y `guia-operones.md`, para quien los mantenga.
@@ -287,35 +303,40 @@ para el asesor, y `guia-operones.md`, para quien los mantenga.
     decisión 3 (1.1).
 14. **Ninguna prueba ejercita el paso `operones` del flujo**: ni omitido cuando
     falta `operones_base.tsv`, ni con `--rehacer-operones`.
-    `pruebas/test_flujo.py`, `guia-operones.md` §6.
+    `pruebas/test_flujo.py`, `guia-operones.md` §6. *Cerrado el 20-oct-2026.*
 
 ## 4. Catálogo de operones
 
 1. **Tomar el `common-name` de BioCyc**: 94 unidades lo traen y salen sin
    nombre. Se arregla sin red (`reparsear --fuente biocyc`, `curar`,
-   `catalogo --paso1`) y cambia `operones_base.tsv` y su huella.
+   `catalogo --paso1`) y cambia `operones_base.tsv` y su huella. *Cerrado el
+   20-oct-2026, con la columna «Nombre en BioCyc» en el catálogo.*
 2. **`es_adyacente` ignora el sufijo `.N`**: 38 de los 55 no adyacentes tienen
    algún locus `.N`, y nadie ha revisado cuántos son falsos.
-   `catalogo-operones.md:399-402`.
+   `catalogo-operones.md` §4.3. *Cerrado el 20-oct-2026: el sufijo cuenta.*
 3. **Pedir a PGD la tabla del release 22.1** (6-oct-2023) con permiso escrito,
    a pseudocap-mail@sfu.ca o gwinsor@sfu.ca. La que entró es del 19-jul-2021.
-   Se carga con `--archivo`, `--url` o `PGD_OPERONES_URL`.
+   Se carga con `--archivo`, `--url` o `PGD_OPERONES_URL`. *El borrador del
+   correo está listo (20-oct-2026); lo manda el usuario.*
 4. **Una fuente que parsea cero filas sale del catálogo sin aviso.** Una página
    de desafío guardada y pasada con `--archivo`, un XML de BioCyc sin unidades
    o un `genes.xml` sin `accession-1` cierran la extracción como completa con 0
    filas; y un cuerpo que no es XML lanza `ET.ParseError`, que no atrapan ni
-   `extraer` ni `reparsear`. `bitacora.md:337-340`,
-   `catalogo-operones.md:81-83`.
+   `extraer` ni `reparsear`. *Cerrado el 20-oct-2026: la foto vigente es la
+   última completa con filas, también para `foto_sana` y `reparsear`, y lo
+   ilegible es formato desconocido.*
 5. **La lista de revisión para el asesor no es reproducible.**
    `operones_conflictos.csv` ya trae las `pendiente_revision`; falta versionar
    el enriquecimiento con PubMed (título, año, revista y tipo por PMID),
-   propuesto como `exportar --pendientes`.
+   propuesto como `exportar --pendientes`. *Cerrado el 20-oct-2026.*
 6. **Prueba y fixture de `parsear_odb`**, que hoy solo se probó contra el
-   volcado real.
+   volcado real. *Cerrado el 20-oct-2026.*
 7. **La hebra puede variar entre máquinas**: sale primero del caché local
    ignorado (`datos_etapa2/cache_diccionario/refseq_gff.gz`) y solo si falta de
-   la copia versionada. `curar.py:76-86`.
-8. **Mover `rutas` de `grn_bronce` a `grn_comun`.** `grn_operones/fuentes.py:40-45`.
+   la copia versionada. *Cerrado el 20-oct-2026: primero la versionada, y
+   `curar` dice cuál usó.*
+8. **Mover `rutas` de `grn_bronce` a `grn_comun`.** *Cerrado el 20-oct-2026,
+   con un puente en `grn_bronce` para los importadores que faltan.*
 9. **Las guías de máquina no dicen cómo generar `operones_base.tsv`**
    (`catalogo --paso1`, con cuenta de BioCyc): en una máquina nueva el bronce
    reporta «recurso ausente». *Cerrado el 16-oct-2026: nota en las dos guías
@@ -329,37 +350,43 @@ detalle de cada uno está en `guia-operones.md` §12.
     Declara `operones_pao1.tsv`, `curar.py` y `exportar.py`. No declara la
     base de datos, los crudos, el resto del paquete, `genes_pao1.tsv`, el GFF
     ni `grn_bronce/operones.py`. Un cambio en ellos no rehace el paso, y hoy
-    hace falta `--forzar operones`.
+    hace falta `--forzar operones`. *Cerrado el 20-oct-2026: declara lo que se
+    puede huellear, `--rehacer-operones` corre siempre, y sin la bandera avisa
+    en cada corrida hasta que se regenera.*
 11. **`extraer` y `reparsear` salen con 0 aunque falle una fuente** por
     credenciales, red o un crudo que falta. En cambio, un XML ilegible o un
-    `--archivo` que no existe terminan con traza. `grn_operones/cli.py`.
+    `--archivo` que no existe terminan con traza. *Cerrado el 20-oct-2026.*
 12. **Una extracción fallida cuenta como corrida fallida.** Pasa en dos casos:
     - la que no trae archivos queda incompleta, como CDBProm en cada
       `extraer --fuente todo` sin `--url` ni `CDBPROM_URL`;
     - la que falla antes de bajar queda abierta, como BioCyc sin
       credenciales.
 
-    A la segunda, `curar` pide revisar la foto. `fuentes.extraer`,
-    `db.edad_de_la_foto`.
+    A la segunda, `curar` pide revisar la foto. *Cerrado el 20-oct-2026: sin
+    intento no se abre extracción, y lo que falla a medias la cierra.*
 13. **`extraer --archivo` exige el correo de contacto** aunque no haga ninguna
-    petición.
+    petición. *Cerrado el 20-oct-2026.*
 14. **El CSV de conflictos no trae `nombre`**: la unidad solo se identifica
-    por sus locus. `exportar.COLUMNAS_CONFLICTOS`.
+    por sus locus. *Cerrado el 20-oct-2026.*
 15. **Código muerto:** `fuentes.URL_ODB_TABLA` y `--max-paginas`, que se acepta
-    y no hace nada.
+    y no hace nada. *Cerrado el 20-oct-2026, junto con `EVIDENCIA_CURADA`.*
 16. **La ruta del crudo es la de la máquina que bajó.** `reparsear` usa
     `operones_descargas.ruta` tal cual, y una ruta de Windows no se resuelve en
-    Linux.
+    Linux. *Cerrado el 20-oct-2026: se busca bajo la raíz de datos de hoy y
+    manda la huella.*
 17. **La autorregulación por operón cuenta operones sintéticos.**
     `etapa2/extraer_pares.py` usa `lexico.miembros_operon`, que incluye las
     concatenaciones del texto, mientras el resto del proyecto expande solo por
-    tabla. Está en `etapa2`, congelada: el arreglo cuenta como corrección de
-    error.
+    tabla. *Cerrado el 20-oct-2026 sin cambio de código.* Medido, son 12 de los
+    8 000 pares marcados, y en la mayoría la marca es correcta. Contarlos solo
+    por tabla metía una arista falsa. El detalle está en `guia-operones.md` §12.
 18. **`pares_informe.json` no sella `operones_pao1.tsv`**, con el que el
-    puente expande el blanco de un par. Sí sella `genes_pao1.tsv`.
+    puente expande el blanco de un par. Sí sella `genes_pao1.tsv`. *Cerrado
+    el 20-oct-2026.*
 19. **La capa corrida a mano puede mezclar dos versiones de la base:**
     `operones_en_oracion` viene del bronce, y `operones_del_blanco` del
-    `operones_base.tsv` del momento. Por el flujo no pasa.
+    `operones_base.tsv` del momento. Por el flujo no pasa. *Cerrado el
+    20-oct-2026: la capa se niega.*
 
 ## 5. Paso 0 y NCBI
 
