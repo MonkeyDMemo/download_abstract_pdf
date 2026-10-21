@@ -517,7 +517,7 @@ python3 servidor.py --datos D --flujo salidas/flujo   # --db y --salida salen de
 python3 flujo.py --corrida 4            # operones -> bronce -> BioBERT -> capa -> evaluacion
 python3 flujo.py --corrida 4 --limite 200   # prueba rapida en su propia carpeta
 python3 flujo.py --pasos capa,evaluar --forzar capa
-python3 flujo.py --pasos operones --rehacer-operones --forzar operones   # operones_base.tsv, sin red
+python3 flujo.py --pasos operones --rehacer-operones   # operones_base.tsv, sin red; corre siempre
 ```
 
 El tablero hace lo mismo que el CLI desde el navegador y ademas deja corregir
