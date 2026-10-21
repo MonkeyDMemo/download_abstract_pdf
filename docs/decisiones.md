@@ -1489,3 +1489,52 @@ Tres detalles de HTTP que no son obvios, y el defecto que evita cada uno:
   navegador sigue poniendo su dominio en `Host`. El puerto no protege nada y
   la primera versión, que lo exigía, rompía el túnel SSH a otro puerto local
   (`ssh -L 8766:127.0.0.1:8765`).
+
+## CollecTF es una referencia de evaluación: no entra a la base de conocimiento ni a `es_tf`
+
+Decidido por el autor el 20-oct-2026 en el Documento de Tesis v1; se confirma
+con el asesor el viernes 23-oct.
+
+`etapa2/collectf_pao1.tsv` reúne sitios de unión de factores de transcripción
+de *P. aeruginosa* validados experimentalmente: es una red regulatoria curada.
+Si el agente de la plata la consultara como herramienta, confirmaría contra la
+respuesta, y la plata y su evaluación saldrían sesgadas a la vez. Es el mismo
+motivo por el que la base curada del laboratorio no entra al bronce ni a la
+base de conocimiento.
+
+- **Su uso es otro: la segunda referencia de evaluación**, independiente del
+  laboratorio. El recall se reporta contra la base curada y contra CollecTF
+  por separado. Ya se usó así: 126 de 333 pares (37.8 %, `bitacora.md:2094`;
+  la línea 2326 dice 38.8 %, una errata).
+- **Tampoco cuenta como evidencia de que un gen es TF.**
+  `construir_diccionario.py:1021-1022` suma `collectf` a `fuente_tf`, y hoy
+  lo hace en 29 de las 572 filas con `es_tf=true` de `genes_pao1.tsv`.
+  Medido el 21-oct: las 29 traen además otra fuente, así que sacar CollecTF no
+  cambia ninguna marca. Como `etapa2` está congelada, la guarda es una prueba
+  del bronce que falla si una marca llega a depender solo de CollecTF.
+- **Por qué no se protege el nombre en `test_contaminacion`:**
+  `construir_diccionario.py` está en `DEL_PIPELINE`, donde la regla no admite
+  lista blanca, y lo nombra para la marca de arriba. Cuando exista el paquete
+  de la base de conocimiento, ese paquete sí entra a la guarda con CollecTF
+  protegido.
+
+## La base de conocimiento no usa base vectorial: los hechos se consultan por igualdad
+
+Decidido por el autor el 20-oct-2026 en el Documento de Tesis v1. La base de
+conocimiento del agente todavía no existe; esto fija cómo se construirá.
+
+- **Los hechos (locus, TF, operón, GO) van en tablas `kb_*` de SQLite**, cada
+  una con su fuente, fecha y huella, y se consultan por igualdad. Un hecho
+  exige una respuesta exacta y determinista; una búsqueda vectorial devuelve
+  lo «parecido» y puede contestar con el gen equivocado. Las tablas además son
+  más rápidas, no cuestan y se reproducen por huella. Su DDL se propone y se
+  confirma antes de aplicarse, como cualquier tabla nueva.
+- **Los vectores sí sirven para proponer, nunca para decidir.** Un índice
+  local (numpy o FAISS plano; unas 273 mil oraciones, menos de 1 GB) puede dar
+  ejemplos parecidos para *few-shot* (solo de un conjunto de desarrollo, nunca
+  de la muestra de 50, del conjunto ciego ni de PMIDs de test), vincular frases
+  con términos GO, sugerir un locus para un nombre fuera del diccionario
+  (marcado como propuesto, nunca como normalizado) o encontrar oraciones casi
+  idénticas entre artículos.
+- **S3 Vectors u OpenSearch** solo si la capa de agentes vive en la nube y
+  hace falta búsqueda híbrida; es trabajo de la tesis, no del servicio social.
