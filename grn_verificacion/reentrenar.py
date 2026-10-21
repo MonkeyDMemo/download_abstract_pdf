@@ -67,6 +67,8 @@ RAIZ_REPO = E.RAIZ_REPO
 PARTICIONAR = os.path.join(RAIZ_REPO, "etapa2", "particionar.py")
 BARRIDO = os.path.join(RAIZ_REPO, "etapa2", "barrido.py")
 CLASIFICAR = os.path.join(RAIZ_REPO, "etapa2", "clasificar.py")
+# El envoltorio que quita --use_class_weights (enmienda 1 del protocolo).
+SIN_PESOS = os.path.join(RAIZ_REPO, "grn_verificacion", "sin_pesos.py")
 # El protocolo de evaluación, fijado antes de entrenar. El informe dice su
 # commit y si es anterior al inicio de la corrida.
 PROTOCOLO = os.path.join("docs", "protocolo-curada-v1.md")
@@ -117,6 +119,7 @@ PROTOCOLO_PARAMETROS = collections.OrderedDict([
     ("folds", 5),
     ("semillas", ["42", "43", "44"]),
     ("excluir", ["regulates"]),
+    ("pesos_clase", "inversa"),
 ])
 
 # PLAN.md 2.4, medido el 10-sep-2026. Lo que no cuadre detiene la corrida:
@@ -1480,7 +1483,7 @@ def ejecutar(raiz, nombre, base, pares, reservas, script, python=None,
              aceptar_base_distinta=False, horas=HORAS,
              gpu_min_mib=GPU_MIN_MIB, max_length=MAX_LENGTH,
              conservar_checkpoints=False, hoja=None, log=_nada,
-             detener=None, semillas=None, excluir=None):
+             detener=None, semillas=None, excluir=None, pesos_clase=True):
     """Corre la pista D y devuelve el estado final (el de `estado.json`).
 
     `semillas`: las de la validación cruzada (por omisión, solo la 42).
@@ -1520,7 +1523,7 @@ def ejecutar(raiz, nombre, base, pares, reservas, script, python=None,
                 os.path.abspath(os.path.expanduser(ciego)) if ciego else None,
                 folds, hasta, aceptar_base_distinta, horas, gpu_min_mib,
                 str(max_length), conservar_checkpoints, hoja, log, detener,
-                semillas=semillas, excluir=excluir)
+                semillas=semillas, excluir=excluir, pesos_clase=pesos_clase)
             corrida.estado["avisos"] = avisos
             return corrida.correr()
         finally:
@@ -1536,11 +1539,15 @@ class _Corrida:
     def __init__(self, r, nombre, base, pares, reservas, script, python,
                  ciego, folds, hasta, aceptar_base_distinta, horas,
                  gpu_min_mib, max_length, conservar_checkpoints, hoja, log,
-                 detener, semillas=(SEMILLA_MODELO,), excluir=()):
+                 detener, semillas=(SEMILLA_MODELO,), excluir=(),
+                 pesos_clase=True):
         self.r = r
         self.nombre = nombre
         self.base, self.pares, self.reservas = base, pares, reservas
         self.script, self.python, self.ciego = script, python, ciego
+        # Sin pesos, barrido.py corre el envoltorio y este, el script real.
+        self.pesos_clase = "inversa" if pesos_clase else "ninguno"
+        self.script_barrido = script if pesos_clase else SIN_PESOS
         self.folds, self.hasta = folds, hasta
         self.aceptar_base_distinta = aceptar_base_distinta
         self.horas, self.gpu_min_mib = horas, gpu_min_mib
@@ -1586,6 +1593,7 @@ class _Corrida:
                 ("semilla_modelo", SEMILLA_MODELO),
                 ("semillas", list(semillas)),
                 ("excluir", list(excluir)),
+                ("pesos_clase", "inversa" if pesos_clase else "ninguno"),
                 ("etiquetas_evaluadas", etiquetas_evaluadas(excluir)),
                 ("bootstrap", {"b": B_BOOTSTRAP,
                                "semilla": SEMILLA_BOOTSTRAP,
@@ -2157,6 +2165,9 @@ class _Corrida:
         except OSError:
             return None
         r = _leer_json(self._destino(c))
+        lado = _leer_json(self._destino(c) + ".tokens") or {}
+        if lado.get("pesos_clase", "inversa") != self.pesos_clase:
+            return None
         if (_metricas_validas(r) and r.get("huella") == hue
                 and str(r.get("max_length")) == self.max_length
                 and str(r.get("semilla")) == c["semilla"]):
@@ -2276,7 +2287,10 @@ class _Corrida:
     def _entorno_hijos(self):
         """Sin red, y con la marca que identifica a los hijos de esta corrida
         para `procesos_con`."""
-        return dict(ENTORNO_HF, **{MARCA_ENTORNO: self.r["runs"]})
+        entorno = dict(ENTORNO_HF, **{MARCA_ENTORNO: self.r["runs"]})
+        if self.script_barrido != self.script:
+            entorno["GRN_SCRIPT_REAL"] = self.script
+        return entorno
 
     def _barrido(self, datos, trabajo, resultados, conservar, info,
                  semilla=SEMILLA_MODELO, primero=True):
@@ -2307,13 +2321,15 @@ class _Corrida:
                 # Con --conservar el resultado vale si están los pesos: un
                 # JSON sin modelo dejaba la corrida atascada en sin_modelo
                 # para siempre, sin volver a entrenar.
-                if _metricas_validas(anterior) and (not conservar
-                                                    or _hay_pesos(run)):
+                lado = _leer_json(destino + ".tokens") or {}
+                if (_metricas_validas(anterior)
+                        and lado.get("pesos_clase", "inversa")
+                        == self.pesos_clase
+                        and (not conservar or _hay_pesos(run))):
                     info["estatus"] = "saltado"
                     info["huella"] = hue
                     # Los tokens no van en el JSON de barrido.py: van aparte,
                     # atados a la misma huella.
-                    lado = _leer_json(destino + ".tokens") or {}
                     if lado.get("huella") == hue:
                         info["tokens"] = lado.get("tokens")
                     self.registrar("%s: ya estaba entrenado con esta "
@@ -2347,7 +2363,7 @@ class _Corrida:
         if not primero:
             self._exigir_gpu()
         argv = [self.python, "-u", BARRIDO, "--datos", datos,
-                "--script", self.script, "--trabajo", trabajo,
+                "--script", self.script_barrido, "--trabajo", trabajo,
                 "--resultados", resultados, "--modelo", MODELO,
                 "--max_length", self.max_length, "--solo", str(CONFIGURACION),
                 "--semillas", semilla]
@@ -2396,7 +2412,7 @@ class _Corrida:
             # `*.json` y `*.json.error`.
             _escribir_texto(destino + ".tokens", json.dumps(
                 {"huella": hue, "tokens": info["tokens"],
-                 "inicio": inicio}) + "\n")
+                 "inicio": inicio, "pesos_clase": self.pesos_clase}) + "\n")
             return resultado
         error = _leer_json(destino + ".error") or {}
         cod = error.get("codigo", codigo)
@@ -2765,6 +2781,8 @@ def desviaciones_del_protocolo(parametros, solo=None):
         if solo is not None and llave not in solo:
             continue
         valor = parametros.get(llave)
+        if llave == "pesos_clase" and valor is None:
+            valor = "inversa"   # las corridas anteriores al parámetro
         if valor != esperado:
             desviaciones.append("%s: el protocolo fija %s y esta corrida usó %s"
                                 % (llave, esperado, valor))
@@ -2898,9 +2916,11 @@ def informe(estado, r=None):
     w("## 1. Receta")
     w("")
     w("- Run %s (`%s`): lr 3e-5, 8 épocas, lote 16, calentamiento 0.1, "
-      "weight decay 0.01, max_length %s, semilla 42, pesos de clase y paro "
+      "weight decay 0.01, max_length %s, semilla 42, %s y paro "
       "temprano con paciencia 2, sobre `%s`."
       % (par.get("configuracion"), par.get("run"), par.get("max_length"),
+         "**sin pesos de clase** (enmienda 1 del protocolo)"
+         if par.get("pesos_clase") == "ninguno" else "pesos de clase",
          par.get("modelo")))
     entreno_cv = bool((p.get("entrenamiento_cv") or {}).get("corridas"))
     w("- Partición por PMID, 80/10/10%s."

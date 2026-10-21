@@ -237,8 +237,52 @@ servidor sin él.
 
 ## 12. Enmiendas
 
-Ninguna. Cada enmienda lleva fecha, qué cambia, por qué y si es anterior o
-posterior a ver alguna cifra del tramo 2.
+Cada enmienda lleva fecha, qué cambia, por qué y si es anterior o posterior a
+ver alguna cifra del tramo 2.
+
+### Enmienda 1 (20-oct-2026): versión 2, sin pesos de clase
+
+**Es posterior a ver las cifras de la v1.** Se escribe después del tramo 2 y
+de la prueba en el flujo del 16-oct, y antes de entrenar la v2. Las cifras de
+la v1 siguen siendo las pre-registradas. La v2 se motiva en lo que mostró la
+v1, así que su comparación con la v1 es exploratoria.
+
+**Qué se vio en la v1:**
+- En la red de la corrida 4, 744 de las 1 025 aristas son represiones.
+- En el patrón de oro acierta el signo en 38 de 82 (46.3 %), por debajo de
+  «siempre activa» (70.7 %).
+- En la validación cruzada, la precisión de `represses` es 0.25.
+
+La hipótesis: los pesos de clase por la inversa de la frecuencia (sección 3)
+empujan hacia `represses`, que es la clase más chica.
+
+**Qué cambia: solo eso.** La v2 entrena sin `--use_class_weights`, con la
+pérdida sin ponderar (`reentrenar --sin-pesos-de-clase`, que interpone
+`grn_verificacion/sin_pesos.py` sin tocar el script del asesor ni
+`barrido.py`). Todo lo demás es igual:
+- los datos, la exclusión de `regulates`, los pliegues y las semillas;
+- el resto de la receta;
+- la métrica, la línea base (0.3817), el bootstrap y la regla de la sección 6.
+
+La corrida es la del paso 9.1 con `--nombre curada-v2 --sin-pesos-de-clase`.
+Su informe lista `pesos_clase` como desviación: es esta enmienda.
+
+**Cuándo una versión puede ir al flujo** (fijado antes de entrenar la v2):
+1. Tiene que superar a la línea base con la regla de la sección 6.
+2. En el patrón de oro (`etapa2/evaluar_oro.py`, denominador honesto, con los
+   umbrales de siempre de `red.py`), su acierto de signo tiene que despegar
+   de las dos líneas base, el azar y «siempre activa», con α = 0.05. Es el
+   campo `despega_de_las_dos_lineas_base`.
+3. Si las dos versiones cumplen 1 y 2, va la de mayor acierto de signo en el
+   oro. Si ninguna cumple 2, ninguna reemplaza al modelo de *E. coli*.
+
+La decisión final sigue siendo del asesor, con el 44 % (sección 10) cuando
+esté.
+
+**Limitación que vale para las dos versiones:** las relaciones del patrón de
+oro pueden estar también en la base curada con la que se entrenó. El oro mide
+el signo en la red, no la generalización a artículos nuevos; esa la mide la
+sección 5.
 
 ## 13. Referencias
 

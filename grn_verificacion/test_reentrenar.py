@@ -88,6 +88,9 @@ if modo == "terco":
 if os.environ.get("FALSO_CUENTA"):
     with open(os.environ["FALSO_CUENTA"], "a") as f:
         f.write("x\\n")
+if os.environ.get("FALSO_PESOS"):
+    with open(os.environ["FALSO_PESOS"], "a") as f:
+        f.write(("si" if "--use_class_weights" in sys.argv else "no") + "\\n")
 os.makedirs(args.out_dir, exist_ok=True)
 # Como un traceback del script real que trajera un ejemplo: si el filtro se
 # desconecta, esto llega a lo que ve la sesión.
@@ -641,6 +644,36 @@ class PruebasPiezas(unittest.TestCase):
         self.assertEqual(R._etapa2("barrido").SEMILLA, R.SEMILLA_MODELO)
         self.assertFalse(R.nombre_run().endswith("_s42"))
         self.assertEqual(R.nombre_run() + "_s43", R.nombre_run(43))
+
+
+class PruebasSinPesos(unittest.TestCase):
+
+    def test_quita_solo_el_flag_de_los_pesos(self):
+        from grn_verificacion import sin_pesos
+        self.assertEqual(["--lr", "3e-5", "--early_stopping"],
+                         sin_pesos.argumentos(["--lr", "3e-5",
+                                               "--use_class_weights",
+                                               "--early_stopping"]))
+
+    def test_corre_el_script_real_sin_el_flag(self):
+        tmp = tempfile.mkdtemp(prefix="grn_sinpesos_")
+        self.addCleanup(shutil.rmtree, tmp)
+        real = _escribir(os.path.join(tmp, "real.py"),
+                         "import json, sys\nprint(json.dumps(sys.argv[1:]))\n")
+        argv = [sys.executable, "-m", "grn_verificacion.sin_pesos",
+                "--use_class_weights", "--seed", "42"]
+        r = subprocess.run(argv, cwd=E.RAIZ_REPO, stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, universal_newlines=True,
+                           env=dict(os.environ, GRN_SCRIPT_REAL=real),
+                           timeout=60)
+        self.assertEqual(0, r.returncode, r.stdout)
+        self.assertEqual(["--seed", "42"], json.loads(r.stdout))
+        sin = subprocess.run(argv, cwd=E.RAIZ_REPO, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, universal_newlines=True,
+                             env=dict((k, v) for k, v in os.environ.items()
+                                      if k != "GRN_SCRIPT_REAL"), timeout=60)
+        self.assertNotEqual(0, sin.returncode)
+        self.assertIn("GRN_SCRIPT_REAL", sin.stdout)
 
 
 class PruebasProtocolo(unittest.TestCase):
@@ -1538,6 +1571,27 @@ class PruebasCorridaProtocolo(_Escenario):
         self.assertEqual([], self.runs_de_pliegue())
         # No se volvió a entrenar ni a predecir el pliegue cortado.
         self.assertEqual((4, 4), (self.llamadas(), self.clasificaciones()))
+
+    def test_sin_pesos_de_clase_el_script_no_recibe_el_flag(self):
+        pesos = os.path.join(self.tmp, "pesos.txt")
+        os.environ["FALSO_PESOS"] = pesos
+        estado, _ = self.correr(folds=3, pesos_clase=False)
+        self.assertEqual("ok", estado["estatus"], estado.get("detalle"))
+        with open(pesos) as f:
+            self.assertEqual(["no"] * 4, f.read().split())
+        self.assertEqual("ninguno", estado["parametros"]["pesos_clase"])
+        informe = self.leer(self.r["informe"])
+        self.assertIn("**sin pesos de clase** (enmienda 1 del protocolo)",
+                      informe)
+        self.assertIn("pesos_clase: el protocolo fija inversa", informe)
+        # Con pesos, nada de lo entrenado sin ellos se reusa.
+        os.remove(pesos)
+        estado, _ = self.correr(folds=3)
+        self.assertEqual("ok", estado["estatus"], estado.get("detalle"))
+        with open(pesos) as f:
+            self.assertEqual(["si"] * 4, f.read().split())
+        self.assertEqual(8, self.llamadas())
+        self.assertNotIn("pesos_clase:", self.leer(self.r["informe"]))
 
     def test_las_semillas_sin_folds_no_se_aceptan(self):
         with self.assertRaises(ValueError):
