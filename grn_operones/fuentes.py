@@ -37,12 +37,10 @@ from html.parser import HTMLParser
 from grn_operones import db as _db
 from grn_operones import red
 
-# `rutas` vive en `grn_bronce` y se importa en vez de copiarse: la precedencia
-# de `GRN_DATOS` tiene que estar escrita en un solo sitio, y dos copias que
-# divergen es el defecto que este proyecto no se puede permitir. Su sitio
-# natural es `grn_comun/`, que es justo "lo que usan los tres pasos"; moverlo
-# toca los imports de `grn_bronce` y se deja anotado en vez de hacerlo de paso.
-from grn_bronce import rutas
+# La precedencia de `GRN_DATOS` está escrita en un solo sitio, `grn_comun`, y
+# se importa en vez de copiarse: dos copias que divergen es el defecto que
+# este proyecto no se puede permitir.
+from grn_comun import rutas
 
 TAXID = "208964"
 ORGID_BIOCYC = "PAER208964"

@@ -611,7 +611,8 @@ def _conexion(datos):
     resuelve contra esa raíz y no contra el directorio de quien llamó: si no,
     el flujo creaba una base vacía en otro lado y decía que no había
     corridas."""
-    from grn_bronce import db as bdb, rutas
+    from grn_bronce import db as bdb
+    from grn_comun import rutas
     raiz = rutas.raiz_datos(datos)
     if not os.path.isabs(raiz):
         raiz = os.path.join(RAIZ, raiz)

@@ -238,6 +238,8 @@ grn_verificacion/      paso 2, en construccion
   entrenamiento.py       datos de entrenamiento por supervision distante
 flujo.py               el flujo de punta a punta; idempotente por huella
 grn_comun/             lo que usan los tres pasos
+  rutas.py               la precedencia de GRN_DATOS; grn_bronce/rutas.py es
+                         su puente desde el 20-oct-2026
   procedencia.py         huella por contenido de cada eslabon de la cadena
   proceso.py             correr un CLI hijo, con su salida al log y cancelable
   archivos.py            el os.replace de la escritura atomica, que en Windows
@@ -276,8 +278,9 @@ servidor.py --> trabajos.py --> flujo.correr --> subprocesos de cada paso
 El flujo entra al tablero por la misma puerta que el ETL: `trabajos.Gestor`
 lo corre en su hilo y el HTTP solo sondea. Cada paso es un proceso aparte,
 así que `servidor.py` no importa ni `grn_verificacion` ni `etapa2`: importa
-`flujo` (para lanzarlo y leer sus carpetas) y `grn_bronce.rutas` (para la
-precedencia de `GRN_DATOS`).
+`flujo` (para lanzarlo y leer sus carpetas) y `rutas` (para la precedencia de
+`GRN_DATOS`). `rutas` vive en `grn_comun/` desde el 20-oct-2026; el tablero
+todavía la importa por el puente `grn_bronce/rutas.py`, y se muda al tocarlo.
 
 Seis reglas que no se rompen:
 
@@ -308,11 +311,11 @@ Seis reglas que no se rompen:
 
 Dependencia en una sola direccion: `cli -> orquestacion -> db / clientes`.
 Ningun modulo salta capas. `grn_comun/` es la excepcion prevista: lo que usan
-los tres pasos por igual (hoy `procedencia.py`) vive ahi para que ninguno
-tenga que importar de lado. `grn_operones/` sí importa de lado desde
-`grn_bronce/`: `rutas` y, solo en su `cli.py`, el lector del catálogo del
-paso 1 (`operones.leer` y `Catalogo`) y el contrato de `operones_base.tsv`
-(`RUTA_BASE`, `COLUMNAS_BASE`). El bronce consume la base de operones **por
+los tres pasos por igual (`procedencia.py`, `rutas.py`) vive ahi para que
+ninguno tenga que importar de lado. `grn_operones/` sí importa de lado desde
+`grn_bronce/`, solo en su `cli.py`: el lector del catálogo del paso 1
+(`operones.leer` y `Catalogo`) y el contrato de `operones_base.tsv`
+(`RUTA_BASE`, `COLUMNAS_BASE`). `rutas` ya lo toma de `grn_comun/`. El bronce consume la base de operones **por
 archivo, sin importar `grn_operones`**: lee `operones_base.tsv`, que se
 genera en cada máquina y **no va a git** (lleva datos de BioCyc, cuya licencia
 restringe redistribuirlos). Si algún día necesitara importar código de

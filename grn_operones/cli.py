@@ -26,7 +26,7 @@ _RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _RAIZ)
 
 from grn_bronce import operones as _operones_paso1              # noqa: E402
-from grn_bronce import rutas                                    # noqa: E402
+from grn_comun import rutas                                     # noqa: E402
 from grn_etl import credenciales, pubmed                        # noqa: E402
 from grn_operones import curar as _curar                        # noqa: E402
 from grn_operones import db, exportar, fuentes, red             # noqa: E402
