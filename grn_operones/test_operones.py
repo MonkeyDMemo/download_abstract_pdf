@@ -499,11 +499,96 @@ class PruebasExtraerPgd(unittest.TestCase):
         """`reparsear` pide volver a extraer si falta el crudo; si `extraer`
         contestara «ya está», cada comando mandaría al otro."""
         self._extraer()
-        os.remove(D.descargas_de(self.con, "pgd")[0]["ruta"])
+        os.remove(F.ruta_del_crudo(D.descargas_de(self.con, "pgd")[0]["ruta"],
+                                   self.tmp.name))
 
         self._extraer()
 
         self.assertEqual(self.pedidas, [F.URL_PGD, F.URL_PGD])
+
+
+class PruebasCrudoEnOtraMaquina(unittest.TestCase):
+    """`reparsear` con la base copiada de otra máquina. La ruta guardada es la
+    de quien bajó el archivo; el crudo se busca bajo la raíz de datos de hoy,
+    y la huella decide si sirve."""
+
+    RELATIVA = "operones_crudo/pgd/2026-09-27/PAO1-operons-2021-07-19.csv"
+
+    def setUp(self):
+        self.con = _con()
+        self.addCleanup(self.con.close)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.cuerpo = PGD_CSV.encode("utf-8")
+        self.local = os.path.join(self.tmp.name, *self.RELATIVA.split("/"))
+        os.makedirs(os.path.dirname(self.local))
+        with io.open(self.local, "wb") as f:
+            f.write(self.cuerpo)
+
+    def _registrar(self, ruta):
+        eid = D.abrir_extraccion(self.con, "pgd")
+        D.registrar_descarga(self.con, eid, F.URL_PGD, ruta, self.cuerpo)
+        D.cerrar_extraccion(self.con, eid)
+
+    def test_una_ruta_relativa_escrita_en_windows(self):
+        self._registrar("datos\\" + self.RELATIVA.replace("/", "\\"))
+
+        informe = F.reparsear(self.con, "pgd", flag_datos=self.tmp.name)
+
+        self.assertEqual(informe["filas"], 5)
+
+    def test_una_ruta_absoluta_de_otra_maquina(self):
+        self._registrar("/home/otra/datos/" + self.RELATIVA)
+
+        informe = F.reparsear(self.con, "pgd", flag_datos=self.tmp.name)
+
+        self.assertEqual(informe["filas"], 5)
+        self.assertEqual(F.foto_sana(self.con, "pgd", self.tmp.name),
+                         F.URL_PGD)
+
+    def test_un_archivo_con_otra_huella_no_sirve(self):
+        self._registrar(self.RELATIVA)
+        with io.open(self.local, "ab") as f:
+            f.write(b"\n")
+
+        with self.assertRaises(F.FormatoDesconocido) as ctx:
+            F.reparsear(self.con, "pgd", flag_datos=self.tmp.name)
+
+        self.assertIn("huella", str(ctx.exception))
+
+    def test_sin_el_archivo_dice_donde_lo_busco(self):
+        self._registrar(self.RELATIVA)
+        os.remove(self.local)
+
+        with self.assertRaises(F.FormatoDesconocido) as ctx:
+            F.reparsear(self.con, "pgd", flag_datos=self.tmp.name)
+
+        self.assertIn(os.path.join(self.tmp.name, F.CARPETA_CRUDA),
+                      str(ctx.exception))
+
+    def test_lo_nuevo_se_registra_relativo_a_la_raiz_de_datos(self):
+        F.extraer(self.con, "pgd", None, flag_datos=self.tmp.name,
+                  archivo=self.local)
+
+        ruta = D.descargas_de(self.con, "pgd")[0]["ruta"]
+        self.assertTrue(ruta.startswith(F.CARPETA_CRUDA + "/"), ruta)
+        self.assertNotIn("\\", ruta)
+        self.assertEqual(F.ruta_del_crudo(ruta, self.tmp.name),
+                         os.path.join(self.tmp.name, *ruta.split("/")))
+
+    def test_un_archivo_con_el_mismo_nombre_y_otros_bytes_se_salta(self):
+        """La ruta guardada puede existir en esta máquina con otro contenido
+        (la misma estructura de carpetas); manda la huella, no el nombre."""
+        otra = os.path.join(self.tmp.name, "otra_raiz")
+        impostor = os.path.join(otra, *self.RELATIVA.split("/"))
+        os.makedirs(os.path.dirname(impostor))
+        with io.open(impostor, "wb") as f:
+            f.write(b"otros bytes")
+        self._registrar(impostor)
+
+        informe = F.reparsear(self.con, "pgd", flag_datos=self.tmp.name)
+
+        self.assertEqual(informe["filas"], 5)
 
 
 class _SesionCaida(object):

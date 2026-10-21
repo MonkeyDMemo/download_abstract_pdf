@@ -104,6 +104,9 @@ class FormatoDesconocido(Exception):
 
 # ------------------------------------------------------------------- utiles
 
+CARPETA_CRUDA = "operones_crudo"
+
+
 def carpeta_cruda(fuente, flag_datos=None, dia=None):
     """`<GRN_DATOS>/operones_crudo/<fuente>/<fecha>/`, creada si no esta.
 
@@ -111,10 +114,70 @@ def carpeta_cruda(fuente, flag_datos=None, dia=None):
     laboratorio `GRN_DATOS` apunta fuera del repositorio, y una ruta literal
     dejaria estas descargas dentro del clon.
     """
-    ruta = os.path.join(rutas.raiz_datos(flag_datos), "operones_crudo", fuente,
+    ruta = os.path.join(rutas.raiz_datos(flag_datos), CARPETA_CRUDA, fuente,
                         dia or date.today().isoformat())
     os.makedirs(ruta, exist_ok=True)
     return ruta
+
+
+def ruta_para_registrar(ruta, flag_datos=None):
+    """La ruta de un crudo como se guarda en `operones_descargas.ruta`.
+
+    Relativa a la raiz de datos y con `/`: `operones_crudo/pgd/2026-09-27/x`.
+    Antes se guardaba como la escribia la maquina que bajo el archivo
+    (relativa a su carpeta de trabajo y con su separador, o absoluta), y en
+    otra maquina ya no llevaba a ninguna parte. Fuera de la raiz de datos, o
+    en otra unidad de Windows, se guarda tal cual.
+    """
+    raiz = rutas.raiz_datos(flag_datos)
+    try:
+        relativa = os.path.relpath(ruta, raiz)
+    except ValueError:
+        return ruta
+    if relativa == os.pardir or relativa.startswith(os.pardir + os.sep):
+        return ruta
+    return relativa.replace(os.sep, "/")
+
+
+def _candidatas_del_crudo(ruta_registrada, flag_datos=None):
+    """Dónde puede estar hoy un crudo registrado, en orden:
+
+    1. la ruta tal como se guardó;
+    2. la misma, relativa a la raíz de datos de hoy;
+    3. lo que sigue a `operones_crudo` en la ruta guardada, bajo la raíz de
+       datos de hoy. Así se encuentra `datos\\operones_crudo\\pgd\\...`, que
+       escribió Windows, en Linux; o `/home/x/datos/operones_crudo/...` en
+       otra máquina.
+    """
+    if not ruta_registrada:
+        return []
+    raiz = rutas.raiz_datos(flag_datos)
+    partes = [p for p in re.split(r"[\\/]+", ruta_registrada) if p]
+    candidatas = [ruta_registrada]
+    if partes and not os.path.isabs(ruta_registrada):
+        candidatas.append(os.path.join(raiz, *partes))
+    if CARPETA_CRUDA in partes:
+        desde = len(partes) - 1 - partes[::-1].index(CARPETA_CRUDA)
+        candidatas.append(os.path.join(raiz, *partes[desde:]))
+    return [c for i, c in enumerate(candidatas) if c not in candidatas[:i]]
+
+
+def ruta_del_crudo(ruta_registrada, flag_datos=None, sha256=None):
+    """Dónde está hoy, en esta máquina, un crudo registrado. None si no está.
+
+    Con `sha256`, solo cuenta un archivo con esa huella: un archivo con el
+    mismo nombre y otros bytes no es el crudo, aunque esté justo en la ruta
+    guardada (pasa cuando dos máquinas comparten la estructura de carpetas).
+    """
+    for candidata in _candidatas_del_crudo(ruta_registrada, flag_datos):
+        if not os.path.isfile(candidata):
+            continue
+        if sha256 is None:
+            return candidata
+        with io.open(candidata, "rb") as f:
+            if _db.huella(f.read()) == sha256:
+                return candidata
+    return None
 
 
 def guardar_crudo(carpeta, nombre, cuerpo):
@@ -739,7 +802,7 @@ def traer_archivo(sesion, fuente, var_entorno, carpeta, url=None,
     return [(url, ruta, cuerpo)]
 
 
-def foto_sana(con, fuente):
+def foto_sana(con, fuente, flag_datos=None):
     """De dónde salió la foto vigente de `fuente`, si sirve; si no, `None`.
 
     Sirve cuando la última extracción completa dejó filas en el bronce y sus
@@ -757,11 +820,8 @@ def foto_sana(con, fuente):
         return None
     descargas = _db.descargas_de_extraccion(con, eid)
     for d in descargas:
-        if not os.path.exists(d["ruta"]):
+        if not ruta_del_crudo(d["ruta"], flag_datos, d["sha256"]):
             return None
-        with io.open(d["ruta"], "rb") as f:
-            if _db.huella(f.read()) != d["sha256"]:
-                return None
     return descargas[0]["url"] if descargas else None
 
 
@@ -815,7 +875,7 @@ def extraer(con, fuente, sesion, flag_datos=None, url=None,
         # devolvería la de 2021 y daría por retirados los operones nuevos.
         # Se comprueba antes de abrir la extracción, porque una abierta y sin
         # cerrar contaría como corrida fallida en `edad_de_la_foto`.
-        origen = None if explicita else foto_sana(con, "pgd")
+        origen = None if explicita else foto_sana(con, "pgd", flag_datos)
         if origen:
             log("  [pgd] ya está: la foto vigente salió de %s y sigue entera "
                 "en disco. Para reemplazarla, pasa --url o --archivo (--url "
@@ -854,7 +914,9 @@ def extraer(con, fuente, sesion, flag_datos=None, url=None,
 
         ids = []
         for u, ruta, cuerpo in bajadas:
-            did = _db.registrar_descarga(con, extraccion_id, u, ruta, cuerpo)
+            did = _db.registrar_descarga(con, extraccion_id, u,
+                                         ruta_para_registrar(ruta, flag_datos),
+                                         cuerpo)
             ids.append(did)
             informe["descargas"].append(
                 dict(ruta=ruta, descarga_id=did, **inspeccionar(cuerpo)))
@@ -931,7 +993,7 @@ def _parsear_fuente(fuente, bajadas):
     raise FormatoDesconocido("%s: no hay parser para esta fuente" % fuente)
 
 
-def reparsear(con, fuente, log=lambda m: None):
+def reparsear(con, fuente, log=lambda m: None, flag_datos=None):
     """Vuelve a parsear los archivos de la ultima extraccion completa.
 
     Es la razon de ser de la capa cruda: corregir un parser no debe costar una
@@ -953,25 +1015,36 @@ def reparsear(con, fuente, log=lambda m: None):
 
     bajadas = []
     for d in _db.descargas_de_extraccion(con, eid):
-        if not os.path.exists(d["ruta"]):
-            raise FormatoDesconocido(
-                "falta el archivo %s de la extraccion %d. Sin el crudo no se "
-                "puede re-parsear; hay que volver a extraer." % (d["ruta"], eid))
+        # La ruta guardada es la de la maquina que bajo el archivo; se busca
+        # donde esta hoy, y solo sirve el que tiene la huella registrada.
         try:
-            with io.open(d["ruta"], "rb") as f:
-                cuerpo = f.read()
+            local = ruta_del_crudo(d["ruta"], flag_datos, d["sha256"])
         except OSError as e:
-            raise FormatoDesconocido("no se pudo leer %s: %s" % (d["ruta"], e))
-        sha = _db.huella(cuerpo)
-        if sha != d["sha256"]:
+            raise FormatoDesconocido("no se pudo leer el crudo %s: %s"
+                                     % (d["ruta"], e))
+        if not local:
+            hallados = [c for c in _candidatas_del_crudo(d["ruta"], flag_datos)
+                        if os.path.isfile(c)]
+            if hallados:
+                raise FormatoDesconocido(
+                    "%s no coincide con su huella registrada (%s). Esos no "
+                    "son los bytes que se descargaron, asi que el bronce que "
+                    "saldria de ellos no tendria la procedencia que dice "
+                    "tener." % (", ".join(hallados), d["sha256"][:16]))
             raise FormatoDesconocido(
-                "%s no coincide con su huella registrada (%s contra %s). Esos "
-                "no son los bytes que se descargaron, asi que el bronce que "
-                "saldria de ellos no tendria la procedencia que dice tener."
-                % (d["ruta"], sha[:16], d["sha256"][:16]))
-        bajadas.append((d["url"], d["ruta"], cuerpo))
+                "falta el crudo %s de la extraccion %d: no esta ahi ni bajo "
+                "%s. Copia la carpeta %s de la maquina que lo bajo o vuelve a "
+                "extraer." % (d["ruta"], eid,
+                              os.path.join(rutas.raiz_datos(flag_datos),
+                                           CARPETA_CRUDA), CARPETA_CRUDA))
+        with io.open(local, "rb") as f:
+            cuerpo = f.read()
+        # La ruta LOCAL: `_parsear` distingue los dos XML de BioCyc por su
+        # nombre, y el `basename` de una ruta de Windows leida en Linux era
+        # la ruta entera.
+        bajadas.append((d["url"], local, cuerpo))
         log("  [%s] %s  (%d bytes, huella ok)"
-            % (fuente, os.path.basename(d["ruta"]), len(cuerpo)))
+            % (fuente, os.path.basename(local), len(cuerpo)))
     if not bajadas:
         raise FormatoDesconocido(
             "la extraccion %d de %s se cerro completa sin ningun archivo"

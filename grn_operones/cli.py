@@ -163,7 +163,7 @@ def cmd_reparsear(args):
         for f in pedidas:
             log(f)
             try:
-                fuentes.reparsear(con, f, log)
+                fuentes.reparsear(con, f, log, flag_datos=args.datos)
             except fuentes.FormatoDesconocido as e:
                 log("  [%s] %s" % (f, e))
                 fallidas.append(f)
