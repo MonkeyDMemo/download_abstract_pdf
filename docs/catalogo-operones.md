@@ -220,8 +220,9 @@ de las reglas del proyecto (CLAUDE.md: «no implementar nada que evada muros
 de pago ni controles de acceso»). No se hizo.
 
 **Cómo se llegó a los mismos datos por otra vía:**
-1. **Qué alimenta la vista.** Una captura de 2024 de la página de operones de
-   `oprM` enseña dos orígenes:
+1. **Qué alimenta la vista.** La captura de la página de operones de `oprM`
+   (25-nov-2017, la única que tiene el Internet Archive; aquí se decía «de
+   2024» por error) enseña dos orígenes:
    - predicciones de **DOOR** (Database of Prokaryotic Operons; Mao et al.
      2009, PMID 18988623), con evidencia «Computationally-predicted»;
    - operones de literatura de **PseudoCAP**, cada uno con su artículo.
@@ -626,9 +627,12 @@ menos un operón.
 ## 8. Límites y pendientes
 
 - **Casi todo es predicción:** el 96.5 %.
-- **Decisión 3 (asesor):** si la base curada del laboratorio usó ODB o
-  BioCyc, esas fuentes no pueden alimentar el paso 1 como rasgo evaluado
-  contra ella. Por ahora el catálogo y la pertenencia solo anotan.
+- **Decisión 3 (abierta):** respuesta verbal, probable (semana del 5 al 9 de
+  octubre de 2026). GRN_experimental es la red regulatoria y no una fuente de
+  operones. Falta confirmar por escrito si alguna relación se amplió por
+  pertenencia a operón; hasta entonces la pertenencia solo anota. Si se
+  amplió con ODB, BioCyc o PGD, esa pertenencia no puede ser rasgo del paso
+  2. La pregunta está en [`operones-asesor.md`](operones-asesor.md) §8.
 - **Contar la literatura por PMID único:** hoy dos fuentes que citan el mismo
   artículo cuentan como dos.
 - **PGD es de 2021:** hay que pedir la tabla del release 22.1.
@@ -647,3 +651,22 @@ menos un operón.
 - **Punto 34 del PLAN:** los mayores de los 103 operones del corpus que faltan
   en el catálogo del paso 1 (exoSTY, rsmZY, phzMS, lasRI, cyaAB) no son
   operones, sino genes que el texto abrevia juntos.
+
+---
+
+## 9. Dónde sigue
+
+- [`fuentes-operones.md`](fuentes-operones.md) tiene la liga exacta de cada
+  fuente: la que pidió el encargo, de la que de verdad se bajó y por qué, con
+  la cadena de evidencia de Pseudomonas Genome DB.
+- [`guia-operones.md`](guia-operones.md) explica cómo se mantiene todo esto:
+  - cómo se regenera `operones_base.tsv` en otra máquina;
+  - el paso `operones` de `flujo.py`;
+  - qué lee cada consumidor;
+  - las pruebas y los huecos conocidos.
+- [`operones-asesor.md`](operones-asesor.md) da el estado en corto, las
+  decisiones pendientes con nuestra recomendación y la pregunta de la
+  decisión 3.
+- Las cifras de este documento son las del 27-sep y siguen vigentes al
+  16-oct-2026. La base no ha cambiado desde entonces: su huella sigue siendo
+  `f399bd89da7d558d`.

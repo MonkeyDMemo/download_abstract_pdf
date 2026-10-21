@@ -1197,9 +1197,12 @@ PGD).
 contrato vive en `grn_bronce/operones.py`. La dirección de las dependencias
 no cambia.
 
-**Pendiente de la decisión 3:** la pertenencia sale de ODB y BioCyc, que
-podrían estar también en la base curada del laboratorio. Hasta saberlo, se
-usa para anotar y no como rasgo del paso 2 evaluado contra esa base.
+**Pendiente de la decisión 3.** La pertenencia sale de ODB, BioCyc y PGD.
+Decisión 3 (abierta): respuesta verbal, probable (semana del 5 al 9 de octubre
+de 2026). GRN_experimental es la red regulatoria y no una fuente de operones.
+Falta confirmar por escrito si alguna relación se amplió por pertenencia a
+operón; hasta entonces la pertenencia solo anota. La pregunta escrita está en
+`operones-asesor.md` §8.
 
 ## El flujo corre cada paso como proceso aparte y se salta lo hecho por huella
 

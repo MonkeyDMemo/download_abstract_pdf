@@ -157,9 +157,9 @@ operones pertenecen los genes de una oración**, en las columnas `hay_operon` y
 
 ### De dónde sale
 
-**No se copia: se genera.** Es la base curada de `grn_operones`, que junta
-ODB v4, BioCyc/PseudoCyc y la exportación del curador de Pseudomonas Genome
-DB, y la escribe `python -m grn_operones.cli catalogo --paso1`. El detalle de
+**No se copia: se genera.** Es la base de operones de `grn_operones`, que
+junta ODB v4, BioCyc/PseudoCyc y la exportación del curador de Pseudomonas
+Genome DB, y la escribe `python -m grn_operones.cli catalogo --paso1`. El detalle de
 cada fuente, qué se tomó y qué no, está en `docs/catalogo-operones.md`. Sale
 ordenada por clave y sin fechas, así que la huella solo cambia cuando cambian
 los operones. El contrato (ruta y encabezado) vive en `grn_bronce/operones.py`,
@@ -169,8 +169,10 @@ que es quien lo lee. Primera versión: 27 de septiembre de 2026, huella
 **No está en git, a diferencia del resto de esta carpeta.** Lleva unidades de
 transcripción de BioCyc/PseudoCyc, bajadas con cuenta, y la licencia de BioCyc
 restringe redistribuir sus datos; el repositorio es público. Cada máquina lo
-genera con el comando de arriba (necesita la base de operones curada, y para
-BioCyc, `BIOCYC_EMAIL` y `BIOCYC_PASSWORD`). Si falta, el bronce corre igual:
+genera con el comando de arriba, que solo necesita la base de datos con las
+tablas de operones: no sale a la red. Volver a extraer las fuentes sí pide
+red, y BioCyc además `BIOCYC_EMAIL` y `BIOCYC_PASSWORD`. Las tres vías para
+regenerarlo están en `docs/guia-operones.md` §8. Si falta, el bronce corre igual:
 `operones_en_oracion` trae solo los operones nombrados y el resumen dice
 «recurso ausente».
 
@@ -182,7 +184,7 @@ BioCyc, `BIOCYC_EMAIL` y `BIOCYC_PASSWORD`). Si falta, el bronce corre igual:
   `docs/decisiones.md`).
 - **La pertenencia no es evidencia de una relación.** Que `mexA` esté en
   `mexAB-oprM` no dice nada sobre quién regula a quién.
-- **El 97 % de las unidades es predicción** (DOOR, Pathway Tools), no
+- **El 96.5 % de las unidades es predicción** (DOOR, Pathway Tools), no
   operones demostrados.
 
 ### Qué unidades cuentan
@@ -194,11 +196,14 @@ conocidas y 1 curada; 11 respaldadas por ODB y las demás por BioCyc o
 PseudoCAP), 20 de ellas dentro de unidades solo predichas. Por ejemplo,
 `rnc-era-recO`, `tolQR` y `bphOP`.
 
-### Pendiente de la decisión 3
+### Decisión 3, abierta
 
-Sus fuentes (ODB, BioCyc) podrían estar también en la base curada del
-laboratorio. Hasta que el asesor lo responda, la pertenencia se usa para
-anotar, **no como rasgo del paso 2 evaluado contra esa base**.
+Decisión 3 (abierta): respuesta verbal, probable (semana del 5 al 9 de
+octubre de 2026). GRN_experimental es la red regulatoria y no una fuente de
+operones. Falta confirmar por escrito si alguna relación se amplió por
+pertenencia a operón; hasta entonces la pertenencia solo anota. Mientras
+tanto, **no es rasgo del paso 2**. La pregunta está en
+`docs/operones-asesor.md` §8.
 
 ## `palabras_comunes.txt` — 41 entradas
 

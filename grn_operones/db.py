@@ -39,7 +39,7 @@ apoyarse el `ON CONFLICT` falla.
 
 | tabla | clave natural | al repetir |
 |---|---|---|
-| `operones_descargas` | `(extraccion_id, sha256)` | no hace nada: ya esta en esta corrida |
+| `operones_descargas` | `(extraccion_id, url)` | no hace nada: esa URL ya esta en esta corrida |
 | `operones_bronze` | `(id_fuente, descarga_id)` | no hace nada: el bronce no se reescribe |
 | `operones_silver` | `clave_genes` | actualiza la evidencia agregada |
 | `operones_silver_fuente` | `(silver_id, fuente, id_fuente)` | no hace nada |
