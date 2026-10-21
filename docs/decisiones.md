@@ -1133,13 +1133,16 @@ pgd` vuelve a leer el crudo desde disco, sin red y comprobando la huella.
 
 - Contar la literatura por PMID único, para que dos fuentes que citan el mismo
   artículo no cuenten como dos respaldos.
-- Pedir a PGD la tabla del release vigente, con permiso escrito.
+- Pedir a PGD la tabla del release vigente, con permiso escrito. *El borrador
+  del correo está listo desde el 20-oct-2026.*
 - `es_adyacente` ignora el sufijo `.N`, así que `PA0668.1|PA0668.2` cuenta
   como paso 0 y sale no adyacente. 38 de los 55 operones marcados como no
   adyacentes tienen algún locus `.N`; cuántos son falsos positivos no se ha
-  revisado uno por uno.
+  revisado uno por uno. *Cerrado el 20-oct-2026: el sufijo cuenta, y quedan
+  17 no adyacentes.*
 - Un `--archivo` con una página de desafío guardada deja a PGD sin operones
-  hasta el siguiente `extraer --fuente pgd`, que la rehace.
+  hasta el siguiente `extraer --fuente pgd`, que la rehace. *Cerrado el
+  20-oct-2026: una extracción sin filas ya no desplaza a la foto vigente.*
 
 ## La base de operones anota el bronce, no lo detecta
 

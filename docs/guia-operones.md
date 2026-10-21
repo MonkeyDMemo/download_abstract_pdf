@@ -5,7 +5,7 @@ Para quien mantenga los operones del proyecto. Sirve para:
 - meter una fuente o una foto nueva;
 - entender por qué se movió una cifra.
 
-Estado al 16 de octubre de 2026. Otros dos documentos completan este:
+Estado al 20 de octubre de 2026. Otros tres documentos completan este:
 - [`catalogo-operones.md`](catalogo-operones.md) tiene el detalle de cada
   fuente y el diccionario de datos, y aquí no se repite;
 - [`fuentes-operones.md`](fuentes-operones.md) tiene la liga exacta de cada
@@ -32,6 +32,8 @@ línea, que se mueve.
 | 5 al 9-oct | Respuesta verbal del asesor sobre la decisión 3 | §11 |
 | 8-oct | `flujo.py` gana el paso `operones`, y la capa dice a qué operones pertenece el blanco | bitácora del 8-oct |
 | 16-oct | Esta guía y el documento para el asesor | bitácora del 16-oct |
+| 18-oct | `fuentes-operones.md`: la liga de cada fuente y la evidencia de PGD | bitácora del 18-oct |
+| 20-oct | Se cierra todo lo de operones que no depende del asesor (§12), y la base pasa a la huella `66b594bba16236d9` | bitácora del 20-oct |
 
 El 27-sep pasaron cinco cosas:
 - entra Pseudomonas Genome DB por la exportación de su curador;
@@ -92,7 +94,8 @@ commit (`git log --reverse 77008be^..e6e0e94 -- grn_operones/`):
 El 24-sep salió además la lista de revisión para el asesor
 (`salidas/operones_pendiente_revision_20260924.csv`): 16 unidades con 21
 PMIDs, con título, año, revista y tipo de artículo. La produjo un script de
-sesión que no está versionado (pendiente 4.5).
+sesión que no quedó versionado. Desde el 20-oct-2026 la reproduce
+`exportar --pendientes`.
 
 ## 1. Los dos catálogos
 
@@ -104,7 +107,7 @@ sesión que no está versionado (pendiente 4.5).
 | lo escribe | `etapa2/construir_diccionario.py` escribe la copia de `etapa2/`, y de ahí se copia a `recursos/` | `python -m grn_operones.cli catalogo --paso1` |
 | lo lee | `grn_bronce/operones.py::Catalogo` y `etapa2/lexico.py` | `grn_bronce/operones.py::BaseOperones` |
 | en git | sí | no (`.gitignore`) |
-| huella (`procedencia.huella_texto`) | `1ebba969e400ddb4` | `f399bd89da7d558d` |
+| huella (`procedencia.huella_texto`) | `1ebba969e400ddb4` | `66b594bba16236d9` desde el 20-oct-2026 (era `f399bd89da7d558d`) |
 
 El contrato de `operones_base.tsv` (ruta y encabezado) vive en el paquete que
 lo lee: `grn_bronce/operones.py` (`RUTA_BASE`, `COLUMNAS_BASE`). `grn_operones`
@@ -147,10 +150,13 @@ Dependencias:
 - solo biblioteca estándar;
 - openpyxl, opcional y solo para el `.xlsx`, va en el extra `[operones]`.
 
-Importa de lado:
-- de `grn_bronce`: `rutas`, el lector del catálogo del paso 1 y el contrato de
+Importa:
+- de `grn_comun`: `rutas` (desde el 20-oct-2026; antes de `grn_bronce`) y
+  `procedencia`;
+- de lado, de `grn_bronce`: el lector del catálogo del paso 1 y el contrato de
   `operones_base.tsv`;
-- de `grn_etl`: `credenciales` y `db`.
+- de `grn_etl`: `credenciales`, `db` y, solo para `exportar --pendientes`,
+  `pubmed`.
 
 ## 3. Comandos
 
@@ -159,10 +165,10 @@ subcomando** en este CLI; en `grn_bronce.cli` va después.
 
 | comando | red | credenciales | lee | escribe |
 |---|---|---|---|---|
-| `extraer [--fuente X] [--url U] [--archivo A] [--pausa S]` | sí, salvo con `--archivo` | siempre el correo de contacto (`NCBI_EMAIL` o `.correo`); para BioCyc, además `BIOCYC_EMAIL` y `BIOCYC_PASSWORD` | la fuente | el crudo en `<datos>/operones_crudo/<fuente>/<fecha>/` y filas en `operones_extracciones`, `operones_descargas` y `operones_bronze` |
-| `reparsear [--fuente X]` | no | no | el crudo de la última extracción completa, con su huella comprobada | rehace el bronce de esa extracción |
-| `curar` | no | no | el bronce vigente, `genes_pao1.tsv` y el GFF de RefSeq | rehace `operones_silver` y `operones_silver_fuente` |
-| `exportar [--sin-monocistronicos]` | no | no | silver, el bronce de PGD y `genes_pao1.tsv` | `salidas/operones_<día>_{silver,conflictos,pgd}.csv` |
+| `extraer [--fuente X] [--url U] [--archivo A] [--pausa S]` | sí, salvo con `--archivo` | el correo de contacto (`NCBI_EMAIL` o `.correo`), salvo con `--archivo`; para BioCyc, además `BIOCYC_EMAIL` y `BIOCYC_PASSWORD` | la fuente | el crudo en `<datos>/operones_crudo/<fuente>/<fecha>/` y filas en `operones_extracciones`, `operones_descargas` y `operones_bronze` |
+| `reparsear [--fuente X]` | no | no | el crudo de la foto vigente y, si la hay, el de la completa y vacía más nueva, buscados bajo la raíz de datos de hoy y con su huella comprobada | rehace el bronce de esas extracciones |
+| `curar` | no | no | el bronce de la foto vigente, `genes_pao1.tsv` y el GFF de RefSeq | rehace `operones_silver` y `operones_silver_fuente` |
+| `exportar [--sin-monocistronicos] [--pendientes]` | solo con `--pendientes`: una petición a PubMed por cada 200 PMIDs (hoy, una) | con `--pendientes`, el correo | silver, el bronce de PGD y `genes_pao1.tsv` | `salidas/operones_<día>_{silver,conflictos,pgd}.csv`; con `--pendientes`, además `_pendiente_revision.csv` |
 | `catalogo [--paso1]` | no | no | silver, el bronce vigente, el registro de descargas (para la hoja de fuentes), `genes_pao1.tsv` y `operones_pao1.tsv` | `salidas/operones_<día>_catalogo.csv`, `_catalogo_fuentes.csv`, `_catalogo_leame.txt` y `.xlsx`; con `--paso1`, además `grn_bronce/recursos/operones_base.tsv` |
 | `estado` | no | no | las tablas | nada |
 
@@ -175,16 +181,26 @@ Detalles que muerden:
 - **Todos los comandos abren la base con `grn_etl.db.conectar`, que la crea
   vacía si no existe.** Un `--datos` equivocado no da error: da una base
   vacía, y `estado` dice «Sin datos todavía».
-- **Un código 0 no dice que todas las fuentes entraron** (pendiente 4.11).
-  - `extraer` sale con 0 aunque una fuente falle por credenciales o por red,
-    y lo resume en el bloque «LO QUE DEVOLVIO CADA FUENTE».
-  - `reparsear` sale con 0 aunque falte un crudo, no coincida su huella o el
-    parser no reconozca el formato, y lo dice línea por línea.
-  - Al revés, dos fallas terminan con traza y código 1:
-    - un XML de BioCyc ilegible (`ET.ParseError`, pendiente 4.4). Con
-      `--fuente todo`, las fuentes que seguían no se intentan;
-    - un `--archivo` que no existe.
-- **`--max-paginas` se acepta y no hace nada** (pendiente 4.15).
+- **El código de salida dice si entró todo lo pedido** (desde el
+  20-oct-2026; antes era 0 siempre).
+  - `extraer` sale con 1 si una fuente pedida no entró: credenciales, red, un
+    `--archivo` que no existe o un formato que no se reconoce. Lo resume en el
+    bloque «LO QUE DEVOLVIO CADA FUENTE».
+  - Lo omitido por diseño no cuenta: CDBProm sin URL dentro de
+    `--fuente todo`. Pedida por nombre, sí cuenta.
+  - `reparsear` sale con 1 si no puede volver a leer la foto vigente: falta
+    un crudo, no coincide su huella o el formato no se reconoce. No son falla
+    una fuente sin ninguna extracción, ni una completa y vacía más nueva que
+    sigue sin leerse: esa se avisa.
+  - Un cuerpo que no es XML, o un XML con una codificación que no se conoce,
+    ya no termina con traza: sale como formato desconocido y las demás
+    fuentes siguen.
+- **Lo que se sabe sin pedir nada se revisa antes de abrir la extracción.**
+  Sin credenciales de BioCyc, sin URL de CDBProm o con un `--archivo` que no
+  existe no queda ninguna extracción registrada. Lo que falla después de
+  abrirla, a media descarga o al guardar el bronce, la cierra incompleta, con
+  su fin.
+- **BioCyc no entra por `--archivo`**: su foto son dos consultas.
 
 Del lado del bronce:
 - `python -m grn_bronce.cli exportar --corrida N` vuelve a volcar una corrida
@@ -200,10 +216,24 @@ Del lado del bronce:
 | tabla | una fila es | clave natural |
 |---|---|---|
 | `operones_extracciones` | una foto de una fuente | `id`; `completa` = 1 si la descarga terminó, aunque el parseo falle (entonces con 0 filas) |
-| `operones_descargas` | un archivo de una foto | `(extraccion_id, url)` |
+| `operones_descargas` | un archivo de una foto | `(extraccion_id, url)`. Desde el 20-oct-2026 la ruta se guarda relativa a la raíz de datos y con `/` |
 | `operones_bronze` | lo que dijo la fuente, partido en campos | `(id_fuente, descarga_id)` |
 | `operones_silver` | un operón curado | `clave_genes` |
 | `operones_silver_fuente` | qué registro de cada fuente respalda cada operón | `(silver_id, fuente, id_fuente)` |
+
+**La foto vigente** de cada fuente, que es la que se cura, es su última
+extracción completa **que dejó filas** (`db.foto_vigente`). Una completa y
+vacía, de un formato que no se supo leer, no desplaza a la anterior:
+- `curar` la nombra;
+- cuenta como fallida en la edad de la foto;
+- la hoja de fuentes del catálogo la dice.
+
+La misma foto es la que mira `fuentes.foto_sana` para decidir si PGD «ya
+está». `reparsear` vuelve a leer la foto vigente y después la completa y
+vacía más nueva: si un parser corregido ya la lee, pasa a ser la vigente.
+Hasta la revisión del 20-oct-2026, `foto_sana` y `reparsear` miraban la
+última completa. Una vacía encima hacía que `extraer --fuente pgd` volviera
+a la tabla de 2021, y que `reparsear` saliera con 1 para siempre.
 
 **El crudo**, en `<GRN_DATOS>/operones_crudo/<fuente>/<AAAA-MM-DD>/`. En la
 laptop pesa 13 MB:
@@ -214,12 +244,14 @@ laptop pesa 13 MB:
 
 **Las salidas** van a `salidas/`. Las del 27-sep son
 `operones_20260927_{catalogo.csv, catalogo.xlsx, catalogo_fuentes.csv,
-catalogo_leame.txt, conflictos.csv, pgd.csv, silver.csv}`.
+catalogo_leame.txt, conflictos.csv, pgd.csv, silver.csv}`. Las vigentes son
+las del 20-oct, con los mismos nombres y `operones_20261020_`, más
+`operones_20261020_pendiente_revision.csv`.
 
 **`operones_base.tsv`.** Columnas: `clave_genes`, `nombre`, `locus_tags`,
 `genes`, `nivel_evidencia`, `es_alternativa` y `monocistronico`.
 - Sale ordenado por clave y sin fechas: la huella solo cambia si cambian los
-  operones.
+  operones o sus nombres.
 - **No lleva el promotor**, así que CDBProm no lo afecta.
 - El detalle está en `catalogo-operones.md` §6.4.
 
@@ -250,7 +282,7 @@ Quién lee qué catálogo:
 | capa (`grn_verificacion/capa.py`) | por los pares | `operones_del_blanco` |
 | entrenamiento con la base curada (`grn_verificacion/entrenamiento.py`) | por los locus que dejó el puente | no |
 | evaluación (`etapa2/evaluar_oro.py`, `evaluar_signo.py`, `evaluar_cobertura_bronce.py`) | sí. El nombre que escribió la referencia se expande además por deducción, a propósito (`evaluar_oro.claves_extremo`); el que produjo el pipeline, solo por tabla | no |
-| autorregulación (`etapa2/extraer_pares.py`) | sí, más los operones sintéticos del léxico (pendiente 4.17) | no |
+| autorregulación (`etapa2/extraer_pares.py`) | sí, más los operones sintéticos del léxico (medido; ver §12, 4.17) | no |
 
 ## 6. El paso `operones` de `flujo.py`
 
@@ -262,28 +294,39 @@ Quién lee qué catálogo:
 - **Si el archivo falta, el paso sale omitido** con el motivo. El bronce y la
   capa corren sin la base, solo con los operones que nombra la oración: es
   `OPCIONALES` en `flujo.py`.
-- **Con `--rehacer-operones` corre tres comandos:** `reparsear --fuente todo`,
-  `curar` y `catalogo --paso1`, con `--datos` si se pasó.
-  - Nunca corre `extraer`: sale a la red, pide credenciales y sale con 0
-    aunque falle una fuente.
-  - Si los crudos no están en la ruta registrada (§8), `reparsear` lo dice en
-    el log y sale con 0. Entonces `curar` sigue con el bronce que ya había.
-- **Las entradas declaradas son incompletas** (pendiente 4.10). Declara
-  `operones_pao1.tsv`, `grn_operones/curar.py`, `grn_operones/exportar.py` y
-  el parámetro `rehacer`. No declara:
-  - la base de datos ni los crudos;
-  - el resto del paquete;
-  - `genes_pao1.tsv` ni el GFF de RefSeq, que lee `curar`;
-  - `grn_bronce/operones.py`, donde vive el encabezado del recurso.
+- **Con `--rehacer-operones` corre tres comandos, y siempre:**
+  `reparsear --fuente todo`, `curar` y `catalogo --paso1`, con `--datos` si se
+  pasó.
+  - Corre aunque nada haya cambiado. La base y los crudos que lee no se pueden
+    huellear desde el flujo, y pedir rehacer es pedir rehacer. Hasta el
+    20-oct-2026 la segunda vez salía «ya hecho» y hacía falta `--forzar
+    operones`.
+  - Nunca corre `extraer`, porque sale a la red y pide credenciales.
+  - Si `reparsear` no puede volver a leer la foto vigente de una fuente (un
+    crudo que no encuentra, §8), sale con 1 y el paso falla con el mensaje.
+    Antes seguía callado con el bronce viejo. Una completa y vacía más nueva
+    que sigue sin leerse solo se avisa, porque no es la que se cura.
+  - La bandera con un `--pasos` que no incluye `operones` es error de uso.
+- **Las entradas declaradas** son lo que decide `operones_base.tsv` y sí se
+  puede huellear:
+  - `genes_pao1.tsv` y `operones_pao1.tsv`;
+  - las dos copias del GFF;
+  - `grn_bronce/operones.py`, donde vive el contrato del recurso;
+  - todo `grn_operones/*.py` menos las pruebas.
 
-  Un cambio en cualquiera de ellos no rehace el paso. Mientras no se arregle,
-  para regenerar de verdad:
+  Sin la bandera, si alguna cambió desde la última regeneración, el paso
+  avisa que la base no se regeneró: en el log y en la nota del paso, que el
+  tablero muestra. **El aviso se repite en cada corrida** hasta que se corre
+  con `--rehacer-operones`. Hasta la revisión del 20-oct-2026 salía una sola
+  vez, y la corrida siguiente daba el paso por hecho con la base vieja.
 
 ```bash
-python flujo.py --pasos operones --rehacer-operones --forzar operones
+python flujo.py --pasos operones --rehacer-operones
 ```
 
-Ninguna prueba ejercita este paso (pendiente 3.14).
+Las pruebas del paso están en `pruebas/test_flujo.py`: los tres comandos, el
+omitido, las entradas, que la bandera rehace también la segunda vez y que el
+aviso se repite hasta regenerar.
 
 ## 7. Red y credenciales
 
@@ -292,10 +335,11 @@ Ninguna prueba ejercita este paso (pendiente 3.14).
 | ODB | red y correo de contacto; una petición al volcado | `reparsear --fuente odb` |
 | BioCyc | red, correo, `BIOCYC_EMAIL` y `BIOCYC_PASSWORD`; dos consultas a la API | `reparsear --fuente biocyc` |
 | PGD | red y correo; una petición a GitHub. No vuelve a bajar mientras la foto vigente sirva (`fuentes.foto_sana`) | `reparsear --fuente pgd`, o una tabla nueva con `--archivo` |
-| CDBProm | no tiene URL pública: entra con `--archivo` y el archivo bajado a mano del sitio del IIMAS. Aun así pide el correo (pendiente 4.13) | `reparsear --fuente cdbprom` |
+| CDBProm | no tiene URL pública: entra con `--archivo` y el archivo bajado a mano del sitio del IIMAS. Con `--archivo` no pide correo | `reparsear --fuente cdbprom` |
 
-`reparsear`, `curar`, `exportar`, `catalogo` y `estado` no salen a la red ni
-piden credenciales.
+`reparsear`, `curar`, `catalogo` y `estado` no salen a la red ni piden
+credenciales. `exportar` tampoco, salvo con `--pendientes`, que hace una
+petición a PubMed por cada 200 PMIDs (hoy, una) con el correo de contacto.
 
 **Las credenciales de BioCyc van solo en el entorno de la sesión.** No se
 escriben en ningún archivo del repositorio, ni en un perfil de shell
@@ -306,8 +350,8 @@ código no las imprime. En Linux, por ejemplo:
 read -r BIOCYC_EMAIL; read -rs BIOCYC_PASSWORD; export BIOCYC_EMAIL BIOCYC_PASSWORD
 ```
 
-Sin ellas, `extraer --fuente todo` anota el error de BioCyc, sigue con las
-demás y sale con 0.
+Sin ellas, `extraer --fuente todo` no abre la extracción de BioCyc, anota el
+error, sigue con las demás y sale con 1.
 
 ## 8. Regenerar `operones_base.tsv` en una máquina nueva
 
@@ -323,32 +367,35 @@ snapshot, igual que para el resto del proyecto. Desde la raíz del clon:
 python -m grn_operones.cli --datos <D> estado            # las cuatro fuentes con filas en bronce
 python -m grn_operones.cli --datos <D> catalogo --paso1
 python -c "from grn_comun import procedencia; print(procedencia.huella_texto('grn_bronce/recursos/operones_base.tsv'))"
-# → f399bd89da7d558d
+# → 66b594bba16236d9 (desde el 20-oct-2026)
 ```
 
 - Sin red y sin credenciales.
 - `curar` no hace falta: silver ya está en la base. Si se corre, rehace silver
-  con el GFF de esta máquina.
-  - La copia versionada y la local del GFF hoy son idénticas: misma huella del
-    contenido descomprimido.
-  - Por eso el resultado no cambia, aunque la hebra puede variar entre
-    máquinas (pendiente 4.7).
+  igual, porque la hebra sale primero de la copia versionada del GFF, la misma
+  en todo clon, y `curar` dice de qué archivo salió y con qué huella.
 - **Si la huella no coincide, no se usa el archivo.** Hay que ver qué cambió:
   `genes_pao1.tsv`, el GFF o la base copiada.
+- **Con una base copiada antes del 20-oct-2026 sale `f399bd89da7d558d`,** la
+  versión anterior. Los nombres de BioCyc entran con `reparsear` y el
+  desempate de nombres con `curar`, así que hacen falta los crudos y
+  `python flujo.py --pasos operones --rehacer-operones`, que corre los tres
+  comandos.
 
-**Los crudos, solo si después hará falta `reparsear`.** Por ejemplo, para
-tomar el `common-name` de BioCyc (pendiente 4.1). En ese caso se copia también
-`<datos>/operones_crudo/`, que son 13 MB.
+**Los crudos, solo si después hará falta `reparsear`,** por ejemplo tras
+corregir un parser. En ese caso se copia también `<datos>/operones_crudo/`, que
+son 13 MB, dentro de la raíz de datos de la máquina nueva.
 
-`reparsear` busca cada archivo en la ruta que quedó en `operones_descargas.ruta`
-al bajarlo, que es la de la máquina que bajó (pendiente 4.16). Bajado sin
-`GRN_DATOS` ni `--datos`, esa ruta es relativa a la carpeta desde donde se
-corrió (`datos/operones_crudo/…`) y lleva el separador del sistema que la
-escribió. Entonces:
-- en Windows basta copiar los crudos al mismo lugar del clon y correr desde la
-  raíz;
-- en Linux, una ruta escrita con `\` no se resuelve, y `reparsear` dice «falta
-  el archivo», pero sale con 0. Para esa fuente queda la vía B.
+`reparsear` busca cada crudo en tres lugares:
+1. la ruta guardada en `operones_descargas.ruta`, que es la de la máquina que
+   lo bajó;
+2. esa misma ruta, bajo la raíz de datos de hoy;
+3. lo que sigue a `operones_crudo` en esa ruta, bajo la raíz de datos de hoy.
+
+Se queda con el primero que tiene la huella registrada. Así una base copiada de
+Windows a Linux encuentra sus crudos, aunque la ruta se haya escrito con `\`.
+Si no lo encuentra, sale con 1 y dice dónde buscó. Desde el 20-oct-2026 lo
+nuevo se registra relativo a la raíz de datos.
 
 ### B. Volver a extraer
 
@@ -398,28 +445,28 @@ huella con el mismo comando de la vía A.
 
 | archivo | pruebas en el archivo | qué cubre de los operones |
 |---|---|---|
-| `grn_operones/test_operones.py` | 136 | el parser de PGD con filas reales, y los de BioCyc y CDBProm con fixtures sintéticos; la página de desafío de Cloudflare como cuerpo rechazado; la foto vigente, la curación, el nivel de evidencia, el catálogo y el recurso del paso 1 |
+| `grn_operones/test_operones.py` | 186 | los parsers de las cuatro fuentes (PGD con filas reales; BioCyc, CDBProm y ODB con fixtures sintéticos); la página de desafío de Cloudflare y las codificaciones que no se conocen; las extracciones que no abren o que se cierran incompletas; los códigos de salida; la foto vigente, también en `foto_sana` y en `reparsear` con una vacía encima; `reparsear` con la base de otra máquina; la curación, la adyacencia con `.N`, el GFF usado; el catálogo, la hoja de fuentes, la lista de revisión y el recurso del paso 1 |
 | `grn_bronce/test_operones.py` | 57 | la expansión por tabla, las dos vistas, `BaseOperones` y las columnas del bronce |
 | `grn_bronce/test_recursos.py` | 25 | que las copias de `grn_bronce/recursos/` y `etapa2/` no diverjan, `operones_pao1.tsv` incluido |
-| `grn_verificacion/test_capa_evaluar.py` | 19 | los operones del blanco en la capa, con base y sin ella |
+| `grn_verificacion/test_capa_evaluar.py` | 27 | los operones del blanco en la capa, con base y sin ella; que la capa no mezcle dos versiones de la base; que IHF, PrrF y PrrH no cuenten como operón |
+| `grn_verificacion/test_puente.py` | 23 | los locus de un blanco que es operón y la huella del catálogo en el informe de pares |
+| `pruebas/test_flujo.py` | 37 | el paso `operones`: sus comandos, el omitido, sus entradas, que `--rehacer-operones` rehace siempre y que el aviso se repite hasta regenerar |
 | `etapa2/test_evaluar.py` | 126 | la equivalencia por operón del evaluador |
 | `etapa2/test_contaminacion.py` | 8 | que ningún paquete vigilado, `grn_operones` incluido, nombre las referencias de evaluación |
 
 ```bash
-python -m unittest grn_operones.test_operones grn_bronce.test_operones grn_bronce.test_recursos
+python -m unittest grn_operones.test_operones grn_bronce.test_operones grn_bronce.test_recursos \
+    grn_verificacion.test_capa_evaluar grn_verificacion.test_puente pruebas.test_flujo
+python -m unittest discover etapa2 -p "test_evaluar.py"
 python -m unittest discover etapa2 -p "test_contaminacion.py"
 ```
 
-Lo que no tiene prueba:
-- el paso `operones` del flujo (pendiente 3.14);
-- `parsear_odb` sin fixture, probado solo contra el volcado real (pendiente
-  4.6);
-- `puente.locus_de` con un blanco que es operón: su prueba cubre genes y que
-  no invente locus, no la expansión;
-- `reparsear`: ninguna prueba lo llama, ni en la misma máquina ni con la base
-  copiada de otra (pendiente 4.16).
+Lo que no tiene prueba es la extracción real contra cada fuente: las pruebas
+usan sesiones falsas y no salen a la red, a propósito.
 
 ## 10. Cifras vigentes y de dónde salen
+
+Al 20-oct-2026, después de regenerar la base y correr el flujo de la corrida 4:
 
 | cifra | valor | de dónde sale |
 |---|---|---|
@@ -427,20 +474,23 @@ Lo que no tiene prueba:
 | conocidas / curadas / predichas | 145 / 3 / 4 102 (96.5 %) | `operones_base.tsv` (`nivel_evidencia`) |
 | alternativas | 1 072 | `operones_base.tsv` (`es_alternativa`) |
 | unidades que anotan | 1 219 | `BaseOperones._cuenta` sobre el TSV |
-| con dos o más fuentes | 738 (717 BioCyc + PGD) | `salidas/operones_20260927_catalogo.csv` |
+| sin nombre | 2 953, todas solo de BioCyc (eran 2 992); BioCyc nombra 93 | `salidas/operones_20261020_catalogo.csv` y su léame |
+| con dos o más fuentes | 738 (717 BioCyc + PGD) | el mismo catálogo |
 | con promotor CDBProm | 1 574 | el mismo catálogo |
-| para revisar | 117 | `salidas/operones_20260927_conflictos.csv` |
+| no adyacentes | 17 (eran 55, con el sufijo `.N` ignorado) | el mismo catálogo |
+| para revisar | 81 (eran 117) | `salidas/operones_20261020_conflictos.csv` |
 | iguales al catálogo del paso 1 | 325 de 3 030 | el léame del catálogo |
-| filas de bronce por fuente | ODB 33, BioCyc 3 774, PGD 1 290, CDBProm 1 950 | `salidas/operones_20260927_catalogo_fuentes.csv` |
-| menciones de operón en la corrida 4 | 7 136, de 363 operones | `salidas/flujo/corrida4_run22/bronce_identificacion_corrida4_20261008_operones.csv` |
+| lista de revisión (D2) | 16 unidades, 21 PMIDs, 22 filas | `salidas/operones_20261020_pendiente_revision.csv` |
+| filas de bronce por fuente | ODB 33, BioCyc 3 774, PGD 1 290, CDBProm 1 950 | `salidas/operones_20261020_catalogo_fuentes.csv` |
+| menciones de operón en la corrida 4 | 7 136, de 363 operones | `salidas/flujo/corrida4_run22/bronce_identificacion_corrida4_20261020_operones.csv` |
 | operones fuera del catálogo del paso 1 | 103, con 447 menciones | el mismo CSV (`en_catalogo = no`) |
-| candidatas con operón | 23 445 de 29 659 | el `_resumen.csv` de esa carpeta |
+| candidatas con operón | 23 445 de 29 659 | `bronce_identificacion_corrida4_20261020_resumen.csv`, en esa carpeta |
 | oraciones de la capa con operón | 17 326 | `capa_resumen.json` |
 | pares con el blanco en un operón de la base | 38 307 | `capa_resumen.json` |
-| pares cuyo blanco es un operón | 3 605 | `capa_resumen.json` |
+| pares cuyo blanco es un operón | 3 422 (eran 3 605: contaba a IHF, PrrF y PrrH) | `capa_resumen.json` |
 | relaciones del oro unidas por operón | 4 de 190 | `evaluacion_oro.json` (`coincidencias`) |
 | oraciones de la auditoría de signo unidas por operón | 8 de 93 | `evaluacion_signo.json` (`union`) |
-| huella de `operones_base.tsv` | `f399bd89da7d558d` | `procedencia.huella_texto`; también en `capa_resumen.json` |
+| huella de `operones_base.tsv` | `66b594bba16236d9` | `procedencia.huella_texto`; también en `bronce_identificacion_corrida4_20261020_resumen.csv` y en `capa_resumen.json`. El resumen del bronce del 8-oct, en la misma carpeta, guarda la anterior |
 
 ## 11. Decisiones
 
@@ -494,52 +544,61 @@ Lo que cambia con cada respuesta:
 
 ## 12. Huecos conocidos
 
-Los de `pendientes.md` §4, más los encontrados al escribir esta guía, sin
-arreglar todavía:
+**Lo que queda, todo lo que no depende del asesor:**
+- **4.3, la tabla del release 22.1 de PGD.** La que entró es de 2021. Se pide
+  por correo al curador (pseudocap-mail@sfu.ca), con permiso escrito, y entra
+  con `extraer --fuente pgd --archivo`. El borrador del correo está listo;
+  lo manda el usuario.
+- **Los importadores de `grn_bronce.rutas`** se mudan a `grn_comun` al tocar
+  cada archivo:
+  - `cli.py` y `servidor.py`;
+  - `grn_verificacion/cli.py` y `grn_bronce/cli.py`;
+  - dos scripts de `etapa2`.
 
-**De antes:**
-- 4.1, el `common-name` de BioCyc;
-- 4.2, la adyacencia con sufijo `.N`;
-- 4.3, la tabla del release 22.1 de PGD;
-- 4.4, una fuente que parsea cero filas sale del catálogo sin aviso;
-- 4.5, la lista de revisión no es reproducible;
-- 4.6, sin prueba de `parsear_odb`;
-- 4.7, la hebra puede variar entre máquinas;
-- 4.8, mover `rutas` a `grn_comun`.
+  Cuando no quede ninguno, se borra el puente.
+- **Dos detalles menores que vio la revisión del 20-oct, sin arreglar:**
+  - `extraer --fuente cdbprom` sin `--archivo` ni URL pide el correo antes de
+    decir que la omite, aunque no vaya a pedir nada;
+  - si NCBI contesta su mensaje de límite rebasado con un 200,
+    `exportar --pendientes` termina con traza. Es el punto 5 de la auditoría
+    de `pubmed.py`, en CLAUDE.md, y se arregla en `grn_etl`.
 
-**Nuevos (16-oct-2026):**
-- **3.14** Ninguna prueba ejercita el paso `operones` del flujo, ni omitido ni
-  con `--rehacer-operones`.
-- **4.10** Las entradas del paso `operones` están incompletas. Faltan:
-  - la base de datos y los crudos;
-  - el resto del paquete;
-  - `genes_pao1.tsv`, el GFF y `grn_bronce/operones.py` (§6).
-- **4.11** `extraer` y `reparsear` salen con 0 aunque falle una fuente por
-  credenciales, red o un crudo que falta (`grn_operones/cli.py`). Dos fallas
-  sí terminan con traza (§3).
-- **4.12** Una extracción fallida cuenta como corrida fallida en
-  `edad_de_la_foto`, y a la segunda `curar` pide revisar la foto. Pasa en dos
-  casos:
-  - una extracción que no trae archivos queda incompleta. Es lo que pasa con
-    CDBProm en cada `extraer --fuente todo` sin URL;
-  - una que falla antes de bajar queda abierta: BioCyc sin credenciales, o un
-    error de red.
-- **4.13** `extraer --archivo` exige el correo de contacto aunque no haga
-  ninguna petición.
-- **4.14** `operones_<día>_conflictos.csv` no trae `nombre`: la unidad solo
-  se identifica por sus locus.
-- **4.15** Código muerto: `URL_ODB_TABLA` y `--max-paginas`, que se acepta y
-  no hace nada.
-- **4.16** `operones_descargas.ruta` guarda la ruta de la máquina que bajó, y
-  `reparsear` la usa tal cual (§8).
-- **4.17** La autorregulación por operón usa `lexico.miembros_operon`, que
-  incluye los operones sintéticos del texto. Los nombres que produce el
-  pipeline se expanden en todo lo demás solo por tabla. Está en
-  `etapa2/extraer_pares.py`, congelada: el arreglo cuenta como corrección de
-  error.
-- **4.18** `pares_informe.json` sella la huella de `genes_pao1.tsv`, pero no
-  la de `operones_pao1.tsv`, con la que se expande el blanco de un par.
-- **4.19** La capa corrida a mano puede mezclar dos versiones de la base:
-  `operones_en_oracion` viene del CSV del bronce, y `operones_del_blanco` de
-  `operones_base.tsv` en el momento de correrla. Por el flujo no pasa, porque
-  el bronce y la capa declaran la base.
+**Cerrados el 20-oct-2026**; los que cambian código llevan sus pruebas (la
+bitácora tiene el detalle):
+- 3.14 y 4.10: el paso `operones` del flujo, con sus entradas reales, y
+  `--rehacer-operones` rehace siempre (§6);
+- 4.1: el `common-name` de BioCyc, con su columna en el catálogo;
+- 4.2: la adyacencia con sufijo `.N`;
+- 4.4: una foto que no deja filas ya no saca a la fuente de la curación (§4);
+- 4.5: `exportar --pendientes`;
+- 4.6: las pruebas de `parsear_odb`;
+- 4.7: la hebra sale primero de la copia versionada, y `curar` dice cuál;
+- 4.8: `rutas` vive en `grn_comun`, con un puente en `grn_bronce`;
+- 4.11, 4.12 y 4.13: las extracciones y los códigos de salida (§3);
+- 4.14: el nombre en el CSV de conflictos;
+- 4.15: el código muerto;
+- 4.16: `reparsear` encuentra el crudo en cualquier máquina (§8);
+- 4.18: la huella de `operones_pao1.tsv` en `pares_informe.json`;
+- 4.19: la capa se niega a mezclar dos versiones de la base;
+- además, la capa contaba como operón a IHF, PrrF y PrrH, que no tienen locus
+  en el diccionario: IHF es un complejo, y PrrF y PrrH son ARN pequeños;
+- y lo que encontró la revisión independiente de la rama: `foto_sana` y
+  `reparsear` miran la foto vigente (§4); el aviso del paso se repite hasta
+  regenerar (§6); y lo ilegible o lo que falla al guardar ya no deja la
+  extracción abierta (§3).
+
+**4.17, medido y sin cambio de código.** La autorregulación por operón usa
+`lexico.miembros_operon`, que incluye los operones sintéticos del texto. Sobre
+la corrida 4:
+- hay 8 000 pares marcados;
+- 7 384 son la misma entidad y 616 son por operón;
+- de los 616, 604 son operones de la tabla y solo 12 son sintéticos.
+
+En la mayoría de esos 12 el regulador sí está entre los genes nombrados. ExsA
+está en exsCBA, y AlgU es AlgT. Contarlos solo por tabla convertía en aristas
+dos autorregulaciones reales y metía una falsa (MvfR → pqsBR, de «pqsBR
+mutants»). Solo LasR → lasRI es discutible, y BioBERT lo da como
+`no_relation`.
+
+Se queda como está: `etapa2` está congelada, y el cambio movería el
+`pares.jsonl` del entrenamiento en curso.

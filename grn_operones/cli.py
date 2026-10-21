@@ -4,7 +4,10 @@
     python -m grn_operones.cli extraer [--fuente odb|biocyc|pgd|cdbprom|todo]
     python -m grn_operones.cli reparsear [--fuente ...]
     python -m grn_operones.cli curar
-    python -m grn_operones.cli exportar
+    python -m grn_operones.cli exportar [--pendientes]   # con --pendientes,
+                                                        # la lista de revisión
+                                                        # (PubMed, una petición
+                                                        # por 200 PMIDs)
     python -m grn_operones.cli catalogo [--paso1]   # catálogo maestro; con
                                                     # --paso1, también el
                                                     # recurso del bronce
@@ -24,8 +27,8 @@ _RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _RAIZ)
 
 from grn_bronce import operones as _operones_paso1              # noqa: E402
-from grn_bronce import rutas                                    # noqa: E402
-from grn_etl import credenciales                                # noqa: E402
+from grn_comun import rutas                                     # noqa: E402
+from grn_etl import credenciales, pubmed                        # noqa: E402
 from grn_operones import curar as _curar                        # noqa: E402
 from grn_operones import db, exportar, fuentes, red             # noqa: E402
 
@@ -49,18 +52,23 @@ def cmd_extraer(args):
     # teclea en la linea de comandos queda en el historial del shell. Es el
     # mismo criterio que aplica a BIOCYC_EMAIL y BIOCYC_PASSWORD, y la
     # interfaz tiene que ser una sola aunque el riesgo de cada dato difiera.
-    correo = credenciales.correo()
-    if not correo:
-        sys.exit("Hace falta un correo de contacto para identificar al agente "
-                 "ante las fuentes. Ponlo en NCBI_EMAIL o en el archivo "
-                 ".correo; no hay flag a proposito, para que no quede en el "
-                 "historial del shell.")
+    # Identifica al agente ante las fuentes, así que solo hace falta si va a
+    # haber peticiones: un --archivo se ingiere sin pedir nada.
+    correo = None
+    if not args.archivo:
+        correo = credenciales.correo()
+        if not correo:
+            sys.exit("Hace falta un correo de contacto para identificar al "
+                     "agente ante las fuentes. Ponlo en NCBI_EMAIL o en el "
+                     "archivo .correo; no hay flag a propósito, para que no "
+                     "quede en el historial del shell.")
     pedidas = (fuentes.FUENTES if args.fuente == "todo" else (args.fuente,))
 
     log("Datos en %s (por %s)" % (rutas.raiz_datos(args.datos),
                                   rutas.de_donde(args.datos)))
     log("Fuentes: %s" % ", ".join(pedidas))
-    log("Pausa entre peticiones: %.1f s" % args.pausa)
+    if correo:
+        log("Pausa entre peticiones: %.1f s" % args.pausa)
     log("")
 
     con = _conectar(args)
@@ -70,12 +78,13 @@ def cmd_extraer(args):
             log("%s" % f)
             # Una sesion por fuente: las cookies de BioCyc no tienen nada que
             # hacer en una peticion a ODB, y la pausa se mide por servidor.
-            sesion = red.Sesion(correo, pausa=args.pausa)
+            sesion = red.Sesion(correo, pausa=args.pausa) if correo else None
             try:
                 informes.append(fuentes.extraer(
-                    con, f, sesion, args.datos, args.url, args.max_paginas,
-                    log, archivo=args.archivo))
-            except (fuentes.ErrorCredenciales, red.ErrorFuente) as e:
+                    con, f, sesion, flag_datos=args.datos, url=args.url,
+                    log=log, archivo=args.archivo))
+            except (fuentes.ErrorCredenciales, red.ErrorFuente,
+                    fuentes.FormatoDesconocido, OSError) as e:
                 log("  [%s] %s" % (f, e))
                 informes.append({"fuente": f, "descargas": [], "filas": 0,
                                  "error": str(e)})
@@ -83,7 +92,27 @@ def cmd_extraer(args):
         con.close()
 
     _informe_extraccion(informes)
+    fallidas = [i["fuente"] for i in informes
+                if _fallo(i, explicita=args.fuente != "todo")]
+    if fallidas:
+        log("  Fallaron: %s. El código de salida es 1: un 0 diría que todas "
+            "las fuentes pedidas entraron." % ", ".join(fallidas))
+        return 1
     return 0
+
+
+def _fallo(informe, explicita=False):
+    """Si una fuente pedida no entró.
+
+    Falla lo que dio error, y la que no bajó nada sin decir que ya lo tenía.
+    Lo omitido por diseño (CDBProm sin URL, dentro de `--fuente todo`) no es
+    falla; si se pidió esa fuente por nombre, sí: no se hizo lo que se pidió.
+    """
+    if informe.get("error"):
+        return True
+    if informe.get("omitida"):
+        return explicita
+    return not informe.get("ya_estaba") and not informe.get("descargas")
 
 
 def _informe_extraccion(informes):
@@ -96,6 +125,8 @@ def _informe_extraccion(informes):
         log("  %s" % i["fuente"])
         if i.get("ya_estaba"):
             log("    ya estaba: no se pidió nada")
+        elif i.get("omitida"):
+            log("    omitida: %s" % i["omitida"])
         elif not i["descargas"]:
             log("    no se bajo nada")
         for d in i["descargas"]:
@@ -120,19 +151,32 @@ def _informe_extraccion(informes):
 
 
 def cmd_reparsear(args):
-    """Re-parsea el crudo ya descargado. Sin red, sin credenciales."""
+    """Re-parsea el crudo ya descargado. Sin red, sin credenciales.
+
+    Sale con 1 si una fuente con foto no se pudo re-parsear: un crudo que
+    falta, una huella que no coincide o un formato que no se reconoce. Antes
+    salía con 0 siempre, y `flujo.py --rehacer-operones` seguía con el bronce
+    viejo sin enterarse. Una fuente sin ninguna extracción completa no es
+    falla: no hay nada que re-parsear.
+    """
     con = _conectar(args)
     pedidas = (fuentes.FUENTES if args.fuente == "todo" else (args.fuente,))
+    fallidas = []
     try:
         for f in pedidas:
             log(f)
             try:
-                fuentes.reparsear(con, f, log)
+                fuentes.reparsear(con, f, log, flag_datos=args.datos)
             except fuentes.FormatoDesconocido as e:
                 log("  [%s] %s" % (f, e))
+                fallidas.append(f)
     finally:
         con.close()
     log("")
+    if fallidas:
+        log("  No se pudo re-parsear: %s. Su bronce quedó como estaba."
+            % ", ".join(fallidas))
+        return 1
     log("  Re-parsear no cuesta una peticion: los bytes ya estaban en disco")
     log("  con su huella, y se comprobo antes de usarlos.")
     return 0
@@ -172,6 +216,10 @@ def cmd_curar(args):
     filas, con_sinonimo = resumen["sinonimos"]
     log("  sinonimos en el diccionario    %d de %d filas (%.1f %%)"
         % (con_sinonimo, filas, 100.0 * con_sinonimo / filas))
+    gff = resumen.get("gff")
+    log("  hebra desde                    %s"
+        % ("%s (huella %s)" % (gff["ruta"], gff["huella"]) if gff
+           else "ningún GFF: la hebra no se verificó"))
 
     if resumen["edad_foto"]:
         log("")
@@ -194,6 +242,18 @@ def cmd_curar(args):
         log("  se curan. Vuelve a correr `extraer` para esas fuentes.")
         for f in resumen["sin_foto"]:
             log("    %s" % f)
+
+    if resumen.get("vacias"):
+        log("")
+        log("  EXTRACCIONES SIN FILAS, ignoradas")
+        log("  Se cerraron completas, pero su formato no se supo leer. No")
+        log("  desplazan a la foto anterior; sin una, la fuente queda fuera.")
+        for f in sorted(resumen["vacias"]):
+            vigente = resumen["edad_foto"].get(f, {}).get("extraccion_id")
+            log("    %-10s extracción %s: %s"
+                % (f, ", ".join(str(x) for x in resumen["vacias"][f]),
+                   "se cura la %d" % vigente if vigente
+                   else "queda fuera de la curación"))
 
     if resumen["retirados"]:
         log("")
@@ -242,12 +302,31 @@ def cmd_curar(args):
 
 
 def cmd_exportar(args):
+    traer = None
+    if args.pendientes:
+        # La única parte de `exportar` que sale a la red: una petición a
+        # PubMed por cada 200 PMIDs de la lista (hoy son 21). Se pide el
+        # correo antes de abrir nada, como `extraer`.
+        correo = credenciales.correo()
+        if not correo:
+            sys.exit("--pendientes consulta PubMed y NCBI exige un correo de "
+                     "contacto: ponlo en NCBI_EMAIL o en el archivo .correo.")
+        cliente = pubmed.Cliente(correo, credenciales.llave())
+
+        def traer(pmids):
+            return pubmed.traer_articulos(cliente, pmids)
+
+    anotacion = exportar.cargar_anotacion(_curar.RUTA_GENES)
     con = _conectar(args)
     try:
         silver = exportar.filas_silver(con, db, args.sin_monocistronicos)
         conflictos = exportar.filas_conflictos(con, db)
-        pgd = exportar.filas_pgd(
-            con, db, exportar.cargar_anotacion(_curar.RUTA_GENES))
+        pgd = exportar.filas_pgd(con, db, anotacion)
+        revision = (exportar.filas_revision(con, db, anotacion, traer)
+                    if traer else None)
+    except pubmed.ErrorPubMed as e:
+        sys.exit("No se pudo consultar PubMed para la lista de revisión: %s"
+                 % e)
     finally:
         con.close()
     if not silver:
@@ -263,6 +342,14 @@ def cmd_exportar(args):
     if pgd:
         exportar.escribir_csv(base + "_pgd.csv", exportar.COLUMNAS_PGD, pgd,
                               log, encabezados=exportar.ENCABEZADOS_PGD)
+    if revision is not None:
+        exportar.escribir_csv(base + "_pendiente_revision.csv",
+                              exportar.COLUMNAS_REVISION, revision, log,
+                              encabezados=exportar.ENCABEZADOS_REVISION,
+                              bom=True)
+        log("  Lista de revisión: %d unidades pendiente_revision, %d PMIDs."
+            % (len(set(f["clave_genes"] for f in revision)),
+               len(set(f["pmid"] for f in revision if f["pmid"]))))
     log("")
     log("  %d operones curados, %d para revisar a mano." % (len(silver),
                                                             len(conflictos)))
@@ -396,8 +483,6 @@ def main():
                          "llegue por otra vía.")
     ex.add_argument("--pausa", type=float, default=red.PAUSA,
                     help="Segundos entre peticiones (minimo del encargo: 2).")
-    ex.add_argument("--max-paginas", type=int, default=500,
-                    dest="max_paginas")
     ex.set_defaults(func=cmd_extraer)
 
     rp = sub.add_parser("reparsear",
@@ -414,6 +499,12 @@ def main():
                      dest="sin_monocistronicos",
                      help="Dejar fuera las unidades de un solo gen. Apagado "
                           "por omision: se conservan marcadas.")
+    ex2.add_argument("--pendientes", action="store_true",
+                     help="Escribir además la lista para que el asesor "
+                          "decida las unidades de BioCyc pendiente_revision, "
+                          "con título, año, revista y tipo de cada PMID. "
+                          "Consulta PubMed (una petición por cada 200 PMIDs; "
+                          "hoy, una) con el correo de NCBI_EMAIL o .correo.")
     ex2.set_defaults(func=cmd_exportar)
 
     ca = sub.add_parser(

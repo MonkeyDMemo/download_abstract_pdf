@@ -55,10 +55,11 @@ Las credenciales **no van ahí**: se escriben a mano en la máquina nueva.
 > - Los crudos, `datos/operones_crudo/` (13 MB), van en el mismo `tar`.
 > - En la máquina nueva basta `python -m grn_operones.cli catalogo --paso1`,
 >   desde la raíz y sin red. La huella del archivo tiene que dar
->   `f399bd89da7d558d`.
+>   `66b594bba16236d9` (desde el 20-oct-2026; antes era `f399bd89da7d558d`).
 >
-> Las tres vías para regenerarlo, y por qué `reparsear` puede no encontrar
-> los crudos en Linux, están en [`guia-operones.md`](guia-operones.md) §8.
+> Las tres vías para regenerarlo, y qué hacer si la base copiada es anterior
+> al 20 de octubre, están en [`guia-operones.md`](guia-operones.md) §8. Desde
+> ese día `reparsear` encuentra los crudos aunque la base venga de Windows.
 
 ---
 

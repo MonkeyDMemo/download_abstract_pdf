@@ -12,6 +12,7 @@ Fixtures locales y minimos: ningun recurso real, ninguna base real.
 
 import io
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -38,20 +39,36 @@ XML_GENES = u"""<?xml version="1.0"?>
   <Gene frameid="G-5"><accession-1>PA2494</accession-1></Gene>
 </ptools-xml>"""
 
+# TU-1 trae su nombre en `common-name`, hijo directo de la unidad. TU-2 no
+# trae nombre, pero su código de evidencia sí trae un `common-name` anidado,
+# como en el XML real: es la descripción del código, no el nombre de la TU.
 XML_TUS = u"""<?xml version="1.0"?>
 <ptools-xml>
   <Transcription-Unit frameid="TU-1">
+    <common-name>mexAB-oprM</common-name>
     <Evidence-Code frameid="EV-EXP-IDA"/>
     <component><Gene frameid="G-1"/></component>
     <component><Gene frameid="G-2"/></component>
     <component><Gene frameid="G-3"/></component>
   </Transcription-Unit>
   <Transcription-Unit frameid="TU-2">
+    <evidence><Evidence-Code frameid="EV-COMP-AINF">
+      <common-name>Inferred computationally</common-name>
+    </Evidence-Code></evidence>
     <component><Gene frameid="G-4"/></component>
     <component><Gene frameid="G-5"/></component>
     <component><Gene frameid="G-99"/></component>
   </Transcription-Unit>
 </ptools-xml>"""
+
+# Un volcado de ODB con su encabezado exacto: dos operones de PAO1 y uno de
+# E. coli, que el filtro por taxid tiene que dejar fuera. Sintético, en el
+# formato del archivo real del 18-sep-2026.
+ODB_TXT = (u"koid\torg\tname\top\tdefinition\tsource\n"
+           u"KO00001\t208964\tmexAB-oprM\tPA0425,PA0426,PA0427\t"
+           u"bomba de eflujo\t7783623 8981997\n"
+           u"KO00002\t511145\tlacZYA\tb0344,b0343,b0342\tlac\t1234\n"
+           u"KO00003\t208964\tmexEF-oprN\tPA2493,PA2494,PA2495\t\t\n")
 
 GENES_TSV = u"""locus_tag\tsimbolo\talias\ttipo\tproducto\tes_tf\tfuente_tf\tfuente\tsensible_mayusculas
 PA0425\tmexA\t\tcds\tefflux\tfalse\t\trefseq\tfalse
@@ -257,6 +274,70 @@ class PruebasParserBioCyc(unittest.TestCase):
         self.assertEqual(tu2["registro_raw"]["sin_mapear"], ["G-99"])
         self.assertIsNone(tu2["genes_raw"],
                           "los frameid no son nombres de gen")
+
+    def test_el_nombre_es_el_common_name_de_la_unidad(self):
+        """94 TUs reales lo traen y el parser no lo tomaba (pendiente 4.1).
+        Solo cuenta el hijo directo: el anidado es la descripción de un
+        código de evidencia."""
+        filas = F.parsear_biocyc(XML_TUS.encode("utf-8"),
+                                 XML_GENES.encode("utf-8"))
+        por_id = dict((f["id_fuente"], f) for f in filas)
+
+        self.assertEqual(por_id["TU-1"]["registro_raw"]["name"], "mexAB-oprM")
+        self.assertNotIn("name", por_id["TU-2"]["registro_raw"])
+
+
+class PruebasParserOdb(unittest.TestCase):
+    """El volcado de ODB, que hasta el 20-oct-2026 solo se había probado
+    contra el archivo real (pendiente 4.6)."""
+
+    def _filas(self, texto=ODB_TXT):
+        return dict((f["id_fuente"], f)
+                    for f in F.parsear_odb(texto.encode("utf-8")))
+
+    def test_solo_quedan_los_de_pao1(self):
+        self.assertEqual(sorted(self._filas()), ["KO00001", "KO00003"])
+
+    def test_locus_pmids_y_nombre(self):
+        mex = self._filas()["KO00001"]
+
+        self.assertEqual(mex["locus_tags"], "PA0425|PA0426|PA0427")
+        self.assertEqual(mex["pmid"], "7783623;8981997")
+        self.assertEqual(mex["tipo_evidencia"], "literatura")
+        self.assertEqual(mex["registro_raw"]["name"], "mexAB-oprM")
+        self.assertIsNone(mex["genes_raw"])
+
+    def test_sin_fuente_el_pmid_queda_vacio(self):
+        self.assertIsNone(self._filas()["KO00003"]["pmid"])
+
+    def test_un_encabezado_distinto_falla(self):
+        with self.assertRaises(F.FormatoDesconocido):
+            self._filas(ODB_TXT.replace("source", "fuente"))
+
+    def test_sin_filas_de_pao1_falla(self):
+        solo_ecoli = "\n".join(ODB_TXT.splitlines()[:1] +
+                               [ODB_TXT.splitlines()[2]])
+        with self.assertRaises(F.FormatoDesconocido):
+            self._filas(solo_ecoli)
+
+    def test_extraer_odb_con_la_sesion_falsa(self):
+        con = _con()
+        self.addCleanup(con.close)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        pedidas = []
+        s = R.Sesion("alguien@unam.mx", pausa=0)
+
+        def falso(url, datos=None, timeout=None):
+            pedidas.append(url)
+            return ODB_TXT.encode("utf-8")
+        s._abrir = falso
+
+        informe = F.extraer(con, "odb", s, flag_datos=tmp.name)
+
+        self.assertEqual(pedidas, [F.URL_ODB])
+        self.assertEqual(informe["filas"], 2)
+        self.assertTrue(informe["completa"])
 
 
 # Filas reales de la tabla de operones de PGD (datos públicos, BSD-3), en su
@@ -484,6 +565,29 @@ class PruebasExtraerPgd(unittest.TestCase):
         self.assertEqual(len(D.bronze_vigente(self.con)), 6)
         self.assertEqual(D.retirados(self.con), {})
 
+    def test_un_archivo_ilegible_despues_no_la_revierte(self):
+        """Un `--archivo` que no se sabe leer deja una extracción completa y
+        vacía, y la foto vigente sigue siendo la tabla nueva. `foto_sana`
+        miraba la última completa, la vacía, y el siguiente `extraer` sin
+        `--url` volvía a la tabla de 2021."""
+        self._extraer()
+        nueva = os.path.join(self.tmp.name, "pgd_nueva.csv")
+        with io.open(nueva, "w", encoding="utf-8", newline="") as f:
+            f.write(PGD_CSV + u'"operon-9","dnaA-dnaN","PA0001",483,2027,1,'
+                              u'"dnaA","DOOR",18988623\n')
+        self._extraer(archivo=nueva)
+        ilegible = os.path.join(self.tmp.name, "pgd_ilegible.csv")
+        with io.open(ilegible, "w", encoding="utf-8") as f:
+            f.write(u"no es la tabla\n")
+        self._extraer(archivo=ilegible)
+
+        informe = self._extraer()
+
+        self.assertTrue(informe.get("ya_estaba"))
+        self.assertEqual(self.pedidas, [F.URL_PGD])
+        self.assertEqual(len(D.bronze_vigente(self.con)), 6)
+        self.assertEqual(D.retirados(self.con), {})
+
     def test_una_foto_que_no_se_pudo_leer_se_rehace(self):
         """Un parseo fallido también cierra la extracción como completa. Si
         contara como «ya está», PGD se quedaría vacía para siempre."""
@@ -499,11 +603,441 @@ class PruebasExtraerPgd(unittest.TestCase):
         """`reparsear` pide volver a extraer si falta el crudo; si `extraer`
         contestara «ya está», cada comando mandaría al otro."""
         self._extraer()
-        os.remove(D.descargas_de(self.con, "pgd")[0]["ruta"])
+        os.remove(F.ruta_del_crudo(D.descargas_de(self.con, "pgd")[0]["ruta"],
+                                   self.tmp.name))
 
         self._extraer()
 
         self.assertEqual(self.pedidas, [F.URL_PGD, F.URL_PGD])
+
+
+class PruebasCrudoEnOtraMaquina(unittest.TestCase):
+    """`reparsear` con la base copiada de otra máquina. La ruta guardada es la
+    de quien bajó el archivo; el crudo se busca bajo la raíz de datos de hoy,
+    y la huella decide si sirve."""
+
+    RELATIVA = "operones_crudo/pgd/2026-09-27/PAO1-operons-2021-07-19.csv"
+
+    def setUp(self):
+        self.con = _con()
+        self.addCleanup(self.con.close)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.cuerpo = PGD_CSV.encode("utf-8")
+        self.local = os.path.join(self.tmp.name, *self.RELATIVA.split("/"))
+        os.makedirs(os.path.dirname(self.local))
+        with io.open(self.local, "wb") as f:
+            f.write(self.cuerpo)
+
+    def _registrar(self, ruta):
+        """Como la deja la máquina que la bajó: registrada, parseada y
+        completa, o sea la foto vigente."""
+        eid = D.abrir_extraccion(self.con, "pgd")
+        did = D.registrar_descarga(self.con, eid, F.URL_PGD, ruta,
+                                   self.cuerpo)
+        filas = F.parsear_pgd(self.cuerpo)
+        for f in filas:
+            f["descarga_id"] = did
+        D.guardar_bronze(self.con, filas)
+        D.cerrar_extraccion(self.con, eid)
+
+    def test_una_ruta_relativa_escrita_en_windows(self):
+        self._registrar("datos\\" + self.RELATIVA.replace("/", "\\"))
+
+        informe = F.reparsear(self.con, "pgd", flag_datos=self.tmp.name)
+
+        self.assertEqual(informe["filas"], 5)
+
+    def test_una_ruta_absoluta_de_otra_maquina(self):
+        self._registrar("/home/otra/datos/" + self.RELATIVA)
+
+        informe = F.reparsear(self.con, "pgd", flag_datos=self.tmp.name)
+
+        self.assertEqual(informe["filas"], 5)
+        self.assertEqual(F.foto_sana(self.con, "pgd", self.tmp.name),
+                         F.URL_PGD)
+
+    def test_un_archivo_con_otra_huella_no_sirve(self):
+        self._registrar(self.RELATIVA)
+        with io.open(self.local, "ab") as f:
+            f.write(b"\n")
+
+        with self.assertRaises(F.FormatoDesconocido) as ctx:
+            F.reparsear(self.con, "pgd", flag_datos=self.tmp.name)
+
+        self.assertIn("huella", str(ctx.exception))
+
+    def test_sin_el_archivo_dice_donde_lo_busco(self):
+        self._registrar(self.RELATIVA)
+        os.remove(self.local)
+
+        with self.assertRaises(F.FormatoDesconocido) as ctx:
+            F.reparsear(self.con, "pgd", flag_datos=self.tmp.name)
+
+        self.assertIn(os.path.join(self.tmp.name, F.CARPETA_CRUDA),
+                      str(ctx.exception))
+
+    def test_lo_nuevo_se_registra_relativo_a_la_raiz_de_datos(self):
+        F.extraer(self.con, "pgd", None, flag_datos=self.tmp.name,
+                  archivo=self.local)
+
+        ruta = D.descargas_de(self.con, "pgd")[0]["ruta"]
+        self.assertTrue(ruta.startswith(F.CARPETA_CRUDA + "/"), ruta)
+        self.assertNotIn("\\", ruta)
+        self.assertEqual(F.ruta_del_crudo(ruta, self.tmp.name),
+                         os.path.join(self.tmp.name, *ruta.split("/")))
+
+    def test_un_archivo_con_el_mismo_nombre_y_otros_bytes_se_salta(self):
+        """La ruta guardada puede existir en esta máquina con otro contenido
+        (la misma estructura de carpetas); manda la huella, no el nombre."""
+        otra = os.path.join(self.tmp.name, "otra_raiz")
+        impostor = os.path.join(otra, *self.RELATIVA.split("/"))
+        os.makedirs(os.path.dirname(impostor))
+        with io.open(impostor, "wb") as f:
+            f.write(b"otros bytes")
+        self._registrar(impostor)
+
+        informe = F.reparsear(self.con, "pgd", flag_datos=self.tmp.name)
+
+        self.assertEqual(informe["filas"], 5)
+
+
+class _SesionCaida(object):
+    """Una sesión cuya fuente no contesta: `pedir` lanza `ErrorFuente` de
+    entrada, sin los reintentos con espera de la sesión de verdad."""
+
+    def pedir(self, *a, **k):
+        raise R.ErrorFuente("la fuente no contestó")
+
+
+class PruebasExtraccionHonesta(unittest.TestCase):
+    """Una extracción abierta es un intento. Lo que no llegó a intentarse no
+    abre ninguna, y lo que falló a medias la cierra incompleta, con su fin.
+    Antes las dos cosas contaban igual en `edad_de_la_foto`, y la segunda
+    dejaba la extracción abierta para siempre."""
+
+    def setUp(self):
+        self.con = _con()
+        self.addCleanup(self.con.close)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        entorno = mock.patch.dict(os.environ, {}, clear=False)
+        entorno.start()
+        self.addCleanup(entorno.stop)
+        for var in (F.VAR_PGD, F.VAR_CDBPROM, "BIOCYC_EMAIL",
+                    "BIOCYC_PASSWORD"):
+            os.environ.pop(var, None)
+
+    def _extracciones(self, fuente):
+        return D.extracciones_de(self.con, fuente)
+
+    def test_cdbprom_sin_url_no_abre_extraccion(self):
+        informe = F.extraer(self.con, "cdbprom", None,
+                            flag_datos=self.tmp.name)
+
+        self.assertTrue(informe["omitida"])
+        self.assertEqual(self._extracciones("cdbprom"), [])
+
+    def test_biocyc_sin_credenciales_no_abre_extraccion(self):
+        with self.assertRaises(F.ErrorCredenciales):
+            F.extraer(self.con, "biocyc", None, flag_datos=self.tmp.name)
+
+        self.assertEqual(self._extracciones("biocyc"), [])
+
+    def test_un_archivo_que_no_existe_no_abre_extraccion(self):
+        with self.assertRaises(F.FormatoDesconocido):
+            F.extraer(self.con, "pgd", None, flag_datos=self.tmp.name,
+                      archivo=os.path.join(self.tmp.name, "no_esta.csv"))
+
+        self.assertEqual(self._extracciones("pgd"), [])
+
+    def test_biocyc_no_entra_por_archivo(self):
+        """Su foto son dos consultas; con un archivo la extracción se cerraba
+        completa y sin filas, y BioCyc salía de la curación."""
+        suelto = os.path.join(self.tmp.name, "tus.xml")
+        with io.open(suelto, "w", encoding="utf-8") as f:
+            f.write(XML_TUS)
+
+        with self.assertRaises(F.FormatoDesconocido):
+            F.extraer(self.con, "biocyc", None, flag_datos=self.tmp.name,
+                      archivo=suelto)
+
+        self.assertEqual(self._extracciones("biocyc"), [])
+
+    def test_un_error_de_red_cierra_la_extraccion_incompleta(self):
+        with self.assertRaises(R.ErrorFuente):
+            F.extraer(self.con, "pgd", _SesionCaida(),
+                      flag_datos=self.tmp.name,
+                      url="https://otro.example/operones.csv")
+
+        extraccion = self._extracciones("pgd")[0]
+        self.assertEqual(extraccion["completa"], 0)
+        self.assertIsNotNone(extraccion["fin"],
+                             "quedaba abierta, sin fin, para siempre")
+
+    def test_un_error_al_guardar_cierra_la_extraccion_incompleta(self):
+        """Lo que falla después de bajar y de parsear (aquí, la base) también
+        la cierra incompleta: el `try` cubría solo la descarga."""
+        local = os.path.join(self.tmp.name, "pgd.csv")
+        with io.open(local, "w", encoding="utf-8", newline="") as f:
+            f.write(PGD_CSV)
+
+        with mock.patch.object(D, "guardar_bronze",
+                               side_effect=sqlite3.OperationalError("lleno")):
+            with self.assertRaises(sqlite3.OperationalError):
+                F.extraer(self.con, "pgd", None, flag_datos=self.tmp.name,
+                          archivo=local)
+
+        extraccion = self._extracciones("pgd")[0]
+        self.assertEqual(extraccion["completa"], 0)
+        self.assertIsNotNone(extraccion["fin"])
+
+    def test_un_archivo_local_entra_sin_sesion(self):
+        """Sin peticiones no hace falta sesión ni, por lo tanto, correo."""
+        local = os.path.join(self.tmp.name, "pgd.csv")
+        with io.open(local, "w", encoding="utf-8", newline="") as f:
+            f.write(PGD_CSV)
+
+        informe = F.extraer(self.con, "pgd", None, flag_datos=self.tmp.name,
+                            archivo=local)
+
+        self.assertEqual(informe["filas"], 5)
+        self.assertTrue(informe["completa"])
+
+
+class PruebasLoQueNoSeSabeLeer(unittest.TestCase):
+    """Todo lo ilegible sale como `FormatoDesconocido`, que es lo que atrapan
+    `extraer` y `reparsear`. Un `ET.ParseError` cortaba el comando con traza."""
+
+    def test_un_cuerpo_que_no_es_xml(self):
+        with self.assertRaises(F.FormatoDesconocido):
+            F._parsear("biocyc", [("u", "tus.xml", b"no es xml"),
+                                  ("u", "genes.xml", b"<ptools-xml/>")])
+
+    def test_biocyc_sin_unidades(self):
+        with self.assertRaises(F.FormatoDesconocido):
+            F.parsear_biocyc(b"<ptools-xml/>", XML_GENES.encode("utf-8"))
+
+    def test_biocyc_con_genes_sin_accession(self):
+        """Ninguna TU llega a locus tag: no es una foto vacía de BioCyc."""
+        genes = (b"<ptools-xml><Gene frameid=\"G-1\"/>"
+                 b"<Gene frameid=\"G-2\"/></ptools-xml>")
+        with self.assertRaises(F.FormatoDesconocido):
+            F.parsear_biocyc(XML_TUS.encode("utf-8"), genes)
+
+    def test_un_xml_con_una_codificacion_que_no_se_conoce(self):
+        """Una codificación desconocida lanzaba `LookupError`, y una de varios
+        bytes `ValueError`: salían con traza, por fuera de lo que atrapan
+        `extraer` y `reparsear`."""
+        for codificacion in ("no-existe", "shift_jis"):
+            tus = (u'<?xml version="1.0" encoding="%s"?><ptools-xml/>'
+                   % codificacion).encode("ascii")
+            with self.assertRaises(F.FormatoDesconocido):
+                F._parsear("biocyc", [("u", "tus.xml", tus),
+                                      ("u", "genes.xml",
+                                       XML_GENES.encode("utf-8"))])
+
+
+class PruebasFotoVigente(unittest.TestCase):
+    """La foto que se cura es la última extracción completa QUE DEJÓ FILAS.
+    Una completa y vacía (un formato que no se supo leer) no desplaza a la
+    anterior: antes la fuente salía entera de la curación y todos sus
+    operones se reportaban como retirados."""
+
+    def setUp(self):
+        self.con = _con()
+        self.addCleanup(self.con.close)
+        _bronce(self.con, [_fila("odb", "KO1", "PA0425|PA0426")])
+        self.buena = D.ultima_extraccion_completa(self.con)["odb"]
+        self.vacia = D.abrir_extraccion(self.con, "odb")
+        D.registrar_descarga(self.con, self.vacia, "u", "r", b"<html/>")
+        D.cerrar_extraccion(self.con, self.vacia, completa=True)
+
+    def test_la_vacia_no_desplaza_a_la_buena(self):
+        self.assertEqual(D.foto_vigente(self.con), {"odb": self.buena})
+        self.assertEqual(len(D.bronze_vigente(self.con)), 1)
+        self.assertEqual(D.retirados(self.con), {})
+        self.assertEqual(D.fuentes_sin_foto(self.con), [])
+
+    def test_la_vacia_se_nombra_y_cuenta_como_fallida(self):
+        self.assertEqual(D.extracciones_vacias(self.con),
+                         {"odb": [self.vacia]})
+        self.assertEqual(
+            D.edad_de_la_foto(self.con)["odb"]["incompletas_despues"], 1)
+
+    def test_la_hoja_de_fuentes_la_dice(self):
+        filas = E.filas_fuentes_catalogo(self.con, D, ["odb"], F.URL_PGD)
+        estados = [f["estado"] for f in filas]
+
+        self.assertTrue(any("no dejó filas" in e for e in estados), estados)
+        self.assertTrue(any("se cura la extracción %d" % self.buena in e
+                            for e in estados), estados)
+
+    def test_sin_foto_anterior_la_hoja_no_dice_que_se_cura_otra(self):
+        """Una fuente cuya única extracción no dejó filas no tiene «anterior»
+        que curar: queda fuera, y la hoja lo tiene que decir así."""
+        con = _con()
+        self.addCleanup(con.close)
+        vacia = D.abrir_extraccion(con, "cdbprom")
+        D.registrar_descarga(con, vacia, "u", "r", b"una linea")
+        D.cerrar_extraccion(con, vacia, completa=True)
+
+        filas = E.filas_fuentes_catalogo(con, D, ["cdbprom"], F.URL_PGD)
+
+        self.assertEqual(len(filas), 1)
+        self.assertNotIn("se cura", filas[0]["estado"])
+        self.assertIn("fuera de la curación", filas[0]["estado"])
+
+
+class PruebasReparsearConUnaVaciaMasNueva(unittest.TestCase):
+    """`reparsear` vuelve a leer la foto vigente, la que se cura, y prueba
+    después la completa y vacía más nueva, que un parser corregido puede leer
+    ahora. Antes tomaba solo la última completa: con una descarga ilegible
+    encima salía con 1 para siempre, la foto vigente no se volvía a leer y
+    `flujo.py --rehacer-operones` no podía regenerar la base."""
+
+    def setUp(self):
+        self.con = _con()
+        self.addCleanup(self.con.close)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def _archivo(self, nombre, texto):
+        ruta = os.path.join(self.tmp.name, nombre)
+        with io.open(ruta, "w", encoding="utf-8", newline="\n") as f:
+            f.write(texto)
+        return ruta
+
+    def _extraer(self, fuente, nombre, texto):
+        return F.extraer(self.con, fuente, None, flag_datos=self.tmp.name,
+                         archivo=self._archivo(nombre, texto))
+
+    def test_una_vacia_encima_no_impide_releer_la_vigente(self):
+        buena = self._extraer("odb", "odb1.txt", ODB_TXT)["extraccion_id"]
+        self._extraer("odb", "odb2.txt", u"esto no es el volcado de ODB\n")
+        mensajes = []
+
+        informe = F.reparsear(self.con, "odb", mensajes.append,
+                              flag_datos=self.tmp.name)
+
+        self.assertEqual(informe["extraccion_id"], buena)
+        self.assertEqual(informe["filas"], 2)
+        self.assertEqual(D.foto_vigente(self.con), {"odb": buena})
+        self.assertTrue(any("sigue sin leerse" in m for m in mensajes),
+                        mensajes)
+
+    def test_una_vacia_que_ahora_se_lee_pasa_a_ser_la_vigente(self):
+        """El parser corregido: la descarga estaba entera y no se supo leer.
+        Con el parser de hoy deja filas y desplaza a la anterior."""
+        self._extraer("odb", "odb1.txt", ODB_TXT)
+        nueva = D.abrir_extraccion(self.con, "odb")
+        ruta = self._archivo("odb2.txt", ODB_TXT)
+        with io.open(ruta, "rb") as f:
+            cuerpo = f.read()
+        D.registrar_descarga(self.con, nueva, "archivo-local:odb2.txt", ruta,
+                             cuerpo)
+        D.cerrar_extraccion(self.con, nueva)
+
+        F.reparsear(self.con, "odb", flag_datos=self.tmp.name)
+
+        self.assertEqual(D.foto_vigente(self.con), {"odb": nueva})
+
+    def test_una_fuente_sin_foto_vigente_no_es_falla(self):
+        """CDBProm con un solo archivo, ilegible: no hay nada que se cure, y
+        detener el flujo por eso impedía regenerar una base que ni siquiera
+        depende de CDBProm."""
+        self._extraer("cdbprom", "cdb.tsv", u"una linea\n")
+
+        informe = F.reparsear(self.con, "cdbprom", flag_datos=self.tmp.name)
+
+        self.assertTrue(informe["sin_foto"])
+
+    def test_la_vigente_que_no_se_puede_releer_si_es_falla(self):
+        """`curar` seguiría con el bronce de otro parser: eso detiene."""
+        self._extraer("odb", "odb1.txt", ODB_TXT)
+        os.remove(F.ruta_del_crudo(D.descargas_de(self.con, "odb")[0]["ruta"],
+                                   self.tmp.name))
+
+        with self.assertRaises(F.FormatoDesconocido):
+            F.reparsear(self.con, "odb", flag_datos=self.tmp.name)
+
+
+class PruebasCodigosDeSalida(unittest.TestCase):
+    """Un 0 tiene que decir que todo lo pedido entró. `extraer` y `reparsear`
+    salían con 0 aunque una fuente fallara, y `flujo.py --rehacer-operones`
+    seguía con el bronce viejo sin enterarse."""
+
+    def setUp(self):
+        from grn_operones import cli
+        self.cli = cli
+        self.con = _con()
+        conectar = mock.patch.object(cli, "_conectar",
+                                     lambda args: self.con)
+        conectar.start()
+        self.addCleanup(conectar.stop)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        entorno = mock.patch.dict(os.environ, {}, clear=False)
+        entorno.start()
+        self.addCleanup(entorno.stop)
+        os.environ.pop(F.VAR_CDBPROM, None)
+
+    def _correr(self, funcion, **kw):
+        import argparse
+        import contextlib
+        valores = dict(datos=self.tmp.name, url=None, archivo=None, pausa=0)
+        valores.update(kw)
+        args = argparse.Namespace(**valores)
+        with contextlib.redirect_stdout(io.StringIO()):
+            return funcion(args)
+
+    def test_reparsear_sin_crudo_sale_con_1(self):
+        _bronce(self.con, [_fila("odb", "KO1", "PA0425|PA0426")])
+
+        self.assertEqual(self._correr(self.cli.cmd_reparsear, fuente="odb"),
+                         1)
+
+    def test_reparsear_sin_foto_no_es_falla(self):
+        self.assertEqual(self._correr(self.cli.cmd_reparsear, fuente="odb"),
+                         0)
+
+    def test_reparsear_con_una_descarga_ilegible_encima_sale_con_0(self):
+        """La que no se lee no es la que se cura: no detiene el flujo."""
+        for nombre, texto in (("odb1.txt", ODB_TXT),
+                              ("odb2.txt", u"no es el volcado de ODB\n")):
+            ruta = os.path.join(self.tmp.name, nombre)
+            with io.open(ruta, "w", encoding="utf-8", newline="\n") as f:
+                f.write(texto)
+            F.extraer(self.con, "odb", None, flag_datos=self.tmp.name,
+                      archivo=ruta)
+
+        self.assertEqual(self._correr(self.cli.cmd_reparsear, fuente="odb"),
+                         0)
+
+    def test_extraer_un_archivo_que_no_existe_sale_con_1(self):
+        self.assertEqual(self._correr(
+            self.cli.cmd_extraer, fuente="pgd",
+            archivo=os.path.join(self.tmp.name, "no_esta.csv")), 1)
+
+    def test_extraer_un_archivo_no_pide_correo(self):
+        local = os.path.join(self.tmp.name, "pgd.csv")
+        with io.open(local, "w", encoding="utf-8", newline="") as f:
+            f.write(PGD_CSV)
+        with mock.patch.object(self.cli.credenciales, "correo",
+                               return_value=None):
+            codigo = self._correr(self.cli.cmd_extraer, fuente="pgd",
+                                  archivo=local)
+
+        self.assertEqual(codigo, 0)
+
+    def test_cdbprom_pedida_por_nombre_y_omitida_sale_con_1(self):
+        """Dentro de `--fuente todo` se omite sin fallar; pedida por nombre,
+        no se hizo lo que se pidió."""
+        with mock.patch.object(self.cli.credenciales, "correo",
+                               return_value="alguien@unam.mx"):
+            codigo = self._correr(self.cli.cmd_extraer, fuente="cdbprom")
+
+        self.assertEqual(codigo, 1)
 
 
 class PruebasIdempotencia(unittest.TestCase):
@@ -755,6 +1289,51 @@ class PruebasCuracion(unittest.TestCase):
         self.assertTrue(C.es_adyacente(["PA0425", "PA0426", "PA0427"]))
         self.assertTrue(C.es_adyacente(["PA0427", "PA0426", "PA0425"]))
         self.assertFalse(C.es_adyacente(["PA0425", "PA0430"]))
+
+    def test_el_sufijo_punto_cuenta_en_la_adyacencia(self):
+        """`PA4277.3|PA4277.2|PA4277.1` es un cluster contiguo. Con el sufijo
+        ignorado daba paso 0 y salía «no adyacente» (pendiente 4.2)."""
+        self.assertTrue(C.es_adyacente(["PA4277.3", "PA4277.2", "PA4277.1"]))
+        self.assertTrue(C.es_adyacente(["PA0668", "PA0668.1", "PA0668.2",
+                                        "PA0669"]))
+        self.assertTrue(C.es_adyacente(["PA0669", "PA0668.2", "PA0668.1"]))
+        self.assertFalse(C.es_adyacente(["PA0668.1", "PA0668.3"]))
+        self.assertFalse(C.es_adyacente(["PA0668.1", "PA0670"]))
+        self.assertFalse(C.es_adyacente(["PA0668", "PA0668"]))
+
+    def test_en_un_empate_de_nombres_gana_la_forma_de_gen(self):
+        """BioCyc escribe `MexAB-OprM` y ODB `mexAB-oprM`: el mismo largo. El
+        operón se nombra por sus genes; sin desempate ganaba BioCyc por el
+        orden alfabético de la fuente."""
+        _bronce(self.con, [
+            _fila("biocyc", "TU-1", "PA0427|PA0426|PA0425",
+                  registro_raw={"name": "MexAB-OprM"}),
+            _fila("odb", "op1", "PA0425|PA0426|PA0427",
+                  registro_raw={"name": "mexAB-oprM"})])
+
+        self._curar()
+
+        self.assertEqual(D.silver_de(self.con)[0]["nombre"], "mexAB-oprM")
+
+    def test_la_hebra_sale_primero_de_la_copia_versionada(self):
+        """La misma en todo clon; el caché local podía ser otra."""
+        self.assertIn("construir_diccionario", C.RUTAS_GFF[0])
+
+    def test_el_informe_dice_de_que_gff_salio_la_hebra(self):
+        import gzip
+        from grn_comun import procedencia
+        gff = os.path.join(self.tmp.name, "refseq.gff.gz")
+        with gzip.open(gff, "wt", encoding="utf-8") as f:
+            f.write("##gff-version 3\n"
+                    "NC_002516.2\tRefSeq\tgene\t1\t9\t.\t+\t.\t"
+                    "ID=gene-PA0425;locus_tag=PA0425\n")
+        _bronce(self.con, [_fila("odb", "op1", "PA0425|PA0426")])
+
+        with mock.patch.object(C, "RUTAS_GFF", (gff,)):
+            resumen = C.curar(self.con, diccionario=self.dicc)
+
+        self.assertEqual(resumen["gff"]["huella"], procedencia.huella(gff))
+        self.assertTrue(resumen["gff"]["ruta"].endswith("refseq.gff.gz"))
 
     def test_dos_fuentes_con_los_mismos_genes_dan_un_solo_operon(self):
         _bronce(self.con, [
@@ -1316,6 +1895,15 @@ class PruebasExportacion(unittest.TestCase):
         self.assertEqual(conflictos[0]["clave_genes"], "PA0425|PA2494")
         self.assertIn("consecutivos", conflictos[0]["motivo"])
 
+    def test_el_csv_de_conflictos_trae_el_nombre(self):
+        """La fila lo traía y `escribir_csv` lo tiraba (pendiente 4.14)."""
+        ruta = os.path.join(self.tmp.name, "conflictos.csv")
+        E.escribir_csv(ruta, E.COLUMNAS_CONFLICTOS,
+                       E.filas_conflictos(self.con, D))
+
+        with io.open(ruta, encoding="utf-8-sig") as f:
+            self.assertIn("nombre", f.readline().strip().split(","))
+
     def test_el_csv_lleva_las_fuentes_que_respaldan_cada_operon(self):
         filas = E.filas_silver(self.con, D)
 
@@ -1329,6 +1917,70 @@ class PruebasExportacion(unittest.TestCase):
 
         self.assertTrue(os.path.exists(ruta))
         self.assertFalse(os.path.exists(ruta + ".tmp"))
+
+
+class PruebasListaDeRevision(unittest.TestCase):
+    """`exportar --pendientes`: la lista de las unidades de BioCyc con cita y
+    sin código de evidencia, con los datos de cada artículo. La del 24-sep no
+    se podía reproducir (pendiente 4.5). PubMed llega por `traer`, falso aquí:
+    ninguna prueba sale a la red."""
+
+    def setUp(self):
+        self.con = _con()
+        self.addCleanup(self.con.close)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        ruta = os.path.join(self.tmp.name, "genes.tsv")
+        with io.open(ruta, "w", encoding="utf-8", newline="") as f:
+            f.write(GENES_TSV)
+        self.anotacion = E.cargar_anotacion(ruta)
+        _bronce(self.con, [
+            # Cita y ningún código: el único caso ambiguo de BioCyc.
+            _fila("biocyc", "TU-9", "PA0426|PA0425", pmid="222;111"),
+            _fila("odb", "op1", "PA2493|PA2494", pmid="333")])
+        C.curar(self.con, diccionario=C.cargar_diccionario(ruta),
+                hebras={"PA0425": "+", "PA0426": "+", "PA2493": "+",
+                        "PA2494": "+"})
+        self.pedidos = []
+
+    def _traer(self, pmids):
+        self.pedidos.append(list(pmids))
+        return [{"pmid": "111", "titulo": "Un artículo", "anio": 2001,
+                 "revista": "J Bacteriol",
+                 "tipos_publicacion": ["Journal Article", "Review"]}]
+
+    def test_una_fila_por_unidad_y_pmid_con_los_datos_del_articulo(self):
+        filas = E.filas_revision(self.con, D, self.anotacion, self._traer)
+
+        self.assertEqual([f["pmid"] for f in filas], ["111", "222"])
+        self.assertEqual(set(f["clave_genes"] for f in filas),
+                         {"PA0425|PA0426"})
+        primera = filas[0]
+        self.assertEqual((primera["titulo"], primera["anio"],
+                          primera["revista"]),
+                         ("Un artículo", 2001, "J Bacteriol"))
+        self.assertEqual(primera["tipos_publicacion"],
+                         "Journal Article; Review")
+        self.assertEqual(primera["genes"], "mexA mexB")
+        self.assertEqual(filas[1]["titulo"], "",
+                         "un PMID que PubMed no devolvió queda en blanco")
+
+    def test_pide_todos_los_pmids_de_una_vez(self):
+        E.filas_revision(self.con, D, self.anotacion, self._traer)
+
+        self.assertEqual(self.pedidos, [["111", "222"]])
+
+    def test_sin_pendientes_no_pregunta_nada(self):
+        con = _con()
+        self.addCleanup(con.close)
+
+        self.assertEqual(E.filas_revision(con, D, self.anotacion,
+                                          self._traer), [])
+        self.assertEqual(self.pedidos, [])
+
+    def test_encabezados_y_columnas_van_parejos(self):
+        self.assertEqual(len(E.COLUMNAS_REVISION),
+                         len(E.ENCABEZADOS_REVISION))
 
 
 class PruebasVistaPgd(unittest.TestCase):
@@ -1423,7 +2075,8 @@ class PruebasCatalogo(unittest.TestCase):
                   registro_raw={"name": "mexAB-oprM"}),
             _fila("biocyc", "TU-1", "PA0427|PA0426|PA0425",
                   tipo_evidencia="EV-EXP-IDA"),
-            _fila("biocyc", "TU-2", "PA2493|PA2494"),
+            _fila("biocyc", "TU-2", "PA2493|PA2494",
+                  registro_raw={"name": "mexEF"}),
             _fila("pgd", "operon-89", "PA0425|PA0426|PA0427",
                   tipo_evidencia="DOOR",
                   registro_raw={"name": "mexA-mexB-oprM",
@@ -1464,6 +2117,23 @@ class PruebasCatalogo(unittest.TestCase):
         self.assertEqual(mex["id_biocyc"], "TU-1")
         self.assertEqual(mex["id_door"], "operon-89")
         self.assertEqual(mex["nombre_door"], "mexA-mexB-oprM")
+
+    def test_biocyc_tiene_su_columna_de_nombre(self):
+        filas = self._catalogo()
+
+        self.assertEqual(filas["PA2493|PA2494"]["nombre_biocyc"], "mexEF")
+        self.assertEqual(filas["PA2493|PA2494"]["nombre"], "mexEF")
+        self.assertEqual(filas["PA0425|PA0426|PA0427"]["nombre_biocyc"], "")
+
+    def test_el_leame_cuenta_los_nombres_de_biocyc(self):
+        """El «94» estaba escrito a mano en el léame."""
+        catalogo = list(self._catalogo().values())
+        fuentes = E.filas_fuentes_catalogo(self.con, D, F.FUENTES, F.URL_PGD)
+
+        texto = "\n".join(E.lineas_leame(catalogo, fuentes, self.paso1))
+
+        self.assertIn("nombra 1 unidades", texto)
+        self.assertNotIn("94", texto)
 
     def test_pseudocap_separado_de_door_en_orden_numerico_y_sin_repetir(self):
         mex = self._catalogo()["PA0425|PA0426|PA0427"]
