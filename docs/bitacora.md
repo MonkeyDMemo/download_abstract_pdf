@@ -8,6 +8,57 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 20 y 21 de octubre de 2026 — la v2 sin pesos de clase, y ninguna reemplaza al modelo de *E. coli*
+
+La v1 salió sesgada a la represión en el flujo, y la hipótesis fue que venía de
+los pesos de clase. Primero se escribió la enmienda 1 del protocolo (`56bf3b1`):
+cambian solo los pesos, y para ir al flujo una versión tiene que cumplir dos
+criterios. El segundo es que su signo en el patrón de oro despegue del azar y
+de «siempre activa». Después se entrenó la v2: `reentrenar --sin-pesos-de-clase`
+(`bc4c06b`), del 21-oct 04:12 a 05:01 UTC, sin relanzamientos. Los resultados
+están en `resultados-curada-v2.md`.
+
+| | v1 (con pesos) | v2 (sin pesos) | *E. coli* (8-oct) |
+|---|---:|---:|---:|
+| validación cruzada: macro-F1 | 0.4917 | 0.4853 | — |
+| diferencia contra la línea base, IC95 | +0.110 [0.022, 0.193] | +0.104 [0.022, 0.182] | — |
+| F1 activates / no_relation / represses | 0.49 / 0.70 / 0.28 | 0.55 / 0.73 / 0.18 | — |
+| corrida 4: activates / represses predichos | 14 872 / 16 581 | 27 591 / 6 498 | 18 822 / 12 330 |
+| red: aristas (activación / represión) | 1 025 (236 / 744) | 4 003 (3 412 / 380) | 8 827 |
+| oro: exhaustividad | 93/144 = 64.6 % | 135/144 = 93.8 % | 137/144 = 95.1 % |
+| oro: acierto de signo | 38/82 = 46.3 % | 90/126 = 71.4 % | 92/105 = 87.6 % |
+| «siempre activa» en esas filas | 70.7 % | 70.6 % | — |
+| criterio 2 de la enmienda | no | no (p = 0.47) | sí |
+
+**Lectura:**
+- Las dos versiones superan a la línea base de memorización: leen algo de
+  la oración. Ninguna lee el signo. Sin pesos, el sesgo pasa de la represión
+  a la activación, y el 71 % de la v2 es lo que da contestar siempre
+  «activa».
+- **Según la regla escrita antes de entrenar la v2, ninguna reemplaza al
+  modelo de *E. coli*.**
+- Lo más probable es que el signo no se pueda aprender de esta supervisión
+  distante: la oración de un par que la base registra como represión no
+  tiene por qué decir «reprime», y `represses` tiene 139 ejemplos de 40
+  artículos.
+
+Detalles:
+- Las salidas de las dos pruebas se quedan en el servidor
+  (`~/grn-guillermo/flujo/corrida4_run_22_…` para la v1 y
+  `corrida4_curada-v2`).
+- El checkpoint de las dos versiones se llama igual (`run_22_…`), así que
+  `flujo.py --modelo` les daría la misma carpeta. La caché del BioBERT las
+  separa por la huella de los pesos, pero las salidas de la red y la capa se
+  pisarían. Por eso la v2 se probó en una carpeta propia.
+
+Abierto:
+- el 44 % con las tres (falta subir la carpeta del flujo de la laptop);
+- si se intenta otra cosa para el signo: un umbral por clase calibrado en dev,
+  o etiquetas de signo juzgadas a mano;
+- el aviso al asesor.
+
+---
+
 ## 20 de octubre de 2026 — lo de operones que no depende del asesor
 
 El usuario pidió avanzar en todo lo pendiente de operones que no dependa de

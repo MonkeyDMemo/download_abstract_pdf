@@ -121,3 +121,8 @@ del protocolo.
   revisión.** Sirve para priorizar candidatas.
 - **Si reemplaza al modelo de *E. coli* lo decide el asesor**, igual que la
   evaluación externa (el 44 %, sección 5).
+- **En el flujo real (16-oct) el signo no sirve:** 744 de 1 025 aristas son
+  represiones y acierta 38 de 82 en el patrón de oro (46.3 %). La v2 sin pesos
+  de clase (enmienda 1, `resultados-curada-v2.md`) corrige el sesgo pero se va
+  a «siempre activa» (71.4 %, igual que esa línea base). **Ninguna de las dos
+  reemplaza al modelo de *E. coli***, según la regla de la enmienda 1.

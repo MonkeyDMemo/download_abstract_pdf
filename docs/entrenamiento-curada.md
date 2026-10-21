@@ -464,6 +464,44 @@ errores del propio orquestador), y `estado` lo muestra filtrado.
   (`flujo.py --modelo` apuntando al modelo nuevo), y como el modelo no sale
   del servidor, corre ahí.
 
+## Paso 6. Probar el modelo en el flujo
+
+La validación cruzada dice si el modelo lee la oración. Lo que importa para la
+red es cómo se comporta sobre los pares del corpus, y sobre todo el signo. La
+prueba son los 72 969 pares de la corrida 4 (`pares.jsonl`): unos 3 minutos en
+la GPU, más la red y el patrón de oro.
+
+```bash
+cd ~/grn-guillermo/download_abstract_pdf && source ~/grn-guillermo/entorno.sh
+C=$RAIZ/flujo/corrida4_curada-v1           # una carpeta por modelo, fuera del clon
+(umask 077; mkdir -p "$C") && cp "$RAIZ/pares.jsonl" "$C/"
+$PY -m grn_verificacion.cli biobert --carpeta "$C" --python $PY --sin-registrar \
+    --modelo "$RAIZ/runs/curada-v1/run_22_lr3e-5_ep8_bs16_wu0.1"
+$PY etapa2/red.py --predicciones "$C/predicciones.jsonl" --pares "$C/pares.jsonl" \
+    --salida "$C/red.tsv" --evidencias "$C/red_evidencias.tsv" --informe "$C/red_informe.json"
+$PY etapa2/evaluar_oro.py --red "$C/red.tsv" --pares "$C/pares.jsonl" \
+    --predicciones "$C/predicciones.jsonl" --red-informe "$C/red_informe.json" \
+    --salida "$C/evaluacion_oro.tsv" --resumen "$C/evaluacion_oro.json"
+```
+
+- **Una carpeta por modelo, con nombre propio.** Todos los checkpoints de
+  `reentrenar` se llaman `run_22_…`, así que `flujo.py --modelo` les daría la
+  misma carpeta, y la red y la capa de uno pisarían las del otro.
+- **`--sin-registrar`:** el servidor no tiene la base del corpus.
+- **Las predicciones se quedan en el servidor.** Sobre los pares que
+  entraron al entrenamiento repiten etiquetas de la base. A la sesión llegan
+  solo los conteos de `red_informe.json` y `evaluacion_oro.json`.
+- **Qué mirar en el oro:** `honesto.acierto_signo` y
+  `veredicto_del_signo.despega_de_las_dos_lineas_base`. El signo tiene que
+  ganarle también a «siempre activa», no solo al azar (enmienda 1 del
+  protocolo).
+- **El 44 %** necesita además el bronce de la corrida 4: la carpeta
+  `salidas/flujo/corrida4_run22` de la laptop.
+
+**Entrenar sin pesos de clase:** `reentrenar correr ... --sin-pesos-de-clase`,
+con otro `--nombre` (la v2 fue `curada-v2`). Un resultado entrenado con otros
+pesos no se reusa, y el informe lista `pesos_clase` como desviación.
+
 ## Si algo falla
 
 `reentrenar estado` dice el motivo. Lo que hay que hacer en cada caso:
