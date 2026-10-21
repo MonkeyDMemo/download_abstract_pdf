@@ -6,6 +6,8 @@ Dr. Edgardo Galán-Vásquez el viernes 23 de octubre: es la decisión a de
 calibración (§7) se ajusta **una sola vez** y queda congelada. Cualquier cambio
 posterior va al final, con fecha y motivo, como la enmienda de un protocolo.
 
+Las citas `archivo:línea` son de `main` en `f05951a`.
+
 ---
 
 ## 1. Para quién y para qué
@@ -38,7 +40,7 @@ posterior va al final, con fecha y motivo, como la enmienda de un protocolo.
 - **Se juzga solo la oración.** No se abre el artículo, no se consulta ninguna
   base de datos y no se usa lo que uno sepa de la biología de
   *P. aeruginosa*. Con esa regla se juzgaron las 50: la precisión se lee «solo
-  desde su oración» (`bitacora.md:1568-1569`).
+  desde su oración» (`bitacora.md:1619-1620`).
 
 ## 3. Definiciones
 
@@ -67,7 +69,7 @@ Los ejemplos son sintéticos, como todos los de este documento.
 | la entidad no es lo que el diccionario cree | «a FLAG tag»: aquí *tag* no es el gen PA0010 | `no` |
 
 El último caso no es raro. Las 568 menciones de `tag` en el corpus son jerga de
-laboratorio (`bitacora.md:1679-1681`).
+laboratorio (`bitacora.md:1730-1732`).
 
 ### 3.3 Directa, indirecta o no se sabe (columna `tipo`)
 
@@ -162,13 +164,13 @@ cambio que se ve en el mutante:
 Esta regla importa porque es la falla medida del modelo actual. En las 24
 oraciones de fenotipo de mutante de la trampa del signo, el BioBERT de
 *E. coli* acierta 2. Catorce de sus errores son inversiones de signo
-(`bitacora.md:2010`).
+(`bitacora.md:2061`).
 
 ### 3.9 Lo que cambia respecto al juicio de las 50
 
 | caso | juicio de las 50 | esta rúbrica | efecto sobre el 44 % |
 |---|---|---|---|
-| la oración dice la relación al revés de como la orientó el bronce | `no` | `si`, con la dirección que dice la oración | Ninguno en la cifra con dirección. Además permite dar la cifra sin dirección, que en las 50 fue 56.0 % (`bitacora.md:1553-1554`). |
+| la oración dice la relación al revés de como la orientó el bronce | `no` | `si`, con la dirección que dice la oración | Ninguno en la cifra con dirección. Además permite dar la cifra sin dirección, que en las 50 fue 56.0 % (`bitacora.md:1604-1605`). |
 | solo correlación | `dudoso` (fila 17) | `no` | Ninguno: `dudoso` y `no` cuentan igual en la precisión. |
 | efecto negado | `no` | `no`, con `negada = si` | Ninguno. |
 | `tipo`, `negada` y `especulativa` | no existían | se anotan | Ninguno. |
@@ -396,8 +398,11 @@ servidor.
    rúbrica obliga a repetir (Documento de Tesis v1, p. 2).
 2. **Calibración.** Todos anotan las mismas 20 oraciones y después se discuten
    los desacuerdos. La rúbrica se ajusta una sola vez: sale la v1.1, con fecha y
-   la lista de cambios, y desde ahí queda congelada. Esas 20 oraciones no entran
-   a la muestra de medición, porque ya se discutieron.
+   la lista de cambios, y desde ahí queda congelada. **Las 20 oraciones son
+   sintéticas**, escritas para la sesión como los casos del §5: ninguna sale
+   del corpus, de `reservas.tsv`, del conjunto ciego ni de las 50 juzgadas.
+   Así discutirlas no deja vista ninguna oración que luego se mida, y la
+   muestra de medición no pierde nada. Se versionan junto a esta rúbrica.
 3. **Anotación independiente.** Nadie ve lo que anotó otro.
 4. **Parte doble.** El 25 % de los ítems lo anotan dos personas para medir la
    concordancia con el κ de Cohen. Si hay más de dos ayudantes, las parejas se
@@ -445,7 +450,7 @@ horas-persona, más la calibración y la adjudicación.
 
 - **Ancho.** Con 200 el intervalo queda en ± 6.8 puntos, contra ± 9.5 con 100.
 - **La retención de cada capa.** Cada capa se mide solo sobre los ítems que
-  acepta. En las 50, el filtro del BioBERT retuvo 37 (`bitacora.md:613`).
+  acepta. En las 50, el filtro del BioBERT retuvo 37 (`bitacora.md:664`).
   Supongamos una capa que retiene lo mismo, el 74 %, con 10 puntos más de
   precisión, es decir 54 %. Con 200 ítems acepta unos 148, y su intervalo es
   [46.0, 61.9]: queda arriba del 44 %. Con 100 ítems acepta 74, el intervalo es
@@ -475,10 +480,12 @@ revisión de candidatas nuevas.
   igual a una reservada, la que contiene una reservada de 40 caracteres o más,
   y la que es un pedazo de 40 o más de una reservada
   (`grn_verificacion/entrenamiento.py:439-459`).
-- **Las 20 oraciones de la calibración.**
+
+Las 20 de la calibración no hace falta apartarlas: son sintéticas (§7, punto
+2) y no están en el corpus.
 
 **Cómo se sortea.** La semilla se escribe antes de sortear, y el script que
-sortea se versiona, como `muestrear_candidatas.py` con las 50 (`PLAN.md:185`).
+sortea se versiona, como `muestrear_candidatas.py` con las 50 (`PLAN.md:206`).
 
 **Cómo se reparte entre las dos tandas, y por qué.** La primera tanda lleva 100
 ítems de la muestra ciega. La segunda lleva los otros 100 barajados con las 100
