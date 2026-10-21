@@ -245,6 +245,7 @@ grn_verificacion/      paso 2, en construccion
   entrenamiento.py       datos de entrenamiento por supervision distante
   reentrenar.py          la pista D de punta a punta en el servidor: datos,
                          particion por PMID y run 22, desprendible, con informe
+  sin_pesos.py           el script del asesor sin --use_class_weights (la v2)
 flujo.py               el flujo de punta a punta; idempotente por huella
 grn_comun/             lo que usan los tres pasos
   rutas.py               la precedencia de GRN_DATOS; grn_bronce/rutas.py es
@@ -533,6 +534,8 @@ $PY -m grn_verificacion.cli reentrenar correr --raiz ~/grn-guillermo --pares P \
     --reservar R --hasta particion --folds 5   # tramo 1: datos, pliegues y linea base, sin GPU
 $PY -m grn_verificacion.cli reentrenar correr ... --folds 5 --semillas 42,43,44 \
     --desprender                          # tramo 2, con docs/protocolo-curada-v1.md ya commiteado
+$PY -m grn_verificacion.cli reentrenar correr ... --nombre curada-v2 \
+    --sin-pesos-de-clase                  # la v2 (enmienda 1 del protocolo)
 $PY -m grn_verificacion.cli reentrenar estado|detener --raiz ~/grn-guillermo
 ```
 
