@@ -415,9 +415,24 @@ def signo_de(celda):
 
 
 def origen_de(celda):
-    """'historica', 'biobert', 'ambos' u 'otro'; sin acentos ni mayúsculas."""
+    """'historica', 'biobert', 'ambos' u 'otro'; sin acentos ni mayúsculas.
+
+    Por palabra clave y no por igualdad. En la base del servidor las celdas
+    no dicen «Histórica», «BioBERT» y «Ambos» a secas sino etiquetas más
+    largas (26 a 28 caracteres, con los conteos 4 824 / 544 / 216 de PLAN.md
+    2.4; medido el 15-oct-2026 sin abrir el archivo). Comparando por igualdad
+    las 5 584 filas caían en «otro», y las 544 que propuso el modelo del
+    asesor habrían entrado como positivos. «ambos» va primero porque su
+    etiqueta también nombra a BioBERT.
+    """
     texto = _sin_acentos((celda or "").strip().lower())
-    return texto if texto in ("historica", "biobert", "ambos") else "otro"
+    if "ambos" in texto:
+        return "ambos"
+    if "biobert" in texto:
+        return "biobert"
+    if "histor" in texto:
+        return "historica"
+    return "otro"
 
 
 def _indice_columnas(encabezados):

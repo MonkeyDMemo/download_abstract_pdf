@@ -101,12 +101,29 @@ class PruebasCancelar(unittest.TestCase):
             "proceso.correr([sys.executable, '-c', %r], nueva_sesion=False)",
             entorno={"PYTHONPATH": _RAIZ})
 
-    def _cancelar_con_nieto(self, plantilla_hijo, entorno=None):
+    @unittest.skipIf(os.name == "nt", "en Windows taskkill /T recorre el árbol")
+    def test_un_nieto_que_ignora_sigterm_muere_con_sigkill(self):
+        """El hijo muere con SIGTERM y el nieto no. Antes, `matar_arbol` solo
+        escalaba a SIGKILL si el HIJO tardaba: el nieto seguía con la GPU y
+        con la tubería abierta, y `correr` se quedaba leyendo hasta que
+        terminara solo. Así se saltaba el tope de horas del reentrenamiento."""
+        self._cancelar_con_nieto(
+            "import subprocess, sys, time; "
+            "subprocess.Popen([sys.executable, '-c', %r]); "
+            "print('hijo listo', flush=True); time.sleep(60)",
+            ignora_sigterm=True)
+
+    def _cancelar_con_nieto(self, plantilla_hijo, entorno=None,
+                            ignora_sigterm=False):
         with tempfile.TemporaryDirectory() as carpeta:
             marca = os.path.join(carpeta, "nieto.pid")
             nieto = ("import os, time; "
                      "open(%r, 'w').write(str(os.getpid())); "
                      "time.sleep(60)" % marca)
+            if ignora_sigterm:
+                nieto = ("import signal; "
+                         "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                         + nieto)
             hijo = plantilla_hijo % nieto
             detener = threading.Event()
             errores = []

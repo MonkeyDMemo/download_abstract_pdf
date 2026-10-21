@@ -313,6 +313,133 @@ desde la raíz y recorrió `datos/` sin salida. La regla pide la herramienta
 
 ---
 
+## 9 al 16 de octubre de 2026 — la pista D: el BioBERT reentrenado con la base curada
+
+Del 9 al 15-oct se construyó `reentrenar` (`grn_verificacion/reentrenar.py`):
+un orquestador desprendible que lleva la pista D de punta a punta en el
+servidor del asesor y publica solo un informe filtrado. Las decisiones están
+en `decisiones.md` y la guía en `entrenamiento-curada.md`.
+
+### Tramo 1 y conciliación (15-oct)
+
+El cotejo contra PLAN.md 2.4 detuvo el primer tramo 1 dos veces, y las dos
+con razón:
+- Las celdas de `Origen` son etiquetas largas. Por igualdad, todas caían en
+  «otro» y las 544 filas de BioBERT habrían entrado como positivos (commit
+  `7a8b01b`).
+- Los «310 PMIDs» son 309 PMIDs y el único DOI (`0c81488`).
+
+Después coincidió en los 14 conteos sin forzar nada.
+
+### Protocolo (16-oct)
+
+El tramo 1 mostró que `regulates` tiene 6 ejemplos de 2 artículos, ninguno en
+dev ni en test, y que el test de la partición única tiene 4 artículos. El
+usuario decidió excluir `regulates` en esta versión y evaluar con un protocolo
+pre-registrado:
+- 5 pliegues por artículo × semillas 42, 43 y 44;
+- macro-F1 sobre etiquetas fijas;
+- bootstrap por artículo;
+- diferencia pareada contra la línea base de memorización.
+
+El código va en `3ffb790` y `6f924e3`. Una revisión independiente encontró 5
+defectos, corregidos con su prueba antes del commit; el más serio, un hash
+corto con forma de PMID que habría dejado el informe sin publicar. El ensayo
+sintético en la GPU real encontró 2 más.
+
+El tramo 1 bis (`6f924e3`) dio 928 ejemplos de 96 artículos, con la línea
+base fuera de pliegue en 0.3817, y quedó en el protocolo. Se commiteó en
+`27b18f5` antes de entrenar.
+
+### Tramo 2 (16-oct, 15:18 a 15:37 UTC)
+
+Fueron 16 entrenamientos de cerca de un minuto, sin relanzamientos. El estado
+terminó «ok» y el informe no trae desviaciones ni avisos. Las cifras están en
+`resultados-curada-v1.md` y la ficha en `modelo-curada-v1.md`.
+
+- **Macro-F1 0.4917**, IC95 [0.445, 0.5338], con sd 0.020 entre semillas.
+- **La línea base de memorización da 0.3817.** La diferencia es **+0.1100**,
+  IC95 [0.0221, 0.193]: **supera a la línea base**, según la regla escrita
+  antes de entrenar.
+- **La ventaja está en los pares nuevos:** 0.48 contra 0.23, en 831 de los 928
+  ejemplos. En los pares ya vistos, recordar la etiqueta acierta todo.
+- **Por clase:** `activates` 0.49, `no_relation` 0.70 (empata con la línea
+  base) y `represses` 0.28. El signo es lo débil.
+
+### Prueba en el flujo (16-oct, tarde)
+
+Se clasificaron los 72 969 pares de la corrida 4 con el modelo nuevo: 2 min
+52 s en la GPU. Después corrieron `red.py`, `evaluar_oro.py` y
+`evaluar_signo.py`. Las salidas se quedan en el servidor (`~/grn-guillermo/
+flujo/`) y aquí van solo conteos. Se compara con el modelo de *E. coli* sobre
+la misma corrida (8-oct).
+
+- **Predicciones:**
+  - `activates` 14 872, `represses` 16 581, `regulates` 0 y `no_relation`
+    41 516;
+  - el modelo de *E. coli* dio 18 822, 12 330, 31 328 y 10 489.
+- **Red:**
+  - 1 025 aristas (contra 8 827), con 236 activaciones, **744 represiones** y
+    45 conflictos;
+  - pasan los umbrales solo 3 147 predicciones.
+- **Oro**, con el denominador honesto:
+  - exhaustividad 93/144 = 64.6 % (contra 95.1 %);
+  - **acierto de signo 38/82 = 46.3 %** (contra 87.6 %);
+  - debajo de «siempre activa» (70.7 %) y sin despegar del azar (p = 0.69).
+- **Trampa del signo:** 51/93 sin umbral y 7/93 con umbral. No cuenta como
+  evaluación para este modelo: sus pares entraron al entrenamiento y la trampa
+  es casi toda de represiones.
+
+**Lectura:** el modelo le gana a memorizar el par (validación cruzada), pero
+en la red real está sesgado a la represión y el signo no sirve. Lo más
+probable es que venga de los pesos de clase por la inversa de la frecuencia:
+`represses` es la clase más chica, y en la validación cruzada su precisión
+fue 0.25. **No reemplaza al modelo de *E. coli* así como está.**
+
+Abierto:
+- el 44 % con este modelo, que necesita la carpeta del flujo de la laptop
+  (el bronce de la corrida 4);
+- decidir si se entrena una v2 sin pesos de clase, o con pesos más suaves,
+  como enmienda fechada del protocolo.
+
+### Al cerrar
+
+- **Pendiente del asesor:**
+  - el aviso por escrito de la exclusión de `regulates` y de la conciliación;
+  - si el modelo reemplaza al de *E. coli* en el flujo;
+  - si autoriza la evaluación externa, el 44 % con `flujo.py --modelo`, que
+    tiene que correr en el servidor.
+- **Se borró** `~/grn-guillermo/ensayo` (datos sintéticos del ensayo).
+
+### Los hashes de esta entrada cambiaron (16-oct, noche)
+
+Los 14 commits hechos en el servidor quedaron firmados con la identidad del
+`~/.gitconfig` de la cuenta compartida, que es de otra persona. Antes de
+empujarlos se les puso el autor correcto con `git filter-branch`. Contenido,
+mensajes y fechas no cambiaron: se comprobó con `git diff` vacío entre la
+punta vieja y la nueva. Desde entonces el clon del servidor lleva la identidad
+en su `.git/config`.
+
+Cambiaron los hashes. Esta entrada, el protocolo y `resultados-curada-v1.md`
+citan los viejos; equivalen a estos:
+
+| viejo | nuevo | commit |
+|---|---|---|
+| `7a8b01b` | `a8c43b7` | validacion: el origen por palabra clave |
+| `0c81488` | `2ecf620` | la base conciliada, 309 PMIDs y 1 DOI |
+| `3ffb790` | `30f5f37` | el protocolo de evaluación (código) |
+| `53f2d06` | `3c3a3be` | la guía, las decisiones y CLAUDE.md |
+| `6f924e3` | `818537d` | el informe del tramo 1 con pliegues (tramo 1 bis) |
+| `27b18f5` | `c48eeae` | el protocolo y la ficha (código del tramo 2) |
+| `8e4f838` | `633b08f` | los resultados, la ficha y la bitácora |
+| `7b0df11` | `646a426` | la prueba en el flujo |
+
+El pre-registro no cambia: se comprueba por fecha, y la del commit del
+protocolo sigue siendo 2026-10-16T09:17:56-06:00, anterior al primer
+entrenamiento (15:18:06 UTC).
+
+---
+
 ## 13 de octubre de 2026 — el paso 0 vuelve a abrirse: tramos por fecha, guardado por lote y exportación
 
 **Qué pasó.** El asesor pidió una consulta sobre cultivos transgénicos

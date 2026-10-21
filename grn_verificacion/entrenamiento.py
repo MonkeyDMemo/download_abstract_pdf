@@ -257,15 +257,20 @@ def reservas_de_csv(ruta_csv, columna_pmid="pmid", columna_oracion=None):
 
 def escribir_reservas_de_juicios(ruta_salida, ruta_csv=RUTA_JUICIOS,
                                  oraciones_extra=()):
-    """El archivo de reservas con los PMIDs de la muestra de 50 juicios.
+    """El archivo de reservas con la muestra de 50 juicios: PMIDs y oraciones.
 
     Con esa muestra se recalcula el 44 % al conectar el clasificador (PLAN.md
     1.1); si sus artículos entraran al entrenamiento, la cifra nueva mediría
-    memoria y no precisión. Se reserva por PMID, que cubre todas sus
-    oraciones. `oraciones_extra` suma oraciones sueltas de otra evaluación.
+    memoria y no precisión. El PMID aparta el artículo, pero no las copias de
+    la oración juzgada en OTROS artículos (el mismo resumen bajo dos PMIDs,
+    una revisión que la cita literal): `_sin_repetidos_entre_pmids` corre
+    después de quitar lo reservado y ya no ve el original, así que la copia
+    entraba como ejemplo. Por eso se reservan también las oraciones.
+    `oraciones_extra` suma oraciones sueltas de otra evaluación.
     """
-    pmids, _ = reservas_de_csv(ruta_csv, "pmid")
-    return escribir_reservas(ruta_salida, pmids, oraciones_extra)
+    pmids, oraciones = reservas_de_csv(ruta_csv, "pmid", "oracion")
+    return escribir_reservas(ruta_salida, pmids,
+                             set(oraciones) | set(oraciones_extra))
 
 
 # --------------------------------------------------------------------- pares
