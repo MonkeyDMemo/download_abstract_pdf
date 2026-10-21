@@ -6,6 +6,7 @@
     python -m grn_verificacion.cli evaluar --carpeta DIR --bronce CSV
     python -m grn_verificacion.cli datos-entrenamiento --pares JSONL --base XLSX ...
     python -m grn_verificacion.cli reentrenar correr|estado|detener --raiz DIR ...
+    python -m grn_verificacion.cli contraste --base XLSX --carpeta DIR --informe MD --confidencial DIR ...
 
 Lo normal es no llamarlo a mano: `python flujo.py` corre los pasos en orden y
 se salta lo que ya está hecho.
@@ -473,6 +474,71 @@ def _sub_reentrenar(sub):
     de.set_defaults(func=cmd_reentrenar)
 
 
+def cmd_contraste(args):
+    """Ningún error sale como traceback: uno de `zipfile` o de `open`
+    traería la ruta de la base o la de la carpeta confidencial. Se dice el
+    mensaje, filtrado, o solo el tipo."""
+    from grn_verificacion import contraste
+    if not args.base:
+        log("ERROR: falta --base (o BASE_CURADA en el entorno).")
+        return 2
+    try:
+        contraste.ejecutar(
+            args.base, args.carpeta, args.confidencial, informe=args.informe,
+            hoja=args.hoja, excluir=args.excluir_pmids, solo=args.solo_pmids,
+            sin_red=args.sin_red,
+            aceptar_base_distinta=args.aceptar_base_distinta, log=log)
+    except KeyboardInterrupt:
+        log("Interrumpido.")
+        return 3
+    except Exception as e:
+        log("ERROR: %s" % contraste.mensaje_publicable(
+            e, (args.base, args.confidencial)))
+        return 1
+    return 0
+
+
+def _sub_contraste(sub):
+    co = sub.add_parser(
+        "contraste",
+        help="Cobertura del bronce y recall de la red contra la base curada "
+             "(PLAN.md 2.4); publica solo un informe con conteos.")
+    co.add_argument("--base", default=os.environ.get("BASE_CURADA"),
+                    help="Ruta del .xlsx de la base curada; por omisión "
+                         "$BASE_CURADA. Nunca se imprime.")
+    co.add_argument("--carpeta", required=True,
+                    help="Carpeta del flujo: los CSV del bronce y, salvo con "
+                         "--sin-red, red.tsv, red_evidencias.tsv y "
+                         "pares.jsonl.")
+    co.add_argument("--excluir-pmids", dest="excluir_pmids", action="append",
+                    default=[], metavar="ARCHIVO",
+                    help="PMIDs fuera del denominador, con el formato de "
+                         "reservas.tsv (pmid<TAB>número), fuera del "
+                         "repositorio. Se puede repetir.")
+    co.add_argument("--solo-pmids", dest="solo_pmids", action="append",
+                    default=[], metavar="ARCHIVO",
+                    help="Para una red hecha con un modelo entrenado con la "
+                         "base: el recall solo sobre estos PMIDs (los de "
+                         "test). Mismo formato; se puede repetir.")
+    co.add_argument("--sin-red", dest="sin_red", action="store_true",
+                    help="Solo la cobertura del bronce, sin la red.")
+    co.add_argument("--hoja", default=None,
+                    help="Nombre de la hoja de la base; por omisión, la "
+                         "primera del libro.")
+    co.add_argument("--aceptar-base-distinta", dest="aceptar_base_distinta",
+                    action="store_true",
+                    help="Seguir aunque la base no coincida con PLAN.md 2.4.")
+    co.add_argument("--informe", required=True,
+                    help="Dónde escribir el informe en Markdown: lo único "
+                         "publicable.")
+    co.add_argument("--confidencial", required=True,
+                    help="Carpeta fuera de todo repositorio para lo que "
+                         "deriva de la base (cobertura_por_fila.tsv, "
+                         "candidatas_nuevas.tsv, contraste.json). Nunca se "
+                         "imprime.")
+    co.set_defaults(func=cmd_contraste)
+
+
 def consola_tolerante():
     """La consola de Windows imprime cp1252: los acentos caben, pero la barra
     de progreso de transformers («█») o una sigma no, y un `print` con ellos
@@ -543,6 +609,7 @@ def main(argv=None):
     rs.set_defaults(func=cmd_reservas)
 
     _sub_reentrenar(sub)
+    _sub_contraste(sub)
 
     args = ap.parse_args(argv)
     return args.func(args)
