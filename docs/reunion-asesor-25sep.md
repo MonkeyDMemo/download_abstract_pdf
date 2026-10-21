@@ -1,5 +1,33 @@
 # Reunión con el asesor — 25 de septiembre de 2026
 
+> **Fe de erratas (16-oct-2026).** El guion se conserva como se presentó. Lo
+> que decía mal, y lo que vale hoy:
+>
+> - **Los operones con promotor no eran 1 350.** El promotor se buscaba frente
+>   al primer gen de la lista, y BioCyc los lista en orden descendente de
+>   locus en las dos hebras: en 515 de 1 082 operones ese no era el primer gen
+>   transcrito. Con las mismas tres fuentes son 1 390; con PGD, 1 574
+>   (bitácora del 27-sep).
+> - **PGD y BioCyc no comparten Pathway Tools** (§5): PGD predice con DOOR.
+>   Son fuentes distintas; lo que sí comparten es la literatura.
+> - **La regla de evidencia de BioCyc** (§2.B) es otra:
+>   - `conocido` exige EV-EXP y PMID;
+>   - EV-EXP sin PMID es `curado`;
+>   - EV-COMP con cita sigue `predicho`.
+>
+>   Está en `catalogo-operones.md` §4.3.
+> - **La decisión 5 quedó superada.** PGD entró el 27-sep por la exportación
+>   de su curador.
+> - **La base no va a sustituir a `operones_pao1.tsv`** (§5). Se midió: anota
+>   y no detecta (`decisiones.md`).
+> - **La hebra se comprueba también en un clon limpio** (§5): sin el caché
+>   local, `curar` usa la copia versionada del GFF, que hoy es idéntica.
+> - **La decisión 3 se reformuló.** Ahora incluye PGD y pregunta por la
+>   ampliación por operón: [`operones-asesor.md`](operones-asesor.md) §8.
+> - **Las cifras de la base son las del 25-sep**, con tres de las cuatro
+>   fuentes. Las vigentes están en [`operones-asesor.md`](operones-asesor.md)
+>   §4.
+
 Guión de estado. Cada cifra dice de dónde sale: un archivo versionado, un
 cuerpo de commit, un comando corrido la noche del 24 o una medición de esa
 misma sesión. Ninguna es de memoria.

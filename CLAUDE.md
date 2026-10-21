@@ -235,7 +235,8 @@ grn_bronce/            paso 1, en construccion
 grn_operones/          la base de operones desde ODB, BioCyc, PGD y CDBProm;
                        `cli.py catalogo` da el catálogo maestro para leer, y
                        con `--paso1` escribe `grn_bronce/recursos/
-                       operones_base.tsv`. Ver docs/catalogo-operones.md
+                       operones_base.tsv`. Ver docs/catalogo-operones.md y,
+                       para mantenerla y regenerarla, docs/guia-operones.md
 grn_verificacion/      paso 2, en construccion
   puente.py              candidatas del bronce -> pares -> clasificar.py (BioBERT)
   capa.py                oracion + funciones + operones + BioBERT, una fila por par
@@ -356,6 +357,12 @@ administra unicamente sus tablas.
 
 **Paso 1 — `grn_bronce/db.py`:** `corridas`, `texto_unidades`, `menciones`,
 `oraciones_candidatas`.
+
+**Base de operones — `grn_operones/db.py`:** `operones_extracciones` (una
+foto por fuente), `operones_descargas` (sus archivos, con huella),
+`operones_bronze` (lo que dijo la fuente), `operones_silver` (un operón por
+conjunto de genes) y `operones_silver_fuente` (qué fuente respalda cada uno).
+Sus claves naturales están en `docs/guia-operones.md` §4.
 
 `menciones.tipo` toma ocho valores: `gen`, `proteina`, **`operon`**,
 `disparador`, `funcion`, `evidencia`, `organismo` y `contexto_regulatorio`
@@ -516,6 +523,7 @@ python3 servidor.py --datos D --flujo salidas/flujo   # --db y --salida salen de
 python3 flujo.py --corrida 4            # operones -> bronce -> BioBERT -> capa -> evaluacion
 python3 flujo.py --corrida 4 --limite 200   # prueba rapida en su propia carpeta
 python3 flujo.py --pasos capa,evaluar --forzar capa
+python3 flujo.py --pasos operones --rehacer-operones --forzar operones   # operones_base.tsv, sin red
 
 # en el servidor, con el python de pseudoRE; ver docs/entrenamiento-curada.md
 $PY -m grn_verificacion.cli reentrenar correr --raiz ~/grn-guillermo --pares P \

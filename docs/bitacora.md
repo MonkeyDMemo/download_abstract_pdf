@@ -8,6 +8,151 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 18 de octubre de 2026 — las ligas de las cuatro fuentes de operones
+
+El usuario pidió una documentación oficial de las ligas de donde se tomó cada
+fuente, con el detalle de Pseudomonas Genome DB. Sus operones salieron de otro
+sitio, el GitHub del laboratorio Greene, que publica la misma información.
+Queda en un documento propio, **`docs/fuentes-operones.md`**:
+- de cada fuente: la liga que pidió el encargo, la liga de la que de verdad se
+  bajó, por qué, la fecha y el archivo con su tamaño;
+- la cadena de evidencia de PGD, eslabón por eslabón con su liga: el desafío
+  de Cloudflare, las capturas de Wayback, Lee et al. 2023, el repositorio y el
+  commit, la comprobación con *metG* y las direcciones muertas de DOOR;
+- las fuentes de apoyo: el GFF de RefSeq, KEGG y UniProt.
+
+Las capturas de Wayback no estaban en el repositorio: se recuperaron de los
+registros de la sesión del 27-sep.
+
+**Lo que se verificó:**
+- se recalcularon los bytes y la huella de los cinco crudos, y coinciden con
+  la hoja de fuentes del catálogo del 27-sep;
+- no se pidió nada a pseudomonas.com, operondb, BioCyc ni el IIMAS;
+- solo se consultó el índice del Internet Archive.
+
+**Una corrección.** La página de operones de *oprM* tiene una sola captura en
+el Internet Archive, del 25-nov-2017. `catalogo-operones.md` §3.3 decía «una
+captura de 2024»: el 27-sep se pidió «la más cercana a 2024», y el archivo
+devolvió la de 2017. La conclusión no cambia: la captura actual de *metG* que
+mandó el usuario dice lo mismo sobre el origen de los datos.
+
+**Lo que no quedó:** la liga exacta del archivo de CDBProm. Se bajó a mano el
+18-sep y no se registró, y el sitio prohíbe buscarla con un programa. Queda
+identificado por su nombre, su tamaño y su huella.
+
+---
+
+## 16 de octubre de 2026 — los operones, documentados para el asesor y para quien los mantenga
+
+**Dónde estábamos.**
+- El entrenamiento del BioBERT con la base curada avanza en el servidor del
+  asesor; lo corre el usuario.
+- El asesor ya tiene las consultas que pidió.
+- `flujo-biobert` y `etl-tramos-export` se fusionaron en `main` el 15-oct.
+  Siguen sin borrarse, en local y en `origin`, igual que `etapa2-reparticion`
+  (pendiente 9.10).
+
+**Decisión 3.** El asesor contestó de palabra, la semana del 5 al 9 de
+octubre, sin ser categórico: «la de operones es una cosa» y GRN_experimental
+«es la de redes». Queda así, con la misma frase en todos los documentos:
+
+> Decisión 3 (abierta): respuesta verbal, probable (semana del 5 al 9 de
+> octubre de 2026). GRN_experimental es la red regulatoria y no una fuente de
+> operones. Falta confirmar por escrito si alguna relación se amplió por
+> pertenencia a operón; hasta entonces la pertenencia solo anota.
+
+La pregunta escrita, que manda el usuario, está en `operones-asesor.md` §8.
+
+**Qué se escribió.** Dos documentos nuevos, enlazados entre sí:
+
+- **`docs/operones-asesor.md`, para el asesor.** Contiene:
+  - los dos catálogos y las cuatro fuentes;
+  - las cifras y cómo entran al pipeline;
+  - lo que decidimos por nuestra cuenta;
+  - las decisiones D1 a D9 con nuestra recomendación (D8 y D9 son nuevas);
+  - la pregunta de la decisión 3;
+  - las correcciones al 25-sep.
+- **`docs/guia-operones.md`, para quien mantenga los operones.** Contiene:
+  - la historia en fechas;
+  - los dos catálogos, los comandos con lo que piden y lo que escriben, y las
+    tablas;
+  - quién lee qué catálogo y el paso `operones` del flujo;
+  - cómo regenerar `operones_base.tsv` en una máquina nueva, por tres vías;
+  - las pruebas, las cifras con su archivo de origen y los huecos.
+
+**Qué se corrigió:**
+- **El guion del 25-sep** lleva una fe de erratas:
+  - los operones con promotor: 1 350 → 1 390 → 1 574;
+  - PGD no es Pathway Tools;
+  - la regla de evidencia de BioCyc;
+  - la D5 quedó superada y la base no sustituye al catálogo del paso 1;
+  - la hebra se comprueba también en un clon limpio;
+  - la D3, reformulada.
+- **`CONTEXTO_OPERONES.md`** queda marcado como histórico, con una tabla de
+  lo que dice contra lo que hay hoy.
+- **Docstrings de `grn_operones`:**
+  - la base no sustituye a `operones_pao1.tsv`;
+  - las alternativas son subconjuntos estrictos y los solapamientos no se
+    marcan;
+  - la clave de `operones_descargas` es `(extraccion_id, url)`;
+  - la regex propuesta lleva `\d+`.
+- **La frase de la decisión 3** quedó igual en el catálogo, `decisiones.md`,
+  `PROCEDENCIA.md`, el PLAN y los pendientes. `PROCEDENCIA.md` además pasa de
+  97 % a 96.5 %.
+- **Lo demás:**
+  - `PLAN.md` gana el §1.4 (la reunión del 25-sep) y la fila 34 deja de decir
+    «completar»;
+  - `CLAUDE.md` lista las cinco tablas de operones;
+  - el README enlaza los documentos nuevos;
+  - las dos guías de máquina dicen cómo regenerar `operones_base.tsv`.
+
+**Cifras recalculadas sin abrir la base**, solo leyendo `operones_base.tsv`,
+el catálogo del 27-sep y las salidas de la corrida 4. Todas coinciden con las
+del 27-sep y el 8-oct:
+- base: 4 250 / 1 576 / 1 072 / 1 219, y huella `f399bd89da7d558d`;
+- catálogo: 738 / 1 574 / 117 / 325;
+- corrida 4: 363 / 103 / 447 / 7 136 / 23 445.
+
+Dos copias del GFF de RefSeq, la local y la versionada, dan la misma huella
+del contenido. Por eso `curar` sale igual en un clon limpio.
+
+**La historia del 18 al 24-sep** quedó reconstruida de los cuerpos de los
+commits, en `guia-operones.md` §0. Fueron siete commits el 18-sep y uno el
+24-sep.
+
+**Huecos encontrados al documentar, sin arreglar:** los pendientes 3.14 y
+4.10 a 4.19. Los que más pesan:
+- el paso `operones` del flujo no declara todas sus entradas, y por eso hoy
+  hace falta `--forzar operones`;
+- `reparsear` busca los crudos en la ruta de la máquina que los bajó.
+
+**Un tropiezo con la regla de búsqueda.** Un `grep -rn --include=*.py` corrió
+desde la raíz y recorrió `datos/` sin salida. La regla pide la herramienta
+`Grep`. No mostró nada; se repitió con `Grep`.
+
+**Verificado:**
+- suites: la raíz, 922 OK (7 omitidas); `etapa2`, 528 OK;
+- los `.py` tocados (solo docstrings y un comentario) compilan, y pasan las
+  136 pruebas de `grn_operones` y la guarda de contaminación;
+- ningún enlace relativo de los documentos tocados está roto;
+- el diff contra `main` no trae correos, host, cuentas, IPs ni filas de la
+  base curada;
+- una revisión independiente leyó los dos documentos contra el código y las
+  cifras, y encontró 13 errores, ya corregidos. Entre ellos:
+  - solo el fixture de PGD es real;
+  - ninguna prueba llama a `reparsear`;
+  - el patrón de oro tiene 181 relaciones atestiguadas de 190;
+  - `completa` = 1 también cuando el parseo falla;
+  - el paso `operones` tampoco declara `genes_pao1.tsv` ni el GFF.
+
+**Qué sigue:**
+1. El usuario revisa las recomendaciones D1 a D9 y manda al asesor
+   `operones-asesor.md`, con la pregunta de la decisión 3.
+2. Cuando llegue la respuesta escrita, se sigue `guia-operones.md` §11.
+3. Borrar las tres ramas ya fusionadas.
+
+---
+
 ## 9 al 16 de octubre de 2026 — la pista D: el BioBERT reentrenado con la base curada
 
 Del 9 al 15-oct se construyó `reentrenar` (`grn_verificacion/reentrenar.py`):
