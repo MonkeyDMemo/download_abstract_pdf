@@ -1459,6 +1459,35 @@ completo (`docs/protocolo-curada-v1.md`).
   `.parcial` si todo lo demás cuadra, y el informe lo marca. La marca sale de
   las predicciones, también con menos de 20 filas.
 
+## La v2 sin pesos de clase va por un envoltorio, y la regla se escribió antes
+
+En el flujo, la v1 salió sesgada a la represión, y la hipótesis fue que venía
+de los pesos de clase por la inversa de la frecuencia (20-oct).
+
+- **Un envoltorio y no un cambio en `barrido.py` ni en el script del
+  asesor.** `barrido.py` está congelado y le pasa siempre
+  `--use_class_weights`; el script es del asesor.
+  `grn_verificacion/sin_pesos.py` quita ese flag y hace `execv` del script
+  real, que llega en `GRN_SCRIPT_REAL`. Con `execv` el PID es el mismo, así
+  que el tope de horas y `detener` lo alcanzan igual. `reentrenar
+  --sin-pesos-de-clase` lo pone en lugar del script.
+- **Los pesos son un parámetro de la corrida.** Quedan en `parametros` y en
+  `PROTOCOLO_PARAMETROS`, así que el informe los lista como desviación. El
+  lado `.tokens` de cada resultado anota con qué pesos se entrenó, y uno
+  entrenado con otros no se reusa.
+- **La regla para elegir versión se escribió antes de entrenar la v2**
+  (enmienda 1). Para ir al flujo no basta con superar a la línea base: el
+  signo en el patrón de oro tiene que despegar del azar y de «siempre
+  activa». Con *E. coli* ya se había visto que un clasificador constante
+  aprueba contra el azar.
+- **Resultado: ninguna versión la cumple.**
+  - la v1 da 46.3 % de signo, sesgada a la represión;
+  - la v2 da 71.4 %, igual que «siempre activa»;
+  - el modelo de *E. coli*, 87.6 %, sigue en el flujo.
+
+  Las dos versiones le ganan a memorizar el par, así que el problema no es
+  que el modelo no lea: el signo no se aprende de esta supervisión distante.
+
 ## El tablero corre el flujo: qué se toma de la petición y qué no
 
 `POST /api/trabajo {tipo: "flujo"}` acepta **qué** correr: corrida, pasos,

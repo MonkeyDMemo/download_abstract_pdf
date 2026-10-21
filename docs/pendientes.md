@@ -26,19 +26,29 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
   - 2.3 [30]: la sintaxis orienta 1 de 4 y no cumple el criterio.
   - 6.5: el tablero y el CLI del paso 0 ya siguen `GRN_DATOS`.
   - 7.3 [33]: el bronce está conectado al BioBERT y el 44 % se recalculó.
-    El BioBERT entrenado con la base curada ya existe (16-oct,
-    `modelo-curada-v1.md`). Faltan la decisión del asesor de usarlo en el
-    flujo y el 44 % recalculado con él.
+    El BioBERT entrenado con la base curada existe en dos versiones (v1, con
+    pesos de clase, 16-oct; v2, sin pesos, 21-oct). Ninguna lee el signo en
+    el flujo, y el de *E. coli* sigue siendo el del flujo (bitácora del 20 y
+    21-oct). Falta el 44 % con los tres.
   - 9.2: se quitó la frase de «panorama»; queda la «sección 7» que CLAUDE.md
     cita y el PLAN no tiene.
   - 9.3: `menciones.tipo` y la descripción de la suite.
   - 9.5: el README da la cifra de pruebas al día.
 - **Nuevos:**
   - el entrenamiento con la base curada, en el servidor
-    (`entrenamiento-curada.md`): hecho el 16-oct, con protocolo
-    pre-registrado (`resultados-curada-v1.md`). Pendiente del asesor: si
-    reemplaza al modelo de *E. coli* y si autoriza la evaluación externa
-    (el 44 % con `flujo.py --modelo`);
+    (`entrenamiento-curada.md`): la v1 (16-oct) y la v2 sin pesos de clase
+    (21-oct), con protocolo pre-registrado y su enmienda 1
+    (`resultados-curada-v1.md`, `resultados-curada-v2.md`). Las dos superan
+    a la línea base de memorización y **ninguna cumple el criterio del
+    signo**. Abierto:
+    - el 44 % con la v1, la v2 y *E. coli*: falta subir la carpeta
+      `salidas/flujo/corrida4_run22` de la laptop;
+    - si se sigue con el signo: un umbral por clase calibrado en dev, o
+      etiquetas de signo juzgadas a mano;
+    - el aviso al asesor con esta conclusión;
+    - `flujo.py --modelo` da la misma carpeta a todos los checkpoints
+      `run_22_…` de `reentrenar`; hoy se prueban a mano en carpetas propias
+      (`entrenamiento-curada.md`, paso 6);
   - la alineación de menciones de la sintaxis: 11 % de los pares;
   - la regla «X-dependent», que orienta al revés;
   - el DDL de las tablas de validación y de sintaxis, que no está escrito;
