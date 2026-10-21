@@ -38,9 +38,12 @@ COLUMNAS_SILVER = [
     "promotor_cdbprom", "revisar", "curado_en",
 ]
 
+# `nombre` entró el 20-oct-2026: la fila ya lo traía y `escribir_csv` lo
+# tiraba en silencio, así que una unidad para revisar solo se reconocía por
+# sus locus.
 COLUMNAS_CONFLICTOS = [
-    "clave_genes", "locus_tags", "n_genes", "motivo", "nivel_evidencia",
-    "n_fuentes", "fuentes", "pmids",
+    "clave_genes", "nombre", "locus_tags", "n_genes", "motivo",
+    "nivel_evidencia", "n_fuentes", "fuentes", "pmids",
 ]
 
 # Lo que obliga a mirar a mano, y por que. El orden es el de urgencia: un
@@ -208,14 +211,72 @@ def filas_conflictos(con, db):
     return filas
 
 
+# ------------------------------------------------- lista de revisión (D2)
+
+COLUMNAS_REVISION = [
+    "clave_genes", "nombre", "locus_tags", "genes", "motivo", "pmid",
+    "titulo", "anio", "revista", "tipos_publicacion",
+]
+ENCABEZADOS_REVISION = [
+    "Clave (locus tags ordenados)", "Nombre", "Locus tags",
+    "Genes (símbolo de genes_pao1.tsv)", "Motivo", "PMID", "Título", "Año",
+    "Revista", "Tipo de publicación",
+]
+
+
+def filas_revision(con, db, anotacion, traer):
+    """La lista que el asesor necesita para decidir las unidades de BioCyc
+    `pendiente_revision` (cita, pero ningún código de evidencia): una fila por
+    unidad y PMID, con el título, el año, la revista y el tipo de cada
+    artículo.
+
+    La del 24-sep-2026 salió de un script de sesión que no quedó versionado
+    (pendiente 4.5). `traer(pmids)` devuelve una lista de dicts con `pmid`,
+    `titulo`, `anio`, `revista` y `tipos_publicacion`: en el CLI es
+    `grn_etl.pubmed.traer_articulos` con su cliente, y llega inyectado para
+    que este módulo no salga a la red y sus pruebas tampoco.
+    """
+    unidades = []
+    for s in db.silver_de(con):
+        marcas = [m for m in (s["revisar"] or "").split(";") if m]
+        if "pendiente_revision" in marcas:
+            pmids = [p for p in (s["pmids"] or "").split(";") if p]
+            unidades.append((s, marcas, pmids))
+    todos = sorted(set(p for _s, _m, ps in unidades for p in ps),
+                   key=lambda p: (len(p), p))
+    articulos = dict((a["pmid"], a) for a in (traer(todos) if todos else []))
+
+    filas = []
+    for s, marcas, pmids in unidades:
+        locus = [x for x in (s["locus_tags"] or "").split("|") if x]
+        orden = orden_transcripcion(locus, s["cadena"] or "")
+        for pmid in pmids or [""]:
+            a = articulos.get(pmid, {})
+            filas.append({
+                "clave_genes": s["clave_genes"],
+                "nombre": s["nombre"] or "",
+                "locus_tags": "|".join(orden),
+                "genes": " ".join(anotacion.get(l, {}).get("simbolo") or l
+                                  for l in orden),
+                "motivo": "; ".join(MOTIVOS.get(m, m) for m in marcas),
+                "pmid": pmid,
+                "titulo": a.get("titulo", ""),
+                "anio": a.get("anio", "") or "",
+                "revista": a.get("revista", ""),
+                "tipos_publicacion": "; ".join(a.get("tipos_publicacion")
+                                               or []),
+            })
+    return filas
+
+
 # ------------------------------------------------------- catálogo maestro
 
 COLUMNAS_CATALOGO = [
     "clave_genes", "nombre", "genes", "locus_tags", "orden_verificado",
     "n_genes", "hebra", "nivel_evidencia", "evidencia", "pmids", "fuentes",
     "n_fuentes",
-    "id_odb", "nombre_odb", "id_biocyc", "id_door", "nombre_door",
-    "id_pseudocap", "nombre_pseudocap",
+    "id_odb", "nombre_odb", "id_biocyc", "nombre_biocyc", "id_door",
+    "nombre_door", "id_pseudocap", "nombre_pseudocap",
     "promotor_cdbprom", "gen_con_promotor", "score_cdbprom",
     "monocistronico", "adyacente", "es_alternativa",
     "en_catalogo_paso1", "nombre_catalogo_paso1", "revisar", "motivo",
@@ -226,8 +287,8 @@ ENCABEZADOS_CATALOGO = [
     "Orden de transcripción verificado", "Número de genes", "Hebra",
     "Nivel de evidencia", "Evidencia por fuente", "PMIDs",
     "Fuentes de operones", "Número de fuentes",
-    "ID en ODB", "Nombre en ODB", "ID en BioCyc", "ID en PGD (DOOR)",
-    "Nombre en PGD (DOOR)", "ID en PGD (PseudoCAP)",
+    "ID en ODB", "Nombre en ODB", "ID en BioCyc", "Nombre en BioCyc",
+    "ID en PGD (DOOR)", "Nombre en PGD (DOOR)", "ID en PGD (PseudoCAP)",
     "Nombre en PGD (PseudoCAP)",
     "Promotor CDBProm", "Gen con promotor", "Score CDBProm",
     "Un solo gen", "Genes adyacentes", "Unidad alternativa",
@@ -340,7 +401,7 @@ def filas_catalogo(con, db, anotacion, paso1=None):
         hebra = s["cadena"] or ""
         orden = orden_transcripcion(locus, hebra)
         ids = {"odb": [], "biocyc": [], "DOOR": [], "PseudoCAP": []}
-        nombres = {"odb": [], "DOOR": [], "PseudoCAP": []}
+        nombres = {"odb": [], "biocyc": [], "DOOR": [], "PseudoCAP": []}
         fuentes = set()
         for fuente, idf in mapa.get(s["id"], []):
             fuentes.add(fuente)
@@ -385,6 +446,7 @@ def filas_catalogo(con, db, anotacion, paso1=None):
             "id_odb": ";".join(sorted(ids["odb"], key=_orden_operon)),
             "nombre_odb": "; ".join(_unicos(nombres["odb"])),
             "id_biocyc": ";".join(sorted(ids["biocyc"])),
+            "nombre_biocyc": "; ".join(_unicos(nombres["biocyc"])),
             "id_door": ";".join(sorted(ids["DOOR"], key=_orden_operon)),
             "nombre_door": "; ".join(_unicos(nombres["DOOR"])),
             "id_pseudocap": ";".join(sorted(ids["PseudoCAP"],
@@ -427,7 +489,10 @@ def filas_fuentes_catalogo(con, db, fuentes, url_pgd):
     vigentes = {}
     for f in db.bronze_vigente(con):
         vigentes[f["fuente"]] = vigentes.get(f["fuente"], 0) + 1
-    ultima = db.ultima_extraccion_completa(con)
+    # La misma foto que cura `curar`: la última completa que dejó filas. Una
+    # completa y vacía salía aquí como «vigente» con 0 filas y sin aviso.
+    ultima = db.foto_vigente(con)
+    vacias = db.extracciones_vacias(con)
     sin_foto = set(db.fuentes_sin_foto(con))
 
     filas = []
@@ -440,13 +505,13 @@ def filas_fuentes_catalogo(con, db, fuentes, url_pgd):
                 "filas_vigentes": vigentes.get(fuente, 0),
                 "unidades": unidades}
         eid = ultima.get(fuente)
-        if not eid:
+        if not eid and not vacias.get(fuente):
             base["estado"] = ("fuera de la curación: ninguna extracción "
                               "terminó" if fuente in sin_foto
                               else "sin datos")
             filas.append(base)
             continue
-        for d in db.descargas_de_extraccion(con, eid):
+        for d in (db.descargas_de_extraccion(con, eid) if eid else ()):
             fila = dict(base)
             fila.update({
                 "estado": ("más nueva que la curación: corre `curar`"
@@ -460,6 +525,23 @@ def filas_fuentes_catalogo(con, db, fuentes, url_pgd):
                 "bytes": d["bytes"],
             })
             filas.append(fila)
+        # Una vacía no se cura nunca, sea más nueva o no que la curación. Lo
+        # que sí cambia es qué queda: la foto anterior, o nada.
+        queda = ("se cura la extracción %d" % eid if eid
+                 else "la fuente queda fuera de la curación")
+        for vid in vacias.get(fuente, ()):
+            for d in db.descargas_de_extraccion(con, vid):
+                fila = dict(base)
+                fila.update({
+                    "estado": ("no dejó filas (formato no reconocido); %s"
+                               % queda),
+                    "fecha_datos": "",
+                    "descargado_en": d["descargado_en"],
+                    "origen": d["url"],
+                    "sha256": d["sha256"],
+                    "bytes": d["bytes"],
+                })
+                filas.append(fila)
     return filas
 
 
@@ -481,8 +563,12 @@ def lineas_leame(catalogo, fuentes, paso1=None):
     curado = cuenta(lambda f: f["nivel_evidencia"] == "curado")
     multi = cuenta(lambda f: f["monocistronico"] == "no")
     sin_nombre = cuenta(lambda f: not f["nombre"])
+    sin_nombre_biocyc = cuenta(lambda f: not f["nombre"]
+                               and f["fuentes"] == "biocyc")
+    con_nombre_biocyc = cuenta(lambda f: f["nombre_biocyc"])
     solo_door = cuenta(lambda f: f["nombre"] and f["nombre_door"]
-                       and not f["nombre_odb"] and not f["nombre_pseudocap"])
+                       and not f["nombre_odb"] and not f["nombre_pseudocap"]
+                       and not f["nombre_biocyc"])
     con_promotor = cuenta(lambda f: f["promotor_cdbprom"] == "sí")
     varios_ids = cuenta(lambda f: any(
         ";" in f[c] for c in ("id_odb", "id_biocyc", "id_door",
@@ -510,11 +596,14 @@ def lineas_leame(catalogo, fuentes, paso1=None):
         "independientes. PGD (DOOR) y BioCyc (Pathway Tools) son predictores "
         "distintos pero parten de la misma distancia intergénica, y ODB, "
         "BioCyc y PseudoCAP pueden citar el mismo artículo.",
-        "- Nombres: %d unidades no tienen nombre (las de BioCyc: su parser no "
-        "toma el `common-name`, que traen 94 TUs), y %d "
+        "- Nombres: %d unidades no tienen nombre (%s solo están en BioCyc, "
+        "que nombra %d unidades con su `common-name`), y %d "
         "solo tienen el de DOOR, que une los nombres de cada gen "
         "(PA0006-lptA) y no es un nombre de la literatura." % (
-            sin_nombre, solo_door),
+            sin_nombre,
+            "todas" if sin_nombre_biocyc == sin_nombre
+            else "%d de ellas" % sin_nombre_biocyc,
+            con_nombre_biocyc, solo_door),
         "- Varios IDs de una misma fuente en una fila (%d filas) son "
         "unidades distintas de esa fuente con los mismos genes: la clave del "
         "catálogo son los genes y ahí colapsan. En PseudoCAP suele ser un ID "

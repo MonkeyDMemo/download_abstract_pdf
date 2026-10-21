@@ -59,6 +59,166 @@ Abierto:
 
 ---
 
+## 20 de octubre de 2026 — lo de operones que no depende del asesor
+
+El usuario pidió avanzar en todo lo pendiente de operones que no dependa de
+una decisión del Dr. Edgardo. Queda en la rama `operones-pendientes`, que sale
+de `main` (`7e355a8`), **lista y sin fusionar**, como eligió el usuario.
+Quedan fuera las decisiones D1 a D9 de `operones-asesor.md` y la decisión 3
+con su guarda (3.13).
+
+**Commits, uno por tema; los de código, con sus pruebas:**
+
+| commit | qué | pendientes |
+|---|---|---|
+| `bdec953` | las comprobaciones previas van antes de abrir la extracción, y lo que falla después la cierra incompleta; `extraer` y `reparsear` salen con 1 si algo falló; un XML ilegible o un BioCyc vacío es `FormatoDesconocido`; la foto vigente es la última completa con filas; `--archivo` no pide correo; se va el código muerto | 4.4, 4.11, 4.12, 4.13, 4.15 |
+| `58b4389` | `reparsear` busca el crudo en tres lugares y se queda con el que tiene la huella registrada; lo nuevo se registra relativo a la raíz de datos | 4.16 |
+| `660aa2b` | el sufijo `.N` cuenta en la adyacencia; la copia versionada del GFF va primero y `curar` dice cuál usó; los conflictos llevan el nombre; BioCyc aporta su `common-name`; ODB tiene pruebas | 4.1, 4.2, 4.6, 4.7, 4.14 |
+| `d69ad19` | `exportar --pendientes`, la lista de revisión de las 16 TUs | 4.5 |
+| `6fa290f` | `--rehacer-operones` rehace siempre; el paso declara sus entradas reales y avisa si cambiaron | 3.14, 4.10 |
+| `45be00d` | la capa se niega a mezclar dos versiones de la base; el informe de pares sella `operones_pao1.tsv`; IHF, PrrF y PrrH dejan de contar como operón | 4.18, 4.19 |
+| `bdd7f04` | `rutas` vive en `grn_comun`, con un puente en `grn_bronce` | 4.8 |
+| `3257165` | en un empate de nombres gana la forma de gen | — |
+| `d9a48a8` | el léame dice «todas» cuando lo son | — |
+| `d3880ca` | acentos en los mensajes y comentarios nuevos de `grn_operones` | — |
+| `13ed3c4` | lo que encontró la revisión en `grn_operones`: `foto_sana` y `reparsear` miran la foto vigente, y más (abajo) | 4.4, 4.11, 4.12 |
+| `761743c` | el aviso del paso `operones` se repite hasta que se regenera la base | 4.10 |
+
+Y un commit de documentos, con esta entrada.
+
+**Lo que salió al regenerar:**
+- **Con el `common-name` de BioCyc, `MexAB-OprM` desplazaba a `mexAB-oprM`.**
+  Miden lo mismo, y el empate lo decidía el orden alfabético de la fuente.
+  Ahora, en un empate, gana la forma de gen, que es la que busca el bronce
+  (`3257165`).
+- **El léame decía «2953 de ellas»** cuando eran todas (`d9a48a8`).
+- **Visto de paso, sin arreglar.** Cuando las predicciones ya están hechas,
+  `grn_verificacion.cli biobert` imprime «Reutilizadas 59676, clasificadas
+  13293», que son las cifras guardadas de la corrida del 8-oct. Parece que
+  acaba de clasificar 13 293 pares, y no clasificó ninguno. No es de operones;
+  queda anotado aquí.
+
+**Un error de la capa, encontrado al medir.** `es_operon` tomaba por operón
+toda entidad sin locus, y IHF, PrrF y PrrH no tienen locus en el diccionario.
+Eran 183 pares: los pares cuyo blanco es un operón bajan de 3 605 a 3 422.
+
+**4.17 se cerró medido, sin cambio de código.** De 8 000 pares marcados como
+autorregulación, 616 lo son por operón y solo 12 por un operón sintético del
+texto. En casi todos la marca es correcta, y contarlos solo por tabla metía
+una arista falsa (MvfR → pqsBR). `etapa2` sigue congelada. El detalle está en
+`guia-operones.md` §12.
+
+**4.3 avanzó.** El borrador del correo al curador de PGD, en inglés, quedó en
+la conversación y no en el repositorio. Lo manda el usuario.
+
+**Regenerado** con `python flujo.py --corrida 4 --rehacer-operones`, y después
+`grn_operones.cli catalogo`, `exportar` y `exportar --pendientes`:
+- **La base:** son las mismas 4 250 unidades con los mismos genes.
+  - Cambian 69 nombres, todos por BioCyc: 39 unidades que no tenían nombre y
+    30 que lo cambian.
+  - La huella pasa de `f399bd89da7d558d` a `66b594bba16236d9`.
+- **El catálogo:**
+  - sin nombre, de 2 992 a 2 953;
+  - no adyacentes, de 55 a 17;
+  - para revisar, de 117 a 81.
+
+  No se mueven las 738 con dos fuentes o más, las 1 574 con promotor ni las
+  325 iguales al catálogo del paso 1.
+- **La lista de revisión:** 16 unidades, 21 PMIDs y 22 filas. Es la misma
+  del 24-sep y costó una sola petición a PubMed.
+- **La corrida 4:** no se mueven estas cifras:
+  - las 1 219 unidades que anotan;
+  - las 23 445 candidatas con operón;
+  - las 17 326 oraciones de la capa con operón;
+  - los 38 307 pares con el blanco en un operón;
+  - las evaluaciones, con 4 de 190 relaciones del oro y 8 de 93 oraciones de
+    la auditoría de signo unidas por operón.
+
+  BioBERT no clasificó nada. Los pares salieron idénticos, con la misma
+  huella, y el puente encontró sus predicciones ya hechas para ese modelo.
+- **El flujo corrió nueve veces.**
+  - Tres con `--rehacer-operones`. La segunda fue después del desempate de
+    nombres. La tercera, con el código ya corregido por la revisión, releyó
+    la foto vigente de las cuatro fuentes y dio la misma huella.
+  - Dos avisaron que cambiaron las entradas del paso sin la bandera: después
+    del léame y después de los acentos. Ninguno de los dos cambios toca la
+    base, y en las dos corridas el resto salió «ya hecho».
+  - Una solo volvió a sellar el paso `operones`, tras la tercera regeneración.
+  - Tres salieron todas «saltado»; la última fue la novena.
+
+**La revisión independiente.** Dos revisores leyeron la rama contra `main`:
+uno el código, y el otro los documentos contra el código y las cifras. Las
+cifras, los conteos de pruebas y la tabla de commits salieron bien. Lo que
+encontraron se arregló con pruebas que fallaban antes del arreglo:
+- **`foto_sana` miraba la última extracción completa, aunque estuviera
+  vacía.**
+  - Con un `--archivo` ilegible encima de una tabla de PGD más nueva, el
+    siguiente `extraer --fuente pgd` volvía a bajar la de 2021 y daba por
+    retirados los operones nuevos.
+  - Es justo el caso del 4.3, cuando llegue la tabla del release 22.1
+    (`13ed3c4`).
+- **`reparsear` tomaba solo la última completa.**
+  - Con una descarga ilegible encima salía con 1 para siempre, no volvía a
+    leer la foto que se cura, y `--rehacer-operones` no podía regenerar la
+    base.
+  - Ahora relee la vigente y después intenta la vacía (`13ed3c4`).
+- **El aviso del paso `operones` salía una sola vez.**
+  - La corrida que avisaba guardaba las entradas nuevas, y la siguiente daba
+    el paso por hecho con la base vieja.
+  - Ahora se repite hasta que se regenera y queda en la nota del paso, que el
+    tablero muestra (`761743c`).
+- **Detalles de código** (`13ed3c4`):
+  - la hoja de fuentes y `curar` decían «se cura la anterior» aunque no hubiera
+    anterior;
+  - un XML con una codificación desconocida salía con traza;
+  - lo que fallaba al guardar el bronce dejaba la extracción abierta.
+- **En los documentos:**
+  - la definición vieja de foto vigente en el catálogo;
+  - el orden viejo del GFF en el documento del asesor;
+  - dos fechas de estado y cuándo se pide el correo;
+  - la segunda causa de `hebra_no_verificada`;
+  - lo que dice la hoja de fuentes y el comando de pruebas de la guía;
+  - dos comentarios de código que contradecían lo que hace (`flujo.py` y el
+    docstring de `curar.py`).
+- **Sin arreglar, anotados en `guia-operones.md` §12:**
+  - `extraer --fuente cdbprom` sin URL pide el correo aunque no vaya a pedir
+    nada;
+  - `exportar --pendientes` termina con traza si NCBI contesta su mensaje de
+    límite con un 200. Es el punto 5 de la auditoría de `pubmed.py`.
+
+**Documentos al día:**
+- `guia-operones.md`;
+- `catalogo-operones.md`;
+- `PROCEDENCIA.md`, con la segunda versión de la base;
+- `operones-asesor.md`, con 81 y 3 422;
+- `traspaso-maquina-nueva.md`, con la huella nueva;
+- `pendientes.md` y `decisiones.md`, con lo cerrado;
+- `CLAUDE.md`, con el comando de `--rehacer-operones`.
+
+**Verificado:**
+- suites, con los arreglos de la revisión: la raíz, 995 OK (7 omitidas);
+  `etapa2`, 528 OK; `test_sintaxis` en el `.venv-nlp`, 40 OK;
+- las pruebas nuevas de cada commit fallan contra el código anterior;
+- la guarda de contaminación pasa;
+- dos revisiones independientes del diff contra `main`, una del código y
+  otra de los documentos; lo que encontraron está arriba;
+- el escaneo de confidencialidad del diff: ni datos de `datos/validacion/`,
+  ni filas de la base curada, ni host, ni credenciales;
+- la base no se abrió por consulta directa: solo la escribieron los comandos
+  del paquete.
+
+**Qué sigue:**
+- mandar el correo al curador de PGD (4.3);
+- la pregunta escrita de la decisión 3 y las decisiones D1 a D9, que son del
+  asesor;
+- fusionar `operones-pendientes` cuando el usuario lo decida;
+- mudar a `grn_comun` los importadores que quedan del puente
+  `grn_bronce/rutas.py`, al tocar cada archivo;
+- los dos detalles que la revisión dejó sin arreglar (`guia-operones.md` §12);
+- borrar las ramas ya fusionadas (pendiente 9.10).
+
+---
+
 ## 18 de octubre de 2026 — las ligas de las cuatro fuentes de operones
 
 El usuario pidió una documentación oficial de las ligas de donde se tomó cada

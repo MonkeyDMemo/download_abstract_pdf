@@ -256,6 +256,11 @@ def construir_pares(ruta_candidatas, carpeta, limite=None, log=_nada):
         "pares": procedencia.huella(ruta),
         "genes_pao1.tsv": procedencia.huella_texto(
             os.path.join(_RAIZ, "grn_bronce", "recursos", "genes_pao1.tsv")),
+        # Con este catálogo se expande el blanco que es operón
+        # (`target_locus`): sin su huella, el informe no decía de qué tabla
+        # salieron esos locus.
+        "operones_pao1.tsv": procedencia.huella_texto(
+            operones.RUTA_POR_OMISION),
     }
     informe["limite"] = limite
     escribir_json(os.path.join(carpeta, "pares_informe.json"), informe)

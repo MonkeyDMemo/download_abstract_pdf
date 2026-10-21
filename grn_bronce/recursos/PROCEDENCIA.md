@@ -164,7 +164,11 @@ cada fuente, qué se tomó y qué no, está en `docs/catalogo-operones.md`. Sale
 ordenada por clave y sin fechas, así que la huella solo cambia cuando cambian
 los operones. El contrato (ruta y encabezado) vive en `grn_bronce/operones.py`,
 que es quien lo lee. Primera versión: 27 de septiembre de 2026, huella
-`f399bd89da7d558d`.
+`f399bd89da7d558d`. Segunda: 20 de octubre de 2026, huella
+`66b594bba16236d9`. Son las mismas 4 250 unidades con los mismos genes, y
+solo cambian 69 nombres, todos por el `common-name` de BioCyc, que el parser
+antes no tomaba: 39 unidades que no tenían nombre y 30 que cambian el que
+tenían por el de BioCyc (`phnA-phnB` → `phnAB`).
 
 **No está en git, a diferencia del resto de esta carpeta.** Lleva unidades de
 transcripción de BioCyc/PseudoCyc, bajadas con cuenta, y la licencia de BioCyc

@@ -66,6 +66,11 @@ RUTA_BASE = os.path.join(AQUI, "recursos", "operones_base.tsv")
 COLUMNAS_BASE = ["clave_genes", "nombre", "locus_tags", "genes",
                  "nivel_evidencia", "es_alternativa", "monocistronico"]
 
+# La fila del resumen del bronce que dice con qué `operones_base.tsv` se
+# exportó (su huella, o «recurso ausente»). La escribe `grn_bronce/cli.py` y
+# la lee la capa del paso 2 para no mezclar dos versiones de la base.
+CONCEPTO_BASE = "Base de operones (pertenencia)"
+
 # Un locus tag de PAO1. La forma con sufijo (`PA0762.1`) existe en el genoma y
 # el resto del proyecto la acepta, asi que aqui tambien.
 _LOCUS = re.compile(r"^PA\d{4}(\.\d)?$", re.I)
@@ -293,10 +298,10 @@ class BaseOperones(object):
     def etiqueta(self, fila):
         """El nombre de la unidad, o sus genes entre llaves si no tiene.
 
-        Las llaves son para que una unidad sin nombre (las de BioCyc, cuyo
-        parser no toma el `common-name` que traen 94 TUs) no se
-        lea como si lo tuviera: `{mexA mexB oprM}` es una lista de genes, no
-        el nombre de un operón.
+        Las llaves son para que una unidad sin nombre (casi todas las que
+        solo vienen de BioCyc, que nombra unas pocas con su `common-name`) no
+        se lea como si lo tuviera: `{mexA mexB oprM}` es una lista de genes,
+        no el nombre de un operón.
         """
         nombre = fila.get("nombre") or ""
         if not nombre:
