@@ -271,10 +271,23 @@ def _plan(ctx, paso):
                               "se genera con `python -m grn_operones.cli "
                               "catalogo --paso1`. Sin él, la capa solo trae "
                               "los operones que la oración nombra."}
+        # Todo lo que decide el contenido de operones_base.tsv y se puede
+        # huellear desde aquí: el diccionario, el catálogo del paso 1, el GFF
+        # de la hebra, el contrato del recurso y el paquete entero. La base de
+        # datos y los crudos no se pueden, y por eso `--rehacer-operones`
+        # fuerza el paso en vez de esperar a que cambie una entrada.
+        from grn_operones import curar as _curar_operones
+        paquete = sorted(
+            r for r in glob.glob(os.path.join(RAIZ, "grn_operones", "*.py"))
+            if not os.path.basename(r).startswith("test_"))
         return {"comandos": comandos,
-                "entradas": [OPERONES_CATALOGO] + _codigo(
-                    "grn_operones/curar.py", "grn_operones/exportar.py"),
+                "entradas": ([OPERONES_CATALOGO, GENES]
+                             + list(_curar_operones.RUTAS_GFF)
+                             + _codigo("grn_bronce/operones.py") + paquete),
                 "parametros": {"rehacer": bool(ctx.rehacer_operones)},
+                "aviso_si_cambian": (
+                    "operones_base.tsv no se regeneró; para regenerarlo, "
+                    "--rehacer-operones"),
                 "salidas": [OPERONES_BASE]}
 
     if paso == "bronce":
@@ -542,6 +555,17 @@ def _correr_paso(ctx, paso, forzar, log, detener):
         previo["revisado"] = _ahora()
         return "saltado"
 
+    if plan.get("aviso_si_cambian") and previo and previo.get("entradas"):
+        # Un paso que sin su bandera no corre nada (el de operones solo sella
+        # la huella) tiene que decir que sus entradas cambiaron: si no, el
+        # recurso viejo seguía en uso sin que nadie se enterara.
+        antes = previo["entradas"]
+        cambiadas = sorted(r for r in set(entradas) | set(antes)
+                           if entradas.get(r) != antes.get(r))
+        if cambiadas and not plan["comandos"]:
+            log("  AVISO: cambió %s; %s." % (", ".join(cambiadas),
+                                            plan["aviso_si_cambian"]))
+
     log("")
     log("▶ %s" % NOMBRES[paso])
     inicio = time.monotonic()
@@ -644,6 +668,14 @@ def correr(corrida=None, pasos=None, forzar=(), datos=None, salida=None,
     if desconocidos:
         raise ValueError("pasos desconocidos: %s" % ", ".join(desconocidos))
     forzar = set(forzar or ())
+    if rehacer_operones:
+        if "operones" not in pasos:
+            raise ValueError("--rehacer-operones pide el paso operones, y los "
+                             "pasos pedidos no lo incluyen")
+        # Pedir rehacer, rehace. El paso se saltaba la segunda vez con las
+        # mismas entradas, porque la base y los crudos que lee no se pueden
+        # huellear desde aquí, y hacía falta además `--forzar operones`.
+        forzar.add("operones")
     modelo = os.path.abspath(modelo or MODELO_POR_OMISION)
     # Absolutas desde aquí: los pasos corren con el directorio de trabajo en
     # la raíz del repositorio, y una ruta relativa al de quien llamó apuntaba
@@ -878,7 +910,9 @@ def main(argv=None):
                     help="Solo las primeras N oraciones (prueba rápida).")
     ap.add_argument("--rehacer-operones", dest="rehacer_operones",
                     action="store_true",
-                    help="Regenerar operones_base.tsv desde los crudos.")
+                    help="Regenerar operones_base.tsv desde la base y los "
+                         "crudos (reparsear, curar, catalogo --paso1), sin "
+                         "red. Con ella el paso operones corre siempre.")
     args = ap.parse_args(argv)
     # La consola de Windows es cp1252: una barra de progreso («█») o una sigma
     # en la salida de un paso tumbaba el `print`. Se reemplaza lo que no cabe.

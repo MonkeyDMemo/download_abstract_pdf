@@ -66,6 +66,19 @@ class _Pasos(object):
                                   (0,), False)],
                     "entradas": [ctx.candidatas()], "parametros": {},
                     "salidas": [ctx.ruta("pares.jsonl")]}
+        if paso == "operones":
+            # Como el de verdad: sin la bandera no corre nada y solo sella la
+            # huella; con ella, regenera.
+            destino = os.path.join(os.path.dirname(self.entrada),
+                                   "operones_base.tsv")
+            comandos = []
+            if ctx.rehacer_operones:
+                comandos = [(self._cmd("operones", self.entrada, destino),
+                             (0,), False)]
+            return {"comandos": comandos, "entradas": [self.entrada],
+                    "parametros": {"rehacer": bool(ctx.rehacer_operones)},
+                    "aviso_si_cambian": "no se regeneró",
+                    "salidas": [destino]}
         if paso == "red":
             self.vistos.append(dict(datos=ctx.datos, python=ctx.python_bert))
             viejo = ctx.ruta("evaluacion_vieja.json")
@@ -126,6 +139,42 @@ class PruebasFlujo(unittest.TestCase):
         self.correr()
         r = self.correr(forzar=["pares"])
         self.assertEqual(r["pasos"], {"bronce": "saltado", "pares": "ok"})
+
+    def test_rehacer_operones_rehace_tambien_la_segunda_vez(self):
+        """Antes la segunda corrida con la bandera y las mismas entradas
+        salía «ya hecho»: la base y los crudos que lee el paso no se pueden
+        huellear, y hacía falta además `--forzar operones` (pendiente 4.10)."""
+        self.correr(pasos=["operones"], rehacer_operones=True)
+        r = self.correr(pasos=["operones"], rehacer_operones=True)
+
+        self.assertEqual(r["pasos"], {"operones": "ok"})
+        self.assertEqual(self.pasos.corridas("operones"), 2)
+
+    def test_sin_la_bandera_el_paso_de_operones_se_salta(self):
+        destino = os.path.join(self.tmp.name, "operones_base.tsv")
+        with io.open(destino, "w", encoding="utf-8") as f:
+            f.write("x")
+        self.correr(pasos=["operones"])
+        r = self.correr(pasos=["operones"])
+
+        self.assertEqual(r["pasos"], {"operones": "saltado"})
+        self.assertEqual(self.pasos.corridas("operones"), 0)
+
+    def test_sin_la_bandera_avisa_si_cambiaron_sus_entradas(self):
+        destino = os.path.join(self.tmp.name, "operones_base.tsv")
+        with io.open(destino, "w", encoding="utf-8") as f:
+            f.write("x")
+        self.correr(pasos=["operones"])
+        with io.open(self.pasos.entrada, "w", encoding="utf-8") as f:
+            f.write("dos")
+        self.correr(pasos=["operones"])
+
+        self.assertIn("AVISO: cambió", self.log())
+        self.assertIn("no se regeneró", self.log())
+
+    def test_rehacer_operones_sin_el_paso_es_error_de_uso(self):
+        with self.assertRaises(ValueError):
+            self.correr(pasos=["bronce"], rehacer_operones=True)
 
     def test_una_salida_borrada_se_rehace(self):
         self.correr()
@@ -299,11 +348,58 @@ class PruebasPlanReal(unittest.TestCase):
             with io.open(os.path.join(self.modelo, nombre), "w") as f:
                 f.write("x")
 
-    def ctx(self, forzar=()):
+    def ctx(self, forzar=(), datos=None, rehacer_operones=False):
         estado = {"archivos": {"candidatas": "c.csv"}, "pasos": {}}
-        return flujo._Contexto(self.tmp.name, 4, None, self.modelo,
+        return flujo._Contexto(self.tmp.name, 4, datos, self.modelo,
                                sys.executable, sys.executable, [], None,
-                               False, estado, forzar)
+                               rehacer_operones, estado, forzar)
+
+    def _operones(self, existe, **kw):
+        """El plan del paso operones con `operones_base.tsv` parchado: el
+        archivo no está en git, y sin parche la prueba dependería de la
+        máquina."""
+        ruta = os.path.join(self.tmp.name, "operones_base.tsv")
+        if existe:
+            with io.open(ruta, "w", encoding="utf-8") as f:
+                f.write("x")
+        with mock.patch.object(flujo, "OPERONES_BASE", ruta):
+            return flujo._plan(self.ctx(**kw), "operones")
+
+    def test_rehacer_operones_corre_tres_comandos_y_nunca_extraer(self):
+        """`extraer` sale a la red y pide credenciales; desde los crudos todo
+        es local. `--datos` va antes del subcomando en este CLI."""
+        plan = self._operones(False, datos="D", rehacer_operones=True)
+
+        colas = []
+        for argv, codigos, opcional in plan["comandos"]:
+            i = argv.index("grn_operones.cli")
+            self.assertEqual(argv[i + 1:i + 3], ["--datos", "D"])
+            colas.append(argv[i + 3:])
+            self.assertEqual((codigos, opcional), ((0,), False))
+        self.assertEqual(colas, [["reparsear", "--fuente", "todo"], ["curar"],
+                                 ["catalogo", "--paso1"]])
+
+    def test_operones_se_omite_sin_archivo_salvo_con_la_bandera(self):
+        self.assertIn("omitir", self._operones(False))
+        self.assertNotIn("omitir", self._operones(False,
+                                                  rehacer_operones=True))
+        self.assertEqual(self._operones(True)["comandos"], [])
+
+    def test_operones_declara_sus_entradas_reales(self):
+        entradas = [os.path.normpath(e)
+                    for e in self._operones(True)["entradas"]]
+
+        for partes in (("grn_bronce", "recursos", "genes_pao1.tsv"),
+                       ("grn_bronce", "recursos", "operones_pao1.tsv"),
+                       ("grn_bronce", "operones.py"),
+                       ("grn_operones", "fuentes.py"),
+                       ("grn_operones", "db.py"),
+                       ("grn_operones", "cli.py"),
+                       ("construir_diccionario", "diccionario_independiente",
+                        "cache", "refseq.gff.gz")):
+            self.assertIn(self.rel(*partes), entradas)
+        self.assertFalse(any(os.path.basename(e).startswith("test_")
+                             for e in entradas))
 
     def rel(self, *partes):
         return os.path.join(flujo.RAIZ, *partes)
