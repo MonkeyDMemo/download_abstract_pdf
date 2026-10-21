@@ -592,11 +592,14 @@ def lineas_leame(catalogo, fuentes, paso1=None):
         "independientes. PGD (DOOR) y BioCyc (Pathway Tools) son predictores "
         "distintos pero parten de la misma distancia intergénica, y ODB, "
         "BioCyc y PseudoCAP pueden citar el mismo artículo.",
-        "- Nombres: %d unidades no tienen nombre (%d de ellas solo están en "
-        "BioCyc, que nombra %d unidades con su `common-name`), y %d "
+        "- Nombres: %d unidades no tienen nombre (%s solo están en BioCyc, "
+        "que nombra %d unidades con su `common-name`), y %d "
         "solo tienen el de DOOR, que une los nombres de cada gen "
         "(PA0006-lptA) y no es un nombre de la literatura." % (
-            sin_nombre, sin_nombre_biocyc, con_nombre_biocyc, solo_door),
+            sin_nombre,
+            "todas" if sin_nombre_biocyc == sin_nombre
+            else "%d de ellas" % sin_nombre_biocyc,
+            con_nombre_biocyc, solo_door),
         "- Varios IDs de una misma fuente en una fila (%d filas) son "
         "unidades distintas de esa fuente con los mismos genes: la clave del "
         "catálogo son los genes y ahí colapsan. En PseudoCAP suele ser un ID "
