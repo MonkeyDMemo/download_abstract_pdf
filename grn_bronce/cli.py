@@ -5,6 +5,8 @@
     python -m grn_bronce.cli exportar --corrida N   # volcar sin identificar
     python -m grn_bronce.cli pares    [--corrida N]
     python -m grn_bronce.cli operones [--corrida N] [--solo-faltantes]
+    python -m grn_bronce.cli sintaxis --entrada CSV     # con .venv-nlp
+    python -m grn_bronce.cli sintaxis --comparar ANTES --salida DESPUES
 
 Parsea, llama a la orquestacion y formatea. Sin logica de negocio y sin SQL:
 lo primero vive en `identificar.py` y lo segundo en `db.py`. Es el unico modulo
@@ -631,6 +633,9 @@ def cmd_sintaxis(args):
     oración y par no ordenado de entidades; es una propuesta, no una
     afirmación, y no se registra en `corridas` hasta que haya tabla propia.
     Nunca se imprime el texto de una oración: una «Δ» tumba la consola cp1252.
+
+    Con `--comparar` no analiza nada: compara dos salidas, y entonces
+    `--salida` es la de después. Eso no necesita spaCy.
     """
     try:
         from grn_bronce import sintaxis
@@ -638,6 +643,10 @@ def cmd_sintaxis(args):
         sys.exit("No se pudo cargar la sintaxis (%s). Se corre con el "
                  "intérprete de .venv-nlp; ver docs/plan-sintaxis-bronce.md."
                  % e)
+    if args.comparar:
+        return _comparar_sintaxis(sintaxis, args)
+    if args.json:
+        sys.exit("--json va con --comparar.")
     if args.diagnostico:
         info = sintaxis.diagnostico(log)
         for clave in sorted(info):
@@ -651,6 +660,32 @@ def cmd_sintaxis(args):
     resultado = sintaxis.ejecutar(args.entrada, salida, args.limite, log)
     for clave in sorted(resultado):
         log("  %s: %s" % (clave, resultado[clave]))
+    return 0
+
+
+def _comparar_sintaxis(sintaxis, args):
+    # Juntarlo con un análisis haría pensar que `--salida` se escribe; aquí
+    # solo se lee.
+    if args.entrada or args.limite is not None or args.diagnostico:
+        sys.exit("--comparar no analiza: no va con --entrada, --limite ni "
+                 "--diagnostico.")
+    if not args.salida:
+        sys.exit("Con --comparar falta --salida: el JSONL de después.")
+    for ruta in (args.comparar, args.salida):
+        if not os.path.isfile(ruta):
+            sys.exit("No existe %s." % ruta)
+    d = sintaxis.comparar_salidas(args.comparar, args.salida)
+    log("Sintaxis, antes: %s" % args.comparar)
+    log("Sintaxis, después: %s" % args.salida)
+    for clave, valor in d.items():
+        if clave in ("antes", "despues"):
+            continue
+        if isinstance(valor, (dict, list)):
+            valor = json.dumps(valor, ensure_ascii=False)
+        log("  %s: %s" % (clave, valor))
+    if args.json:
+        sintaxis.escribir_comparacion(args.json, d)
+        log("Comparación completa en %s" % args.json)
     return 0
 
 
@@ -710,10 +745,20 @@ def main():
                     help="CSV de oraciones candidatas de `exportar`.")
     si.add_argument("--salida", default=None,
                     help="JSONL de salida (por omisión, junto al CSV en "
-                         "salidas/, con la corrida en el nombre).")
+                         "salidas/, con la corrida en el nombre). Con "
+                         "--comparar es el JSONL de «después»: se lee, no "
+                         "se escribe.")
     si.add_argument("--limite", type=int, default=None)
     si.add_argument("--diagnostico", action="store_true",
                     help="Versiones, carga del modelo y prueba de humo.")
+    si.add_argument("--comparar", default=None, metavar="ANTES",
+                    help="No analiza: compara el JSONL ANTES con el de "
+                         "--salida (líneas, claves, sin_alineacion, "
+                         "mismo_token, recuperadas y cambiadas fuera de "
+                         "sin_alineacion). No necesita spaCy.")
+    si.add_argument("--json", default=None, metavar="R",
+                    help="Con --comparar, la comparación completa en JSON "
+                         "en R.")
     si.set_defaults(func=cmd_sintaxis)
 
     args = ap.parse_args()

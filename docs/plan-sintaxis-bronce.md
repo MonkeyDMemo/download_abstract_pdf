@@ -125,12 +125,92 @@ los 4 recuperables y ninguna de las 22 relaciones correctas rota.
 
 - **v2 de la alineación:** partir en los límites de mención los tokens que
   comparten dos menciones («LasR/RhlR») antes de fusionar. Cambia la salida, así
-  que va con `VERSION = "2"`.
+  que va con `VERSION = "2"`. *(21-oct: partir el token se descarta; la v2 que
+  sí se hace, su porqué y su criterio están en la §7.)*
 - **Tabla propia** con la clave `(corrida, unidad, entidad_a, entidad_b)` y sin
   llave foránea hacia las filas del bronce, cuando se confirme su DDL.
 - **NER (fase 4)**, después del mapeo PA14 → PAO1 (punto 35) y con la métrica
   corregida.
 - **Muestra nueva y ciega** para probar las reglas: las 50 ya se miraron.
+
+## 7. v2 de la alineación: criterio fijado antes de correr (21-oct-2026)
+
+Esta sección se escribió y entró a git **antes** de cambiar el código y de
+correr la v2 sobre la corrida 4. Lo que salga se compara contra esto, y esto no
+se toca después: solo se llena el «Resultado» de abajo.
+
+### Qué cambia
+
+En la v1, cuando el tokenizador deja dos menciones en un solo token
+(«LasR/RhlR», «FleQ-FleN»), las dos se expanden al mismo tramo, `filter_spans`
+conserva uno y la otra mención se queda sin token: todos sus pares salen
+`sin_alineacion`. Son los 8 485 pares de la §5, por 4 874 menciones.
+
+La v2 no toca el `Doc`. `preparar_doc` alinea, filtra y fusiona igual que en la
+v1; lo nuevo es que la mención que pierde en `filter_spans` y cuyo tramo cabe
+**entero** dentro de un tramo conservado se alinea al token de ese tramo
+(`contenedores`, calculado con offsets de caracteres antes de fusionar). Un
+traslape parcial no se asigna y sigue `sin_alineacion`.
+
+Si las dos entidades de un par caen en el mismo token, el par sale con una voz
+nueva, `mismo_token`, sin orientar: entre las dos no hay camino que leer. Con
+una tercera entidad, cada una ocupa el token compartido y se orienta como la
+otra. `VERSION` pasa a `"2"`; las reglas de orientación siguen siendo las v1 y
+`CAMPOS` no cambia.
+
+### Por qué no se parte el token
+
+La §6 proponía partirlo en los límites de mención. Se descarta por dos razones:
+
+1. **Partirlo cambia los tokens que ve el parser en toda la oración.** El árbol
+   de los pares que la v1 ya alinea se movería sin que nadie lo midiera, y lo
+   que se ganara en los pares recuperados se pagaría con cambios sin revisar en
+   los demás. Sin partir, el `Doc` es el mismo y esos pares salen idénticos
+   (C3).
+2. **Fabrica relaciones.** En «PqsE/RhlR-dependent», partir le dejaría el sufijo
+   solo a RhlR (`RhlR-dependent`), y la regla del sufijo propondría RhlR → PqsE,
+   una relación que el texto no dice. Con el token entero, las dos menciones
+   llevan el sufijo, como en el texto, y entre ellas no se orienta nada.
+
+### Criterios
+
+| # | Criterio | Dónde se lee |
+|---|---|---|
+| C1 | Pares `sin_alineacion` de 8 485 a **849 o menos**, y menciones sin alinear de 4 874 a **487 o menos** | `sin_alineacion_despues` de la comparación; `menciones_sin_alineacion` en el resumen del paso, en `flujo.log` |
+| C2 | Ninguna de las 22 relaciones `si` de la muestra de 50 se rompe: **D2 sigue en 0/22** | `D2_si_que_se_romperian` de `evaluacion.json` |
+| C3 | **Cero** líneas cambiadas fuera de `sin_alineacion`: el `Doc` es idéntico al de la v1 | `cambiadas_fuera_de_sin_alineacion` de la comparación |
+| C4 | Las mismas **76 453** claves `(pmid, fuente_texto, num_oracion, a, b)` | `claves_antes`, `claves_despues`, `claves_solo_antes` y `claves_solo_despues` de la comparación |
+
+La comparación la hace `sintaxis --comparar`, que no necesita spaCy:
+
+```bash
+python -m grn_bronce.cli sintaxis --comparar RESPALDO_V1/sintaxis.jsonl \
+    --salida salidas/flujo/corrida4_run22/sintaxis.jsonl --json COMPARACION.json
+```
+
+Una línea «cambiada» es una cuya versión v1 no era `sin_alineacion` y cuya
+versión v2 difiere en algún campo distinto de `version`.
+
+### Lo que se reporta sin decidir
+
+- **D1**, que se espera en 1 de 4, sin cambio: las líneas 8, 11, 20 y 41 no
+  fallan por alineación (`ficha-invertidos-punto30.md`). La 50 pasa de
+  `sin_alineacion` a `mismo_token` y sigue sin orientar.
+- Cuántos pares recuperados quedan orientados, y con qué voz (`recuperadas`,
+  `recuperadas_orientadas` y `recuperadas_por_voz` de la comparación).
+- El punto 18 (`disparador_dominante_punto_18` de `evaluacion.json`): los pares
+  recuperados traen lema, disparador y signo donde antes no traían nada.
+
+### La regla
+
+Antes de correr la v2 se respalda el `sintaxis.jsonl` de la v1 y se anota su
+sha256. Si C1, C2, C3 y C4 se cumplen, la v2 queda en el flujo. Si alguno no se
+cumple, se revierte el merge de `sintaxis-v2`, se vuelve a correr el paso y el
+sha256 de `sintaxis.jsonl` tiene que volver a ser el del respaldo v1.
+
+### Resultado
+
+(pendiente: se llena tras la corrida del 21-oct)
 
 ---
 

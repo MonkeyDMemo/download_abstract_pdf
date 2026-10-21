@@ -135,6 +135,21 @@ class PruebasCapa(unittest.TestCase):
         self.assertEqual(filas[0]["direccion_sintaxis"], "inversa")
         self.assertEqual(filas[0]["voz"], "pasiva")
 
+    def test_mismo_token_queda_sin_orientar(self):
+        """La voz de la v2 de la sintaxis: las dos menciones en un token, sin
+        regulador. `direccion` no mira la voz, solo el regulador, así que
+        cae en `sin_orientar` y no puede contar como dirección en D1 ni D2;
+        la capa la lleva tal cual."""
+        sint = {("1", "xml", "0", frozenset(("mexT", "mexE"))):
+                {"regulador_sintactico": "", "voz": "mismo_token",
+                 "negada": False, "signo_dominante": ""}}
+        filas = capa.filas_capa([_candidata()], [_par("a")],
+                                {"a": _pred("a", "activates")}, set(),
+                                self.base, self.locus, sint)
+        self.assertEqual((filas[0]["voz"], filas[0]["direccion_sintaxis"],
+                          filas[0]["regulador_sintactico"]),
+                         ("mismo_token", "sin_orientar", ""))
+
 
 def _juicios(si=22, no=24, dudoso=4):
     filas = []

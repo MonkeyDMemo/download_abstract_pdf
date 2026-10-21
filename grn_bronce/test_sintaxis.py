@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Las reglas v1 de `sintaxis.py` y su contacto con spaCy.
+"""Las reglas v1 de `sintaxis.py`, su alineación v2 y su contacto con spaCy.
 
 Dos clases de prueba, y la diferencia importa:
 
@@ -18,6 +18,8 @@ miden contra esa muestra, no se escriben con ella.
     .venv-nlp/Scripts/python -m unittest grn_bronce.test_sintaxis
 """
 
+import argparse
+import collections
 import csv
 import importlib
 import importlib.util
@@ -28,6 +30,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 _RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _RAIZ)
@@ -355,6 +358,24 @@ DOS_RAICES = [
     ("rhlA", "rhla", "NOUN", "NN", "dobj", 4),
 ]
 
+# LasR/RhlR activate lasB.  (el tokenizador deja «LasR/RhlR» en un token)
+COMPARTIDO = [
+    ("LasR/RhlR", "lasr/rhlr", "NOUN", "NN", "nsubj", 1),
+    ("activate", "activate", "VERB", "VBP", "ROOT", 1),
+    ("lasB", "lasb", "NOUN", "NN", "dobj", 1),
+    (".", ".", "PUNCT", ".", "punct", 1),
+]
+
+# El esquema y las voces de la v1, escritos a mano: la v2 agrega una voz al
+# final y no toca el esquema, y el consumidor que los recorra no se entera.
+CAMPOS_V1 = ("pmid", "fuente_texto", "seccion", "num_oracion",
+             "huella_oracion", "a", "b", "a_es_tf", "b_es_tf",
+             "regulador_sintactico", "blanco_sintactico", "voz", "negada",
+             "lema_dominante", "disparador_dominante", "signo_dominante",
+             "camino", "longitud_camino", "modelo", "spacy", "version")
+VOCES_V1 = ("activa", "pasiva", "nominal", "mutante", "indeterminada",
+            "sin_camino", "sin_alineacion")
+
 
 class PruebasVoz(unittest.TestCase):
     """Activa, pasiva, nominal, mutante."""
@@ -542,15 +563,16 @@ class PruebasPares(unittest.TestCase):
                          ("mutante", ""))
 
     def test_mencion_sin_alinear(self):
-        # "LasR/RhlR" es un token: solo una de las dos menciones se alinea.
+        # Lo que dejaba la v1 en «LasR/RhlR»: una de las dos menciones fuera
+        # de `alineacion`. Desde la v2 `preparar_doc` alinea a las dos (ver
+        # `test_dos_menciones_en_un_token`), pero una mención que de verdad
+        # se queda sin token --un `char_span` None, un traslape a medias--
+        # sigue dejando todos sus pares en `sin_alineacion`.
         texto = "LasR/RhlR activate lasB."
         menciones = [mencion(texto, "LasR", "lasR", True),
                      mencion(texto, "RhlR", "rhlR", True),
                      mencion(texto, "lasB", "lasB", False)]
-        toks = arbol([("LasR/RhlR", "lasr/rhlr", "NOUN", "NN", "nsubj", 1),
-                      ("activate", "activate", "VERB", "VBP", "ROOT", 1),
-                      ("lasB", "lasb", "NOUN", "NN", "dobj", 1),
-                      (".", ".", "PUNCT", ".", "punct", 1)])
+        toks = arbol(COMPARTIDO)
         pares = S.analizar_doc(toks, texto, menciones, {0: 0, 2: 2}, SIGNOS)
         por_par = dict(((p["a"], p["b"]), p) for p in pares)
         self.assertEqual(por_par[("lasB", "lasR")]["regulador_sintactico"],
@@ -560,6 +582,53 @@ class PruebasPares(unittest.TestCase):
             self.assertEqual((p["voz"], p["regulador_sintactico"],
                               p["camino"], p["longitud_camino"]),
                              ("sin_alineacion", "", "", 0))
+
+    def test_dos_menciones_en_un_token(self):
+        # La v2: las dos menciones de «LasR/RhlR» apuntan al mismo token.
+        # Entre ellas no hay camino; con lasB, cada una se orienta como lo
+        # haría la otra.
+        texto = "LasR/RhlR activate lasB."
+        menciones = [mencion(texto, "LasR", "lasR", True),
+                     mencion(texto, "RhlR", "rhlR", True),
+                     mencion(texto, "lasB", "lasB", False)]
+        pares = S.analizar_doc(arbol(COMPARTIDO), texto, menciones,
+                               {0: 0, 1: 0, 2: 2}, SIGNOS)
+        por_par = dict(((p["a"], p["b"]), p) for p in pares)
+        p = por_par[("lasR", "rhlR")]
+        self.assertEqual((p["voz"], p["regulador_sintactico"],
+                          p["blanco_sintactico"], p["lema_dominante"],
+                          p["camino"], p["longitud_camino"]),
+                         ("mismo_token", "", "", "", "", 0))
+        con_lasr, con_rhlr = por_par[("lasB", "lasR")], por_par[("lasB",
+                                                                 "rhlR")]
+        self.assertEqual((con_lasr["regulador_sintactico"], con_lasr["voz"]),
+                         ("lasR", "activa"))
+        self.assertEqual((con_rhlr["regulador_sintactico"], con_rhlr["voz"]),
+                         ("rhlR", "activa"))
+        for campo in S.CAMPOS_PAR:
+            if campo not in ("b", "regulador_sintactico"):
+                self.assertEqual(con_lasr[campo], con_rhlr[campo], campo)
+
+    def test_mismo_token_aunque_la_oracion_sea_de_mutante(self):
+        # La frase de mutante deja los demás pares en `mutante`; el de las
+        # dos menciones del token sigue diciendo por qué no hay camino.
+        texto = "LasR/RhlR mutants overproduce lasB."
+        menciones = [mencion(texto, "LasR", "lasR", True),
+                     mencion(texto, "RhlR", "rhlR", True),
+                     mencion(texto, "lasB", "lasB", False)]
+        toks = arbol([
+            ("LasR/RhlR", "lasr/rhlr", "NOUN", "NN", "compound", 1),
+            ("mutants", "mutant", "NOUN", "NNS", "nsubj", 2),
+            ("overproduce", "overproduce", "VERB", "VBP", "ROOT", 2),
+            ("lasB", "lasb", "NOUN", "NN", "dobj", 2),
+            (".", ".", "PUNCT", ".", "punct", 2)])
+        pares = S.analizar_doc(toks, texto, menciones, {0: 0, 1: 0, 2: 3},
+                               SIGNOS)
+        self.assertEqual([(p["a"], p["b"], p["voz"]) for p in pares], [
+            ("lasB", "lasR", "mutante"),
+            ("lasB", "rhlR", "mutante"),
+            ("lasR", "rhlR", "mismo_token"),
+        ])
 
     def test_la_ocurrencia_es_la_que_elige_extraer_pares(self):
         # rhlR aparece dos veces; `elegir_ocurrencias` toma la más cercana a
@@ -601,6 +670,187 @@ class PruebasPares(unittest.TestCase):
             orientada = p["voz"] in ("activa", "pasiva", "nominal")
             self.assertEqual(bool(p["regulador_sintactico"]), orientada)
             self.assertEqual(bool(p["blanco_sintactico"]), orientada)
+
+
+class PruebasAlineacionV2(unittest.TestCase):
+    """`contenedores` y lo que la v2 deja como estaba, sin spaCy. Los tramos
+    son `(ini_char, fin_char, k)`, como los arma `preparar_doc`."""
+
+    def test_un_tramo_identico_se_alinea_a_su_contenedor(self):
+        # «LasR/RhlR activate lasB»: las dos primeras menciones se expanden al
+        # mismo token y `filter_spans` se queda con la primera.
+        tramos = [(0, 9, 0), (0, 9, 1), (19, 23, 2)]
+        conservados = [(0, 9, 0), (19, 23, 2)]
+        self.assertEqual(S.contenedores(tramos, conservados), {1: 0})
+
+    def test_un_tramo_contenido_se_alinea_a_su_contenedor(self):
+        # La que perdió es el último token de un tramo de tres que se fusiona.
+        tramos = [(4, 14, 0), (10, 14, 1)]
+        self.assertEqual(S.contenedores(tramos, [(4, 14, 0)]), {1: 0})
+
+    def test_un_traslape_parcial_no_se_asigna(self):
+        # Tras fusionar el tramo conservado, ningún token es entero de la que
+        # perdió: asignarla sería inventarle un token.
+        tramos = [(0, 9, 0), (5, 14, 1)]
+        self.assertEqual(S.contenedores(tramos, [(0, 9, 0)]), {})
+
+    def test_sin_perdedoras_no_hay_nada_que_asignar(self):
+        tramos = [(0, 4, 0), (15, 19, 1)]
+        self.assertEqual(S.contenedores(tramos, tramos), {})
+
+    def test_en_token_compartido(self):
+        self.assertEqual(S.en_token_compartido({0: 0, 1: 0, 2: 2}), 1)
+        self.assertEqual(S.en_token_compartido({0: 0, 2: 2}), 0)
+        self.assertEqual(S.en_token_compartido({}), 0)
+
+    def test_el_esquema_es_el_de_la_v1(self):
+        self.assertEqual(S.CAMPOS, CAMPOS_V1)
+
+    def test_mismo_token_va_al_final_de_las_voces(self):
+        self.assertEqual(S.VOCES, VOCES_V1 + ("mismo_token",))
+
+
+def linea_jsonl(pmid, num, a, b, voz, regulador="", version="1"):
+    """Una línea del JSONL con el esquema entero; lo que no se pasa, vacío."""
+    blanco = (b if regulador == a else a) if regulador else ""
+    return collections.OrderedDict([
+        ("pmid", pmid), ("fuente_texto", "xml"), ("seccion", "results"),
+        ("num_oracion", num), ("huella_oracion", "0" * 16), ("a", a),
+        ("b", b), ("a_es_tf", True), ("b_es_tf", False),
+        ("regulador_sintactico", regulador), ("blanco_sintactico", blanco),
+        ("voz", voz), ("negada", False), ("lema_dominante", ""),
+        ("disparador_dominante", ""), ("signo_dominante", ""),
+        ("camino", ""), ("longitud_camino", 0),
+        ("modelo", "en_core_sci_md-0.5.4"), ("spacy", "3.7.5"),
+        ("version", version)])
+
+
+def escribir_jsonl(ruta, lineas):
+    with io.open(ruta, "w", encoding="utf-8", newline="\n") as f:
+        for d in lineas:
+            f.write(json.dumps(d, ensure_ascii=False) + "\n")
+
+
+class PruebasComparar(unittest.TestCase):
+    """`comparar_salidas` y `sintaxis --comparar`, sin spaCy. PMIDs y pares
+    inventados."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.carpeta = tmp.name
+        self.antes = os.path.join(self.carpeta, "v1.jsonl")
+        self.despues = os.path.join(self.carpeta, "v2.jsonl")
+        igual = linea_jsonl("90101", 0, "lasB", "lasR", "activa", "lasR")
+        alterada = linea_jsonl("90101", 1, "lasR", "rhlA", "activa", "lasR")
+        escribir_jsonl(self.antes, [
+            igual, alterada,
+            linea_jsonl("90102", 0, "lasR", "rhlR", "sin_alineacion"),
+            linea_jsonl("90102", 0, "lasB", "rhlR", "sin_alineacion"),
+            linea_jsonl("90103", 2, "lasB", "rhlA", "sin_alineacion"),
+            linea_jsonl("90104", 0, "lasR", "mexT", "indeterminada"),
+        ])
+        escribir_jsonl(self.despues, [
+            linea_jsonl("90101", 0, "lasB", "lasR", "activa", "lasR", "2"),
+            # La que cambió sin deber: antes orientada, ahora no.
+            linea_jsonl("90101", 1, "lasR", "rhlA", "indeterminada", "", "2"),
+            linea_jsonl("90102", 0, "lasR", "rhlR", "mismo_token", "", "2"),
+            linea_jsonl("90102", 0, "lasB", "rhlR", "activa", "rhlR", "2"),
+            linea_jsonl("90103", 2, "lasB", "rhlA", "sin_alineacion", "", "2"),
+            linea_jsonl("90105", 0, "lasR", "mexT", "indeterminada", "", "2"),
+        ])
+
+    def test_cuenta_lo_que_pide_el_criterio(self):
+        d = S.comparar_salidas(self.antes, self.despues)
+        self.assertEqual((d["lineas_antes"], d["lineas_despues"]), (6, 6))
+        self.assertEqual((d["claves_antes"], d["claves_despues"]), (6, 6))
+        self.assertEqual((d["claves_solo_antes"], d["claves_solo_despues"]),
+                         (1, 1))
+        self.assertEqual((d["claves_repetidas_antes"],
+                          d["claves_repetidas_despues"]), (0, 0))
+        self.assertEqual((d["versiones_antes"], d["versiones_despues"]),
+                         ({"1": 6}, {"2": 6}))
+        self.assertEqual((d["sin_alineacion_antes"],
+                          d["sin_alineacion_despues"],
+                          d["mismo_token_despues"]), (3, 1, 1))
+        # Solo la `version` distinta no cuenta como cambio; la alterada sí.
+        self.assertEqual(d["cambiadas_fuera_de_sin_alineacion"], 1)
+        self.assertEqual(d["campos_cambiados_fuera_de_sin_alineacion"],
+                         {"blanco_sintactico": 1, "regulador_sintactico": 1,
+                          "voz": 1})
+        self.assertEqual(d["ejemplos_cambiadas_fuera_de_sin_alineacion"],
+                         [["90101", "xml", "1", "lasR", "rhlA"]])
+        # Recuperadas: la de `mismo_token` y la que se orientó; la que sigue
+        # `sin_alineacion` no.
+        self.assertEqual((d["recuperadas"], d["recuperadas_orientadas"]),
+                         (2, 1))
+        self.assertEqual(list(d["recuperadas_por_voz"].items()),
+                         [("activa", 1), ("mismo_token", 1)])
+        self.assertEqual(tuple(d["por_voz_antes"]), S.VOCES)
+        self.assertEqual((d["por_voz_antes"]["activa"],
+                          d["por_voz_antes"]["sin_alineacion"],
+                          d["por_voz_antes"]["mismo_token"]), (2, 3, 0))
+        self.assertEqual((d["por_voz_despues"]["indeterminada"],
+                          d["por_voz_despues"]["mismo_token"]), (2, 1))
+
+    def test_una_clave_repetida_se_cuenta_aparte(self):
+        repetida = linea_jsonl("90101", 0, "lasB", "lasR", "pasiva", "lasR",
+                               "2")
+        with io.open(self.despues, "a", encoding="utf-8", newline="\n") as f:
+            f.write(json.dumps(repetida) + "\n")
+        d = S.comparar_salidas(self.antes, self.despues)
+        self.assertEqual((d["lineas_despues"], d["claves_despues"],
+                          d["claves_repetidas_despues"]), (7, 6, 1))
+        # La repetida no se compara: cuenta la primera línea de la clave.
+        self.assertEqual(d["cambiadas_fuera_de_sin_alineacion"], 1)
+
+    def test_una_voz_desconocida_no_se_pierde(self):
+        escribir_jsonl(self.despues, [
+            linea_jsonl("90101", 0, "lasB", "lasR", "otra_voz", "", "3")])
+        d = S.comparar_salidas(self.antes, self.despues)
+        self.assertEqual(d["por_voz_despues"]["otra_voz"], 1)
+        self.assertEqual(list(d["por_voz_despues"])[-1], "otra_voz")
+
+    def test_escribir_comparacion(self):
+        d = S.comparar_salidas(self.antes, self.despues)
+        ruta = os.path.join(self.carpeta, "sub", "comparacion.json")
+        S.escribir_comparacion(ruta, d)
+        self.assertFalse(os.path.exists(ruta + ".tmp"))
+        with io.open(ruta, encoding="utf-8") as f:
+            leido = json.load(f)
+        self.assertEqual(list(leido), list(d))
+        self.assertEqual(leido["recuperadas_orientadas"], 1)
+
+    def _args(self, **cambios):
+        args = dict(comparar=self.antes, salida=self.despues, json=None,
+                    entrada=None, limite=None, diagnostico=False)
+        args.update(cambios)
+        return argparse.Namespace(**args)
+
+    def test_la_cli_compara_sin_spacy(self):
+        from grn_bronce import cli
+        ruta = os.path.join(self.carpeta, "comparacion.json")
+        lineas = []
+        # Con `spacy` en None, cualquier `import spacy` del camino revienta.
+        with mock.patch.dict(sys.modules, {"spacy": None}), \
+                mock.patch.object(cli, "log", lineas.append):
+            self.assertEqual(cli.cmd_sintaxis(self._args(json=ruta)), 0)
+        self.assertIn("  cambiadas_fuera_de_sin_alineacion: 1", lineas)
+        self.assertIn("  recuperadas: 2", lineas)
+        self.assertIn('  recuperadas_por_voz: {"activa": 1, "mismo_token": 1}',
+                      lineas)
+        with io.open(ruta, encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["claves_solo_despues"], 1)
+
+    def test_la_cli_no_mezcla_comparar_con_analizar(self):
+        from grn_bronce import cli
+        for cambios in ({"salida": None}, {"entrada": "candidatas.csv"},
+                        {"limite": 10}, {"diagnostico": True},
+                        {"comparar": os.path.join(self.carpeta, "no.jsonl")},
+                        {"comparar": None, "json": "r.json"}):
+            with mock.patch.object(cli, "log", lambda m: None):
+                with self.assertRaises(SystemExit, msg=str(cambios)):
+                    cli.cmd_sintaxis(self._args(**cambios))
 
 
 class PruebasRecursos(unittest.TestCase):
@@ -670,6 +920,44 @@ class PruebasImportacion(unittest.TestCase):
 
 # ------------------------------------------------------------ con spaCy
 
+# Lo que escribió la v1 (`en_core_sci_md` 0.5.4, spaCy 3.7.5) el 21-oct-2026,
+# antes de cambiar la alineación, con el léxico de juguete y `SIGNOS`: una
+# tupla por par en el orden de `CAMPOS_PAR`. La primera oración no tiene
+# menciones que compartan token; en la segunda, «LasR/RhlR-dependent» es un
+# token con dos. Si cambian el modelo o las reglas, sube VERSION y esto se
+# vuelve a escribir a propósito, no se ajusta hasta que pase.
+SIN_COMPARTIR = "rhlA is activated by RhlR, whereas LasR represses lasB."
+CON_COMPARTIDO = "LasR/RhlR-dependent expression of rhlA was reduced."
+V1_PARES = {
+    SIN_COMPARTIR: [
+        ("lasB", "lasR", False, True, "lasR", "lasB", "activa", False,
+         "repress", "repress", "-", "dobj< >nsubj", 2),
+        ("lasB", "rhlA", False, False, "", "", "indeterminada", False,
+         "activate", "activated", "+", "dobj< advcl< >nsubjpass", 3),
+        ("lasB", "rhlR", False, True, "", "", "indeterminada", False,
+         "activate", "activated", "+", "dobj< advcl< >nmod", 3),
+        ("lasR", "rhlA", True, False, "", "", "indeterminada", False,
+         "activate", "activated", "+", "nsubj< advcl< >nsubjpass", 3),
+        ("lasR", "rhlR", True, True, "", "", "indeterminada", False,
+         "activate", "activated", "+", "nsubj< advcl< >nmod", 3),
+        ("rhlA", "rhlR", False, True, "rhlR", "rhlA", "pasiva", False,
+         "activate", "activated", "+", "nsubjpass< >nmod", 2),
+    ],
+    CON_COMPARTIDO: [
+        ("lasR", "rhlA", True, False, "lasR", "rhlA", "nominal", False,
+         "dependent", "dependent", "?", "amod< >nmod", 2),
+        ("lasR", "rhlR", True, True, "", "", "sin_alineacion", False,
+         "", "", "", "", 0),
+        ("rhlA", "rhlR", False, True, "", "", "sin_alineacion", False,
+         "", "", "", "", 0),
+    ],
+}
+
+
+def tuplas(pares):
+    return [tuple(p[c] for c in S.CAMPOS_PAR) for p in pares]
+
+
 def lexico_de_juguete(carpeta):
     """Un `Lexico` de verdad sobre un diccionario sintético de seis genes y
     dos operones: el reconocimiento es el del pipeline, los datos no."""
@@ -725,10 +1013,103 @@ class PruebasConSpacy(unittest.TestCase):
             self.assertTrue(pares)
             for p in pares:
                 self.assertIn(p["voz"], S.VOCES)
-        # ΔmexR y mexEF-oprN se alinean; en LasR/RhlR puede perder una.
-        for oracion in S.HUMO_ALINEACION[1:]:
+        # ΔmexR y mexEF-oprN se alineaban ya en la v1; desde la v2, también
+        # las dos menciones de «LasR/RhlR», que comparten token.
+        for oracion in S.HUMO_ALINEACION:
             _, menciones, alineacion = self.parsear(oracion)
             self.assertEqual(len(alineacion), len(menciones), oracion)
+
+    def test_las_dos_menciones_del_token_llevan_el_sufijo(self):
+        doc, menciones, alineacion = self.parsear(CON_COMPARTIDO)
+        k = dict((m[3], i) for i, m in enumerate(menciones))
+        self.assertEqual(len(alineacion), len(menciones))
+        self.assertEqual(alineacion[k["lasR"]], alineacion[k["rhlR"]])
+        self.assertEqual(doc[alineacion[k["lasR"]]].text,
+                         "LasR/RhlR-dependent")
+        pares = S.analizar_doc(doc, CON_COMPARTIDO, menciones, alineacion,
+                               SIGNOS)
+        resumen = dict(((p["a"], p["b"]),
+                        (p["regulador_sintactico"], p["blanco_sintactico"],
+                         p["voz"], p["lema_dominante"]))
+                       for p in pares)
+        self.assertEqual(resumen, {
+            ("lasR", "rhlA"): ("lasR", "rhlA", "nominal", "dependent"),
+            ("rhlA", "rhlR"): ("rhlR", "rhlA", "nominal", "dependent"),
+            ("lasR", "rhlR"): ("", "", "mismo_token", ""),
+        })
+        # El par que la v1 ya alineaba sale igual que en la v1.
+        self.assertEqual(tuplas(pares)[0], V1_PARES[CON_COMPARTIDO][0])
+
+    def test_sin_token_compartido_la_salida_es_la_de_la_v1(self):
+        _, menciones, alineacion = self.parsear(SIN_COMPARTIR)
+        self.assertEqual(S.en_token_compartido(alineacion), 0)
+        pares = S.analizar_oracion(self.nlp, SIN_COMPARTIR, menciones, SIGNOS)
+        self.assertEqual(tuplas(pares), V1_PARES[SIN_COMPARTIR])
+
+    def test_ejecutar_cuenta_las_menciones_en_token_compartido(self):
+        entrada = os.path.join(self.carpeta, "compartido.csv")
+        salida = os.path.join(self.carpeta, "compartido.jsonl")
+        with io.open(entrada, "w", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["pmid", "fuente_texto", "seccion", "num_oracion",
+                        "oracion"])
+            w.writerow(["21", "xml", "results", "3",
+                        "LasR/RhlR activate lasB transcription."])
+        cuenta = S.ejecutar(entrada, salida, lex=self.lex, nlp=self.nlp,
+                            vocab_signos=SIGNOS)
+        self.assertEqual((cuenta["menciones"],
+                          cuenta["menciones_sin_alineacion"],
+                          cuenta["menciones_en_token_compartido"]),
+                         (3, 0, 1))
+        self.assertEqual(cuenta["pares"], 3)
+        self.assertEqual((cuenta["por_voz"]["activa"],
+                          cuenta["por_voz"]["mismo_token"],
+                          cuenta["por_voz"]["sin_alineacion"]), (2, 1, 0))
+        with io.open(salida, encoding="utf-8") as f:
+            lineas = [json.loads(l) for l in f]
+        self.assertEqual(set(r["version"] for r in lineas), {"2"})
+
+    def test_comparar_la_v1_congelada_con_la_v2(self):
+        """La medición de la §7 en chico: lo que escribió la v1 contra lo que
+        escribe hoy `ejecutar`, con el mismo modelo y la misma entrada."""
+        import spacy
+        entrada = os.path.join(self.carpeta, "v1v2.csv")
+        antes = os.path.join(self.carpeta, "v1.jsonl")
+        despues = os.path.join(self.carpeta, "v2.jsonl")
+        filas = [
+            {"pmid": "31", "fuente_texto": "xml", "seccion": "results",
+             "num_oracion": "0", "oracion": SIN_COMPARTIR},
+            {"pmid": "32", "fuente_texto": "abstract", "seccion": "abstract",
+             "num_oracion": "4", "oracion": CON_COMPARTIDO},
+        ]
+        with io.open(entrada, "w", encoding="utf-8", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(S.COLUMNAS_ENTRADA))
+            w.writeheader()
+            w.writerows(filas)
+        S.ejecutar(entrada, despues, lex=self.lex, nlp=self.nlp,
+                   vocab_signos=SIGNOS)
+        lineas = []
+        for fila in filas:
+            for t in V1_PARES[fila["oracion"]]:
+                r = S._registro(fila, S.huella_oracion(fila["oracion"]),
+                                dict(zip(S.CAMPOS_PAR, t)),
+                                S.nombre_modelo(self.nlp), spacy.__version__)
+                r["version"] = "1"
+                lineas.append(r)
+        escribir_jsonl(antes, lineas)
+
+        d = S.comparar_salidas(antes, despues)
+        self.assertEqual((d["claves_antes"], d["claves_despues"],
+                          d["claves_solo_antes"], d["claves_solo_despues"]),
+                         (9, 9, 0, 0))
+        self.assertEqual(d["cambiadas_fuera_de_sin_alineacion"], 0)
+        self.assertEqual((d["sin_alineacion_antes"],
+                          d["sin_alineacion_despues"],
+                          d["mismo_token_despues"]), (2, 0, 1))
+        self.assertEqual((d["recuperadas"], d["recuperadas_orientadas"]),
+                         (2, 1))
+        self.assertEqual((d["versiones_antes"], d["versiones_despues"]),
+                         ({"1": 9}, {"2": 9}))
 
     def test_esquema_de_analizar_oracion(self):
         menciones = self.lex.menciones(S.HUMO_CORTE)
@@ -798,6 +1179,11 @@ class PruebasConSpacy(unittest.TestCase):
         self.assertTrue(info["cargado_sin_scispacy"])
         self.assertNotIn("ner", info["componentes"])
         self.assertIn("parser", info["componentes"])
+        # «LasR/RhlR activate lasB transcription.»: una de las tres comparte
+        # token y ya ninguna se queda sin alinear.
+        compartido = info["humo"]["alineacion"][0]
+        self.assertEqual((compartido["en_token_compartido"],
+                          compartido["sin_alineacion"]), (1, []))
 
 
 if __name__ == "__main__":

@@ -35,9 +35,11 @@ TRES CORRECCIONES QUE NO SON OPCIONALES
    `char_span(..., alignment_mode="expand")` y se fusiona en un solo token para
    que la entidad sea un nodo del árbol. Pero el tokenizador del modelo deja
    `LasR/RhlR` como UN token: las dos menciones se expanden al mismo tramo y
-   fusionar los dos lanza E102. `filter_spans` se queda con uno; la mención que
-   pierde, o cuyo `char_span` sale `None`, se reporta como `sin_alineacion` en
-   sus pares, nunca como excepción.
+   fusionar los dos lanza E102. `filter_spans` se queda con uno. Desde la v2,
+   la mención que pierde y cabe entera en el tramo que se quedó apunta al token
+   de ese tramo (ver ALINEACIÓN v2); la que lo traslapa a medias, o cuyo
+   `char_span` sale `None`, se reporta como `sin_alineacion` en sus pares,
+   nunca como excepción.
 2. **El corte de oración está congelado.** Una unidad del bronce es una
    oración (93 golden en `test_texto.py`), y el parser del modelo segmenta por
    su cuenta. Antes de parsear se fija `is_sent_start` en el primer token y se
@@ -50,6 +52,34 @@ TRES CORRECCIONES QUE NO SON OPCIONALES
    TF primero cuando solo uno de los dos lo es: es el orden en que esa función
    rompe empates en la etapa 2. Así lo que se compara entre los dos métodos es
    el mismo par de tokens.
+
+ALINEACIÓN v2
+=============
+
+Desde el 21 de octubre de 2026, con `VERSION = "2"`. En la v1, la mención que
+perdía en `filter_spans` se quedaba sin token y todos sus pares salían
+`sin_alineacion`: en la corrida 4, 8 485 pares por 4 874 de 93 154 menciones,
+casi todas pegadas a otra por una barra o un guion. La v2 la alinea al token
+del tramo que la contiene (`contenedores`), calculado con offsets de
+caracteres antes de fusionar. Nada más cambia: los mismos tramos, la misma
+fusión y el mismo corte, así que el `Doc` que ve el parser es el de la v1 y
+todo par que la v1 ya alineaba sale idéntico salvo `version`. Las reglas de
+orientación siguen siendo las v1.
+
+Si las dos entidades del par caen en el mismo token, entre ellas no hay camino
+que leer y el par sale `mismo_token`, sin orientar. Con una tercera entidad,
+cada una ocupa el token compartido y se orienta como la otra: en «LasR/RhlR
+activate lasB», las dos activan a lasB.
+
+El token no se parte, aunque eso proponía el plan, por dos razones (§7 de
+`docs/plan-sintaxis-bronce.md`). Partirlo cambia los tokens que ve el parser
+en toda la oración, y con ellos el árbol de los pares que hoy salen bien. Y en
+«PqsE/RhlR-dependent» dejaría el sufijo pegado solo a RhlR: la regla del
+sufijo fabricaría RhlR -> PqsE, que el texto no dice. Con el token entero, las
+dos menciones llevan el sufijo, como en el texto.
+
+Lo que cambia entre dos salidas lo mide `comparar_salidas`, sin spaCy
+(`python -m grn_bronce.cli sintaxis --comparar ANTES --salida DESPUES`).
 
 REGLAS v1
 =========
@@ -143,10 +173,13 @@ MODELO = "en_core_sci_md"
 
 # Sube cada vez que una línea de la salida pasa a decir algo distinto de la
 # misma oración: una regla nueva, un cambio de modelo o de versión de spaCy.
-VERSION = "1"
+# La "2" es la de la alineación al contenedor; las reglas siguen en la v1.
+VERSION = "2"
 
+# `mismo_token` es de la v2 y va al final: quien recorra las voces en este
+# orden no ve moverse las de la v1.
 VOCES = ("activa", "pasiva", "nominal", "mutante", "indeterminada",
-         "sin_camino", "sin_alineacion")
+         "sin_camino", "sin_alineacion", "mismo_token")
 
 # El esquema de cada línea del JSONL. Otro código lo consume: se agrega al
 # final o se sube VERSION, nunca se reordena en silencio.
@@ -612,13 +645,45 @@ def huella_oracion(oracion):
                         .encode("utf-8")).hexdigest()[:16]
 
 
+def contenedores(tramos, conservados):
+    """`{k de la mención que perdió: k de la que conservó el tramo}`.
+
+    `tramos` y `conservados` son tuplas `(ini_char, fin_char, k)`: el tramo
+    expandido de cada mención y los que dejó `filter_spans`. Una mención que
+    perdió se asigna solo si su tramo cabe ENTERO en uno conservado. Si lo
+    traslapa a medias, después de fusionar ninguno de los tokens es suyo
+    entero, y sigue `sin_alineacion`. Los conservados no se traslapan entre sí,
+    así que a lo más uno la contiene.
+    """
+    ganadoras = set(k for _, _, k in conservados)
+    salida = {}
+    for ini, fin, k in tramos:
+        if k in ganadoras:
+            continue
+        for c_ini, c_fin, c_k in conservados:
+            if c_ini <= ini and fin <= c_fin:
+                salida[k] = c_k
+                break
+    return salida
+
+
+def en_token_compartido(alineacion):
+    """Cuántas menciones de `alineacion` se alinearon a su contenedor.
+
+    Cada tramo conservado queda en un token distinto, así que son las que
+    sobran sobre los tokens distintos.
+    """
+    return len(alineacion) - len(set(alineacion.values()))
+
+
 def preparar_doc(nlp, oracion, menciones):
     """`(doc, alineacion)`: el Doc tokenizado, con cada mención fusionada en
     un token y el corte de oración fijado, listo para el pipeline.
 
     `alineacion` es `{indice de mención: indice de token}` y solo trae las
-    menciones que quedaron alineadas. Ver las correcciones 1 y 2 del docstring
-    del módulo.
+    menciones que quedaron alineadas. Desde la v2 dos menciones pueden
+    apuntar al mismo token: la que conservó el tramo y la que cabía en él.
+    Ver las correcciones 1 y 2 y la ALINEACIÓN v2 del docstring del módulo.
     """
     from spacy.util import filter_spans
     doc = nlp.make_doc(oracion)
@@ -629,6 +694,11 @@ def preparar_doc(nlp, oracion, menciones):
         if tramo is not None:
             tramos.append(tramo)
     conservados = filter_spans(tramos)
+    # Con offsets y antes del merge: después, los `Span` describen un Doc que
+    # ya no existe.
+    dentro = contenedores(
+        [(t.start_char, t.end_char, int(t.label_)) for t in tramos],
+        [(t.start_char, t.end_char, int(t.label_)) for t in conservados])
     inicios = dict((t.start_char, int(t.label_)) for t in conservados)
     with doc.retokenize() as r:
         for t in conservados:
@@ -639,6 +709,9 @@ def preparar_doc(nlp, oracion, menciones):
         k = inicios.get(t.idx)
         if k is not None:
             alineacion[k] = t.i
+    for perdedora, contenedora in dentro.items():
+        if contenedora in alineacion:
+            alineacion[perdedora] = alineacion[contenedora]
     for t in doc:
         t.is_sent_start = (t.i == 0)
     return doc, alineacion
@@ -649,6 +722,8 @@ def analizar_doc(doc, oracion, menciones, alineacion, vocab_signos):
     claves de `CAMPOS_PAR`. `a < b` en orden lexicográfico.
 
     `doc` ya pasó por el pipeline; basta con que se pueda indexar por token.
+    Un par cuyas dos ocurrencias apuntan al mismo token sale `mismo_token`,
+    sin orientar, aunque la oración sea de fenotipo de mutante.
     """
     mutante = _extraer_pares.clasificar(oracion) == "fenotipo_mutante"
     por = _por_entidad(menciones)
@@ -665,6 +740,12 @@ def analizar_doc(doc, oracion, menciones, alineacion, vocab_signos):
             ia, ib = alineacion.get(oa[4]), alineacion.get(ob[4])
             if ia is None or ib is None:
                 p = _vacio("sin_alineacion")
+            elif ia == ib:
+                # Entre dos menciones de un mismo token no hay camino.
+                # `orientar` lo daría por `indeterminada` (o `mutante`) con
+                # camino vacío, revuelto con los pares que las reglas sí
+                # miraron y no supieron orientar.
+                p = _vacio("mismo_token")
             else:
                 p = orientar(doc, ia, ib, mutante, vocab_signos)
             regulador = {"a": a, "b": b}.get(p["regulador"], "")
@@ -770,8 +851,9 @@ def diagnostico(log=lambda m: None, lex=None):
 
     La prueba de humo comprueba (a) que `HUMO_CORTE` siga siendo UNA oración
     después de parsear, y (b) que cada mención de `HUMO_ALINEACION` se alinee
-    o salga como `sin_alineacion`, sin excepción. Las menciones las pone el
-    diccionario real (`identificar.cargar_lexico()`) salvo que se pase `lex`.
+    o salga como `sin_alineacion`, sin excepción; de las alineadas, dice
+    cuántas comparten token con otra. Las menciones las pone el diccionario
+    real (`identificar.cargar_lexico()`) salvo que se pase `lex`.
     """
     info = collections.OrderedDict()
     info["python"] = platform.python_version()
@@ -821,13 +903,15 @@ def diagnostico(log=lambda m: None, lex=None):
         menciones = lex.menciones(oracion)
         caso = collections.OrderedDict([
             ("oracion", oracion), ("menciones", len(menciones)),
-            ("alineadas", 0), ("sin_alineacion", []), ("pares", 0),
-            ("error", ""), ("ok", False)])
+            ("alineadas", 0), ("en_token_compartido", 0),
+            ("sin_alineacion", []), ("pares", 0), ("error", ""),
+            ("ok", False)])
         try:
             doc, alineacion = preparar_doc(nlp, oracion, menciones)
             doc = nlp(doc)
             pares = analizar_doc(doc, oracion, menciones, alineacion, {})
             caso["alineadas"] = len(alineacion)
+            caso["en_token_compartido"] = en_token_compartido(alineacion)
             caso["sin_alineacion"] = [m[2] for k, m in enumerate(menciones)
                                       if k not in alineacion]
             caso["pares"] = len(pares)
@@ -839,11 +923,11 @@ def diagnostico(log=lambda m: None, lex=None):
         info["humo"]["alineacion"].append(caso)
         # Sin la oración: el `Δ` de una de ellas no existe en cp1252 y
         # tumbaría la consola de Windows; el conteo basta.
-        log("Humo (b), alineación: %d menciones, %d alineadas, %d sin "
-            "alinear%s" % (caso["menciones"], caso["alineadas"],
-                           len(caso["sin_alineacion"]),
-                           ", ERROR " + caso["error"] if caso["error"]
-                           else ""))
+        log("Humo (b), alineación: %d menciones, %d alineadas (%d en un "
+            "token compartido), %d sin alinear%s"
+            % (caso["menciones"], caso["alineadas"],
+               caso["en_token_compartido"], len(caso["sin_alineacion"]),
+               ", ERROR " + caso["error"] if caso["error"] else ""))
     info["ok"] = info["humo"]["corte"]["ok"] and alineacion_ok
     return info
 
@@ -946,6 +1030,8 @@ def ejecutar(entrada_csv, salida_jsonl, limite=None, log=lambda m: None,
                     cuenta["menciones"] += len(menciones)
                     cuenta["menciones_sin_alineacion"] += (
                         len(menciones) - len(alineacion))
+                    cuenta["menciones_en_token_compartido"] += (
+                        en_token_compartido(alineacion))
                     pendientes.append((fila, oracion, menciones, doc,
                                        alineacion))
                 if len(pendientes) >= lote:
@@ -971,8 +1057,8 @@ def ejecutar(entrada_csv, salida_jsonl, limite=None, log=lambda m: None,
     for clave in ("oraciones_analizadas", "oraciones_sin_par",
                   "oraciones_demasiadas_entidades",
                   "oraciones_partidas_por_el_parser", "menciones",
-                  "menciones_sin_alineacion", "pares", "con_regulador",
-                  "regulador_no_tf", "negadas"):
+                  "menciones_sin_alineacion", "menciones_en_token_compartido",
+                  "pares", "con_regulador", "regulador_no_tf", "negadas"):
         resumen[clave] = cuenta[clave]
     resumen["por_voz"] = collections.OrderedDict(
         (v, por_voz[v]) for v in VOCES)
@@ -985,3 +1071,150 @@ def ejecutar(entrada_csv, salida_jsonl, limite=None, log=lambda m: None,
         % (resumen["pares"], resumen["oraciones_analizadas"],
            resumen["segundos"], salida_jsonl))
     return resumen
+
+
+# ------------------------------------------------------------- comparación
+
+# Claves de ejemplo que guarda la comparación de las líneas que cambiaron sin
+# deber: bastan para ir a mirar, y el JSON no crece con el corpus.
+EJEMPLOS = 10
+
+
+def _clave_linea(d):
+    """`(pmid, fuente_texto, num_oracion, a, b)`: la oración y el par."""
+    return (str(d.get("pmid", "")), str(d.get("fuente_texto", "")),
+            str(d.get("num_oracion", "")), str(d.get("a", "")),
+            str(d.get("b", "")))
+
+
+def _sin_version(d):
+    """La línea sin `version`, como texto comparable: cuentan los valores,
+    no el orden de los campos."""
+    return json.dumps(dict((k, v) for k, v in d.items() if k != "version"),
+                      sort_keys=True, ensure_ascii=False)
+
+
+def _leer_jsonl(ruta):
+    with io.open(ruta, encoding="utf-8") as f:
+        for linea in f:
+            if linea.strip():
+                yield json.loads(linea)
+
+
+def _reparto(cuenta, con_ceros=True):
+    """Las voces en el orden de `VOCES` y, al final, las que no están ahí:
+    una voz desconocida se ve en vez de perderse."""
+    salida = collections.OrderedDict(
+        (v, cuenta[v]) for v in VOCES if con_ceros or cuenta[v])
+    for v in sorted(set(cuenta) - set(VOCES)):
+        salida[v] = cuenta[v]
+    return salida
+
+
+def comparar_salidas(ruta_antes, ruta_despues):
+    """Qué cambió entre dos salidas de `ejecutar` sobre la misma entrada.
+
+    Es la medición de la §7 de `docs/plan-sintaxis-bronce.md`, y no necesita
+    spaCy. Una línea se identifica por `(pmid, fuente_texto, num_oracion, a,
+    b)`. Cuenta:
+
+    - las líneas y las claves de cada lado, y las que están en uno solo;
+    - las `sin_alineacion` de cada lado y las `mismo_token` de después;
+    - las cambiadas fuera de `sin_alineacion`: antes NO eran `sin_alineacion`
+      y después difieren en algún campo distinto de `version`. Entre la v1 y
+      la v2 tienen que ser cero, porque el `Doc` es el mismo;
+    - las recuperadas: antes `sin_alineacion` y después otra voz,
+      `mismo_token` incluida, y cuántas de ellas quedaron orientadas;
+    - el reparto de voces de cada lado.
+
+    Una clave repetida dentro de un archivo se cuenta en `claves_repetidas_*`
+    y a la comparación entra solo su primera línea: con repetidas, la clave
+    no identifica la línea y la comparación por clave no prueba nada.
+    """
+    antes = {}
+    voces_antes = collections.Counter()
+    versiones_antes = collections.Counter()
+    lineas_antes = repetidas_antes = 0
+    for d in _leer_jsonl(ruta_antes):
+        lineas_antes += 1
+        voces_antes[d.get("voz", "")] += 1
+        versiones_antes[str(d.get("version", ""))] += 1
+        clave = _clave_linea(d)
+        if clave in antes:
+            repetidas_antes += 1
+        else:
+            antes[clave] = (d.get("voz", ""), _sin_version(d))
+
+    vistas = set()
+    voces_despues = collections.Counter()
+    versiones_despues = collections.Counter()
+    lineas_despues = repetidas_despues = solo_despues = 0
+    cambiadas, campos, ejemplos = 0, collections.Counter(), []
+    recuperadas, orientadas = collections.Counter(), 0
+    for d in _leer_jsonl(ruta_despues):
+        lineas_despues += 1
+        voz = d.get("voz", "")
+        voces_despues[voz] += 1
+        versiones_despues[str(d.get("version", ""))] += 1
+        clave = _clave_linea(d)
+        if clave in vistas:
+            repetidas_despues += 1
+            continue
+        vistas.add(clave)
+        if clave not in antes:
+            solo_despues += 1
+            continue
+        voz_antes, forma_antes = antes[clave]
+        if voz_antes == "sin_alineacion":
+            if voz != "sin_alineacion":
+                recuperadas[voz] += 1
+                if d.get("regulador_sintactico"):
+                    orientadas += 1
+        elif _sin_version(d) != forma_antes:
+            cambiadas += 1
+            previa = json.loads(forma_antes)
+            for campo in sorted((set(previa) | set(d)) - set(["version"])):
+                if previa.get(campo) != d.get(campo):
+                    campos[campo] += 1
+            if len(ejemplos) < EJEMPLOS:
+                ejemplos.append(list(clave))
+
+    r = collections.OrderedDict()
+    r["antes"] = ruta_antes
+    r["despues"] = ruta_despues
+    r["lineas_antes"] = lineas_antes
+    r["lineas_despues"] = lineas_despues
+    r["claves_antes"] = len(antes)
+    r["claves_despues"] = len(vistas)
+    r["claves_repetidas_antes"] = repetidas_antes
+    r["claves_repetidas_despues"] = repetidas_despues
+    r["claves_solo_antes"] = sum(1 for c in antes if c not in vistas)
+    r["claves_solo_despues"] = solo_despues
+    r["versiones_antes"] = dict(sorted(versiones_antes.items()))
+    r["versiones_despues"] = dict(sorted(versiones_despues.items()))
+    r["sin_alineacion_antes"] = voces_antes["sin_alineacion"]
+    r["sin_alineacion_despues"] = voces_despues["sin_alineacion"]
+    r["mismo_token_despues"] = voces_despues["mismo_token"]
+    r["cambiadas_fuera_de_sin_alineacion"] = cambiadas
+    r["campos_cambiados_fuera_de_sin_alineacion"] = dict(
+        sorted(campos.items()))
+    r["ejemplos_cambiadas_fuera_de_sin_alineacion"] = ejemplos
+    r["recuperadas"] = sum(recuperadas.values())
+    r["recuperadas_orientadas"] = orientadas
+    r["recuperadas_por_voz"] = _reparto(recuperadas, con_ceros=False)
+    r["por_voz_antes"] = _reparto(voces_antes)
+    r["por_voz_despues"] = _reparto(voces_despues)
+    return r
+
+
+def escribir_comparacion(ruta, d):
+    """`d`, lo que devuelve `comparar_salidas`, en JSON y UTF-8. Escritura
+    atómica, como el JSONL: uno a medias no se confunde con uno entero."""
+    carpeta = os.path.dirname(ruta)
+    if carpeta:
+        os.makedirs(carpeta, exist_ok=True)
+    tmp = ruta + ".tmp"
+    with io.open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps(d, ensure_ascii=False, indent=2))
+        f.write("\n")
+    reemplazar(tmp, ruta)
