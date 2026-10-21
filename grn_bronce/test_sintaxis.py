@@ -18,6 +18,8 @@ miden contra esa muestra, no se escriben con ella.
     .venv-nlp/Scripts/python -m unittest grn_bronce.test_sintaxis
 """
 
+import argparse
+import collections
 import csv
 import importlib
 import importlib.util
@@ -28,6 +30,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 _RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _RAIZ)
@@ -707,6 +710,149 @@ class PruebasAlineacionV2(unittest.TestCase):
         self.assertEqual(S.VOCES, VOCES_V1 + ("mismo_token",))
 
 
+def linea_jsonl(pmid, num, a, b, voz, regulador="", version="1"):
+    """Una línea del JSONL con el esquema entero; lo que no se pasa, vacío."""
+    blanco = (b if regulador == a else a) if regulador else ""
+    return collections.OrderedDict([
+        ("pmid", pmid), ("fuente_texto", "xml"), ("seccion", "results"),
+        ("num_oracion", num), ("huella_oracion", "0" * 16), ("a", a),
+        ("b", b), ("a_es_tf", True), ("b_es_tf", False),
+        ("regulador_sintactico", regulador), ("blanco_sintactico", blanco),
+        ("voz", voz), ("negada", False), ("lema_dominante", ""),
+        ("disparador_dominante", ""), ("signo_dominante", ""),
+        ("camino", ""), ("longitud_camino", 0),
+        ("modelo", "en_core_sci_md-0.5.4"), ("spacy", "3.7.5"),
+        ("version", version)])
+
+
+def escribir_jsonl(ruta, lineas):
+    with io.open(ruta, "w", encoding="utf-8", newline="\n") as f:
+        for d in lineas:
+            f.write(json.dumps(d, ensure_ascii=False) + "\n")
+
+
+class PruebasComparar(unittest.TestCase):
+    """`comparar_salidas` y `sintaxis --comparar`, sin spaCy. PMIDs y pares
+    inventados."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.carpeta = tmp.name
+        self.antes = os.path.join(self.carpeta, "v1.jsonl")
+        self.despues = os.path.join(self.carpeta, "v2.jsonl")
+        igual = linea_jsonl("90101", 0, "lasB", "lasR", "activa", "lasR")
+        alterada = linea_jsonl("90101", 1, "lasR", "rhlA", "activa", "lasR")
+        escribir_jsonl(self.antes, [
+            igual, alterada,
+            linea_jsonl("90102", 0, "lasR", "rhlR", "sin_alineacion"),
+            linea_jsonl("90102", 0, "lasB", "rhlR", "sin_alineacion"),
+            linea_jsonl("90103", 2, "lasB", "rhlA", "sin_alineacion"),
+            linea_jsonl("90104", 0, "lasR", "mexT", "indeterminada"),
+        ])
+        escribir_jsonl(self.despues, [
+            linea_jsonl("90101", 0, "lasB", "lasR", "activa", "lasR", "2"),
+            # La que cambió sin deber: antes orientada, ahora no.
+            linea_jsonl("90101", 1, "lasR", "rhlA", "indeterminada", "", "2"),
+            linea_jsonl("90102", 0, "lasR", "rhlR", "mismo_token", "", "2"),
+            linea_jsonl("90102", 0, "lasB", "rhlR", "activa", "rhlR", "2"),
+            linea_jsonl("90103", 2, "lasB", "rhlA", "sin_alineacion", "", "2"),
+            linea_jsonl("90105", 0, "lasR", "mexT", "indeterminada", "", "2"),
+        ])
+
+    def test_cuenta_lo_que_pide_el_criterio(self):
+        d = S.comparar_salidas(self.antes, self.despues)
+        self.assertEqual((d["lineas_antes"], d["lineas_despues"]), (6, 6))
+        self.assertEqual((d["claves_antes"], d["claves_despues"]), (6, 6))
+        self.assertEqual((d["claves_solo_antes"], d["claves_solo_despues"]),
+                         (1, 1))
+        self.assertEqual((d["claves_repetidas_antes"],
+                          d["claves_repetidas_despues"]), (0, 0))
+        self.assertEqual((d["versiones_antes"], d["versiones_despues"]),
+                         ({"1": 6}, {"2": 6}))
+        self.assertEqual((d["sin_alineacion_antes"],
+                          d["sin_alineacion_despues"],
+                          d["mismo_token_despues"]), (3, 1, 1))
+        # Solo la `version` distinta no cuenta como cambio; la alterada sí.
+        self.assertEqual(d["cambiadas_fuera_de_sin_alineacion"], 1)
+        self.assertEqual(d["campos_cambiados_fuera_de_sin_alineacion"],
+                         {"blanco_sintactico": 1, "regulador_sintactico": 1,
+                          "voz": 1})
+        self.assertEqual(d["ejemplos_cambiadas_fuera_de_sin_alineacion"],
+                         [["90101", "xml", "1", "lasR", "rhlA"]])
+        # Recuperadas: la de `mismo_token` y la que se orientó; la que sigue
+        # `sin_alineacion` no.
+        self.assertEqual((d["recuperadas"], d["recuperadas_orientadas"]),
+                         (2, 1))
+        self.assertEqual(list(d["recuperadas_por_voz"].items()),
+                         [("activa", 1), ("mismo_token", 1)])
+        self.assertEqual(tuple(d["por_voz_antes"]), S.VOCES)
+        self.assertEqual((d["por_voz_antes"]["activa"],
+                          d["por_voz_antes"]["sin_alineacion"],
+                          d["por_voz_antes"]["mismo_token"]), (2, 3, 0))
+        self.assertEqual((d["por_voz_despues"]["indeterminada"],
+                          d["por_voz_despues"]["mismo_token"]), (2, 1))
+
+    def test_una_clave_repetida_se_cuenta_aparte(self):
+        repetida = linea_jsonl("90101", 0, "lasB", "lasR", "pasiva", "lasR",
+                               "2")
+        with io.open(self.despues, "a", encoding="utf-8", newline="\n") as f:
+            f.write(json.dumps(repetida) + "\n")
+        d = S.comparar_salidas(self.antes, self.despues)
+        self.assertEqual((d["lineas_despues"], d["claves_despues"],
+                          d["claves_repetidas_despues"]), (7, 6, 1))
+        # La repetida no se compara: cuenta la primera línea de la clave.
+        self.assertEqual(d["cambiadas_fuera_de_sin_alineacion"], 1)
+
+    def test_una_voz_desconocida_no_se_pierde(self):
+        escribir_jsonl(self.despues, [
+            linea_jsonl("90101", 0, "lasB", "lasR", "otra_voz", "", "3")])
+        d = S.comparar_salidas(self.antes, self.despues)
+        self.assertEqual(d["por_voz_despues"]["otra_voz"], 1)
+        self.assertEqual(list(d["por_voz_despues"])[-1], "otra_voz")
+
+    def test_escribir_comparacion(self):
+        d = S.comparar_salidas(self.antes, self.despues)
+        ruta = os.path.join(self.carpeta, "sub", "comparacion.json")
+        S.escribir_comparacion(ruta, d)
+        self.assertFalse(os.path.exists(ruta + ".tmp"))
+        with io.open(ruta, encoding="utf-8") as f:
+            leido = json.load(f)
+        self.assertEqual(list(leido), list(d))
+        self.assertEqual(leido["recuperadas_orientadas"], 1)
+
+    def _args(self, **cambios):
+        args = dict(comparar=self.antes, salida=self.despues, json=None,
+                    entrada=None, limite=None, diagnostico=False)
+        args.update(cambios)
+        return argparse.Namespace(**args)
+
+    def test_la_cli_compara_sin_spacy(self):
+        from grn_bronce import cli
+        ruta = os.path.join(self.carpeta, "comparacion.json")
+        lineas = []
+        # Con `spacy` en None, cualquier `import spacy` del camino revienta.
+        with mock.patch.dict(sys.modules, {"spacy": None}), \
+                mock.patch.object(cli, "log", lineas.append):
+            self.assertEqual(cli.cmd_sintaxis(self._args(json=ruta)), 0)
+        self.assertIn("  cambiadas_fuera_de_sin_alineacion: 1", lineas)
+        self.assertIn("  recuperadas: 2", lineas)
+        self.assertIn('  recuperadas_por_voz: {"activa": 1, "mismo_token": 1}',
+                      lineas)
+        with io.open(ruta, encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["claves_solo_despues"], 1)
+
+    def test_la_cli_no_mezcla_comparar_con_analizar(self):
+        from grn_bronce import cli
+        for cambios in ({"salida": None}, {"entrada": "candidatas.csv"},
+                        {"limite": 10}, {"diagnostico": True},
+                        {"comparar": os.path.join(self.carpeta, "no.jsonl")},
+                        {"comparar": None, "json": "r.json"}):
+            with mock.patch.object(cli, "log", lambda m: None):
+                with self.assertRaises(SystemExit, msg=str(cambios)):
+                    cli.cmd_sintaxis(self._args(**cambios))
+
+
 class PruebasRecursos(unittest.TestCase):
     """Lo que no necesita spaCy: vocabulario, huella, lectura del CSV."""
 
@@ -922,6 +1068,48 @@ class PruebasConSpacy(unittest.TestCase):
         with io.open(salida, encoding="utf-8") as f:
             lineas = [json.loads(l) for l in f]
         self.assertEqual(set(r["version"] for r in lineas), {"2"})
+
+    def test_comparar_la_v1_congelada_con_la_v2(self):
+        """La medición de la §7 en chico: lo que escribió la v1 contra lo que
+        escribe hoy `ejecutar`, con el mismo modelo y la misma entrada."""
+        import spacy
+        entrada = os.path.join(self.carpeta, "v1v2.csv")
+        antes = os.path.join(self.carpeta, "v1.jsonl")
+        despues = os.path.join(self.carpeta, "v2.jsonl")
+        filas = [
+            {"pmid": "31", "fuente_texto": "xml", "seccion": "results",
+             "num_oracion": "0", "oracion": SIN_COMPARTIR},
+            {"pmid": "32", "fuente_texto": "abstract", "seccion": "abstract",
+             "num_oracion": "4", "oracion": CON_COMPARTIDO},
+        ]
+        with io.open(entrada, "w", encoding="utf-8", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(S.COLUMNAS_ENTRADA))
+            w.writeheader()
+            w.writerows(filas)
+        S.ejecutar(entrada, despues, lex=self.lex, nlp=self.nlp,
+                   vocab_signos=SIGNOS)
+        lineas = []
+        for fila in filas:
+            for t in V1_PARES[fila["oracion"]]:
+                r = S._registro(fila, S.huella_oracion(fila["oracion"]),
+                                dict(zip(S.CAMPOS_PAR, t)),
+                                S.nombre_modelo(self.nlp), spacy.__version__)
+                r["version"] = "1"
+                lineas.append(r)
+        escribir_jsonl(antes, lineas)
+
+        d = S.comparar_salidas(antes, despues)
+        self.assertEqual((d["claves_antes"], d["claves_despues"],
+                          d["claves_solo_antes"], d["claves_solo_despues"]),
+                         (9, 9, 0, 0))
+        self.assertEqual(d["cambiadas_fuera_de_sin_alineacion"], 0)
+        self.assertEqual((d["sin_alineacion_antes"],
+                          d["sin_alineacion_despues"],
+                          d["mismo_token_despues"]), (2, 0, 1))
+        self.assertEqual((d["recuperadas"], d["recuperadas_orientadas"]),
+                         (2, 1))
+        self.assertEqual((d["versiones_antes"], d["versiones_despues"]),
+                         ({"1": 9}, {"2": 9}))
 
     def test_esquema_de_analizar_oracion(self):
         menciones = self.lex.menciones(S.HUMO_CORTE)

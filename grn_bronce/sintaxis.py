@@ -78,6 +78,9 @@ en toda la oración, y con ellos el árbol de los pares que hoy salen bien. Y en
 sufijo fabricaría RhlR -> PqsE, que el texto no dice. Con el token entero, las
 dos menciones llevan el sufijo, como en el texto.
 
+Lo que cambia entre dos salidas lo mide `comparar_salidas`, sin spaCy
+(`python -m grn_bronce.cli sintaxis --comparar ANTES --salida DESPUES`).
+
 REGLAS v1
 =========
 
@@ -1068,3 +1071,150 @@ def ejecutar(entrada_csv, salida_jsonl, limite=None, log=lambda m: None,
         % (resumen["pares"], resumen["oraciones_analizadas"],
            resumen["segundos"], salida_jsonl))
     return resumen
+
+
+# ------------------------------------------------------------- comparación
+
+# Claves de ejemplo que guarda la comparación de las líneas que cambiaron sin
+# deber: bastan para ir a mirar, y el JSON no crece con el corpus.
+EJEMPLOS = 10
+
+
+def _clave_linea(d):
+    """`(pmid, fuente_texto, num_oracion, a, b)`: la oración y el par."""
+    return (str(d.get("pmid", "")), str(d.get("fuente_texto", "")),
+            str(d.get("num_oracion", "")), str(d.get("a", "")),
+            str(d.get("b", "")))
+
+
+def _sin_version(d):
+    """La línea sin `version`, como texto comparable: cuentan los valores,
+    no el orden de los campos."""
+    return json.dumps(dict((k, v) for k, v in d.items() if k != "version"),
+                      sort_keys=True, ensure_ascii=False)
+
+
+def _leer_jsonl(ruta):
+    with io.open(ruta, encoding="utf-8") as f:
+        for linea in f:
+            if linea.strip():
+                yield json.loads(linea)
+
+
+def _reparto(cuenta, con_ceros=True):
+    """Las voces en el orden de `VOCES` y, al final, las que no están ahí:
+    una voz desconocida se ve en vez de perderse."""
+    salida = collections.OrderedDict(
+        (v, cuenta[v]) for v in VOCES if con_ceros or cuenta[v])
+    for v in sorted(set(cuenta) - set(VOCES)):
+        salida[v] = cuenta[v]
+    return salida
+
+
+def comparar_salidas(ruta_antes, ruta_despues):
+    """Qué cambió entre dos salidas de `ejecutar` sobre la misma entrada.
+
+    Es la medición de la §7 de `docs/plan-sintaxis-bronce.md`, y no necesita
+    spaCy. Una línea se identifica por `(pmid, fuente_texto, num_oracion, a,
+    b)`. Cuenta:
+
+    - las líneas y las claves de cada lado, y las que están en uno solo;
+    - las `sin_alineacion` de cada lado y las `mismo_token` de después;
+    - las cambiadas fuera de `sin_alineacion`: antes NO eran `sin_alineacion`
+      y después difieren en algún campo distinto de `version`. Entre la v1 y
+      la v2 tienen que ser cero, porque el `Doc` es el mismo;
+    - las recuperadas: antes `sin_alineacion` y después otra voz,
+      `mismo_token` incluida, y cuántas de ellas quedaron orientadas;
+    - el reparto de voces de cada lado.
+
+    Una clave repetida dentro de un archivo se cuenta en `claves_repetidas_*`
+    y a la comparación entra solo su primera línea: con repetidas, la clave
+    no identifica la línea y la comparación por clave no prueba nada.
+    """
+    antes = {}
+    voces_antes = collections.Counter()
+    versiones_antes = collections.Counter()
+    lineas_antes = repetidas_antes = 0
+    for d in _leer_jsonl(ruta_antes):
+        lineas_antes += 1
+        voces_antes[d.get("voz", "")] += 1
+        versiones_antes[str(d.get("version", ""))] += 1
+        clave = _clave_linea(d)
+        if clave in antes:
+            repetidas_antes += 1
+        else:
+            antes[clave] = (d.get("voz", ""), _sin_version(d))
+
+    vistas = set()
+    voces_despues = collections.Counter()
+    versiones_despues = collections.Counter()
+    lineas_despues = repetidas_despues = solo_despues = 0
+    cambiadas, campos, ejemplos = 0, collections.Counter(), []
+    recuperadas, orientadas = collections.Counter(), 0
+    for d in _leer_jsonl(ruta_despues):
+        lineas_despues += 1
+        voz = d.get("voz", "")
+        voces_despues[voz] += 1
+        versiones_despues[str(d.get("version", ""))] += 1
+        clave = _clave_linea(d)
+        if clave in vistas:
+            repetidas_despues += 1
+            continue
+        vistas.add(clave)
+        if clave not in antes:
+            solo_despues += 1
+            continue
+        voz_antes, forma_antes = antes[clave]
+        if voz_antes == "sin_alineacion":
+            if voz != "sin_alineacion":
+                recuperadas[voz] += 1
+                if d.get("regulador_sintactico"):
+                    orientadas += 1
+        elif _sin_version(d) != forma_antes:
+            cambiadas += 1
+            previa = json.loads(forma_antes)
+            for campo in sorted((set(previa) | set(d)) - set(["version"])):
+                if previa.get(campo) != d.get(campo):
+                    campos[campo] += 1
+            if len(ejemplos) < EJEMPLOS:
+                ejemplos.append(list(clave))
+
+    r = collections.OrderedDict()
+    r["antes"] = ruta_antes
+    r["despues"] = ruta_despues
+    r["lineas_antes"] = lineas_antes
+    r["lineas_despues"] = lineas_despues
+    r["claves_antes"] = len(antes)
+    r["claves_despues"] = len(vistas)
+    r["claves_repetidas_antes"] = repetidas_antes
+    r["claves_repetidas_despues"] = repetidas_despues
+    r["claves_solo_antes"] = sum(1 for c in antes if c not in vistas)
+    r["claves_solo_despues"] = solo_despues
+    r["versiones_antes"] = dict(sorted(versiones_antes.items()))
+    r["versiones_despues"] = dict(sorted(versiones_despues.items()))
+    r["sin_alineacion_antes"] = voces_antes["sin_alineacion"]
+    r["sin_alineacion_despues"] = voces_despues["sin_alineacion"]
+    r["mismo_token_despues"] = voces_despues["mismo_token"]
+    r["cambiadas_fuera_de_sin_alineacion"] = cambiadas
+    r["campos_cambiados_fuera_de_sin_alineacion"] = dict(
+        sorted(campos.items()))
+    r["ejemplos_cambiadas_fuera_de_sin_alineacion"] = ejemplos
+    r["recuperadas"] = sum(recuperadas.values())
+    r["recuperadas_orientadas"] = orientadas
+    r["recuperadas_por_voz"] = _reparto(recuperadas, con_ceros=False)
+    r["por_voz_antes"] = _reparto(voces_antes)
+    r["por_voz_despues"] = _reparto(voces_despues)
+    return r
+
+
+def escribir_comparacion(ruta, d):
+    """`d`, lo que devuelve `comparar_salidas`, en JSON y UTF-8. Escritura
+    atómica, como el JSONL: uno a medias no se confunde con uno entero."""
+    carpeta = os.path.dirname(ruta)
+    if carpeta:
+        os.makedirs(carpeta, exist_ok=True)
+    tmp = ruta + ".tmp"
+    with io.open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps(d, ensure_ascii=False, indent=2))
+        f.write("\n")
+    reemplazar(tmp, ruta)
