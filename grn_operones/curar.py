@@ -13,11 +13,12 @@ Las seis reglas del encargo, y las dos desviaciones que hubo que hacer:
    (RefSeq, KEGG, UniProt) en vez de una sola.
 2. **Validar adyacencia.** Los locus tags de PAO1 son consecutivos por
    construccion, asi que la adyacencia se comprueba sobre su numeracion. La
-   **hebra** sale del GFF de RefSeq: primero el caché local (ignorado por
-   git) y, si falta, la copia versionada en
-   `construir_diccionario/diccionario_independiente/cache/`. Solo si faltan
-   las dos la fila queda marcada `hebra_no_verificada` en vez de darse por
-   buena.
+   **hebra** sale del GFF de RefSeq: desde el 20-oct-2026, primero la copia
+   versionada en `construir_diccionario/diccionario_independiente/cache/`,
+   que es la misma en todo clon, y si falta, el caché local (ignorado por
+   git). Si no hay ninguna de las dos, o ninguno de los genes de la unidad
+   está en el GFF, la fila queda marcada `hebra_no_verificada` en vez de
+   darse por buena.
 3. **Deduplicar** por conjunto de locus tags. Una unidad cuyos genes son un
    subconjunto estricto de los de otra **no se fusiona**: se conserva marcada
    como alternativa (`es_alternativa`), porque un operón puede transcribirse

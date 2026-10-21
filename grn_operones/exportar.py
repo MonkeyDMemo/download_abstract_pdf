@@ -525,12 +525,16 @@ def filas_fuentes_catalogo(con, db, fuentes, url_pgd):
                 "bytes": d["bytes"],
             })
             filas.append(fila)
+        # Una vacía no se cura nunca, sea más nueva o no que la curación. Lo
+        # que sí cambia es qué queda: la foto anterior, o nada.
+        queda = ("se cura la extracción %d" % eid if eid
+                 else "la fuente queda fuera de la curación")
         for vid in vacias.get(fuente, ()):
             for d in db.descargas_de_extraccion(con, vid):
                 fila = dict(base)
                 fila.update({
-                    "estado": ("más nueva que la curación: no dejó filas "
-                               "(formato no reconocido); se cura la anterior"),
+                    "estado": ("no dejó filas (formato no reconocido); %s"
+                               % queda),
                     "fecha_datos": "",
                     "descargado_en": d["descargado_en"],
                     "origen": d["url"],

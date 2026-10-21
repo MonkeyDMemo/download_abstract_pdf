@@ -6,7 +6,8 @@
     python -m grn_operones.cli curar
     python -m grn_operones.cli exportar [--pendientes]   # con --pendientes,
                                                         # la lista de revisión
-                                                        # (una petición a PubMed)
+                                                        # (PubMed, una petición
+                                                        # por 200 PMIDs)
     python -m grn_operones.cli catalogo [--paso1]   # catálogo maestro; con
                                                     # --paso1, también el
                                                     # recurso del bronce
@@ -246,10 +247,13 @@ def cmd_curar(args):
         log("")
         log("  EXTRACCIONES SIN FILAS, ignoradas")
         log("  Se cerraron completas, pero su formato no se supo leer. No")
-        log("  desplazan a la foto anterior, que es la que se cura.")
+        log("  desplazan a la foto anterior; sin una, la fuente queda fuera.")
         for f in sorted(resumen["vacias"]):
-            log("    %-10s extracción %s"
-                % (f, ", ".join(str(x) for x in resumen["vacias"][f])))
+            vigente = resumen["edad_foto"].get(f, {}).get("extraccion_id")
+            log("    %-10s extracción %s: %s"
+                % (f, ", ".join(str(x) for x in resumen["vacias"][f]),
+                   "se cura la %d" % vigente if vigente
+                   else "queda fuera de la curación"))
 
     if resumen["retirados"]:
         log("")
@@ -301,8 +305,8 @@ def cmd_exportar(args):
     traer = None
     if args.pendientes:
         # La única parte de `exportar` que sale a la red: una petición a
-        # PubMed por los PMIDs de la lista. Se pide el correo antes de abrir
-        # nada, como `extraer`.
+        # PubMed por cada 200 PMIDs de la lista (hoy son 21). Se pide el
+        # correo antes de abrir nada, como `extraer`.
         correo = credenciales.correo()
         if not correo:
             sys.exit("--pendientes consulta PubMed y NCBI exige un correo de "
@@ -499,8 +503,8 @@ def main():
                      help="Escribir además la lista para que el asesor "
                           "decida las unidades de BioCyc pendiente_revision, "
                           "con título, año, revista y tipo de cada PMID. "
-                          "Consulta PubMed (una petición) con el correo de "
-                          "NCBI_EMAIL o .correo.")
+                          "Consulta PubMed (una petición por cada 200 PMIDs; "
+                          "hoy, una) con el correo de NCBI_EMAIL o .correo.")
     ex2.set_defaults(func=cmd_exportar)
 
     ca = sub.add_parser(

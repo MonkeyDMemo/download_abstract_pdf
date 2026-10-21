@@ -12,6 +12,7 @@ Fixtures locales y minimos: ningun recurso real, ninguna base real.
 
 import io
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -564,6 +565,29 @@ class PruebasExtraerPgd(unittest.TestCase):
         self.assertEqual(len(D.bronze_vigente(self.con)), 6)
         self.assertEqual(D.retirados(self.con), {})
 
+    def test_un_archivo_ilegible_despues_no_la_revierte(self):
+        """Un `--archivo` que no se sabe leer deja una extracción completa y
+        vacía, y la foto vigente sigue siendo la tabla nueva. `foto_sana`
+        miraba la última completa, la vacía, y el siguiente `extraer` sin
+        `--url` volvía a la tabla de 2021."""
+        self._extraer()
+        nueva = os.path.join(self.tmp.name, "pgd_nueva.csv")
+        with io.open(nueva, "w", encoding="utf-8", newline="") as f:
+            f.write(PGD_CSV + u'"operon-9","dnaA-dnaN","PA0001",483,2027,1,'
+                              u'"dnaA","DOOR",18988623\n')
+        self._extraer(archivo=nueva)
+        ilegible = os.path.join(self.tmp.name, "pgd_ilegible.csv")
+        with io.open(ilegible, "w", encoding="utf-8") as f:
+            f.write(u"no es la tabla\n")
+        self._extraer(archivo=ilegible)
+
+        informe = self._extraer()
+
+        self.assertTrue(informe.get("ya_estaba"))
+        self.assertEqual(self.pedidas, [F.URL_PGD])
+        self.assertEqual(len(D.bronze_vigente(self.con)), 6)
+        self.assertEqual(D.retirados(self.con), {})
+
     def test_una_foto_que_no_se_pudo_leer_se_rehace(self):
         """Un parseo fallido también cierra la extracción como completa. Si
         contara como «ya está», PGD se quedaría vacía para siempre."""
@@ -606,8 +630,15 @@ class PruebasCrudoEnOtraMaquina(unittest.TestCase):
             f.write(self.cuerpo)
 
     def _registrar(self, ruta):
+        """Como la deja la máquina que la bajó: registrada, parseada y
+        completa, o sea la foto vigente."""
         eid = D.abrir_extraccion(self.con, "pgd")
-        D.registrar_descarga(self.con, eid, F.URL_PGD, ruta, self.cuerpo)
+        did = D.registrar_descarga(self.con, eid, F.URL_PGD, ruta,
+                                   self.cuerpo)
+        filas = F.parsear_pgd(self.cuerpo)
+        for f in filas:
+            f["descarga_id"] = did
+        D.guardar_bronze(self.con, filas)
         D.cerrar_extraccion(self.con, eid)
 
     def test_una_ruta_relativa_escrita_en_windows(self):
@@ -744,6 +775,23 @@ class PruebasExtraccionHonesta(unittest.TestCase):
         self.assertIsNotNone(extraccion["fin"],
                              "quedaba abierta, sin fin, para siempre")
 
+    def test_un_error_al_guardar_cierra_la_extraccion_incompleta(self):
+        """Lo que falla después de bajar y de parsear (aquí, la base) también
+        la cierra incompleta: el `try` cubría solo la descarga."""
+        local = os.path.join(self.tmp.name, "pgd.csv")
+        with io.open(local, "w", encoding="utf-8", newline="") as f:
+            f.write(PGD_CSV)
+
+        with mock.patch.object(D, "guardar_bronze",
+                               side_effect=sqlite3.OperationalError("lleno")):
+            with self.assertRaises(sqlite3.OperationalError):
+                F.extraer(self.con, "pgd", None, flag_datos=self.tmp.name,
+                          archivo=local)
+
+        extraccion = self._extracciones("pgd")[0]
+        self.assertEqual(extraccion["completa"], 0)
+        self.assertIsNotNone(extraccion["fin"])
+
     def test_un_archivo_local_entra_sin_sesion(self):
         """Sin peticiones no hace falta sesión ni, por lo tanto, correo."""
         local = os.path.join(self.tmp.name, "pgd.csv")
@@ -777,6 +825,18 @@ class PruebasLoQueNoSeSabeLeer(unittest.TestCase):
         with self.assertRaises(F.FormatoDesconocido):
             F.parsear_biocyc(XML_TUS.encode("utf-8"), genes)
 
+    def test_un_xml_con_una_codificacion_que_no_se_conoce(self):
+        """Una codificación desconocida lanzaba `LookupError`, y una de varios
+        bytes `ValueError`: salían con traza, por fuera de lo que atrapan
+        `extraer` y `reparsear`."""
+        for codificacion in ("no-existe", "shift_jis"):
+            tus = (u'<?xml version="1.0" encoding="%s"?><ptools-xml/>'
+                   % codificacion).encode("ascii")
+            with self.assertRaises(F.FormatoDesconocido):
+                F._parsear("biocyc", [("u", "tus.xml", tus),
+                                      ("u", "genes.xml",
+                                       XML_GENES.encode("utf-8"))])
+
 
 class PruebasFotoVigente(unittest.TestCase):
     """La foto que se cura es la última extracción completa QUE DEJÓ FILAS.
@@ -805,16 +865,101 @@ class PruebasFotoVigente(unittest.TestCase):
         self.assertEqual(
             D.edad_de_la_foto(self.con)["odb"]["incompletas_despues"], 1)
 
-    def test_reparsear_sigue_tomando_la_ultima_completa(self):
-        """Es la que hay que reparar, aunque esté vacía."""
-        self.assertEqual(D.ultima_extraccion_completa(self.con),
-                         {"odb": self.vacia})
-
     def test_la_hoja_de_fuentes_la_dice(self):
         filas = E.filas_fuentes_catalogo(self.con, D, ["odb"], F.URL_PGD)
         estados = [f["estado"] for f in filas]
 
         self.assertTrue(any("no dejó filas" in e for e in estados), estados)
+        self.assertTrue(any("se cura la extracción %d" % self.buena in e
+                            for e in estados), estados)
+
+    def test_sin_foto_anterior_la_hoja_no_dice_que_se_cura_otra(self):
+        """Una fuente cuya única extracción no dejó filas no tiene «anterior»
+        que curar: queda fuera, y la hoja lo tiene que decir así."""
+        con = _con()
+        self.addCleanup(con.close)
+        vacia = D.abrir_extraccion(con, "cdbprom")
+        D.registrar_descarga(con, vacia, "u", "r", b"una linea")
+        D.cerrar_extraccion(con, vacia, completa=True)
+
+        filas = E.filas_fuentes_catalogo(con, D, ["cdbprom"], F.URL_PGD)
+
+        self.assertEqual(len(filas), 1)
+        self.assertNotIn("se cura", filas[0]["estado"])
+        self.assertIn("fuera de la curación", filas[0]["estado"])
+
+
+class PruebasReparsearConUnaVaciaMasNueva(unittest.TestCase):
+    """`reparsear` vuelve a leer la foto vigente, la que se cura, y prueba
+    después la completa y vacía más nueva, que un parser corregido puede leer
+    ahora. Antes tomaba solo la última completa: con una descarga ilegible
+    encima salía con 1 para siempre, la foto vigente no se volvía a leer y
+    `flujo.py --rehacer-operones` no podía regenerar la base."""
+
+    def setUp(self):
+        self.con = _con()
+        self.addCleanup(self.con.close)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def _archivo(self, nombre, texto):
+        ruta = os.path.join(self.tmp.name, nombre)
+        with io.open(ruta, "w", encoding="utf-8", newline="\n") as f:
+            f.write(texto)
+        return ruta
+
+    def _extraer(self, fuente, nombre, texto):
+        return F.extraer(self.con, fuente, None, flag_datos=self.tmp.name,
+                         archivo=self._archivo(nombre, texto))
+
+    def test_una_vacia_encima_no_impide_releer_la_vigente(self):
+        buena = self._extraer("odb", "odb1.txt", ODB_TXT)["extraccion_id"]
+        self._extraer("odb", "odb2.txt", u"esto no es el volcado de ODB\n")
+        mensajes = []
+
+        informe = F.reparsear(self.con, "odb", mensajes.append,
+                              flag_datos=self.tmp.name)
+
+        self.assertEqual(informe["extraccion_id"], buena)
+        self.assertEqual(informe["filas"], 2)
+        self.assertEqual(D.foto_vigente(self.con), {"odb": buena})
+        self.assertTrue(any("sigue sin leerse" in m for m in mensajes),
+                        mensajes)
+
+    def test_una_vacia_que_ahora_se_lee_pasa_a_ser_la_vigente(self):
+        """El parser corregido: la descarga estaba entera y no se supo leer.
+        Con el parser de hoy deja filas y desplaza a la anterior."""
+        self._extraer("odb", "odb1.txt", ODB_TXT)
+        nueva = D.abrir_extraccion(self.con, "odb")
+        ruta = self._archivo("odb2.txt", ODB_TXT)
+        with io.open(ruta, "rb") as f:
+            cuerpo = f.read()
+        D.registrar_descarga(self.con, nueva, "archivo-local:odb2.txt", ruta,
+                             cuerpo)
+        D.cerrar_extraccion(self.con, nueva)
+
+        F.reparsear(self.con, "odb", flag_datos=self.tmp.name)
+
+        self.assertEqual(D.foto_vigente(self.con), {"odb": nueva})
+
+    def test_una_fuente_sin_foto_vigente_no_es_falla(self):
+        """CDBProm con un solo archivo, ilegible: no hay nada que se cure, y
+        detener el flujo por eso impedía regenerar una base que ni siquiera
+        depende de CDBProm."""
+        self._extraer("cdbprom", "cdb.tsv", u"una linea\n")
+
+        informe = F.reparsear(self.con, "cdbprom", flag_datos=self.tmp.name)
+
+        self.assertTrue(informe["sin_foto"])
+
+    def test_la_vigente_que_no_se_puede_releer_si_es_falla(self):
+        """`curar` seguiría con el bronce de otro parser: eso detiene."""
+        self._extraer("odb", "odb1.txt", ODB_TXT)
+        os.remove(F.ruta_del_crudo(D.descargas_de(self.con, "odb")[0]["ruta"],
+                                   self.tmp.name))
+
+        with self.assertRaises(F.FormatoDesconocido):
+            F.reparsear(self.con, "odb", flag_datos=self.tmp.name)
 
 
 class PruebasCodigosDeSalida(unittest.TestCase):
@@ -853,6 +998,19 @@ class PruebasCodigosDeSalida(unittest.TestCase):
                          1)
 
     def test_reparsear_sin_foto_no_es_falla(self):
+        self.assertEqual(self._correr(self.cli.cmd_reparsear, fuente="odb"),
+                         0)
+
+    def test_reparsear_con_una_descarga_ilegible_encima_sale_con_0(self):
+        """La que no se lee no es la que se cura: no detiene el flujo."""
+        for nombre, texto in (("odb1.txt", ODB_TXT),
+                              ("odb2.txt", u"no es el volcado de ODB\n")):
+            ruta = os.path.join(self.tmp.name, nombre)
+            with io.open(ruta, "w", encoding="utf-8", newline="\n") as f:
+                f.write(texto)
+            F.extraer(self.con, "odb", None, flag_datos=self.tmp.name,
+                      archivo=ruta)
+
         self.assertEqual(self._correr(self.cli.cmd_reparsear, fuente="odb"),
                          0)
 

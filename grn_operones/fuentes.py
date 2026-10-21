@@ -809,18 +809,22 @@ def traer_archivo(sesion, fuente, var_entorno, carpeta, url=None,
 def foto_sana(con, fuente, flag_datos=None):
     """De dónde salió la foto vigente de `fuente`, si sirve; si no, `None`.
 
-    Sirve cuando la última extracción completa dejó filas en el bronce y sus
-    archivos siguen en disco con la huella registrada. Que la extracción
-    figure como completa no basta, por dos casos que ya se reprodujeron:
+    Sirve cuando hay foto vigente (la última extracción completa que dejó
+    filas, la que se cura) y sus archivos siguen en disco con la huella
+    registrada. Que una extracción figure como completa no basta, por tres
+    casos que ya se reprodujeron:
 
     - Un parseo fallido también cierra la extracción como completa, con 0
       filas. Si eso contara como «ya está», PGD se quedaría vacía para
       siempre.
+    - Esa misma extracción vacía, encima de una tabla más nueva que entró
+      por `--archivo`, no la desplaza. Si se mirara la última completa y no
+      la vigente, `extraer` volvería a bajar la tabla fijada de 2021.
     - Si falta el crudo, `reparsear` pide volver a extraer. Si `extraer`
       contestara «ya está, usa reparsear», cada comando mandaría al otro.
     """
-    eid = _db.ultima_extraccion_completa(con).get(fuente)
-    if not eid or not _db.filas_bronze_de_extraccion(con, eid):
+    eid = _db.foto_vigente(con).get(fuente)
+    if not eid:
         return None
     descargas = _db.descargas_de_extraccion(con, eid)
     for d in descargas:
@@ -939,6 +943,9 @@ def extraer(con, fuente, sesion, flag_datos=None, url=None,
 
     try:
         filas = _parsear(fuente, bajadas)
+        for f in filas:
+            f.setdefault("descarga_id", ids[0] if ids else None)
+        insertadas, ya_estaban = _db.guardar_bronze(con, filas)
     except FormatoDesconocido as e:
         # La descarga si termino: se marca completa aunque no se sepa leer.
         # El parser es un problema nuestro, no una foto a medias de la fuente,
@@ -948,10 +955,12 @@ def extraer(con, fuente, sesion, flag_datos=None, url=None,
         informe["error"] = str(e)
         log("  [%s] descargado, sin parsear: %s" % (fuente, e))
         return informe
-
-    for f in filas:
-        f.setdefault("descarga_id", ids[0] if ids else None)
-    insertadas, ya_estaban = _db.guardar_bronze(con, filas)
+    except Exception:
+        # Lo que no es de formato (un parser con un defecto, la base que no
+        # escribe) tampoco llegó a su foto: se cierra incompleta, con su fin,
+        # como la de un error de red. Antes quedaba abierta.
+        _db.cerrar_extraccion(con, extraccion_id, completa=False)
+        raise
     # Solo aqui, y solo si no hubo error en ningun paso anterior.
     _db.cerrar_extraccion(con, extraccion_id)
     informe["completa"] = True
@@ -969,11 +978,14 @@ def _parsear(fuente, bajadas):
     Todo lo que no se sabe leer sale por la misma excepción. Un cuerpo que no
     es XML lanzaba `ET.ParseError`, que no atrapaban ni `extraer` ni
     `reparsear`: el comando terminaba con traza y, con `--fuente todo`, las
-    fuentes que seguían no se intentaban.
+    fuentes que seguían no se intentaban. Lo mismo pasaba con un XML que
+    declara una codificación desconocida (`LookupError`) o de varios bytes,
+    y con un número que no se puede convertir (`ValueError`, que también
+    cubre a `UnicodeDecodeError`).
     """
     try:
         return _parsear_fuente(fuente, bajadas)
-    except (ET.ParseError, UnicodeDecodeError) as e:
+    except (ET.ParseError, LookupError, ValueError) as e:
         raise FormatoDesconocido("%s: los bytes no se pueden leer (%s)"
                                  % (fuente, e))
 
@@ -998,16 +1010,26 @@ def _parsear_fuente(fuente, bajadas):
 
 
 def reparsear(con, fuente, log=lambda m: None, flag_datos=None):
-    """Vuelve a parsear los archivos de la ultima extraccion completa.
+    """Vuelve a parsear la foto vigente y, si la hay, la completa y vacía que
+    vino después.
 
     Es la razon de ser de la capa cruda: corregir un parser no debe costar una
     peticion a la fuente. Los bytes estan en disco con su huella registrada, y
     se comprueba antes de usarlos --si el archivo cambio, se para-- porque
     re-parsear bytes distintos de los que se descargaron produciria un bronce
     cuya procedencia dice otra cosa de la que tiene.
+
+    Manda la foto vigente, la que se cura: si no se puede volver a leer es un
+    error, porque `curar` seguiría con el bronce de otro parser. La completa
+    y vacía más nueva se intenta después, porque un parser corregido puede
+    leerla ahora, y entonces pasa a ser la vigente. Si sigue sin leerse se
+    avisa y no es falla, porque tampoco antes se curaba. Antes se tomaba solo
+    la última completa: con una descarga ilegible encima, `reparsear` salía
+    con 1 para siempre y la foto vigente no se volvía a leer.
     """
-    eid = _db.ultima_extraccion_completa(con).get(fuente)
-    if not eid:
+    vigente = _db.foto_vigente(con).get(fuente)
+    ultima = _db.ultima_extraccion_completa(con).get(fuente)
+    if not ultima:
         # Sin foto no hay nada que re-parsear, y eso no es un fallo: una
         # máquina puede no haber bajado nunca una fuente. Antes era una
         # excepción, y `reparsear --fuente todo` no distinguía esto de un
@@ -1017,6 +1039,25 @@ def reparsear(con, fuente, log=lambda m: None, flag_datos=None):
         return {"fuente": fuente, "extraccion_id": None, "filas": 0,
                 "archivos": 0, "sin_foto": True}
 
+    informe = {"fuente": fuente, "extraccion_id": None, "filas": 0,
+               "archivos": 0, "sin_foto": True}
+    if vigente:
+        informe = _reparsear_extraccion(con, fuente, vigente, log, flag_datos)
+    if ultima != vigente:
+        try:
+            informe = _reparsear_extraccion(con, fuente, ultima, log,
+                                            flag_datos)
+        except FormatoDesconocido as e:
+            log("  [%s] la extracción %d no dejó filas y sigue sin leerse: "
+                "%s. %s" % (fuente, ultima, e,
+                            "Se cura la %d." % vigente if vigente
+                            else "La fuente queda fuera de la curación."))
+            informe["sin_leer"] = ultima
+    return informe
+
+
+def _reparsear_extraccion(con, fuente, eid, log, flag_datos):
+    """Las filas de bronce de una extracción, leídas otra vez de su crudo."""
     bajadas = []
     for d in _db.descargas_de_extraccion(con, eid):
         # La ruta guardada es la de la máquina que bajó el archivo; se busca
