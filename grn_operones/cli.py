@@ -213,6 +213,10 @@ def cmd_curar(args):
     filas, con_sinonimo = resumen["sinonimos"]
     log("  sinonimos en el diccionario    %d de %d filas (%.1f %%)"
         % (con_sinonimo, filas, 100.0 * con_sinonimo / filas))
+    gff = resumen.get("gff")
+    log("  hebra desde                    %s"
+        % ("%s (huella %s)" % (gff["ruta"], gff["huella"]) if gff
+           else "ningun GFF: la hebra no se verifico"))
 
     if resumen["edad_foto"]:
         log("")

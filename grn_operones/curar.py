@@ -57,6 +57,7 @@ import io
 import os
 import re
 
+from grn_comun import procedencia
 from grn_operones import db as _db
 
 LOCUS = re.compile(r"^PA(\d{4})(?:\.(\d))?$")
@@ -75,16 +76,18 @@ RUTA_GENES = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "grn_bronce", "recursos", "genes_pao1.tsv")
 
-# El GFF de RefSeq, en orden de preferencia: el caché local del constructor
-# del diccionario (ignorado por git) y la copia versionada del diccionario
-# independiente, que sí viene en un clon limpio. La hebra sigue siendo
-# opcional para el caso de que falten las dos.
+_RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# El GFF de RefSeq, en orden de preferencia: primero la copia versionada del
+# diccionario independiente, que es la misma en todo clon, y después el caché
+# local del constructor del diccionario (ignorado por git). Hasta el
+# 20-oct-2026 iba primero el caché local, y la hebra podía cambiar de una
+# máquina a otra sin que nada lo dijera. La hebra sigue siendo opcional para
+# el caso de que falten las dos.
 RUTAS_GFF = (
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                 "datos_etapa2", "cache_diccionario", "refseq_gff.gz"),
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                 "construir_diccionario", "diccionario_independiente", "cache",
-                 "refseq.gff.gz"),
+    os.path.join(_RAIZ, "construir_diccionario", "diccionario_independiente",
+                 "cache", "refseq.gff.gz"),
+    os.path.join(_RAIZ, "datos_etapa2", "cache_diccionario", "refseq_gff.gz"),
 )
 
 NIVELES = ("conocido", "curado", "predicho")
@@ -125,6 +128,15 @@ def cargar_hebras(rutas=RUTAS_GFF):
     siendo util, solo que no puede afirmar nada sobre la hebra, y eso se
     marca fila por fila en vez de fingir que se comprobo.
     """
+    return cargar_hebras_con_origen(rutas)[0]
+
+
+def cargar_hebras_con_origen(rutas=RUTAS_GFF):
+    """(hebras, ruta del GFF que se uso), o ({}, None) si no hay ninguno.
+
+    La ruta va al informe de `curar` con su huella: es lo que dice, en cada
+    maquina, de que archivo salio la hebra.
+    """
     for ruta in rutas:
         if not os.path.exists(ruta):
             continue
@@ -140,8 +152,8 @@ def cargar_hebras(rutas=RUTAS_GFF):
                 if m:
                     hebras[m.group(1).strip()] = partes[6]
         if hebras:
-            return hebras
-    return {}
+            return hebras, ruta
+    return {}, None
 
 
 _SUFIJO = re.compile(r"^(.*?[a-zA-Z])(\d+)$")
@@ -198,9 +210,22 @@ def normalizar(nombres, diccionario, paralogos=None):
     return locus, fuera, ambiguos
 
 
-def _numero(locus_tag):
+def _posicion(locus_tag):
+    """(número, sufijo) de un locus de PAO1, o None: `PA0668.1` → (668, 1)."""
     m = LOCUS.match(locus_tag)
-    return int(m.group(1)) if m else None
+    return (int(m.group(1)), int(m.group(2) or 0)) if m else None
+
+
+def _consecutivos(a, b):
+    """Si la posición `b` sigue a la `a` en el genoma.
+
+    El mismo número con el sufijo siguiente (`PA0668` → `PA0668.1` →
+    `PA0668.2`), o el número siguiente sin sufijo (`PA0668` → `PA0669`, y
+    también `PA0668.2` → `PA0669`). Los `PA####.N` son genes que se anotaron
+    después entre `PA####` y el siguiente, casi siempre ARN.
+    """
+    return ((b[0] == a[0] and b[1] == a[1] + 1)
+            or (b[0] == a[0] + 1 and b[1] == 0))
 
 
 def primer_gen(locus_tags, hebra):
@@ -251,14 +276,16 @@ def es_adyacente(locus_tags):
     orden de transcripción), y exigir uno solo marcaría como no adyacente a
     media fuente.
 
-    Limitación conocida: `_numero` ignora el sufijo `.N`, así que
-    `PA0668.1|PA0668.2` da paso 0 y sale como no adyacente aunque lo sea.
+    El sufijo `.N` cuenta (`_consecutivos`). Hasta el 20-oct-2026 se
+    ignoraba, y `PA0668.1|PA0668.2` daba paso 0 y salía como no adyacente
+    aunque lo fuera: eran la mayoría de los «no adyacentes» del catálogo.
     """
-    nums = [_numero(l) for l in locus_tags]
-    if len(nums) < 2 or any(n is None for n in nums):
+    posiciones = [_posicion(l) for l in locus_tags]
+    if len(posiciones) < 2 or any(p is None for p in posiciones):
         return False
-    pasos = [b - a for a, b in zip(nums, nums[1:])]
-    return all(p == 1 for p in pasos) or all(p == -1 for p in pasos)
+    pares = list(zip(posiciones, posiciones[1:]))
+    return (all(_consecutivos(a, b) for a, b in pares)
+            or all(_consecutivos(b, a) for a, b in pares))
 
 
 def misma_hebra(locus_tags, hebras):
@@ -541,7 +568,9 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
     actualizacion, y un diff a medias dejaria huerfanos que nadie limpia.
     """
     diccionario = cargar_diccionario() if diccionario is None else diccionario
-    hebras = cargar_hebras() if hebras is None else hebras
+    gff = None
+    if hebras is None:
+        hebras, gff = cargar_hebras_con_origen(RUTAS_GFF)
     if not hebras:
         log("  aviso: sin GFF en cache, la hebra no se verifica")
 
@@ -637,8 +666,8 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
         _db.guardar_silver(con, {
             "clave_genes": clave,
             # El nombre que la fuente le da al operon, si alguna lo da.
-            # ODB y PGD lo traen en `name` (`mmsAB`, `metG-PA3483`). BioCyc
-            # tiene `common-name` en 94 TUs, pero su parser no lo toma.
+            # ODB y PGD lo traen en `name` (`mmsAB`, `metG-PA3483`), y BioCyc
+            # en el `common-name` de algunas TUs (`mexEF-oprN`, `carAB`).
             "nombre": _nombre_de(filas),
             "locus_tags": "|".join(locus),
             "n_genes": len(locus),
@@ -687,6 +716,15 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
     # se cura una foto vieja indefinidamente y sin ruido, porque todo
     # sigue funcionando; esto es lo que lo delata.
     resumen["edad_foto"] = _db.edad_de_la_foto(con)
+    # De qué archivo salió la hebra, con su huella. Sin esto, dos máquinas
+    # con GFF distintos daban curaciones distintas sin decirlo.
+    resumen["gff"] = None
+    if gff:
+        try:
+            ruta_gff = os.path.relpath(gff, _RAIZ).replace(os.sep, "/")
+        except ValueError:          # otra unidad en Windows
+            ruta_gff = gff
+        resumen["gff"] = {"ruta": ruta_gff, "huella": procedencia.huella(gff)}
     resumen["ambiguos"] = sin_resolver_ambiguo
     # El tamano del diccionario de sinonimos, por la misma razon. Una prueba
     # que fallara al crecer castigaria la mejora y romperia CI por una buena

@@ -293,10 +293,10 @@ class BaseOperones(object):
     def etiqueta(self, fila):
         """El nombre de la unidad, o sus genes entre llaves si no tiene.
 
-        Las llaves son para que una unidad sin nombre (las de BioCyc, cuyo
-        parser no toma el `common-name` que traen 94 TUs) no se
-        lea como si lo tuviera: `{mexA mexB oprM}` es una lista de genes, no
-        el nombre de un operón.
+        Las llaves son para que una unidad sin nombre (casi todas las que
+        solo vienen de BioCyc, que nombra unas pocas con su `common-name`) no
+        se lea como si lo tuviera: `{mexA mexB oprM}` es una lista de genes,
+        no el nombre de un operón.
         """
         nombre = fila.get("nombre") or ""
         if not nombre:

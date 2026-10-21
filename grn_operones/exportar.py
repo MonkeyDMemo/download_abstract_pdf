@@ -38,9 +38,12 @@ COLUMNAS_SILVER = [
     "promotor_cdbprom", "revisar", "curado_en",
 ]
 
+# `nombre` entró el 20-oct-2026: la fila ya lo traía y `escribir_csv` lo
+# tiraba en silencio, así que una unidad para revisar solo se reconocía por
+# sus locus.
 COLUMNAS_CONFLICTOS = [
-    "clave_genes", "locus_tags", "n_genes", "motivo", "nivel_evidencia",
-    "n_fuentes", "fuentes", "pmids",
+    "clave_genes", "nombre", "locus_tags", "n_genes", "motivo",
+    "nivel_evidencia", "n_fuentes", "fuentes", "pmids",
 ]
 
 # Lo que obliga a mirar a mano, y por que. El orden es el de urgencia: un
@@ -214,8 +217,8 @@ COLUMNAS_CATALOGO = [
     "clave_genes", "nombre", "genes", "locus_tags", "orden_verificado",
     "n_genes", "hebra", "nivel_evidencia", "evidencia", "pmids", "fuentes",
     "n_fuentes",
-    "id_odb", "nombre_odb", "id_biocyc", "id_door", "nombre_door",
-    "id_pseudocap", "nombre_pseudocap",
+    "id_odb", "nombre_odb", "id_biocyc", "nombre_biocyc", "id_door",
+    "nombre_door", "id_pseudocap", "nombre_pseudocap",
     "promotor_cdbprom", "gen_con_promotor", "score_cdbprom",
     "monocistronico", "adyacente", "es_alternativa",
     "en_catalogo_paso1", "nombre_catalogo_paso1", "revisar", "motivo",
@@ -226,8 +229,8 @@ ENCABEZADOS_CATALOGO = [
     "Orden de transcripción verificado", "Número de genes", "Hebra",
     "Nivel de evidencia", "Evidencia por fuente", "PMIDs",
     "Fuentes de operones", "Número de fuentes",
-    "ID en ODB", "Nombre en ODB", "ID en BioCyc", "ID en PGD (DOOR)",
-    "Nombre en PGD (DOOR)", "ID en PGD (PseudoCAP)",
+    "ID en ODB", "Nombre en ODB", "ID en BioCyc", "Nombre en BioCyc",
+    "ID en PGD (DOOR)", "Nombre en PGD (DOOR)", "ID en PGD (PseudoCAP)",
     "Nombre en PGD (PseudoCAP)",
     "Promotor CDBProm", "Gen con promotor", "Score CDBProm",
     "Un solo gen", "Genes adyacentes", "Unidad alternativa",
@@ -340,7 +343,7 @@ def filas_catalogo(con, db, anotacion, paso1=None):
         hebra = s["cadena"] or ""
         orden = orden_transcripcion(locus, hebra)
         ids = {"odb": [], "biocyc": [], "DOOR": [], "PseudoCAP": []}
-        nombres = {"odb": [], "DOOR": [], "PseudoCAP": []}
+        nombres = {"odb": [], "biocyc": [], "DOOR": [], "PseudoCAP": []}
         fuentes = set()
         for fuente, idf in mapa.get(s["id"], []):
             fuentes.add(fuente)
@@ -385,6 +388,7 @@ def filas_catalogo(con, db, anotacion, paso1=None):
             "id_odb": ";".join(sorted(ids["odb"], key=_orden_operon)),
             "nombre_odb": "; ".join(_unicos(nombres["odb"])),
             "id_biocyc": ";".join(sorted(ids["biocyc"])),
+            "nombre_biocyc": "; ".join(_unicos(nombres["biocyc"])),
             "id_door": ";".join(sorted(ids["DOOR"], key=_orden_operon)),
             "nombre_door": "; ".join(_unicos(nombres["DOOR"])),
             "id_pseudocap": ";".join(sorted(ids["PseudoCAP"],
@@ -497,8 +501,12 @@ def lineas_leame(catalogo, fuentes, paso1=None):
     curado = cuenta(lambda f: f["nivel_evidencia"] == "curado")
     multi = cuenta(lambda f: f["monocistronico"] == "no")
     sin_nombre = cuenta(lambda f: not f["nombre"])
+    sin_nombre_biocyc = cuenta(lambda f: not f["nombre"]
+                               and f["fuentes"] == "biocyc")
+    con_nombre_biocyc = cuenta(lambda f: f["nombre_biocyc"])
     solo_door = cuenta(lambda f: f["nombre"] and f["nombre_door"]
-                       and not f["nombre_odb"] and not f["nombre_pseudocap"])
+                       and not f["nombre_odb"] and not f["nombre_pseudocap"]
+                       and not f["nombre_biocyc"])
     con_promotor = cuenta(lambda f: f["promotor_cdbprom"] == "sí")
     varios_ids = cuenta(lambda f: any(
         ";" in f[c] for c in ("id_odb", "id_biocyc", "id_door",
@@ -526,11 +534,11 @@ def lineas_leame(catalogo, fuentes, paso1=None):
         "independientes. PGD (DOOR) y BioCyc (Pathway Tools) son predictores "
         "distintos pero parten de la misma distancia intergénica, y ODB, "
         "BioCyc y PseudoCAP pueden citar el mismo artículo.",
-        "- Nombres: %d unidades no tienen nombre (las de BioCyc: su parser no "
-        "toma el `common-name`, que traen 94 TUs), y %d "
+        "- Nombres: %d unidades no tienen nombre (%d de ellas solo están en "
+        "BioCyc, que nombra %d unidades con su `common-name`), y %d "
         "solo tienen el de DOOR, que une los nombres de cada gen "
         "(PA0006-lptA) y no es un nombre de la literatura." % (
-            sin_nombre, solo_door),
+            sin_nombre, sin_nombre_biocyc, con_nombre_biocyc, solo_door),
         "- Varios IDs de una misma fuente en una fila (%d filas) son "
         "unidades distintas de esa fuente con los mismos genes: la clave del "
         "catálogo son los genes y ahí colapsan. En PseudoCAP suele ser un ID "

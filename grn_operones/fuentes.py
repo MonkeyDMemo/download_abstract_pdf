@@ -15,8 +15,8 @@ Un parser escrito a ciegas produce código que parece funcionar y devuelve
 cero filas, que es la peor forma de fallar: silenciosa y con pinta de
 correcta. Por eso los de ODB, CDBProm y PGD exigen su contrato (encabezado,
 columnas, valores de hebra) y, si no se cumple, lanzan `FormatoDesconocido`
-en vez de leer columnas corridas. El de BioCyc todavía no lo hace: un XML sin
-TUs da cero filas y un cuerpo que no es XML lanza `ET.ParseError`.
+en vez de leer columnas corridas. El de BioCyc lo lanza si ninguna unidad
+llega a locus tag, y `_parsear` convierte en lo mismo un cuerpo que no es XML.
 `inspeccionar()` dice **qué llegó de verdad** --tipo,
 tamaño, si trae tablas, si trae JSON--, que es lo que hace falta cuando una
 fuente cambia de formato o devuelve una página en lugar de datos.
@@ -467,6 +467,12 @@ def parsear_biocyc(xml_tus, xml_genes):
         crudo = {"frameids": frameids}
         if sin_mapear:
             crudo["sin_mapear"] = sin_mapear
+        # El nombre de la unidad, que traen 94 TUs (`mexEF-oprN`, `carAB`).
+        # Solo el hijo directo: con `iter` saldrían también las descripciones
+        # de los códigos de evidencia («Inferred from experiment»).
+        nombre = (tu.findtext("common-name") or "").strip()
+        if nombre:
+            crudo["name"] = nombre
         filas.append({
             "fuente": "biocyc",
             "id_fuente": tu.get("frameid"),
