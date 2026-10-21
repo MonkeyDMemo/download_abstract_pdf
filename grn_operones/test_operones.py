@@ -1143,6 +1143,20 @@ class PruebasCuracion(unittest.TestCase):
         self.assertFalse(C.es_adyacente(["PA0668.1", "PA0670"]))
         self.assertFalse(C.es_adyacente(["PA0668", "PA0668"]))
 
+    def test_en_un_empate_de_nombres_gana_la_forma_de_gen(self):
+        """BioCyc escribe `MexAB-OprM` y ODB `mexAB-oprM`: el mismo largo. El
+        operón se nombra por sus genes; sin desempate ganaba BioCyc por el
+        orden alfabético de la fuente."""
+        _bronce(self.con, [
+            _fila("biocyc", "TU-1", "PA0427|PA0426|PA0425",
+                  registro_raw={"name": "MexAB-OprM"}),
+            _fila("odb", "op1", "PA0425|PA0426|PA0427",
+                  registro_raw={"name": "mexAB-oprM"})])
+
+        self._curar()
+
+        self.assertEqual(D.silver_de(self.con)[0]["nombre"], "mexAB-oprM")
+
     def test_la_hebra_sale_primero_de_la_copia_versionada(self):
         """La misma en todo clon; el caché local podía ser otra."""
         self.assertIn("construir_diccionario", C.RUTAS_GFF[0])

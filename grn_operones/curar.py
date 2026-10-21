@@ -527,6 +527,11 @@ def _nombre_de(filas):
     Se prefiere el mas corto entre los disponibles: cuando dos fuentes nombran
     el mismo operon, la forma corta suele ser la canonica (`mmsAB` antes que
     `mmsAB operon region`).
+
+    En un empate gana la forma de gen, con minuscula: un operon se nombra por
+    sus genes (`mexAB-oprM`), no por sus proteinas (`MexAB-OprM`, como lo
+    escribe BioCyc). Sin esto el empate lo decidia el orden alfabetico de la
+    fuente.
     """
     nombres = []
     for f in filas:
@@ -539,7 +544,9 @@ def _nombre_de(filas):
             continue
         if isinstance(d, dict) and d.get("name"):
             nombres.append(d["name"])
-    return sorted(nombres, key=len)[0] if nombres else None
+    if not nombres:
+        return None
+    return sorted(nombres, key=lambda n: (len(n), n[:1].isupper()))[0]
 
 
 def _huerfanos(fila):
