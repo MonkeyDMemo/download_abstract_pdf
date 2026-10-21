@@ -16,11 +16,17 @@ La dependencia va en el sentido correcto --el bronce depende de la extraccion,
 no al reves-- y garantiza que las tablas del paso 0 existan, que es lo que las
 llaves foraneas del bronce necesitan.
 
+Lo que usa la verificacion de una corrida (`conectar_lectura`,
+`integridad_de_corrida`, `corridas_por_estatus`) solo lee, y vive aqui por la
+misma regla: el SQL del bronce esta en este archivo y en ningun otro.
+
 Solo biblioteca estandar.
 """
 
 import json
+import os
 import sqlite3
+import urllib.request
 from datetime import datetime, timezone
 
 from grn_etl import db as _paso0
@@ -100,6 +106,46 @@ def conectar(ruta="datos/grn.db"):
     """Abre la base con el esquema del paso 0 y el del bronce encima."""
     con = _paso0.conectar(ruta)
     con.executescript(ESQUEMA_BRONCE)
+    return con
+
+
+def conectar_lectura(ruta):
+    """La base en solo lectura, para verificarla sin poder cambiarla.
+
+    No pasa por `conectar()`: esa crea la carpeta, el esquema y el WAL, o sea
+    que escribe, y con una ruta mal escrita deja una base vacía donde no había
+    nada y la verificación diría «la corrida no existe» de una base que nunca
+    existió. Aquí son tres capas, cada una por el hueco de la anterior:
+
+    - `mode=ro` en la URI: SQLite abre sin permiso de escritura y, si el
+      archivo no está, falla en vez de crearlo;
+    - `PRAGMA query_only`: rechaza toda escritura de esta conexión aunque el
+      modo de la URI se perdiera por el camino;
+    - una lectura de prueba: `connect` es perezoso, y un archivo que no es
+      una base solo truena en la primera consulta. Así truena aquí.
+
+    Si algo de eso falla, lanza `ErrorBase`; nunca cae a una conexión de
+    lectura y escritura. Una base en WAL se abre aunque falten sus `-wal` y
+    `-shm` (el estado normal de una base que nadie tiene abierta): desde
+    SQLite 3.22 basta con que se puedan crear en la carpeta, y SQLite los
+    crea vacíos para leer. Son su contabilidad, no un cambio a la base.
+    """
+    absoluta = os.path.abspath(ruta)
+    if not os.path.isfile(absoluta):
+        raise sqlite3.OperationalError("no existe la base de datos")
+    con = sqlite3.connect(
+        "file:%s?mode=ro" % urllib.request.pathname2url(absoluta), uri=True)
+    try:
+        con.row_factory = sqlite3.Row
+        con.execute("PRAGMA query_only = ON")
+        # Leer no bloquea al escritor en WAL, pero abrir mientras otro hace un
+        # checkpoint puede dar SQLITE_BUSY de un instante: se espera en vez de
+        # declarar la base inaccesible por un choque de milisegundos.
+        con.execute("PRAGMA busy_timeout = 5000")
+        con.execute("SELECT COUNT(*) FROM sqlite_master").fetchone()
+    except sqlite3.Error:
+        con.close()
+        raise
     return con
 
 
@@ -529,6 +575,80 @@ def conteos_de(con, corrida_id):
             """SELECT COUNT(*) FROM oraciones_candidatas
                 WHERE corrida_id=? AND disparador <> ''""", (corrida_id,)),
     }
+
+
+def integridad_de_corrida(con, corrida_id):
+    """Las filas que rompen «todo se lee por `corrida_id`», contadas.
+
+    Toda consulta del bronce filtra por la corrida de la tabla que lee: una
+    mención con la corrida 7 colgada de una unidad de la 4 no entra en
+    `conteos_de(4)`, y en `conteos_de(7)` cuenta una oración que no es de esa
+    corrida, sin que ninguna cifra proteste. Aquí se cuenta lo que haría falso
+    ese supuesto:
+
+    - menciones y candidatas cuya corrida difiere de la de su unidad, en los
+      dos sentidos (la fila es de la corrida y su unidad no, o al revés);
+    - filas sin `corrida_id`, en toda la tabla. La columna es NOT NULL y no
+      debería haber ninguna; se cuentan igual porque una fila sin corrida no
+      la mira ninguna consulta, y si apareciera nadie se enteraría;
+    - huérfanas: menciones y candidatas de la corrida cuya unidad ya no está,
+      y unidades cuyo documento ya no está.
+
+    Una corrida sana da cero en todo. Dos consultas por cruce y no un OR: con
+    el OR, SQLite no usa ningún índice y recorre las menciones de todas las
+    corridas.
+    """
+    def uno(sql, params=()):
+        return con.execute(sql, params).fetchone()[0]
+
+    def cruzadas(tabla):
+        return uno(
+            """SELECT COUNT(*) FROM %s x
+                 JOIN texto_unidades u ON u.id = x.unidad_id
+                WHERE x.corrida_id = ? AND u.corrida_id IS NOT ?""" % tabla,
+            (corrida_id, corrida_id)) + uno(
+            """SELECT COUNT(*) FROM texto_unidades u
+                 JOIN %s x ON x.unidad_id = u.id
+                WHERE u.corrida_id = ? AND x.corrida_id IS NOT ?""" % tabla,
+            (corrida_id, corrida_id))
+
+    def huerfanas(tabla):
+        return uno(
+            """SELECT COUNT(*) FROM %s x
+                 LEFT JOIN texto_unidades u ON u.id = x.unidad_id
+                WHERE x.corrida_id = ? AND u.id IS NULL""" % tabla,
+            (corrida_id,))
+
+    def sin_corrida(tabla):
+        return uno("SELECT COUNT(*) FROM %s WHERE corrida_id IS NULL" % tabla)
+
+    return {
+        "menciones_de_otra_corrida": cruzadas("menciones"),
+        "candidatas_de_otra_corrida": cruzadas("oraciones_candidatas"),
+        "unidades_sin_corrida": sin_corrida("texto_unidades"),
+        "menciones_sin_corrida": sin_corrida("menciones"),
+        "candidatas_sin_corrida": sin_corrida("oraciones_candidatas"),
+        "menciones_huerfanas": huerfanas("menciones"),
+        "candidatas_huerfanas": huerfanas("oraciones_candidatas"),
+        "unidades_sin_documento": uno(
+            """SELECT COUNT(*) FROM texto_unidades u
+                 LEFT JOIN documentos d ON d.pmid = u.pmid
+                WHERE u.corrida_id = ? AND d.pmid IS NULL""", (corrida_id,)),
+    }
+
+
+def corridas_por_estatus(con):
+    """{estatus: [corrida, ...]} de todas las corridas, cada una como dict.
+
+    Filas y no conteos: quien busca zombis necesita la hora de inicio, y quien
+    revisa el paso 2 necesita los `parametros` para saber a qué corrida del
+    bronce apunta cada una. El conteo es `len()` de la lista. Son decenas de
+    filas, no miles.
+    """
+    salida = {}
+    for f in con.execute("SELECT * FROM corridas ORDER BY id"):
+        salida.setdefault(f["estatus"], []).append(dict(f))
+    return salida
 
 
 def fulltext_disponible(con, tipo="xml"):
