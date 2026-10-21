@@ -132,10 +132,10 @@ def cargar_hebras(rutas=RUTAS_GFF):
 
 
 def cargar_hebras_con_origen(rutas=RUTAS_GFF):
-    """(hebras, ruta del GFF que se uso), o ({}, None) si no hay ninguno.
+    """(hebras, ruta del GFF que se usó), o ({}, None) si no hay ninguno.
 
     La ruta va al informe de `curar` con su huella: es lo que dice, en cada
-    maquina, de que archivo salio la hebra.
+    máquina, de qué archivo salió la hebra.
     """
     for ruta in rutas:
         if not os.path.exists(ruta):
@@ -528,9 +528,9 @@ def _nombre_de(filas):
     el mismo operon, la forma corta suele ser la canonica (`mmsAB` antes que
     `mmsAB operon region`).
 
-    En un empate gana la forma de gen, con minuscula: un operon se nombra por
-    sus genes (`mexAB-oprM`), no por sus proteinas (`MexAB-OprM`, como lo
-    escribe BioCyc). Sin esto el empate lo decidia el orden alfabetico de la
+    En un empate gana la forma de gen, con minúscula: un operón se nombra por
+    sus genes (`mexAB-oprM`), no por sus proteínas (`MexAB-OprM`, como lo
+    escribe BioCyc). Sin esto el empate lo decidía el orden alfabético de la
     fuente.
     """
     nombres = []

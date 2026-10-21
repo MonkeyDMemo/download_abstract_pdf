@@ -48,9 +48,9 @@ GENOMA = "NC_002516.2"
 
 FUENTES = ("odb", "biocyc", "pgd", "cdbprom")
 
-# El volcado de texto plano que el propio sitio ofrece en la pagina de la
+# El volcado de texto plano que el propio sitio ofrece en la página de la
 # tabla, https://operondb.jp/known ("Download Known Operons (Plain text)").
-# Es UNA peticion en vez de paginar, y es la via que el sitio quiere que se
+# Es UNA petición en vez de paginar, y es la vía que el sitio quiere que se
 # use.
 #
 # La paginacion HTML que se intento primero no sirve, y la razon merece
@@ -121,10 +121,10 @@ def carpeta_cruda(fuente, flag_datos=None, dia=None):
 def ruta_para_registrar(ruta, flag_datos=None):
     """La ruta de un crudo como se guarda en `operones_descargas.ruta`.
 
-    Relativa a la raiz de datos y con `/`: `operones_crudo/pgd/2026-09-27/x`.
-    Antes se guardaba como la escribia la maquina que bajo el archivo
+    Relativa a la raíz de datos y con `/`: `operones_crudo/pgd/2026-09-27/x`.
+    Antes se guardaba como la escribía la máquina que bajó el archivo
     (relativa a su carpeta de trabajo y con su separador, o absoluta), y en
-    otra maquina ya no llevaba a ninguna parte. Fuera de la raiz de datos, o
+    otra máquina ya no llevaba a ninguna parte. Fuera de la raíz de datos, o
     en otra unidad de Windows, se guarda tal cual.
     """
     raiz = rutas.raiz_datos(flag_datos)
@@ -297,9 +297,9 @@ def inspeccionar(cuerpo):
 def traer_odb(sesion, carpeta, log=lambda m: None):
     """Trae el volcado completo de operones conocidos. Una sola peticion.
 
-    La paginacion HTML no da datos (ver `URL_ODB`) y la sustituye este
-    volcado. El `max_paginas` que quedo de ella se quito el 20-oct-2026: se
-    aceptaba y no hacia nada.
+    La paginación HTML no da datos (ver `URL_ODB`) y la sustituye este
+    volcado. El `max_paginas` que quedó de ella se quitó el 20-oct-2026: se
+    aceptaba y no hacía nada.
     """
     cuerpo = sesion.pedir(URL_ODB, timeout=300)
     if cuerpo is None:
@@ -1009,18 +1009,18 @@ def reparsear(con, fuente, log=lambda m: None, flag_datos=None):
     eid = _db.ultima_extraccion_completa(con).get(fuente)
     if not eid:
         # Sin foto no hay nada que re-parsear, y eso no es un fallo: una
-        # maquina puede no haber bajado nunca una fuente. Antes era una
-        # excepcion, y `reparsear --fuente todo` no distinguia esto de un
+        # máquina puede no haber bajado nunca una fuente. Antes era una
+        # excepción, y `reparsear --fuente todo` no distinguía esto de un
         # crudo perdido.
-        log("  [%s] sin ninguna extraccion completa: nada que re-parsear"
+        log("  [%s] sin ninguna extracción completa: nada que re-parsear"
             % fuente)
         return {"fuente": fuente, "extraccion_id": None, "filas": 0,
                 "archivos": 0, "sin_foto": True}
 
     bajadas = []
     for d in _db.descargas_de_extraccion(con, eid):
-        # La ruta guardada es la de la maquina que bajo el archivo; se busca
-        # donde esta hoy, y solo sirve el que tiene la huella registrada.
+        # La ruta guardada es la de la máquina que bajó el archivo; se busca
+        # dónde está hoy, y solo sirve el que tiene la huella registrada.
         try:
             local = ruta_del_crudo(d["ruta"], flag_datos, d["sha256"])
         except OSError as e:
@@ -1032,30 +1032,30 @@ def reparsear(con, fuente, log=lambda m: None, flag_datos=None):
             if hallados:
                 raise FormatoDesconocido(
                     "%s no coincide con su huella registrada (%s). Esos no "
-                    "son los bytes que se descargaron, asi que el bronce que "
-                    "saldria de ellos no tendria la procedencia que dice "
+                    "son los bytes que se descargaron, así que el bronce que "
+                    "saldría de ellos no tendría la procedencia que dice "
                     "tener." % (", ".join(hallados), d["sha256"][:16]))
             raise FormatoDesconocido(
-                "falta el crudo %s de la extraccion %d: no esta ahi ni bajo "
-                "%s. Copia la carpeta %s de la maquina que lo bajo o vuelve a "
+                "falta el crudo %s de la extracción %d: no está ahí ni bajo "
+                "%s. Copia la carpeta %s de la máquina que lo bajó o vuelve a "
                 "extraer." % (d["ruta"], eid,
                               os.path.join(rutas.raiz_datos(flag_datos),
                                            CARPETA_CRUDA), CARPETA_CRUDA))
         with io.open(local, "rb") as f:
             cuerpo = f.read()
         # La ruta LOCAL: `_parsear` distingue los dos XML de BioCyc por su
-        # nombre, y el `basename` de una ruta de Windows leida en Linux era
+        # nombre, y el `basename` de una ruta de Windows leída en Linux era
         # la ruta entera.
         bajadas.append((d["url"], local, cuerpo))
         log("  [%s] %s  (%d bytes, huella ok)"
             % (fuente, os.path.basename(local), len(cuerpo)))
     if not bajadas:
         raise FormatoDesconocido(
-            "la extraccion %d de %s se cerro completa sin ningun archivo"
+            "la extracción %d de %s se cerró completa sin ningún archivo"
             % (eid, fuente))
 
     # Se parsea ANTES de borrar: si el formato no se reconoce, el bronce de
-    # esa extraccion queda como estaba.
+    # esa extracción queda como estaba.
     filas = _parsear(fuente, bajadas)
     primera = _db.descargas_de_extraccion(con, eid)[0]["id"]
     for f in filas:

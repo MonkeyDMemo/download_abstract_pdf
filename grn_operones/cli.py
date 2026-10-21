@@ -51,7 +51,7 @@ def cmd_extraer(args):
     # teclea en la linea de comandos queda en el historial del shell. Es el
     # mismo criterio que aplica a BIOCYC_EMAIL y BIOCYC_PASSWORD, y la
     # interfaz tiene que ser una sola aunque el riesgo de cada dato difiera.
-    # Identifica al agente ante las fuentes, asi que solo hace falta si va a
+    # Identifica al agente ante las fuentes, así que solo hace falta si va a
     # haber peticiones: un --archivo se ingiere sin pedir nada.
     correo = None
     if not args.archivo:
@@ -59,7 +59,7 @@ def cmd_extraer(args):
         if not correo:
             sys.exit("Hace falta un correo de contacto para identificar al "
                      "agente ante las fuentes. Ponlo en NCBI_EMAIL o en el "
-                     "archivo .correo; no hay flag a proposito, para que no "
+                     "archivo .correo; no hay flag a propósito, para que no "
                      "quede en el historial del shell.")
     pedidas = (fuentes.FUENTES if args.fuente == "todo" else (args.fuente,))
 
@@ -94,7 +94,7 @@ def cmd_extraer(args):
     fallidas = [i["fuente"] for i in informes
                 if _fallo(i, explicita=args.fuente != "todo")]
     if fallidas:
-        log("  Fallaron: %s. El codigo de salida es 1: un 0 diria que todas "
+        log("  Fallaron: %s. El código de salida es 1: un 0 diría que todas "
             "las fuentes pedidas entraron." % ", ".join(fallidas))
         return 1
     return 0
@@ -154,8 +154,8 @@ def cmd_reparsear(args):
 
     Sale con 1 si una fuente con foto no se pudo re-parsear: un crudo que
     falta, una huella que no coincide o un formato que no se reconoce. Antes
-    salia con 0 siempre, y `flujo.py --rehacer-operones` seguia con el bronce
-    viejo sin enterarse. Una fuente sin ninguna extraccion completa no es
+    salía con 0 siempre, y `flujo.py --rehacer-operones` seguía con el bronce
+    viejo sin enterarse. Una fuente sin ninguna extracción completa no es
     falla: no hay nada que re-parsear.
     """
     con = _conectar(args)
@@ -173,7 +173,7 @@ def cmd_reparsear(args):
         con.close()
     log("")
     if fallidas:
-        log("  No se pudo re-parsear: %s. Su bronce quedo como estaba."
+        log("  No se pudo re-parsear: %s. Su bronce quedó como estaba."
             % ", ".join(fallidas))
         return 1
     log("  Re-parsear no cuesta una peticion: los bytes ya estaban en disco")
@@ -218,7 +218,7 @@ def cmd_curar(args):
     gff = resumen.get("gff")
     log("  hebra desde                    %s"
         % ("%s (huella %s)" % (gff["ruta"], gff["huella"]) if gff
-           else "ningun GFF: la hebra no se verifico"))
+           else "ningún GFF: la hebra no se verificó"))
 
     if resumen["edad_foto"]:
         log("")
@@ -248,7 +248,7 @@ def cmd_curar(args):
         log("  Se cerraron completas, pero su formato no se supo leer. No")
         log("  desplazan a la foto anterior, que es la que se cura.")
         for f in sorted(resumen["vacias"]):
-            log("    %-10s extraccion %s"
+            log("    %-10s extracción %s"
                 % (f, ", ".join(str(x) for x in resumen["vacias"][f])))
 
     if resumen["retirados"]:
@@ -300,7 +300,7 @@ def cmd_curar(args):
 def cmd_exportar(args):
     traer = None
     if args.pendientes:
-        # La unica parte de `exportar` que sale a la red: una peticion a
+        # La única parte de `exportar` que sale a la red: una petición a
         # PubMed por los PMIDs de la lista. Se pide el correo antes de abrir
         # nada, como `extraer`.
         correo = credenciales.correo()
