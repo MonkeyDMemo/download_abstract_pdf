@@ -132,6 +132,28 @@ class PruebasParesDesdeElBronce(unittest.TestCase):
                                          self.catalogo), [])
         self.assertEqual(puente.locus_de("", self.locus, self.catalogo), [])
 
+    def test_locus_de_un_operon_sale_de_la_tabla(self):
+        """Un blanco que es operón del catálogo se expande a sus genes; uno
+        sintético (`exoSTY`) no, por la misma regla que el bronce."""
+        self.assertEqual(puente.locus_de("mexEF-oprN", self.locus,
+                                         self.catalogo),
+                         ["PA2493", "PA2494", "PA2495"])
+        self.assertEqual(puente.locus_de("exoSTY", self.locus,
+                                         self.catalogo), [])
+
+    def test_el_informe_sella_el_catalogo_de_operones(self):
+        """Con ese catálogo se expande el blanco; el informe no lo decía
+        (pendiente 4.18)."""
+        from grn_bronce import operones
+        from grn_comun import procedencia
+        with tempfile.TemporaryDirectory() as carpeta:
+            ruta = os.path.join(carpeta, "c.csv")
+            with io.open(ruta, "w", encoding="utf-8") as f:
+                f.write("pmid,seccion,fuente_texto,num_oracion,oracion\n")
+            informe = puente.construir_pares(ruta, carpeta)
+        self.assertEqual(informe["huellas"]["operones_pao1.tsv"],
+                         procedencia.huella_texto(operones.RUTA_POR_OMISION))
+
     def test_par_del_bronce(self):
         self.assertEqual(puente.par_del_bronce("a", "b", "a", "b"), "directo")
         self.assertEqual(puente.par_del_bronce("a", "b", "b", "a"), "inverso")

@@ -273,7 +273,7 @@ def _volcar(con, fila, corpus_nombre, cuenta, segundos, faltan,
     recursos = [
         ("Catalogo de operones del paso 1", operones.RUTA_POR_OMISION,
          len(catalogo), "operones"),
-        ("Base de operones (pertenencia)", operones.RUTA_BASE,
+        (operones.CONCEPTO_BASE, operones.RUTA_BASE,
          len(base_op) if base_op.presente else None, "unidades"),
     ]
     resumen = _armar_resumen(conteos, cuenta, corpus_nombre, fila, segundos,

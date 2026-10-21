@@ -110,14 +110,21 @@ def _leer_sintaxis(ruta):
     return indice
 
 
-def es_operon(id_canonico, locus):
+def es_operon(id_canonico, locus, sin_locus=frozenset()):
     """Lo que no es un locus ni un símbolo de gen del diccionario es un
-    operón: del catálogo o sintético (abreviado en el texto)."""
+    operón: del catálogo o sintético (abreviado en el texto).
+
+    Salvo las entidades del diccionario sin locus (`sin_locus`: IHF, PrrF,
+    PrrH), que son complejos o familias y no operones. Sin descontarlas, los
+    183 pares con esos blancos contaban como «blanco que es operón».
+    """
     if not id_canonico or LOCUS.match(id_canonico):
         return False
-    return not any(f in locus for f in (
-        id_canonico, id_canonico[:1].lower() + id_canonico[1:],
-        id_canonico[:1].upper() + id_canonico[1:]))
+    formas = (id_canonico, id_canonico[:1].lower() + id_canonico[1:],
+              id_canonico[:1].upper() + id_canonico[1:])
+    if any(f in sin_locus for f in formas):
+        return False
+    return not any(f in locus for f in formas)
 
 
 def direccion(sint, tf_id, target_id):
@@ -132,7 +139,7 @@ def direccion(sint, tf_id, target_id):
 
 
 def filas_capa(candidatas, pares, predicciones, nuevas, base_operones,
-               locus, sintaxis=None):
+               locus, sintaxis=None, sin_locus=frozenset()):
     """Las filas de la capa, en el orden de `pares.jsonl`."""
     por_oracion = dict((_clave_oracion(c["pmid"], c.get("fuente_texto", ""),
                                        c["num_oracion"]), c)
@@ -184,7 +191,7 @@ def filas_capa(candidatas, pares, predicciones, nuevas, base_operones,
         fila["distancia"] = par.get("distancia", "")
         fila["par_del_bronce"] = par.get("par_del_bronce", "")
         fila["blanco_es_operon"] = "si" if es_operon(par.get("target_id"),
-                                                     locus) else "no"
+                                                     locus, sin_locus) else "no"
         fila["operones_del_blanco"] = operones_blanco
         fila["prediccion"] = clase
         for e in puente.ETIQUETAS:
@@ -282,6 +289,31 @@ def escribir_csv(ruta, filas):
     reemplazar(tmp, ruta)
 
 
+_SUFIJO_CANDIDATAS = "_oraciones_candidatas.csv"
+
+
+def base_del_bronce(ruta_bronce, concepto):
+    """(sabida, huella) de la `operones_base.tsv` con la que se exportó el
+    bronce, leída de su `_resumen.csv` (el mismo nombre que el CSV de
+    candidatas). `huella` es None si el bronce se exportó sin la base
+    («recurso ausente»). `sabida` es False si no hay resumen o no trae la
+    fila, y entonces no se puede comprobar nada.
+    """
+    if not ruta_bronce.endswith(_SUFIJO_CANDIDATAS):
+        return False, None
+    ruta = ruta_bronce[:-len(_SUFIJO_CANDIDATAS)] + "_resumen.csv"
+    if not os.path.isfile(ruta):
+        return False, None
+    with io.open(ruta, encoding="utf-8-sig", newline="") as f:
+        for fila in csv.reader(f):
+            if len(fila) >= 2 and fila[0] == concepto:
+                if fila[1].startswith("recurso ausente"):
+                    return True, None
+                m = re.search(r"huella ([0-9a-f]{16})", fila[1])
+                return (True, m.group(1)) if m else (False, None)
+    return False, None
+
+
 def escribir_capa(carpeta, ruta_bronce, ruta_sintaxis=None, log=lambda m: None):
     from grn_bronce import identificar, operones
     log("Armando la capa...")
@@ -305,13 +337,29 @@ def escribir_capa(carpeta, ruta_bronce, ruta_sintaxis=None, log=lambda m: None):
         with io.open(origen, encoding="utf-8") as f:
             nuevas = set(json.load(f).get("nuevas", []))
     base = operones.BaseOperones.cargar(operones.RUTA_BASE)
+    huella_base = (procedencia.huella_texto(operones.RUTA_BASE)
+                   if base.presente else None)
+    # `operones_en_oracion` viene del CSV del bronce y `operones_del_blanco`
+    # sale de la base de hoy. Corrida a mano después de regenerar la base, la
+    # capa mezclaba dos versiones sin decirlo (pendiente 4.19). Por el flujo
+    # no pasa: el bronce y la capa declaran la base como entrada.
+    sabida, del_bronce = base_del_bronce(ruta_bronce, operones.CONCEPTO_BASE)
+    if not sabida:
+        log("  AVISO: no encontré el resumen del bronce; no se puede comprobar "
+            "que use la misma operones_base.tsv que la capa.")
+    elif del_bronce != huella_base:
+        raise ValueError(
+            "El bronce se exportó con operones_base.tsv %s y hoy es %s: "
+            "operones_en_oracion y operones_del_blanco saldrían de dos "
+            "versiones distintas. Vuelve a exportar el bronce "
+            "(python -m grn_bronce.cli exportar --corrida N) o corre el flujo."
+            % (del_bronce or "ausente", huella_base or "ausente"))
     locus = identificar.cargar_locus_tags()
     sintaxis = _leer_sintaxis(ruta_sintaxis)
     filas = filas_capa(candidatas, pares, predicciones, nuevas, base, locus,
-                       sintaxis)
+                       sintaxis, identificar.cargar_entidades_sin_locus())
     escribir_csv(os.path.join(carpeta, "capa_pares.csv"), filas)
-    resumen = resumen_capa(filas, sintaxis, ruta_sintaxis, base,
-                           procedencia.huella_texto(operones.RUTA_BASE))
+    resumen = resumen_capa(filas, sintaxis, ruta_sintaxis, base, huella_base)
     puente.escribir_json(os.path.join(carpeta, "capa_resumen.json"), resumen)
     with io.open(os.path.join(carpeta, "capa_leame.txt"), "w",
                  encoding="utf-8", newline="\n") as f:
