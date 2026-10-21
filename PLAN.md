@@ -1,6 +1,6 @@
 # PLAN — Pipeline GRN · *Pseudomonas aeruginosa*
 
-Actualizado: 11-sep-2026; la tabla 3.1 (crítico), al 28-sep-2026; filas 11, 18, 30, 33, 36 y 37, al 8-oct-2026. Documento guía del repositorio.
+Actualizado: 11-sep-2026; la tabla 3.1 (crítico), al 28-sep-2026; filas 11, 18, 30, 33, 36 y 37, al 8-oct-2026; §1.4 y fila 34, al 16-oct-2026. Documento guía del repositorio.
 Tres registros separados a propósito: lo **acordado** con el asesor es la fuente de verdad; lo **construido** es lo que el repositorio demuestra hoy; lo **pendiente** es la resta de los dos primeros. Nada se mueve de registro sin evidencia.
 
 Numeración: paso 0 extracción · paso 1 identificación (bronce) · paso 2 verificación · paso 3 consolidación.
@@ -43,6 +43,21 @@ Toda cifra debe declarar contra cuál se midió.
 - Tres vías de verificación sobre el mismo conjunto de evaluación: BERT del laboratorio reajustado, fine-tuning de LLM, agente con directrices.
 - Fine-tuning sobre la base curada solo con partición por PMID y test retenido.
 - Trazabilidad: toda fila conserva documento, fuente, offsets y la corrida que la produjo.
+
+### 1.4 De la reunión del 25-sep-2026 (operones)
+
+Lo único acordado es el pedido. El resto son siete decisiones que se le pidieron al asesor y que siguen sin respuesta escrita. El guion de la reunión es `docs/reunion-asesor-25sep.md`, con su fe de erratas. El estado y nuestras recomendaciones están en `docs/operones-asesor.md`.
+
+- **Pedido: los operones de PAO1 tal como los muestra Pseudomonas Genome DB.** Entraron el 27-sep por la exportación de su curador. El sitio está tras un desafío de Cloudflare y no ofrece descarga de operones.
+- **Lo que quedó por decidir:**
+  - **D1, patrón de locus tag:** pendiente.
+  - **D2, las 16 unidades de BioCyc con cita y sin código de evidencia:** pendiente.
+  - **D3, decisión 3 (abierta):** respuesta verbal, probable (semana del 5 al 9 de octubre de 2026). GRN_experimental es la red regulatoria y no una fuente de operones. Falta confirmar por escrito si alguna relación se amplió por pertenencia a operón; hasta entonces la pertenencia solo anota.
+  - **D4, CDBProm y la clave de la unidad:** pendiente.
+  - **D5, el volcado de PGD:** superada el 27-sep.
+  - **D6, las tres decisiones propias:** pendiente.
+  - **D7, los 103 operones fuera del catálogo:** pendiente; es la fila 34.
+- **El 16-oct se agregaron dos decisiones:** D8, contar la literatura por PMID único, y D9, operones en la red, expandidos o como anotación.
 
 ---
 
@@ -142,7 +157,7 @@ con sus fuentes en [`docs/pendientes.md`](docs/pendientes.md), al 28-sep-2026.
 | 31 | Columna de operón en la salida del bronce, con el distinto de operones encontrados | **Hecho** (17-sep, corrida 2): 7 136 menciones de operón, 363 operones distintos, 3 603 candidatas afectadas (12.1 %), 393 con operón como blanco. Expansión única en `grn_bronce/operones.py`; `etapa2/evaluar_oro.py` delega ahí. El bronce guarda la mención del operón y su expansión a genes por separado |
 | 32 | Ampliar catálogos de funciones biológicas y revisar las proteínas | **Limpieza hecha** (17-sep, corrida 3): emparejamiento normalizado por mayúsculas y guiones (recupera las 329 menciones sin categoría, aporta 2 243 nuevas), `regulation` movida a `contexto_regulatorio.csv` con tipo y columna propios, `western blot` añadido y 8 filas redundantes quitadas de `evidencia_experimental.csv`. **Corte de virulencia hecho** (corrida 4): `virulence_molecule` / `virulence_phenotype` / `virulence_general`, con la última marcada como señal débil y no como atributo de nodo; el escenario clínico salió a `infection_type`, que se amplió a 38 términos y se quedó en 0.73 % de las candidatas, documentado como señal débil. **Bombas de expulsión: decidido que NO entran como función.** `MexAB-OprM` y las demás familias se quedan como operón y como genes; `efflux` (6 términos, 1 126 menciones) ya cubre el concepto. Razón: la misma mención produciría tres filas en tres ejes distintos, que es exactamente el solapamiento que se deshizo al sacar `regulation`. **Queda pendiente de medir** anaerobiosis y respiración microaerobia, y metabolismo de fosfato. Antes de añadirlos se les aplica la regla de `recursos/PROCEDENCIA.md`: menciones, candidatas y reparto por sección. Si se comportan como `infection_type` —el grueso de las menciones en resumen, introducción o METHODS, y una fracción minúscula de candidatas—, no entran |
 | 33 | Conectar el bronce con la capa silver usando el BioBERT entrenado | **En curso** desde el 8-oct: `grn_verificacion/puente.py` lleva las candidatas del bronce a `clasificar.py` con el mismo marcado del entrenamiento, `capa.py` arma la tabla oración + funciones + operones + BioBERT y `evaluar.py` recalcula el 44 %. Todo lo corre `python flujo.py`. **Corrió el 8-oct** sobre la corrida 4: 72 969 pares, 81.8 % de predicciones reutilizadas del 27-ago. Sobre las 50 juzgadas el filtro no sube la precisión (43.2 % con umbral contra 44.0 %) y retiene 16 de las 22 correctas; el signo, donde lo da, acierta 11 de 11. Ver la bitácora del 8-oct |
-| 34 | Completar `operones_pao1.tsv` con los 103 operones del corpus ausentes del catálogo | 447 menciones; los mayores: cyaAB, exoSTY, rsmZY, phzMS, lasRI, sodAB. Listado completo en `salidas/operones_corrida2_20260917.csv`. Es el trabajo de catálogo que pidió el asesor |
+| 34 | Los 103 operones del corpus ausentes del catálogo del paso 1 | **Espera criterio del asesor** (D7, §1.4). Son 447 menciones; los mayores, cyaAB, exoSTY, rsmZY, phzMS, lasRI y sodAB. **Medido el 27-sep:** los mayores no son operones, sino genes separados en el genoma que el texto abrevia juntos, y solo 3 de los 103 tienen su conjunto exacto en la base de operones. Completarlos tal cual metería uniones que no se cotranscriben. **Recomendación:** dejarlos como lista de huecos (`docs/operones-asesor.md` §7). Listado completo en `salidas/operones_corrida2_20260917.csv` |
 
 ### 3.3 Cruce contra la base curada — parcialmente resuelto
 

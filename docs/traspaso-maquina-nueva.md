@@ -47,6 +47,19 @@ tar czf grn_datos.tar.gz \
 
 Las credenciales **no van ahí**: se escriben a mano en la máquina nueva.
 
+> **Nota del 16-oct-2026: la base de operones.**
+> `grn_bronce/recursos/operones_base.tsv` no viaja por git, porque lleva
+> datos de BioCyc. Sin él, el bronce dice «recurso ausente» y el flujo omite
+> el paso `operones`.
+> - Las tablas de operones viajan dentro de `datos/grn.db`.
+> - Los crudos, `datos/operones_crudo/` (13 MB), van en el mismo `tar`.
+> - En la máquina nueva basta `python -m grn_operones.cli catalogo --paso1`,
+>   desde la raíz y sin red. La huella del archivo tiene que dar
+>   `f399bd89da7d558d`.
+>
+> Las tres vías para regenerarlo, y por qué `reparsear` puede no encontrar
+> los crudos en Linux, están en [`guia-operones.md`](guia-operones.md) §8.
+
 ---
 
 ## 2. Cómo queda la máquina nueva
