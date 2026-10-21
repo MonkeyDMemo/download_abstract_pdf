@@ -532,11 +532,18 @@ class PruebasPiezas(unittest.TestCase):
     def test_el_filtro(self):
         r = R.rutas("/srv/cuenta/grn", "curada-v1")
         san = R.Saneador(r, extra=[("/srv/cuenta/grn/base.xlsx", "<base>")])
-        self.assertEqual(
-            "Escritos 5 ejemplos en <datos>. Particion <datos>/por_pmid",
-            san.linea("Escritos 5 ejemplos en /srv/cuenta/grn/datos/curada-v1."
-                      " Particion /srv/cuenta/grn/datos/curada-v1/por_pmid"))
-        self.assertEqual("<base>", san.linea("/srv/cuenta/grn/base.xlsx"))
+        # Las rutas del servidor son POSIX. En Windows `abspath` las vuelve
+        # «C:\srv\...» y el reemplazo ya no casa con el texto, así que esta
+        # parte solo se prueba fuera de Windows: el orquestador no corre ahí
+        # (validar_entradas lo rechaza). El filtro de líneas de abajo sí vale
+        # en los dos, y por eso no se salta la prueba entera.
+        if os.name != "nt":
+            self.assertEqual(
+                "Escritos 5 ejemplos en <datos>. Particion <datos>/por_pmid",
+                san.linea("Escritos 5 ejemplos en /srv/cuenta/grn/datos/"
+                          "curada-v1. Particion /srv/cuenta/grn/datos/"
+                          "curada-v1/por_pmid"))
+            self.assertEqual("<base>", san.linea("/srv/cuenta/grn/base.xlsx"))
         for mala in ("gen PA1234 aquí", "<e1> LasR </e1> activa",
                      "pmid 12345678 suelto", "pmid 1234567."):
             self.assertIsNone(san.linea(mala), mala)
