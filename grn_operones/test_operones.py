@@ -506,6 +506,217 @@ class PruebasExtraerPgd(unittest.TestCase):
         self.assertEqual(self.pedidas, [F.URL_PGD, F.URL_PGD])
 
 
+class _SesionCaida(object):
+    """Una sesión cuya fuente no contesta: `pedir` lanza `ErrorFuente` de
+    entrada, sin los reintentos con espera de la sesión de verdad."""
+
+    def pedir(self, *a, **k):
+        raise R.ErrorFuente("la fuente no contestó")
+
+
+class PruebasExtraccionHonesta(unittest.TestCase):
+    """Una extracción abierta es un intento. Lo que no llegó a intentarse no
+    abre ninguna, y lo que falló a medias la cierra incompleta, con su fin.
+    Antes las dos cosas contaban igual en `edad_de_la_foto`, y la segunda
+    dejaba la extracción abierta para siempre."""
+
+    def setUp(self):
+        self.con = _con()
+        self.addCleanup(self.con.close)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        entorno = mock.patch.dict(os.environ, {}, clear=False)
+        entorno.start()
+        self.addCleanup(entorno.stop)
+        for var in (F.VAR_PGD, F.VAR_CDBPROM, "BIOCYC_EMAIL",
+                    "BIOCYC_PASSWORD"):
+            os.environ.pop(var, None)
+
+    def _extracciones(self, fuente):
+        return D.extracciones_de(self.con, fuente)
+
+    def test_cdbprom_sin_url_no_abre_extraccion(self):
+        informe = F.extraer(self.con, "cdbprom", None,
+                            flag_datos=self.tmp.name)
+
+        self.assertTrue(informe["omitida"])
+        self.assertEqual(self._extracciones("cdbprom"), [])
+
+    def test_biocyc_sin_credenciales_no_abre_extraccion(self):
+        with self.assertRaises(F.ErrorCredenciales):
+            F.extraer(self.con, "biocyc", None, flag_datos=self.tmp.name)
+
+        self.assertEqual(self._extracciones("biocyc"), [])
+
+    def test_un_archivo_que_no_existe_no_abre_extraccion(self):
+        with self.assertRaises(F.FormatoDesconocido):
+            F.extraer(self.con, "pgd", None, flag_datos=self.tmp.name,
+                      archivo=os.path.join(self.tmp.name, "no_esta.csv"))
+
+        self.assertEqual(self._extracciones("pgd"), [])
+
+    def test_biocyc_no_entra_por_archivo(self):
+        """Su foto son dos consultas; con un archivo la extracción se cerraba
+        completa y sin filas, y BioCyc salía de la curación."""
+        suelto = os.path.join(self.tmp.name, "tus.xml")
+        with io.open(suelto, "w", encoding="utf-8") as f:
+            f.write(XML_TUS)
+
+        with self.assertRaises(F.FormatoDesconocido):
+            F.extraer(self.con, "biocyc", None, flag_datos=self.tmp.name,
+                      archivo=suelto)
+
+        self.assertEqual(self._extracciones("biocyc"), [])
+
+    def test_un_error_de_red_cierra_la_extraccion_incompleta(self):
+        with self.assertRaises(R.ErrorFuente):
+            F.extraer(self.con, "pgd", _SesionCaida(),
+                      flag_datos=self.tmp.name,
+                      url="https://otro.example/operones.csv")
+
+        extraccion = self._extracciones("pgd")[0]
+        self.assertEqual(extraccion["completa"], 0)
+        self.assertIsNotNone(extraccion["fin"],
+                             "quedaba abierta, sin fin, para siempre")
+
+    def test_un_archivo_local_entra_sin_sesion(self):
+        """Sin peticiones no hace falta sesión ni, por lo tanto, correo."""
+        local = os.path.join(self.tmp.name, "pgd.csv")
+        with io.open(local, "w", encoding="utf-8", newline="") as f:
+            f.write(PGD_CSV)
+
+        informe = F.extraer(self.con, "pgd", None, flag_datos=self.tmp.name,
+                            archivo=local)
+
+        self.assertEqual(informe["filas"], 5)
+        self.assertTrue(informe["completa"])
+
+
+class PruebasLoQueNoSeSabeLeer(unittest.TestCase):
+    """Todo lo ilegible sale como `FormatoDesconocido`, que es lo que atrapan
+    `extraer` y `reparsear`. Un `ET.ParseError` cortaba el comando con traza."""
+
+    def test_un_cuerpo_que_no_es_xml(self):
+        with self.assertRaises(F.FormatoDesconocido):
+            F._parsear("biocyc", [("u", "tus.xml", b"no es xml"),
+                                  ("u", "genes.xml", b"<ptools-xml/>")])
+
+    def test_biocyc_sin_unidades(self):
+        with self.assertRaises(F.FormatoDesconocido):
+            F.parsear_biocyc(b"<ptools-xml/>", XML_GENES.encode("utf-8"))
+
+    def test_biocyc_con_genes_sin_accession(self):
+        """Ninguna TU llega a locus tag: no es una foto vacía de BioCyc."""
+        genes = (b"<ptools-xml><Gene frameid=\"G-1\"/>"
+                 b"<Gene frameid=\"G-2\"/></ptools-xml>")
+        with self.assertRaises(F.FormatoDesconocido):
+            F.parsear_biocyc(XML_TUS.encode("utf-8"), genes)
+
+
+class PruebasFotoVigente(unittest.TestCase):
+    """La foto que se cura es la última extracción completa QUE DEJÓ FILAS.
+    Una completa y vacía (un formato que no se supo leer) no desplaza a la
+    anterior: antes la fuente salía entera de la curación y todos sus
+    operones se reportaban como retirados."""
+
+    def setUp(self):
+        self.con = _con()
+        self.addCleanup(self.con.close)
+        _bronce(self.con, [_fila("odb", "KO1", "PA0425|PA0426")])
+        self.buena = D.ultima_extraccion_completa(self.con)["odb"]
+        self.vacia = D.abrir_extraccion(self.con, "odb")
+        D.registrar_descarga(self.con, self.vacia, "u", "r", b"<html/>")
+        D.cerrar_extraccion(self.con, self.vacia, completa=True)
+
+    def test_la_vacia_no_desplaza_a_la_buena(self):
+        self.assertEqual(D.foto_vigente(self.con), {"odb": self.buena})
+        self.assertEqual(len(D.bronze_vigente(self.con)), 1)
+        self.assertEqual(D.retirados(self.con), {})
+        self.assertEqual(D.fuentes_sin_foto(self.con), [])
+
+    def test_la_vacia_se_nombra_y_cuenta_como_fallida(self):
+        self.assertEqual(D.extracciones_vacias(self.con),
+                         {"odb": [self.vacia]})
+        self.assertEqual(
+            D.edad_de_la_foto(self.con)["odb"]["incompletas_despues"], 1)
+
+    def test_reparsear_sigue_tomando_la_ultima_completa(self):
+        """Es la que hay que reparar, aunque esté vacía."""
+        self.assertEqual(D.ultima_extraccion_completa(self.con),
+                         {"odb": self.vacia})
+
+    def test_la_hoja_de_fuentes_la_dice(self):
+        filas = E.filas_fuentes_catalogo(self.con, D, ["odb"], F.URL_PGD)
+        estados = [f["estado"] for f in filas]
+
+        self.assertTrue(any("no dejó filas" in e for e in estados), estados)
+
+
+class PruebasCodigosDeSalida(unittest.TestCase):
+    """Un 0 tiene que decir que todo lo pedido entró. `extraer` y `reparsear`
+    salían con 0 aunque una fuente fallara, y `flujo.py --rehacer-operones`
+    seguía con el bronce viejo sin enterarse."""
+
+    def setUp(self):
+        from grn_operones import cli
+        self.cli = cli
+        self.con = _con()
+        conectar = mock.patch.object(cli, "_conectar",
+                                     lambda args: self.con)
+        conectar.start()
+        self.addCleanup(conectar.stop)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        entorno = mock.patch.dict(os.environ, {}, clear=False)
+        entorno.start()
+        self.addCleanup(entorno.stop)
+        os.environ.pop(F.VAR_CDBPROM, None)
+
+    def _correr(self, funcion, **kw):
+        import argparse
+        import contextlib
+        valores = dict(datos=self.tmp.name, url=None, archivo=None, pausa=0)
+        valores.update(kw)
+        args = argparse.Namespace(**valores)
+        with contextlib.redirect_stdout(io.StringIO()):
+            return funcion(args)
+
+    def test_reparsear_sin_crudo_sale_con_1(self):
+        _bronce(self.con, [_fila("odb", "KO1", "PA0425|PA0426")])
+
+        self.assertEqual(self._correr(self.cli.cmd_reparsear, fuente="odb"),
+                         1)
+
+    def test_reparsear_sin_foto_no_es_falla(self):
+        self.assertEqual(self._correr(self.cli.cmd_reparsear, fuente="odb"),
+                         0)
+
+    def test_extraer_un_archivo_que_no_existe_sale_con_1(self):
+        self.assertEqual(self._correr(
+            self.cli.cmd_extraer, fuente="pgd",
+            archivo=os.path.join(self.tmp.name, "no_esta.csv")), 1)
+
+    def test_extraer_un_archivo_no_pide_correo(self):
+        local = os.path.join(self.tmp.name, "pgd.csv")
+        with io.open(local, "w", encoding="utf-8", newline="") as f:
+            f.write(PGD_CSV)
+        with mock.patch.object(self.cli.credenciales, "correo",
+                               return_value=None):
+            codigo = self._correr(self.cli.cmd_extraer, fuente="pgd",
+                                  archivo=local)
+
+        self.assertEqual(codigo, 0)
+
+    def test_cdbprom_pedida_por_nombre_y_omitida_sale_con_1(self):
+        """Dentro de `--fuente todo` se omite sin fallar; pedida por nombre,
+        no se hizo lo que se pidió."""
+        with mock.patch.object(self.cli.credenciales, "correo",
+                               return_value="alguien@unam.mx"):
+            codigo = self._correr(self.cli.cmd_extraer, fuente="cdbprom")
+
+        self.assertEqual(codigo, 1)
+
+
 class PruebasIdempotencia(unittest.TestCase):
     """El encargo la exige: re-correr no debe duplicar registros."""
 

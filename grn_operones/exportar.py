@@ -427,7 +427,10 @@ def filas_fuentes_catalogo(con, db, fuentes, url_pgd):
     vigentes = {}
     for f in db.bronze_vigente(con):
         vigentes[f["fuente"]] = vigentes.get(f["fuente"], 0) + 1
-    ultima = db.ultima_extraccion_completa(con)
+    # La misma foto que cura `curar`: la última completa que dejó filas. Una
+    # completa y vacía salía aquí como «vigente» con 0 filas y sin aviso.
+    ultima = db.foto_vigente(con)
+    vacias = db.extracciones_vacias(con)
     sin_foto = set(db.fuentes_sin_foto(con))
 
     filas = []
@@ -440,13 +443,13 @@ def filas_fuentes_catalogo(con, db, fuentes, url_pgd):
                 "filas_vigentes": vigentes.get(fuente, 0),
                 "unidades": unidades}
         eid = ultima.get(fuente)
-        if not eid:
+        if not eid and not vacias.get(fuente):
             base["estado"] = ("fuera de la curación: ninguna extracción "
                               "terminó" if fuente in sin_foto
                               else "sin datos")
             filas.append(base)
             continue
-        for d in db.descargas_de_extraccion(con, eid):
+        for d in (db.descargas_de_extraccion(con, eid) if eid else ()):
             fila = dict(base)
             fila.update({
                 "estado": ("más nueva que la curación: corre `curar`"
@@ -460,6 +463,19 @@ def filas_fuentes_catalogo(con, db, fuentes, url_pgd):
                 "bytes": d["bytes"],
             })
             filas.append(fila)
+        for vid in vacias.get(fuente, ()):
+            for d in db.descargas_de_extraccion(con, vid):
+                fila = dict(base)
+                fila.update({
+                    "estado": ("más nueva que la curación: no dejó filas "
+                               "(formato no reconocido); se cura la anterior"),
+                    "fecha_datos": "",
+                    "descargado_en": d["descargado_en"],
+                    "origen": d["url"],
+                    "sha256": d["sha256"],
+                    "bytes": d["bytes"],
+                })
+                filas.append(fila)
     return filas
 
 

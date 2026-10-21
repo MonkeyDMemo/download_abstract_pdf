@@ -89,11 +89,6 @@ RUTAS_GFF = (
 
 NIVELES = ("conocido", "curado", "predicho")
 
-# Codigos de evidencia de BioCyc que indican curacion a partir de un
-# experimento, no prediccion de Pathway Tools.
-EVIDENCIA_CURADA = ("EV-EXP", "EV-COMP-HINF-SIMILAR-TO-CONSENSUS",
-                    "EV-EXP-IDA", "EV-EXP-IEP", "EV-EXP-TAS")
-
 
 def cargar_diccionario(ruta=RUTA_GENES):
     """{nombre en minusculas: locus_tag}, con simbolos y alias.
@@ -684,6 +679,9 @@ def curar(con, log=lambda m: None, diccionario=None, hebras=None):
     # indistinguible de una que no trajo nada, y piden acciones
     # distintas.
     resumen["sin_foto"] = _db.fuentes_sin_foto(con)
+    # Extracciones completas que no dejaron filas: un formato que no se supo
+    # leer. No desplazan a la foto anterior, pero tienen que verse.
+    resumen["vacias"] = _db.extracciones_vacias(con)
     # De que fecha es la foto que se esta curando, y cuantas corridas
     # fallaron despues. Si las extracciones fallan varias veces seguidas
     # se cura una foto vieja indefinidamente y sin ruido, porque todo

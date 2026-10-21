@@ -51,8 +51,9 @@ GENOMA = "NC_002516.2"
 FUENTES = ("odb", "biocyc", "pgd", "cdbprom")
 
 # El volcado de texto plano que el propio sitio ofrece en la pagina de la
-# tabla ("Download Known Operons (Plain text)"). Es UNA peticion en vez de
-# paginar, y es la via que el sitio quiere que se use.
+# tabla, https://operondb.jp/known ("Download Known Operons (Plain text)").
+# Es UNA peticion en vez de paginar, y es la via que el sitio quiere que se
+# use.
 #
 # La paginacion HTML que se intento primero no sirve, y la razon merece
 # quedar escrita: **ODB v4 es una aplicacion de JavaScript**. `GET /known`
@@ -61,7 +62,6 @@ FUENTES = ("odb", "biocyc", "pgd", "cdbprom")
 # `robots.txt` incluido. Un parser sobre ese HTML habria devuelto cero filas
 # para siempre. Comprobado el 18 de septiembre de 2026.
 URL_ODB = "https://operondb.jp/download/known_operon.download.txt"
-URL_ODB_TABLA = "https://operondb.jp/known"
 URL_BIOCYC_LOGIN = "https://websvc.biocyc.org/credentials/login/"
 URL_BIOCYC_QUERY = "https://websvc.biocyc.org/xmlquery"
 
@@ -233,12 +233,12 @@ def inspeccionar(cuerpo):
 
 # --------------------------------------------------------------------- ODB
 
-def traer_odb(sesion, carpeta, max_paginas=None, log=lambda m: None):
+def traer_odb(sesion, carpeta, log=lambda m: None):
     """Trae el volcado completo de operones conocidos. Una sola peticion.
 
-    `max_paginas` se conserva en la firma pero ya no se usa: la paginacion
-    HTML no da datos y la sustituye este volcado. Se deja para no romper a
-    quien llame con el argumento.
+    La paginacion HTML no da datos (ver `URL_ODB`) y la sustituye este
+    volcado. El `max_paginas` que quedo de ella se quito el 20-oct-2026: se
+    aceptaba y no hacia nada.
     """
     cuerpo = sesion.pedir(URL_ODB, timeout=300)
     if cuerpo is None:
@@ -423,9 +423,15 @@ def parsear_biocyc(xml_tus, xml_genes):
             "pmid": ";".join(pmids) or None,
             "registro_raw": crudo,
         })
+    if not filas:
+        # Cero unidades no es una foto vacía de BioCyc: es una respuesta que
+        # no se supo leer (un XML sin TUs, o un `genes.xml` sin `accession-1`).
+        # Devolver [] cerraba la extracción completa y sin filas, y BioCyc
+        # salía de la curación sin decir por qué.
+        raise FormatoDesconocido(
+            "biocyc: ninguna unidad de transcripción llegó a locus tag "
+            "(%d genes con accession-1 en genes.xml)" % len(frame_a_locus))
     return filas
-
-
 
 
 # ----------------------------------------------------------------- CDBProm
@@ -761,7 +767,7 @@ def foto_sana(con, fuente):
 
 # ------------------------------------------------------------- orquestacion
 
-def extraer(con, fuente, sesion, flag_datos=None, url=None, max_paginas=500,
+def extraer(con, fuente, sesion, flag_datos=None, url=None,
             log=lambda m: None, archivo=None):
     """Trae una fuente, guarda lo crudo, lo registra y lo parsea si se puede.
 
@@ -769,7 +775,37 @@ def extraer(con, fuente, sesion, flag_datos=None, url=None, max_paginas=500,
     la corrida si el parser no existe todavia**: la descarga es util por si
     sola --es lo que permite escribir el parser-- y perderla porque no se sabe
     leerla seria tirar la unica parte que si se consiguio.
+
+    Lo que se puede saber sin pedir nada se comprueba ANTES de abrir la
+    extracción. Sin credenciales de BioCyc, sin URL de CDBProm o con un
+    `--archivo` que no existe no hubo intento, y la extracción que se abría
+    por eso contaba como corrida fallida en `edad_de_la_foto`. Lo que falla
+    después de abrirla la cierra incompleta antes de propagarse: antes quedaba
+    abierta, sin `fin`, para siempre.
+
+    `sesion` puede ser None cuando no va a haber peticiones (`archivo`).
     """
+    if fuente not in FUENTES:
+        raise ValueError("fuente desconocida: %r" % fuente)
+    if archivo:
+        if fuente == "biocyc":
+            # Su foto son dos consultas. Un solo archivo no se puede parsear,
+            # y la extracción se cerraba completa y sin filas: BioCyc salía de
+            # la curación sin que nada lo explicara.
+            raise FormatoDesconocido(
+                "biocyc no entra por --archivo: su foto son dos consultas a "
+                "la API (tus.xml y genes.xml)")
+        if not os.path.isfile(archivo):
+            raise FormatoDesconocido("no existe el archivo %s" % archivo)
+    elif fuente == "cdbprom" and not (url or os.environ.get(VAR_CDBPROM)):
+        log("  [cdbprom] omitida: no tiene URL pública. Pasa --archivo con el "
+            "archivo del IIMAS, --url o %s." % VAR_CDBPROM)
+        return {"fuente": fuente, "extraccion_id": None, "descargas": [],
+                "filas": 0, "error": None, "completa": False,
+                "omitida": "sin --archivo, --url ni %s" % VAR_CDBPROM}
+    elif fuente == "biocyc":
+        credenciales_biocyc()
+
     if fuente == "pgd" and not archivo:
         explicita = url or os.environ.get(VAR_PGD)
         # `URL_PGD` solo se usa para la primera carga, o para rehacer una foto
@@ -799,30 +835,35 @@ def extraer(con, fuente, sesion, flag_datos=None, url=None, max_paginas=500,
                "descargas": [],
                "filas": 0, "error": None, "completa": False}
 
-    if archivo:
-        # Gana sobre la via de red de la fuente, sea cual sea: si alguien
-        # pasa un archivo es porque lo tiene, y pedirselo otra vez a la
-        # fuente seria trafico para nada.
-        bajadas = traer_archivo_local(archivo, fuente, carpeta, log)
-    elif fuente == "odb":
-        bajadas = traer_odb(sesion, carpeta, max_paginas, log)
-    elif fuente == "biocyc":
-        entrar_biocyc(sesion)
-        bajadas = traer_biocyc(sesion, carpeta, log)
-    elif fuente == "pgd":
-        bajadas = traer_archivo(sesion, "pgd", VAR_PGD, carpeta, url, log)
-    elif fuente == "cdbprom":
-        bajadas = traer_archivo(sesion, "cdbprom", VAR_CDBPROM, carpeta, url,
-                                log)
-    else:
-        raise ValueError("fuente desconocida: %r" % fuente)
+    try:
+        if archivo:
+            # Gana sobre la via de red de la fuente, sea cual sea: si alguien
+            # pasa un archivo es porque lo tiene, y pedirselo otra vez a la
+            # fuente seria trafico para nada.
+            bajadas = traer_archivo_local(archivo, fuente, carpeta, log)
+        elif fuente == "odb":
+            bajadas = traer_odb(sesion, carpeta, log)
+        elif fuente == "biocyc":
+            entrar_biocyc(sesion)
+            bajadas = traer_biocyc(sesion, carpeta, log)
+        elif fuente == "pgd":
+            bajadas = traer_archivo(sesion, "pgd", VAR_PGD, carpeta, url, log)
+        else:
+            bajadas = traer_archivo(sesion, "cdbprom", VAR_CDBPROM, carpeta,
+                                    url, log)
 
-    ids = []
-    for u, ruta, cuerpo in bajadas:
-        did = _db.registrar_descarga(con, extraccion_id, u, ruta, cuerpo)
-        ids.append(did)
-        informe["descargas"].append(
-            dict(ruta=ruta, descarga_id=did, **inspeccionar(cuerpo)))
+        ids = []
+        for u, ruta, cuerpo in bajadas:
+            did = _db.registrar_descarga(con, extraccion_id, u, ruta, cuerpo)
+            ids.append(did)
+            informe["descargas"].append(
+                dict(ruta=ruta, descarga_id=did, **inspeccionar(cuerpo)))
+    except Exception:
+        # Se abrió y no llegó a su foto: un error de red, un login rechazado o
+        # un disco lleno. Se cierra incompleta para que quede constancia del
+        # intento con su `fin`, y el error sigue su camino.
+        _db.cerrar_extraccion(con, extraccion_id, completa=False)
+        raise
 
     if not bajadas:
         # Sin archivos no hay foto: se cierra incompleta para que la capa
@@ -857,6 +898,21 @@ def extraer(con, fuente, sesion, flag_datos=None, url=None, max_paginas=500,
 
 
 def _parsear(fuente, bajadas):
+    """Las filas de bronce de una foto, o `FormatoDesconocido`.
+
+    Todo lo que no se sabe leer sale por la misma excepción. Un cuerpo que no
+    es XML lanzaba `ET.ParseError`, que no atrapaban ni `extraer` ni
+    `reparsear`: el comando terminaba con traza y, con `--fuente todo`, las
+    fuentes que seguían no se intentaban.
+    """
+    try:
+        return _parsear_fuente(fuente, bajadas)
+    except (ET.ParseError, UnicodeDecodeError) as e:
+        raise FormatoDesconocido("%s: los bytes no se pueden leer (%s)"
+                                 % (fuente, e))
+
+
+def _parsear_fuente(fuente, bajadas):
     if fuente == "biocyc":
         por_nombre = dict((os.path.basename(r), c) for _, r, c in bajadas)
         if "tus.xml" not in por_nombre or "genes.xml" not in por_nombre:
@@ -886,8 +942,14 @@ def reparsear(con, fuente, log=lambda m: None):
     """
     eid = _db.ultima_extraccion_completa(con).get(fuente)
     if not eid:
-        raise FormatoDesconocido(
-            "%s no tiene ninguna extraccion completa que re-parsear" % fuente)
+        # Sin foto no hay nada que re-parsear, y eso no es un fallo: una
+        # maquina puede no haber bajado nunca una fuente. Antes era una
+        # excepcion, y `reparsear --fuente todo` no distinguia esto de un
+        # crudo perdido.
+        log("  [%s] sin ninguna extraccion completa: nada que re-parsear"
+            % fuente)
+        return {"fuente": fuente, "extraccion_id": None, "filas": 0,
+                "archivos": 0, "sin_foto": True}
 
     bajadas = []
     for d in _db.descargas_de_extraccion(con, eid):
@@ -895,8 +957,11 @@ def reparsear(con, fuente, log=lambda m: None):
             raise FormatoDesconocido(
                 "falta el archivo %s de la extraccion %d. Sin el crudo no se "
                 "puede re-parsear; hay que volver a extraer." % (d["ruta"], eid))
-        with io.open(d["ruta"], "rb") as f:
-            cuerpo = f.read()
+        try:
+            with io.open(d["ruta"], "rb") as f:
+                cuerpo = f.read()
+        except OSError as e:
+            raise FormatoDesconocido("no se pudo leer %s: %s" % (d["ruta"], e))
         sha = _db.huella(cuerpo)
         if sha != d["sha256"]:
             raise FormatoDesconocido(
@@ -907,10 +972,17 @@ def reparsear(con, fuente, log=lambda m: None):
         bajadas.append((d["url"], d["ruta"], cuerpo))
         log("  [%s] %s  (%d bytes, huella ok)"
             % (fuente, os.path.basename(d["ruta"]), len(cuerpo)))
+    if not bajadas:
+        raise FormatoDesconocido(
+            "la extraccion %d de %s se cerro completa sin ningun archivo"
+            % (eid, fuente))
 
+    # Se parsea ANTES de borrar: si el formato no se reconoce, el bronce de
+    # esa extraccion queda como estaba.
     filas = _parsear(fuente, bajadas)
+    primera = _db.descargas_de_extraccion(con, eid)[0]["id"]
     for f in filas:
-        f.setdefault("descarga_id", _db.descargas_de_extraccion(con, eid)[0]["id"])
+        f.setdefault("descarga_id", primera)
     _db.borrar_bronze_de_extraccion(con, eid)
     insertadas, _ya = _db.guardar_bronze(con, filas)
     log("  [%s] %d filas re-parseadas en la extraccion %d"
