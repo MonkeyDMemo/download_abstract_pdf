@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Las reglas v1 de `sintaxis.py` y su contacto con spaCy.
+"""Las reglas v1 de `sintaxis.py`, su alineación v2 y su contacto con spaCy.
 
 Dos clases de prueba, y la diferencia importa:
 
@@ -355,6 +355,24 @@ DOS_RAICES = [
     ("rhlA", "rhla", "NOUN", "NN", "dobj", 4),
 ]
 
+# LasR/RhlR activate lasB.  (el tokenizador deja «LasR/RhlR» en un token)
+COMPARTIDO = [
+    ("LasR/RhlR", "lasr/rhlr", "NOUN", "NN", "nsubj", 1),
+    ("activate", "activate", "VERB", "VBP", "ROOT", 1),
+    ("lasB", "lasb", "NOUN", "NN", "dobj", 1),
+    (".", ".", "PUNCT", ".", "punct", 1),
+]
+
+# El esquema y las voces de la v1, escritos a mano: la v2 agrega una voz al
+# final y no toca el esquema, y el consumidor que los recorra no se entera.
+CAMPOS_V1 = ("pmid", "fuente_texto", "seccion", "num_oracion",
+             "huella_oracion", "a", "b", "a_es_tf", "b_es_tf",
+             "regulador_sintactico", "blanco_sintactico", "voz", "negada",
+             "lema_dominante", "disparador_dominante", "signo_dominante",
+             "camino", "longitud_camino", "modelo", "spacy", "version")
+VOCES_V1 = ("activa", "pasiva", "nominal", "mutante", "indeterminada",
+            "sin_camino", "sin_alineacion")
+
 
 class PruebasVoz(unittest.TestCase):
     """Activa, pasiva, nominal, mutante."""
@@ -542,15 +560,16 @@ class PruebasPares(unittest.TestCase):
                          ("mutante", ""))
 
     def test_mencion_sin_alinear(self):
-        # "LasR/RhlR" es un token: solo una de las dos menciones se alinea.
+        # Lo que dejaba la v1 en «LasR/RhlR»: una de las dos menciones fuera
+        # de `alineacion`. Desde la v2 `preparar_doc` alinea a las dos (ver
+        # `test_dos_menciones_en_un_token`), pero una mención que de verdad
+        # se queda sin token --un `char_span` None, un traslape a medias--
+        # sigue dejando todos sus pares en `sin_alineacion`.
         texto = "LasR/RhlR activate lasB."
         menciones = [mencion(texto, "LasR", "lasR", True),
                      mencion(texto, "RhlR", "rhlR", True),
                      mencion(texto, "lasB", "lasB", False)]
-        toks = arbol([("LasR/RhlR", "lasr/rhlr", "NOUN", "NN", "nsubj", 1),
-                      ("activate", "activate", "VERB", "VBP", "ROOT", 1),
-                      ("lasB", "lasb", "NOUN", "NN", "dobj", 1),
-                      (".", ".", "PUNCT", ".", "punct", 1)])
+        toks = arbol(COMPARTIDO)
         pares = S.analizar_doc(toks, texto, menciones, {0: 0, 2: 2}, SIGNOS)
         por_par = dict(((p["a"], p["b"]), p) for p in pares)
         self.assertEqual(por_par[("lasB", "lasR")]["regulador_sintactico"],
@@ -560,6 +579,53 @@ class PruebasPares(unittest.TestCase):
             self.assertEqual((p["voz"], p["regulador_sintactico"],
                               p["camino"], p["longitud_camino"]),
                              ("sin_alineacion", "", "", 0))
+
+    def test_dos_menciones_en_un_token(self):
+        # La v2: las dos menciones de «LasR/RhlR» apuntan al mismo token.
+        # Entre ellas no hay camino; con lasB, cada una se orienta como lo
+        # haría la otra.
+        texto = "LasR/RhlR activate lasB."
+        menciones = [mencion(texto, "LasR", "lasR", True),
+                     mencion(texto, "RhlR", "rhlR", True),
+                     mencion(texto, "lasB", "lasB", False)]
+        pares = S.analizar_doc(arbol(COMPARTIDO), texto, menciones,
+                               {0: 0, 1: 0, 2: 2}, SIGNOS)
+        por_par = dict(((p["a"], p["b"]), p) for p in pares)
+        p = por_par[("lasR", "rhlR")]
+        self.assertEqual((p["voz"], p["regulador_sintactico"],
+                          p["blanco_sintactico"], p["lema_dominante"],
+                          p["camino"], p["longitud_camino"]),
+                         ("mismo_token", "", "", "", "", 0))
+        con_lasr, con_rhlr = por_par[("lasB", "lasR")], por_par[("lasB",
+                                                                 "rhlR")]
+        self.assertEqual((con_lasr["regulador_sintactico"], con_lasr["voz"]),
+                         ("lasR", "activa"))
+        self.assertEqual((con_rhlr["regulador_sintactico"], con_rhlr["voz"]),
+                         ("rhlR", "activa"))
+        for campo in S.CAMPOS_PAR:
+            if campo not in ("b", "regulador_sintactico"):
+                self.assertEqual(con_lasr[campo], con_rhlr[campo], campo)
+
+    def test_mismo_token_aunque_la_oracion_sea_de_mutante(self):
+        # La frase de mutante deja los demás pares en `mutante`; el de las
+        # dos menciones del token sigue diciendo por qué no hay camino.
+        texto = "LasR/RhlR mutants overproduce lasB."
+        menciones = [mencion(texto, "LasR", "lasR", True),
+                     mencion(texto, "RhlR", "rhlR", True),
+                     mencion(texto, "lasB", "lasB", False)]
+        toks = arbol([
+            ("LasR/RhlR", "lasr/rhlr", "NOUN", "NN", "compound", 1),
+            ("mutants", "mutant", "NOUN", "NNS", "nsubj", 2),
+            ("overproduce", "overproduce", "VERB", "VBP", "ROOT", 2),
+            ("lasB", "lasb", "NOUN", "NN", "dobj", 2),
+            (".", ".", "PUNCT", ".", "punct", 2)])
+        pares = S.analizar_doc(toks, texto, menciones, {0: 0, 1: 0, 2: 3},
+                               SIGNOS)
+        self.assertEqual([(p["a"], p["b"], p["voz"]) for p in pares], [
+            ("lasB", "lasR", "mutante"),
+            ("lasB", "rhlR", "mutante"),
+            ("lasR", "rhlR", "mismo_token"),
+        ])
 
     def test_la_ocurrencia_es_la_que_elige_extraer_pares(self):
         # rhlR aparece dos veces; `elegir_ocurrencias` toma la más cercana a
@@ -601,6 +667,44 @@ class PruebasPares(unittest.TestCase):
             orientada = p["voz"] in ("activa", "pasiva", "nominal")
             self.assertEqual(bool(p["regulador_sintactico"]), orientada)
             self.assertEqual(bool(p["blanco_sintactico"]), orientada)
+
+
+class PruebasAlineacionV2(unittest.TestCase):
+    """`contenedores` y lo que la v2 deja como estaba, sin spaCy. Los tramos
+    son `(ini_char, fin_char, k)`, como los arma `preparar_doc`."""
+
+    def test_un_tramo_identico_se_alinea_a_su_contenedor(self):
+        # «LasR/RhlR activate lasB»: las dos primeras menciones se expanden al
+        # mismo token y `filter_spans` se queda con la primera.
+        tramos = [(0, 9, 0), (0, 9, 1), (19, 23, 2)]
+        conservados = [(0, 9, 0), (19, 23, 2)]
+        self.assertEqual(S.contenedores(tramos, conservados), {1: 0})
+
+    def test_un_tramo_contenido_se_alinea_a_su_contenedor(self):
+        # La que perdió es el último token de un tramo de tres que se fusiona.
+        tramos = [(4, 14, 0), (10, 14, 1)]
+        self.assertEqual(S.contenedores(tramos, [(4, 14, 0)]), {1: 0})
+
+    def test_un_traslape_parcial_no_se_asigna(self):
+        # Tras fusionar el tramo conservado, ningún token es entero de la que
+        # perdió: asignarla sería inventarle un token.
+        tramos = [(0, 9, 0), (5, 14, 1)]
+        self.assertEqual(S.contenedores(tramos, [(0, 9, 0)]), {})
+
+    def test_sin_perdedoras_no_hay_nada_que_asignar(self):
+        tramos = [(0, 4, 0), (15, 19, 1)]
+        self.assertEqual(S.contenedores(tramos, tramos), {})
+
+    def test_en_token_compartido(self):
+        self.assertEqual(S.en_token_compartido({0: 0, 1: 0, 2: 2}), 1)
+        self.assertEqual(S.en_token_compartido({0: 0, 2: 2}), 0)
+        self.assertEqual(S.en_token_compartido({}), 0)
+
+    def test_el_esquema_es_el_de_la_v1(self):
+        self.assertEqual(S.CAMPOS, CAMPOS_V1)
+
+    def test_mismo_token_va_al_final_de_las_voces(self):
+        self.assertEqual(S.VOCES, VOCES_V1 + ("mismo_token",))
 
 
 class PruebasRecursos(unittest.TestCase):
@@ -670,6 +774,44 @@ class PruebasImportacion(unittest.TestCase):
 
 # ------------------------------------------------------------ con spaCy
 
+# Lo que escribió la v1 (`en_core_sci_md` 0.5.4, spaCy 3.7.5) el 21-oct-2026,
+# antes de cambiar la alineación, con el léxico de juguete y `SIGNOS`: una
+# tupla por par en el orden de `CAMPOS_PAR`. La primera oración no tiene
+# menciones que compartan token; en la segunda, «LasR/RhlR-dependent» es un
+# token con dos. Si cambian el modelo o las reglas, sube VERSION y esto se
+# vuelve a escribir a propósito, no se ajusta hasta que pase.
+SIN_COMPARTIR = "rhlA is activated by RhlR, whereas LasR represses lasB."
+CON_COMPARTIDO = "LasR/RhlR-dependent expression of rhlA was reduced."
+V1_PARES = {
+    SIN_COMPARTIR: [
+        ("lasB", "lasR", False, True, "lasR", "lasB", "activa", False,
+         "repress", "repress", "-", "dobj< >nsubj", 2),
+        ("lasB", "rhlA", False, False, "", "", "indeterminada", False,
+         "activate", "activated", "+", "dobj< advcl< >nsubjpass", 3),
+        ("lasB", "rhlR", False, True, "", "", "indeterminada", False,
+         "activate", "activated", "+", "dobj< advcl< >nmod", 3),
+        ("lasR", "rhlA", True, False, "", "", "indeterminada", False,
+         "activate", "activated", "+", "nsubj< advcl< >nsubjpass", 3),
+        ("lasR", "rhlR", True, True, "", "", "indeterminada", False,
+         "activate", "activated", "+", "nsubj< advcl< >nmod", 3),
+        ("rhlA", "rhlR", False, True, "rhlR", "rhlA", "pasiva", False,
+         "activate", "activated", "+", "nsubjpass< >nmod", 2),
+    ],
+    CON_COMPARTIDO: [
+        ("lasR", "rhlA", True, False, "lasR", "rhlA", "nominal", False,
+         "dependent", "dependent", "?", "amod< >nmod", 2),
+        ("lasR", "rhlR", True, True, "", "", "sin_alineacion", False,
+         "", "", "", "", 0),
+        ("rhlA", "rhlR", False, True, "", "", "sin_alineacion", False,
+         "", "", "", "", 0),
+    ],
+}
+
+
+def tuplas(pares):
+    return [tuple(p[c] for c in S.CAMPOS_PAR) for p in pares]
+
+
 def lexico_de_juguete(carpeta):
     """Un `Lexico` de verdad sobre un diccionario sintético de seis genes y
     dos operones: el reconocimiento es el del pipeline, los datos no."""
@@ -725,10 +867,61 @@ class PruebasConSpacy(unittest.TestCase):
             self.assertTrue(pares)
             for p in pares:
                 self.assertIn(p["voz"], S.VOCES)
-        # ΔmexR y mexEF-oprN se alinean; en LasR/RhlR puede perder una.
-        for oracion in S.HUMO_ALINEACION[1:]:
+        # ΔmexR y mexEF-oprN se alineaban ya en la v1; desde la v2, también
+        # las dos menciones de «LasR/RhlR», que comparten token.
+        for oracion in S.HUMO_ALINEACION:
             _, menciones, alineacion = self.parsear(oracion)
             self.assertEqual(len(alineacion), len(menciones), oracion)
+
+    def test_las_dos_menciones_del_token_llevan_el_sufijo(self):
+        doc, menciones, alineacion = self.parsear(CON_COMPARTIDO)
+        k = dict((m[3], i) for i, m in enumerate(menciones))
+        self.assertEqual(len(alineacion), len(menciones))
+        self.assertEqual(alineacion[k["lasR"]], alineacion[k["rhlR"]])
+        self.assertEqual(doc[alineacion[k["lasR"]]].text,
+                         "LasR/RhlR-dependent")
+        pares = S.analizar_doc(doc, CON_COMPARTIDO, menciones, alineacion,
+                               SIGNOS)
+        resumen = dict(((p["a"], p["b"]),
+                        (p["regulador_sintactico"], p["blanco_sintactico"],
+                         p["voz"], p["lema_dominante"]))
+                       for p in pares)
+        self.assertEqual(resumen, {
+            ("lasR", "rhlA"): ("lasR", "rhlA", "nominal", "dependent"),
+            ("rhlA", "rhlR"): ("rhlR", "rhlA", "nominal", "dependent"),
+            ("lasR", "rhlR"): ("", "", "mismo_token", ""),
+        })
+        # El par que la v1 ya alineaba sale igual que en la v1.
+        self.assertEqual(tuplas(pares)[0], V1_PARES[CON_COMPARTIDO][0])
+
+    def test_sin_token_compartido_la_salida_es_la_de_la_v1(self):
+        _, menciones, alineacion = self.parsear(SIN_COMPARTIR)
+        self.assertEqual(S.en_token_compartido(alineacion), 0)
+        pares = S.analizar_oracion(self.nlp, SIN_COMPARTIR, menciones, SIGNOS)
+        self.assertEqual(tuplas(pares), V1_PARES[SIN_COMPARTIR])
+
+    def test_ejecutar_cuenta_las_menciones_en_token_compartido(self):
+        entrada = os.path.join(self.carpeta, "compartido.csv")
+        salida = os.path.join(self.carpeta, "compartido.jsonl")
+        with io.open(entrada, "w", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["pmid", "fuente_texto", "seccion", "num_oracion",
+                        "oracion"])
+            w.writerow(["21", "xml", "results", "3",
+                        "LasR/RhlR activate lasB transcription."])
+        cuenta = S.ejecutar(entrada, salida, lex=self.lex, nlp=self.nlp,
+                            vocab_signos=SIGNOS)
+        self.assertEqual((cuenta["menciones"],
+                          cuenta["menciones_sin_alineacion"],
+                          cuenta["menciones_en_token_compartido"]),
+                         (3, 0, 1))
+        self.assertEqual(cuenta["pares"], 3)
+        self.assertEqual((cuenta["por_voz"]["activa"],
+                          cuenta["por_voz"]["mismo_token"],
+                          cuenta["por_voz"]["sin_alineacion"]), (2, 1, 0))
+        with io.open(salida, encoding="utf-8") as f:
+            lineas = [json.loads(l) for l in f]
+        self.assertEqual(set(r["version"] for r in lineas), {"2"})
 
     def test_esquema_de_analizar_oracion(self):
         menciones = self.lex.menciones(S.HUMO_CORTE)
@@ -798,6 +991,11 @@ class PruebasConSpacy(unittest.TestCase):
         self.assertTrue(info["cargado_sin_scispacy"])
         self.assertNotIn("ner", info["componentes"])
         self.assertIn("parser", info["componentes"])
+        # «LasR/RhlR activate lasB transcription.»: una de las tres comparte
+        # token y ya ninguna se queda sin alinear.
+        compartido = info["humo"]["alineacion"][0]
+        self.assertEqual((compartido["en_token_compartido"],
+                          compartido["sin_alineacion"]), (1, []))
 
 
 if __name__ == "__main__":
