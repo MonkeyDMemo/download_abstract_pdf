@@ -172,6 +172,29 @@ class PruebasFlujo(unittest.TestCase):
         self.assertIn("AVISO: cambió", self.log())
         self.assertIn("no se regeneró", self.log())
 
+    def test_el_aviso_se_repite_hasta_que_se_regenera(self):
+        """Avisar una sola vez no bastaba: la corrida que avisaba guardaba las
+        entradas nuevas, y la siguiente daba el paso por hecho con la base
+        vieja. Si nadie leía esa corrida, nadie se enteraba."""
+        destino = os.path.join(self.tmp.name, "operones_base.tsv")
+        with io.open(destino, "w", encoding="utf-8") as f:
+            f.write("x")
+        self.correr(pasos=["operones"])
+        with io.open(self.pasos.entrada, "w", encoding="utf-8") as f:
+            f.write("dos")
+        self.correr(pasos=["operones"])
+        avisos = self.log().count("AVISO: cambió")
+
+        self.correr(pasos=["operones"])
+        self.assertEqual(self.log().count("AVISO: cambió"), avisos + 1)
+
+        self.correr(pasos=["operones"], rehacer_operones=True)
+        avisos = self.log().count("AVISO: cambió")
+        self.correr(pasos=["operones"])
+        r = self.correr(pasos=["operones"])
+        self.assertEqual(r["pasos"], {"operones": "saltado"})
+        self.assertEqual(self.log().count("AVISO: cambió"), avisos)
+
     def test_rehacer_operones_sin_el_paso_es_error_de_uso(self):
         with self.assertRaises(ValueError):
             self.correr(pasos=["bronce"], rehacer_operones=True)

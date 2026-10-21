@@ -260,9 +260,8 @@ def _plan(ctx, paso):
         if ctx.rehacer_operones:
             base = [py, "-m", "grn_operones.cli"] + (
                 ["--datos", ctx.datos] if ctx.datos else [])
-            # Nunca `extraer`: sale a la red, pide credenciales de BioCyc y
-            # sale con código 0 aunque una fuente falle. Desde los crudos ya
-            # bajados todo es local y determinista.
+            # Nunca `extraer`: sale a la red y pide credenciales de BioCyc.
+            # Desde los crudos ya bajados todo es local y determinista.
             comandos = [(base + ["reparsear", "--fuente", "todo"], (0,), False),
                         (base + ["curar"], (0,), False),
                         (base + ["catalogo", "--paso1"], (0,), False)]
@@ -555,6 +554,7 @@ def _correr_paso(ctx, paso, forzar, log, detener):
         previo["revisado"] = _ahora()
         return "saltado"
 
+    aviso = None
     if plan.get("aviso_si_cambian") and previo and previo.get("entradas"):
         # Un paso que sin su bandera no corre nada (el de operones solo sella
         # la huella) tiene que decir que sus entradas cambiaron: si no, el
@@ -563,8 +563,9 @@ def _correr_paso(ctx, paso, forzar, log, detener):
         cambiadas = sorted(r for r in set(entradas) | set(antes)
                            if entradas.get(r) != antes.get(r))
         if cambiadas and not plan["comandos"]:
-            log("  AVISO: cambió %s; %s." % (", ".join(cambiadas),
-                                            plan["aviso_si_cambian"]))
+            aviso = "cambió %s; %s" % (", ".join(cambiadas),
+                                       plan["aviso_si_cambian"])
+            log("  AVISO: %s." % aviso)
 
     log("")
     log("▶ %s" % NOMBRES[paso])
@@ -600,6 +601,14 @@ def _correr_paso(ctx, paso, forzar, log, detener):
     if avisos:
         registro["nota"] = "Avisos: " + " | ".join(avisos)
         registro["avisos"] = avisos
+    if aviso:
+        # Se guardan las entradas con las que se generó el recurso, no las de
+        # hoy: así la corrida siguiente vuelve a ver el cambio y vuelve a
+        # avisar, hasta que la bandera lo regenere. Con las de hoy el aviso
+        # salía una sola vez, y la siguiente corrida daba el paso por hecho
+        # con el recurso viejo.
+        registro["entradas"] = previo["entradas"]
+        registro["nota"] = "AVISO: %s." % aviso
     ctx.estado["pasos"][paso] = registro
     log("✓ %s (%.1f s)" % (NOMBRES[paso], registro["segundos"]))
     return "ok"
