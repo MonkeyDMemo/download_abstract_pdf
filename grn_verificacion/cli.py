@@ -197,6 +197,8 @@ def _argv_correr(args):
     argv += ["--semillas", args.semillas]
     for etiqueta in args.excluir_etiqueta or ():
         argv += ["--excluir-etiqueta", etiqueta]
+    if args.sin_pesos_de_clase:
+        argv.append("--sin-pesos-de-clase")
     return argv
 
 
@@ -370,7 +372,8 @@ def _cmd_reentrenar(args, R):
             max_length=args.max_length,
             conservar_checkpoints=args.conservar_checkpoints, hoja=args.hoja,
             log=_nada if desprendido else log, detener=detener,
-            semillas=semillas, excluir=excluir)
+            semillas=semillas, excluir=excluir,
+            pesos_clase=not args.sin_pesos_de_clase)
     except R.Ocupado as e:
         error("ERROR: ya corre una corrida %s (PID %s). Mírala con "
               "`reentrenar estado` o detenla con `reentrenar detener`."
@@ -441,6 +444,11 @@ def _sub_reentrenar(sub):
                     help="Clase que esta versión deja fuera; se puede "
                          "repetir. Por omisión %s; «ninguna» para entrenar "
                          "con todas." % ", ".join(R.EXCLUIR_POR_OMISION))
+    co.add_argument("--sin-pesos-de-clase", dest="sin_pesos_de_clase",
+                    action="store_true",
+                    help="Entrena sin --use_class_weights (enmienda 1 del "
+                         "protocolo). Usa otro --nombre: un resultado con "
+                         "otros pesos no se reusa.")
     co.add_argument("--hasta", choices=R.HASTA, default="entrenamiento",
                     help="Último paso: datos, particion o entrenamiento.")
     co.add_argument("--aceptar-base-distinta", dest="aceptar_base_distinta",
