@@ -250,6 +250,8 @@ grn_verificacion/      paso 2, en construccion
                          en solo lectura, y su reporte JSON y HTML
   contraste.py           cobertura del bronce y recall de la red contra la base
                          curada (ruta por argumento, informe filtrado)
+  muestra.py             el sorteo de la muestra ciega para anotar con
+                         ayudantes (docs/rubrica-anotacion.md §6 a §8)
 grn_red/               paso 3; solo estandar y compatible con 3.8
   paquete.py             nodos.tsv, red.graphml y manifiesto.json desde la red
                          de etapa2/red.py, con los nodos unificados por id
@@ -539,6 +541,8 @@ python3 flujo.py --pasos operones --rehacer-operones   # operones_base.tsv, sin 
 python3 -m grn_red.cli paquete --carpeta salidas/flujo/corrida4_run22   # tambien es el ultimo paso del flujo
 python3 -m grn_verificacion.cli verificar --carpeta salidas/flujo/corrida4_run22 [--contra J] [--html H]
 python3 -m grn_bronce.cli sintaxis --comparar ANTES --salida DESPUES [--json R]   # sin spaCy
+python3 -m grn_verificacion.cli muestra --carpeta salidas/flujo/corrida4_run22 \
+    --reservas salidas/flujo/reservas.tsv --n 200 --salida D   # la hoja para los ayudantes
 # donde viva la base; ver docs/contraste-curada.md
 python3 -m grn_verificacion.cli contraste --base X --carpeta C --excluir-pmids A \
     --informe M --confidencial D

@@ -8,6 +8,45 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 22 de octubre de 2026 — el sorteo de la muestra ciega, la tesis al día y la pregunta de operones reescrita
+
+- **`grn_verificacion/muestra.py`**, con el subcomando `cli muestra`, sortea la
+  muestra ciega de anotación tal como la define la rúbrica (§6 a §8):
+  - por oración, con el par que orientó el bronce y sin decir cuál es el
+    regulador;
+  - aleatorio simple, con semilla 20261024;
+  - dos tandas, la segunda para barajarla en el servidor con las candidatas
+    nuevas;
+  - el 25 % doble.
+  - **Salidas:** las hojas llevan solo las columnas de la rúbrica.
+    `dobles.csv` va a quien reparte y adjudica, sin la orientación del bronce,
+    y `llave.csv` queda solo para el análisis.
+  - **Población de la corrida 4:** 5 833 oraciones con regulador y blanco en el
+    CSV de candidatas. Quedan 4 864 tras las exclusiones: 832 por PMID
+    reservado, 47 por oración reservada, 5 sin el par del bronce en la capa y
+    85 repetidas.
+  - **Todavía no se sortea:** espera a que el asesor valide la rúbrica el
+    viernes. Suites: raíz 1 237.
+- **El Documento de Tesis v1 en claude.ai** quedó al 21-oct: la v2 de la
+  curada, una tabla con lo del 21-oct (sintaxis v2, verificación, paquete de la
+  red, contraste), las erratas de la base (5 584 interacciones sobre 3 006
+  locus) y de los documentos (2 354 procesados de 2 361), y las filas de
+  «¿Hubo solución?» y de los formatos de la red.
+- **La pregunta de la decisión 3** se reescribió para hacerla en persona el
+  viernes 23. La anterior empezaba por «son bases distintas» e invitaba a
+  repetir la respuesta verbal. La nueva parte de las 2 850 filas inferidas por
+  homología desde PA14 y pregunta si también se infirieron filas por
+  pertenencia a operón.
+
+**Abierto:**
+- **El resumen del bronce no cuadra con su CSV.** El de la corrida 4 dice 8 339
+  candidatas «con regulador y blanco asignados», y el CSV de candidatas trae
+  5 833. Hay que ver qué cuenta cada uno antes de citar cualquiera; la tesis
+  cita 8 339.
+- **`muestra.py` usa funciones privadas** de `entrenamiento.py` (`_reservada` y
+  `_pmid_valido`): conviene hacerlas públicas al tocar ese archivo.
+- **El contraste con la base real** lo corre el usuario (`contraste-curada.md`).
+
 ## 21 de octubre de 2026 — los dos bundles del servidor en main, la alineación v2, verificar-corrida, el contraste y los documentos del viernes
 
 Es el primer día del cierre técnico del Documento de Tesis v1: el calendario
