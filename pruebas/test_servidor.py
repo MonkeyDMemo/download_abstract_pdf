@@ -1614,6 +1614,22 @@ class PruebasArchivosDelFlujo(BasePruebaFlujo):
 
         self.assertEqual(objeto.descarga_como, "red.tsv")
 
+    def test_el_graphml_siempre_se_descarga(self):
+        """Abierto en la pestaña, el navegador lo interpretaría como XML en
+        el origen del tablero, con nombres y productos que llegaron de
+        afuera: aunque pidan ?ver=1, se baja."""
+        (self.carpeta / "red.graphml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n<graphml/>\n',
+            encoding="utf-8")
+        self.assertNotIn("graphml", servidor.SE_PUEDEN_VER)
+        for params in ({}, {"ver": "1"}):
+            codigo, objeto = self.pedir("GET", self.ruta("red.graphml"),
+                                        params)
+            self.assertEqual(codigo, 200)
+            self.assertEqual(objeto.descarga_como, "red.graphml")
+            self.assertEqual(objeto.tipo_mime,
+                             "application/graphml+xml; charset=utf-8")
+
     def test_ver_con_valor_raro_es_400(self):
         self.falla("GET", self.ruta("red.tsv"), 400, {"ver": "quiza"})
 
