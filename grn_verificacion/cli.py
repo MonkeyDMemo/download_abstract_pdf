@@ -8,6 +8,7 @@
     python -m grn_verificacion.cli datos-entrenamiento --pares JSONL --base XLSX ...
     python -m grn_verificacion.cli reentrenar correr|estado|detener --raiz DIR ...
     python -m grn_verificacion.cli contraste --base XLSX --carpeta DIR --informe MD --confidencial DIR ...
+    python -m grn_verificacion.cli muestra --carpeta DIR --reservas TSV --n N --salida DIR [--semilla S] [--fraccion-doble F]
 
 Lo normal es no llamarlo a mano: `python flujo.py` corre los pasos en orden y
 se salta lo que ya está hecho.
@@ -560,6 +561,45 @@ def _sub_contraste(sub):
     co.set_defaults(func=cmd_contraste)
 
 
+def cmd_muestra(args):
+    """Solo conteos: el módulo nunca le pasa una oración a `log`."""
+    from grn_verificacion import muestra
+    try:
+        muestra.ejecutar(args.carpeta, args.reservas, args.n, args.salida,
+                         semilla=args.semilla,
+                         fraccion_doble=args.fraccion_doble, log=log)
+    except (ValueError, OSError) as e:
+        log("ERROR: %s" % e)
+        return 1
+    return 0
+
+
+def _sub_muestra(sub):
+    from grn_verificacion import muestra
+    mu = sub.add_parser(
+        "muestra",
+        help="Sortea la muestra ciega de anotación con ayudantes "
+             "(docs/rubrica-anotacion.md, §6 a §8): las dos hojas, la llave "
+             "y el resumen.")
+    mu.add_argument("--carpeta", required=True,
+                    help="Carpeta del flujo con capa_pares.csv.")
+    mu.add_argument("--reservas", required=True,
+                    help="reservas.tsv: la muestra de 50 y el conjunto "
+                         "ciego, que no entran.")
+    mu.add_argument("--n", type=int, required=True,
+                    help="Cuántos ítems se sortean.")
+    mu.add_argument("--salida", required=True,
+                    help="Carpeta para hoja_tanda1.csv, "
+                         "hoja_tanda2_ciega.csv, llave.csv y resumen.json.")
+    mu.add_argument("--semilla", type=int, default=muestra.SEMILLA,
+                    help="Por omisión, %(default)s.")
+    mu.add_argument("--fraccion-doble", dest="fraccion_doble", type=float,
+                    default=muestra.FRACCION_DOBLE,
+                    help="Fracción de cada tanda que anotan dos personas; "
+                         "por omisión, %(default)s.")
+    mu.set_defaults(func=cmd_muestra)
+
+
 def consola_tolerante():
     """La consola de Windows imprime cp1252: los acentos caben, pero la barra
     de progreso de transformers («█») o una sigma no, y un `print` con ellos
@@ -653,6 +693,7 @@ def main(argv=None):
 
     _sub_reentrenar(sub)
     _sub_contraste(sub)
+    _sub_muestra(sub)
 
     args = ap.parse_args(argv)
     return args.func(args)
