@@ -465,8 +465,11 @@ horas-persona, más la calibración y la adjudicación.
 Si el contraste (`docs/contraste-curada.md`) fija otro tamaño, manda el suyo.
 
 **De dónde sale la muestra ciega.** Sale de la misma población que las 50: las
-oraciones candidatas del bronce con regulador y blanco, ahora de la corrida 4,
-que son 8 339 (resumen de la corrida 4). Cada ítem es la oración con el par
+oraciones candidatas del bronce con regulador y blanco, ahora de la corrida 4.
+El CSV de candidatas de la corrida 4 trae 5 833. Su resumen dice 8 339, y esa
+diferencia dentro del export del bronce está pendiente de explicar (contado el
+22-oct). Tras las exclusiones de abajo quedan 4 864. Cada ítem es la oración
+con el par
 que propone el bronce, sin decir cuál de los dos es el regulador. Así la cifra
 se compara con el 44 %, y cada capa de la plata se mide sobre lo que acepta. Lo que la plata saque de
 pares que el bronce no orientó queda fuera de esta población; eso lo cubre la
@@ -496,15 +499,18 @@ oraciones de `capa_pares.csv` cuyo par es el que orientó el bronce. Además de
 las oraciones reservadas, deja fuera los artículos de los PMID de
 `reservas.tsv`, que es como ahí están las 50, y las oraciones repetidas; el
 resumen dice cuántas salen por cada motivo. Si se piden más ítems de los que
-quedan, no sortea. Escribe cuatro archivos, y cada uno va a alguien distinto:
+quedan, no sortea. Escribe cinco archivos, y cada uno va a alguien distinto:
 
 - `hoja_tanda1.csv`, la tanda 1: a los ayudantes.
 - `hoja_tanda2_ciega.csv`, la mitad ciega de la tanda 2: al servidor, donde
   se baraja con las candidatas nuevas en una sola hoja. Así no va a los
   ayudantes.
+- `dobles.csv`, solo con qué ítems anotan dos personas y su tanda: a quien
+  reparte y adjudica. No lleva la orientación del bronce, porque un
+  adjudicador que la ve desempata hacia el bronce.
 - `llave.csv`, con el PMID, el `id_par`, la orientación del bronce y qué
-  ítems son dobles: solo para quien adjudica y para el análisis. Nunca va a
-  los ayudantes.
+  ítems son dobles: solo para el análisis. No va a los ayudantes ni a quien
+  adjudica.
 - `resumen.json`, con la semilla, la población, las exclusiones y las huellas
   de las entradas y de las salidas. No lleva oraciones ni PMID.
 

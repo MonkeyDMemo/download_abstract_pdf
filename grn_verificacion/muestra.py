@@ -53,8 +53,9 @@ clave estable (PMID, fuente, número de oración, `id_par`) antes de
   entrega así, sino barajada en el servidor con las candidatas nuevas en una
   sola hoja, para que la hoja no diga qué pares faltan en la base.
 - **Parte doble** (§7, punto 4). En cada tanda, la fracción pedida, el 25 %
-  por omisión. Va en la llave y no en la hoja: todos reciben la misma hoja, y
-  qué ítems anotan dos personas lo decide quien reparte.
+  por omisión. Va en `dobles.csv` y en la llave, y no en la hoja: todos
+  reciben la misma hoja, y qué ítems anotan dos personas lo decide quien
+  reparte.
 - **`id_item`**. Un código al azar del mismo sorteo (`m-` y cuatro cifras o
   más), no un consecutivo: un consecutivo diría el orden del sorteo y, al
   barajar la tanda 2, de qué estrato viene cada ítem. Las candidatas nuevas
@@ -68,7 +69,11 @@ Las salidas, y a quién va cada una
 - `hoja_tanda1.csv`: a los ayudantes.
 - `hoja_tanda2_ciega.csv`: al servidor, para barajarla con las candidatas
   nuevas; no va directo a los ayudantes.
-- `llave.csv`: solo para el adjudicador y el análisis, nunca a los ayudantes.
+- `dobles.csv`: a quien reparte y adjudica la parte doble; solo `id_item` y
+  tanda. La orientación del bronce no va ahí: un adjudicador que la ve
+  desempata hacia el bronce.
+- `llave.csv`: solo para el análisis, nunca a los ayudantes ni a quien
+  adjudica.
 - `resumen.json`: semilla, tamaño, población, exclusiones por motivo y
   huellas de las entradas y las salidas; no lleva oraciones ni PMIDs.
 
@@ -104,7 +109,14 @@ NOMBRE_CAPA = "capa_pares.csv"
 HOJA_TANDA1 = "hoja_tanda1.csv"
 HOJA_TANDA2 = "hoja_tanda2_ciega.csv"
 LLAVE = "llave.csv"
+DOBLES = "dobles.csv"
 RESUMEN = "resumen.json"
+
+# Lo único que necesita quien reparte la parte doble y adjudica sus
+# desacuerdos. Va aparte de la llave porque la llave dice cómo orientó el
+# bronce cada par, y un adjudicador que lo ve desempata hacia el bronce: la
+# cifra mediría el acuerdo con el pipeline y no lo que dice la oración.
+COLUMNAS_DOBLES = ["id_item", "tanda"]
 
 # Las de la rúbrica, §6, en su orden, y ninguna más.
 COLUMNAS_HOJA = ["id_item", "oracion", "entidad_1", "entidad_2", "relacion",
@@ -426,13 +438,16 @@ def ejecutar(carpeta, ruta_reservas, n, salida, semilla=SEMILLA,
                   [fila_hoja(m) for m in muestra if m["tanda"] == 1])
     _escribir_csv(os.path.join(salida, HOJA_TANDA2), COLUMNAS_HOJA,
                   [fila_hoja(m) for m in muestra if m["tanda"] == 2])
+    ordenada = sorted(muestra, key=lambda m: (m["tanda"], m["id_item"]))
     _escribir_csv(os.path.join(salida, LLAVE), COLUMNAS_LLAVE,
-                  [fila_llave(m) for m in
-                   sorted(muestra, key=lambda m: (m["tanda"], m["id_item"]))])
+                  [fila_llave(m) for m in ordenada])
+    _escribir_csv(os.path.join(salida, DOBLES), COLUMNAS_DOBLES,
+                  [{"id_item": m["id_item"], "tanda": m["tanda"]}
+                   for m in ordenada if m["doble"]])
     resumen["salidas"] = dict(
         (nombre, procedencia.huella(os.path.join(salida, nombre)))
-        for nombre in (HOJA_TANDA1, HOJA_TANDA2, LLAVE))
-    # El resumen va al final: si está, las tres anteriores ya se escribieron.
+        for nombre in (HOJA_TANDA1, HOJA_TANDA2, LLAVE, DOBLES))
+    # El resumen va al final: si está, las anteriores ya se escribieron.
     _escribir_json(os.path.join(salida, RESUMEN), resumen)
 
     log("sorteo con semilla %d: %d ítems, %d en la tanda 1 y %d en la "
@@ -441,6 +456,7 @@ def ejecutar(carpeta, ruta_reservas, n, salida, semilla=SEMILLA,
     log("  %s: a los ayudantes" % HOJA_TANDA1)
     log("  %s: al servidor, para barajarla con las candidatas nuevas"
         % HOJA_TANDA2)
-    log("  %s: solo para el adjudicador y el análisis" % LLAVE)
+    log("  %s: a quien reparte y adjudica la parte doble" % DOBLES)
+    log("  %s: solo para el análisis" % LLAVE)
     log("  %s: semilla, población, exclusiones y huellas" % RESUMEN)
     return resumen

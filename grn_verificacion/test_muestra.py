@@ -420,10 +420,26 @@ class PruebasSalidas(Base):
             self.assertEqual(de_la_hoja["entidad_1"], primero)
             self.assertIn(fila["doble"], ("si", "no"))
 
+    def test_los_dobles_van_sin_la_orientacion_del_bronce(self):
+        salida, _ = self.ejecutar()
+        columnas, dobles = leer_csv(os.path.join(salida, muestra.DOBLES))
+        self.assertEqual(columnas, ["id_item", "tanda"])
+        _, llave = leer_csv(os.path.join(salida, muestra.LLAVE))
+        self.assertEqual(
+            sorted((f["id_item"], f["tanda"]) for f in dobles),
+            sorted((f["id_item"], f["tanda"]) for f in llave
+                   if f["doble"] == "si"))
+        self.assertEqual(len(dobles), 6)
+        with io.open(os.path.join(salida, muestra.DOBLES),
+                     encoding="utf-8-sig") as f:
+            texto = f.read()
+        for marca in ("1>2", "2>1", "PA9", "9000"):
+            self.assertNotIn(marca, texto)
+
     def test_los_csv_llevan_bom(self):
         salida, _ = self.ejecutar()
         for nombre in (muestra.HOJA_TANDA1, muestra.HOJA_TANDA2,
-                       muestra.LLAVE):
+                       muestra.LLAVE, muestra.DOBLES):
             with open(os.path.join(salida, nombre), "rb") as f:
                 self.assertEqual(f.read(3), codecs.BOM_UTF8, nombre)
 
@@ -452,7 +468,7 @@ class PruebasSalidas(Base):
         uno, _ = self.ejecutar(salida="uno")
         dos, _ = self.ejecutar(salida="dos")
         for nombre in (muestra.HOJA_TANDA1, muestra.HOJA_TANDA2,
-                       muestra.LLAVE, muestra.RESUMEN):
+                       muestra.LLAVE, muestra.DOBLES, muestra.RESUMEN):
             with open(os.path.join(uno, nombre), "rb") as a, \
                     open(os.path.join(dos, nombre), "rb") as b:
                 self.assertEqual(a.read(), b.read(), nombre)
