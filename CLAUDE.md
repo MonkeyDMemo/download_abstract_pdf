@@ -18,7 +18,7 @@ El pipeline tiene cuatro pasos y tres capas. `PLAN.md` los define en detalle.
 | 0 | Extraccion | — | `grn_etl/` | cerrado |
 | 1 | Identificacion de elementos | bronce | `grn_bronce/` | con metricas; sigue la v5 |
 | 2 | Verificacion | silver | `grn_verificacion/` | en construccion desde el 8-oct-2026 |
-| 3 | Consolidacion | gold | `grn_red/` | futuro |
+| 3 | Consolidacion | gold | `grn_red/` | abierto el 21-oct-2026: el paquete de la red; la consolidacion sigue |
 
 **El flujo de punta a punta es `python flujo.py`** (8-oct-2026): operones →
 bronce → pares → BioBERT → red → sintaxis → capa → evaluacion, cada paso con
@@ -105,7 +105,7 @@ cualquier particion en la que detecte esa contaminacion. El panorama esta en
   Va en el extra `[operones]`. Se instala con `pip install -e ".[bronce]"` o
   `".[operones]"` dentro del venv; el núcleo no tiene dependencias.
 
-- **`grn_verificacion/`, `flujo.py` y `grn_comun/` son solo estandar y
+- **`grn_verificacion/`, `grn_red/`, `flujo.py` y `grn_comun/` son solo estandar y
   compatibles con 3.8**, como el nucleo: lo que necesita terceros corre en
   otro proceso.
 - **`grn_bronce/sintaxis.py` es la unica pieza que importa spaCy** (aprobado el
@@ -250,6 +250,10 @@ grn_verificacion/      paso 2, en construccion
                          en solo lectura, y su reporte JSON y HTML
   contraste.py           cobertura del bronce y recall de la red contra la base
                          curada (ruta por argumento, informe filtrado)
+grn_red/               paso 3; solo estandar y compatible con 3.8
+  paquete.py             nodos.tsv, red.graphml y manifiesto.json desde la red
+                         de etapa2/red.py, con los nodos unificados por id
+                         canonico; es el ultimo paso del flujo (`paquete`)
 flujo.py               el flujo de punta a punta; idempotente por huella
 grn_comun/             lo que usan los tres pasos
   rutas.py               la precedencia de GRN_DATOS; grn_bronce/rutas.py es
@@ -532,6 +536,7 @@ python3 flujo.py --corrida 4            # operones -> bronce -> BioBERT -> capa 
 python3 flujo.py --corrida 4 --limite 200   # prueba rapida en su propia carpeta
 python3 flujo.py --pasos capa,evaluar --forzar capa
 python3 flujo.py --pasos operones --rehacer-operones   # operones_base.tsv, sin red; corre siempre
+python3 -m grn_red.cli paquete --carpeta salidas/flujo/corrida4_run22   # tambien es el ultimo paso del flujo
 python3 -m grn_verificacion.cli verificar --carpeta salidas/flujo/corrida4_run22 [--contra J] [--html H]
 python3 -m grn_bronce.cli sintaxis --comparar ANTES --salida DESPUES [--json R]   # sin spaCy
 # donde viva la base; ver docs/contraste-curada.md
@@ -611,8 +616,9 @@ La tercera son las salidas del flujo:
 `/api/flujo/<carpeta>/archivos/<nombre>`. La raíz sale de `--flujo` al
 arrancar, nunca de una petición. `flujo.ruta_archivo` valida la carpeta
 (`^[A-Za-z0-9_.-]{1,80}$`, hija directa de la raíz) y el nombre (patrón
-cerrado con extensión `csv`, `tsv`, `json`, `jsonl`, `log`, `txt` o `xlsx`, y
-además tiene que estar en el listado), y `servidor.py` comprueba otra vez con
+cerrado con extensión `csv`, `tsv`, `json`, `jsonl`, `log`, `txt`, `xlsx` o
+`graphml`, y además tiene que estar en el listado; el `graphml` siempre se
+descarga, nunca se abre en el origen del tablero), y `servidor.py` comprueba otra vez con
 `_dentro_de`. Se entrega por bloques de 256 KB y exactamente
 `Content-Length` bytes: `flujo.log` crece mientras el flujo corre, y con
 HTTP/1.1 los bytes de más se leerían como el principio de la siguiente
@@ -753,9 +759,9 @@ Las pruebas que no pueden faltar:
   `reentrenar` escribe `datos/`, `runs/` y `resultados/`.
 - Usar `sudo`, cambiar configuracion del sistema o instalar paquetes globales.
 - Ejecutar Playwright u otros navegadores. Desactivado por omision.
-- **Crear `grn_red/`** (paso 3). `grn_verificacion/` se abrio el 8-oct-2026,
-  cuando el usuario dio por cumplida la compuerta: el paso 1 ya reporta
-  metricas.
+- **Las reglas de consolidacion en `grn_red/`** hasta que el asesor revise el
+  borrador (`docs/reunion-asesor-23oct.md`, decision f). `grn_red/` se abrio el
+  21-oct-2026 con el usuario, solo para empaquetar la red que ya existe.
 - **`etapa2/` se conserva congelada**: sin cambios funcionales, solo lo que
   exija una mudanza de modulos, una correccion de error o una prueba. El paso 2
   la usa sin modificarla: `grn_verificacion` importa sus funciones y corre sus

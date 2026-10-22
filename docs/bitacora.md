@@ -60,12 +60,14 @@ el límite de sesión; se retomó a las 10:00.
 sintaxis en `.venv-nlp` da 59.
 
 **Abierto:**
-- **`grn-red-paquete`** está hecho (2 commits; raíz 1 101, etapa2 528), pero
-  falta un commit: `servidor.py`, `test_servidor.py` y `web/index.html`, para
-  el `graphml`. La regla `Bash(*servidor.py*)` de los permisos de la noche negó
-  el `git add`. Lo commitea el usuario, o se afina la regla. Hasta entonces la
-  rama no se fusiona, y CLAUDE.md sigue listando `grn_red/` como fuera de
-  alcance.
+- **`grn-red-paquete`** se fusionó esa misma tarde, después de que el usuario
+  borró el `settings.local.json` de la noche, cuya regla `Bash(*servidor.py*)`
+  negaba el `git add` del tablero.
+  - Sobre la corrida 4 dio 1 809 nodos y 8 827 aristas, con 0 colisiones; la
+    segunda corrida sale «saltado».
+  - Suites: raíz 1 202, etapa2 528 y sintaxis 59.
+  - CLAUDE.md ya no lista `grn_red/` como fuera de alcance; lo que sigue fuera
+    son las reglas de consolidación, hasta que las revise el asesor.
 - **El push** lo hace el usuario. `main` contiene el `main` del servidor
   (`a2e8d02`), así que el servidor podrá hacer `pull --ff-only`.
 - **Para el viernes 23:** las nueve decisiones de `reunion-asesor-23oct.md`, y la
