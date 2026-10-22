@@ -237,16 +237,20 @@ Genome DB. En ese caso, usar esa misma pertenencia como rasgo del paso 2 sería
 evaluar al clasificador con la fuente que construyó la referencia. La cifra
 saldría igual de bien presentada y mediría otra cosa.
 
-**La pregunta, lista para mandar:**
+**La pregunta**, reescrita el 21-oct-2026 para hacerla en persona en la
+reunión del viernes 23-oct. La versión anterior empezaba por «la base de
+operones es una cosa y GRN_experimental otra». Eso invitaba a repetir la
+respuesta verbal, que dice qué es cada base, pero no cómo se construyó la
+curada. La nueva parte de un precedente conocido: una parte de la base ya se
+infirió, por homología.
 
-> Dr. Galán: en la semana del 5 al 9 de octubre me comentó que la base de
-> operones es una cosa y que GRN_experimental es la base de la red
-> regulatoria; así lo registré. Para cerrar este punto por escrito me falta un
-> dato: ¿alguna relación de GRN_experimental se creó o se amplió por
-> pertenencia a un operón —es decir, de «el regulador X actúa sobre el operón
-> Y» se pasó a una fila por cada gen de Y— usando los operones de ODB,
-> BioCyc/PseudoCyc o Pseudomonas Genome DB? Basta con sí, no o no lo sé; si es
-> sí, ¿con cuál de esas fuentes?
+> Dr. Galán, sobre cómo se construyó la base curada (GRN_experimental):
+> sabemos que 2 850 de sus filas se infirieron por homología desde PA14.
+> ¿Hubo también filas inferidas por pertenencia a operón? Es decir, si un
+> artículo dice «LasR activa el operón rhlAB», ¿se registró solo lo que dice
+> el artículo, o también una fila por cada gen del operón (LasR → rhlA y
+> LasR → rhlB), sacando los genes de ODB, BioCyc o Pseudomonas Genome DB?
+> Basta con sí, no o no lo sé.
 
 **Qué cambia con cada respuesta:**
 
