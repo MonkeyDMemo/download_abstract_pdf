@@ -11,6 +11,35 @@ Es una foto con fecha, no un segundo tablero. El estado de cada punto se lleva
 en `PLAN.md`: cuando algo se cierre, se marca allá y en la bitácora. Los
 números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
 
+**Lo que cambió el 21 y el 22-oct-2026** (detalle en la bitácora de esos días):
+
+- **Cerrados:**
+  - la alineación de menciones de la sintaxis (nuevo del 8-oct): con la v2,
+    los pares `sin_alineacion` bajan de 8 485 a 0 (`plan-sintaxis-bronce.md`
+    §7);
+  - 7.1, la parte de `grn_red/`: se abrió el 21-oct para el paquete de la red
+    (`nodos.tsv`, `red.graphml` y `manifiesto.json`). Las reglas de
+    consolidación siguen fuera hasta que las revise el asesor.
+- **Avanzados:**
+  - 1.1: la pregunta de la decisión 3 se reescribió (`operones-asesor.md` §8)
+    y se hace en persona el viernes 23;
+  - 2.3 [30]: con la v2 se orientan 600 de los pares que no se alineaban,
+    pero D1 sigue en 1 de 4 y el criterio sigue sin cumplirse;
+  - 7.2 [11] → [12] → [14]: `cli contraste` versiona el cruce, mide el recall
+    de la red (7.16) y escribe las candidatas nuevas solo en la carpeta
+    confidencial. Está probado con bases sintéticas; falta correrlo contra la
+    base real, y lo corre el usuario (`contraste-curada.md`);
+  - 7.6: la guía es `rubrica-anotacion.md`, y `cli muestra` sortea la muestra
+    ciega. El sorteo espera a que el asesor valide la rúbrica.
+- **Nuevos:**
+  - GO en `nodos.tsv`: hoy la función es el producto de RefSeq, porque bajar
+    GO de UniProt es red;
+  - `muestra.py` usa dos funciones privadas de `entrenamiento.py`
+    (`_reservada` y `_pmid_valido`): hacerlas públicas al tocar ese archivo.
+- **Encontrado y arreglado:** la fila del resumen del bronce decía «con
+  regulador y blanco» y contaba solo el regulador: 8 339, cuando con los dos
+  son 5 833. La tesis v1 lo citó así; ya está corregida.
+
 **Lo que cambió el 8-oct-2026** (detalle en la bitácora de ese día):
 
 - **Cerrados:**

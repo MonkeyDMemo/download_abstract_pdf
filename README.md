@@ -399,8 +399,8 @@ python3 -m unittest discover          # desde la raíz del proyecto
 python3 -m unittest discover etapa2   # etapa2 no es un paquete y va aparte
 ```
 
-859 pruebas en la raíz (`pruebas/` y los paquetes `grn_*`) y 528 en `etapa2`
-al 8-oct-2026, con `unittest` de la biblioteca estándar. **Ninguna toca la
+1 238 pruebas en la raíz (`pruebas/` y los paquetes `grn_*`) y 528 en `etapa2`
+al 22-oct-2026, con `unittest` de la biblioteca estándar. **Ninguna toca la
 red.** Se inyecta `pruebas.falsos.ClienteFalso`, que devuelve XML o
 JSON fijo y registra cada llamada; además, la clase base deja `urlopen`
 inutilizable, así que una prueba que arme un cliente de verdad falla en vez de
@@ -422,7 +422,9 @@ grn_etl/
   trabajos.py          corre un trabajo en segundo plano, uno a la vez
 grn_operones/          la base de operones y el catálogo maestro
 grn_bronce/            paso 1: menciones y oraciones candidatas (y la sintaxis)
-grn_verificacion/      paso 2: puente al BioBERT, capa y evaluación
+grn_verificacion/      paso 2: puente al BioBERT, capa, evaluación, verificación,
+                       contraste con la base curada y muestra para anotar
+grn_red/               paso 3: el paquete de la red (nodos, GraphML y manifiesto)
 grn_comun/             lo que usan los tres pasos (huellas, procesos hijos)
 flujo.py               el flujo de punta a punta, idempotente por huella
 etapa2/                el clasificador heredado, congelado

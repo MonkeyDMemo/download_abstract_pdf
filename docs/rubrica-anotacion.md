@@ -465,15 +465,15 @@ horas-persona, más la calibración y la adjudicación.
 Si el contraste (`docs/contraste-curada.md`) fija otro tamaño, manda el suyo.
 
 **De dónde sale la muestra ciega.** Sale de la misma población que las 50: las
-oraciones candidatas del bronce con regulador y blanco, ahora de la corrida 4.
-El CSV de candidatas de la corrida 4 trae 5 833. Su resumen dice 8 339, y esa
-diferencia dentro del export del bronce está pendiente de explicar (contado el
+oraciones candidatas del bronce con regulador y blanco, ahora de la corrida 4:
+5 833, las mismas que en la corrida 1. El resumen del bronce decía 8 339 «con
+regulador y blanco», pero contaba solo el regulador: las otras 2 506 traen un
+solo TF y más de un blanco posible, y el blanco queda vacío (corregido el
 22-oct). Tras las exclusiones de abajo quedan 4 864. Cada ítem es la oración
-con el par
-que propone el bronce, sin decir cuál de los dos es el regulador. Así la cifra
-se compara con el 44 %, y cada capa de la plata se mide sobre lo que acepta. Lo que la plata saque de
-pares que el bronce no orientó queda fuera de esta población; eso lo cubre la
-revisión de candidatas nuevas.
+con el par que propone el bronce, sin decir cuál de los dos es el regulador.
+Así la cifra se compara con el 44 %, y cada capa de la plata se mide sobre lo
+que acepta. Lo que la plata saque de pares que el bronce no orientó queda fuera
+de esta población; eso lo cubre la revisión de candidatas nuevas.
 
 **Lo que queda fuera de la muestra:**
 

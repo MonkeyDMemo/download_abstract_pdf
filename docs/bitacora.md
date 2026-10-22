@@ -26,7 +26,7 @@ Para el detalle técnico de cada punto está
     reservado, 47 por oración reservada, 5 sin el par del bronce en la capa y
     85 repetidas.
   - **Todavía no se sortea:** espera a que el asesor valide la rúbrica el
-    viernes. Suites: raíz 1 237.
+    viernes. Suites: raíz 1 237 con el muestreo.
 - **El Documento de Tesis v1 en claude.ai** quedó al 21-oct: la v2 de la
   curada, una tabla con lo del 21-oct (sintaxis v2, verificación, paquete de la
   red, contraste), las erratas de la base (5 584 interacciones sobre 3 006
@@ -37,12 +37,23 @@ Para el detalle técnico de cada punto está
   repetir la respuesta verbal. La nueva parte de las 2 850 filas inferidas por
   homología desde PA14 y pregunta si también se infirieron filas por
   pertenencia a operón.
+- **El 8 339 del resumen del bronce no era «con regulador y blanco».**
+  - La fila contaba las candidatas con regulador, tuvieran blanco o no. Con un
+    solo TF y más de un gen más en la oración, `identificar` pone el regulador
+    y deja el blanco vacío.
+  - En la corrida 4, contado sobre el CSV de candidatas: 8 339 con regulador,
+    5 833 con regulador y blanco, y 2 506 con regulador y sin blanco. La
+    corrida 1 tenía las mismas 5 833, de donde salieron las 50.
+  - La fila ahora dice «con regulador asignado», con otra debajo para las que
+    tienen también blanco (`con_regulador_y_blanco` en `conteos_de`, con su
+    prueba). Raíz 1 238 en verde, y `verificar` sigue en 0.
+  - La tesis v1 citaba el 8 339 como «con regulador y blanco»: se corrigió en
+    claude.ai y va en la fe de erratas de `reunion-asesor-23oct.md`.
+  - Cambió el código del bronce, así que la próxima corrida del flujo rehará
+    su exportación y los pasos que la siguen. BioBERT sale de caché y no se
+    mueve ninguna cifra; el resumen ya saldrá con la etiqueta nueva.
 
 **Abierto:**
-- **El resumen del bronce no cuadra con su CSV.** El de la corrida 4 dice 8 339
-  candidatas «con regulador y blanco asignados», y el CSV de candidatas trae
-  5 833. Hay que ver qué cuenta cada uno antes de citar cualquiera; la tesis
-  cita 8 339.
 - **`muestra.py` usa funciones privadas** de `entrenamiento.py` (`_reservada` y
   `_pmid_valido`): conviene hacerlas públicas al tocar ese archivo.
 - **El contraste con la base real** lo corre el usuario (`contraste-curada.md`).
