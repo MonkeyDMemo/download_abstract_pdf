@@ -162,7 +162,8 @@ def _leer_capa(ruta):
     oraciones = {}
     with open(ruta, encoding="utf-8-sig", newline="") as f:
         lector = csv.DictReader(f)
-        faltan = [c for c in COLUMNAS_CAPA if c not in (lector.fieldnames or [])]
+        cabecera = lector.fieldnames or []
+        faltan = [c for c in COLUMNAS_CAPA if c not in cabecera]
         if faltan:
             raise ValueError("A %s le faltan columnas: %s."
                              % (NOMBRE_CAPA, ", ".join(faltan)))
