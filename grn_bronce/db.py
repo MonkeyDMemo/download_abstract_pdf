@@ -571,6 +571,14 @@ def conteos_de(con, corrida_id):
             """SELECT COUNT(*) FROM oraciones_candidatas
                 WHERE corrida_id=? AND regulador_candidato <> ''""",
             (corrida_id,)),
+        # Con un solo TF y más de un gen más en la oración, `identificar` pone
+        # el regulador y deja el blanco vacío. La fila del resumen decía «con
+        # regulador y blanco» y contaba solo el regulador: en la corrida 4 son
+        # 8 339 con regulador y 5 833 con los dos, y la tesis v1 citó el 8 339.
+        "con_regulador_y_blanco": uno(
+            """SELECT COUNT(*) FROM oraciones_candidatas
+                WHERE corrida_id=? AND regulador_candidato <> ''
+                  AND blanco_candidato <> ''""", (corrida_id,)),
         "con_disparador": uno(
             """SELECT COUNT(*) FROM oraciones_candidatas
                 WHERE corrida_id=? AND disparador <> ''""", (corrida_id,)),

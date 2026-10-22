@@ -376,6 +376,33 @@ class PruebasSalida(unittest.TestCase):
         self.assertEqual(fila["genes_expandidos"],
                          "PA0425;PA0426;PA0427")
 
+    def test_el_resumen_no_llama_con_blanco_a_la_que_solo_tiene_regulador(self):
+        """Con un solo TF y dos genes más, `identificar` pone el regulador y
+        deja el blanco vacío. La fila decía «con regulador y blanco
+        asignados» y contaba solo el regulador: en la corrida 4, 8 339 en vez
+        de 5 833, y así llegó a la tesis v1."""
+        from grn_bronce import cli
+        unidad = bdb.guardar_unidad(self.con, self.corrida, {
+            "pmid": "1", "fuente_texto": "abstract", "seccion": "abstract",
+            "num_oracion": 2,
+            "texto": "MexT activates mexEF-oprN and pqsABCDE in PAO1.",
+            "offset_ini": 0, "offset_fin": 46, "contiguo": True})
+        bdb.guardar_candidata(self.con, self.corrida, "m", unidad, {
+            "disparador": "activates", "signo_sugerido": "+",
+            "regulador_candidato": "mexT", "blanco_candidato": "",
+            "score": 0.5}, [])
+        self.con.commit()
+
+        c = bdb.conteos_de(self.con, self.corrida)
+        filas = dict(cli._armar_resumen(
+            c, None, "v0", bdb.corrida(self.con, self.corrida), None, []))
+
+        self.assertEqual((c["con_regulador"], c["con_regulador_y_blanco"]),
+                         (2, 1))
+        self.assertEqual(filas["  con regulador asignado"], 2)
+        self.assertEqual(filas["    de ellas, también con blanco"], 1)
+        self.assertNotIn("  con regulador y blanco asignados", filas)
+
     def test_el_informe_separa_lo_que_falta_del_catalogo(self):
         filas = exportar.filas_operones(self.con, bdb, self.corrida, self.cat)
         por_nombre = dict((f["operon"], f) for f in filas)
