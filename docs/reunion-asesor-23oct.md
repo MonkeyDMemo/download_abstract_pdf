@@ -105,14 +105,14 @@ muestra. Es la decisión a.
 - **El contraste con la base curada, listo para correr** (`docs/contraste-curada.md`),
   sin correrlo: dónde y quién lo corre es la decisión d.
 
-**Cifras de la noche (las llena el orquestador al cierre)**
+**Cifras de la noche del 20 al 21-oct**
 
 | renglón | cifra | fuente |
 |---|---|---|
-| alineación v2 (C1-C4) | | |
-| paquete de la red | | |
-| verificar-corrida | | |
-| suites | | |
+| alineación v2 (C1-C4) | Cumple los cuatro: pares sin alinear de 8 485 a 0; menciones sin alinear de 4 874 a 0; 0 relaciones correctas rotas de 22; 0 líneas cambiadas fuera de las que estaban sin alinear; las mismas 76 453 claves. Ahora 600 pares se orientan. D1 sigue en 1 de 4, y el 44 % no cambia. | `plan-sintaxis-bronce.md` §7, «Resultado» |
+| paquete de la red | Hecho y probado (`grn_red/`, paso `paquete` al final del flujo); falta fusionarlo, y por eso no hay todavía cifras sobre la corrida 4 | bitácora del 21-oct |
+| verificar-corrida | Código 0 sobre la corrida 4, antes y después de la v2: normalización 95.07 % (umbral 95 %), 14 de 14 comprobaciones de la cadena, partición sin fuga y corpus v0-agosto verificado | bitácora del 21-oct |
+| suites | Raíz 1 110, etapa2 528 y sintaxis 59 en `.venv-nlp`, todas en verde | bitácora del 21-oct |
 
 ---
 
