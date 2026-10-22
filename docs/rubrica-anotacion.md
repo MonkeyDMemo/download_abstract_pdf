@@ -487,6 +487,30 @@ Las 20 de la calibración no hace falta apartarlas: son sintéticas (§7, punto
 **Cómo se sortea.** La semilla se escribe antes de sortear, y el script que
 sortea se versiona, como `muestrear_candidatas.py` con las 50 (`PLAN.md:206`).
 
+**Con qué comando.** `python -m grn_verificacion.cli muestra --carpeta
+salidas/flujo/corrida4_run22 --reservas salidas/flujo/reservas.tsv --n 200
+--salida D` (`grn_verificacion/muestra.py`). La semilla por omisión es
+20261024 y la parte doble, el 25 % de cada tanda (`--semilla`,
+`--fraccion-doble`). Sortea por oración, con aleatorio simple, entre las
+oraciones de `capa_pares.csv` cuyo par es el que orientó el bronce. Además de
+las oraciones reservadas, deja fuera los artículos de los PMID de
+`reservas.tsv`, que es como ahí están las 50, y las oraciones repetidas; el
+resumen dice cuántas salen por cada motivo. Si se piden más ítems de los que
+quedan, no sortea. Escribe cuatro archivos, y cada uno va a alguien distinto:
+
+- `hoja_tanda1.csv`, la tanda 1: a los ayudantes.
+- `hoja_tanda2_ciega.csv`, la mitad ciega de la tanda 2: al servidor, donde
+  se baraja con las candidatas nuevas en una sola hoja. Así no va a los
+  ayudantes.
+- `llave.csv`, con el PMID, el `id_par`, la orientación del bronce y qué
+  ítems son dobles: solo para quien adjudica y para el análisis. Nunca va a
+  los ayudantes.
+- `resumen.json`, con la semilla, la población, las exclusiones y las huellas
+  de las entradas y de las salidas. No lleva oraciones ni PMID.
+
+Un CSV no guarda el formato de las celdas: al abrir la hoja en Excel, las
+columnas de valores se ponen en texto antes de anotar (§6).
+
 **Cómo se reparte entre las dos tandas, y por qué.** La primera tanda lleva 100
 ítems de la muestra ciega. La segunda lleva los otros 100 barajados con las 100
 candidatas nuevas, en una sola hoja. Así la hoja no dice qué pares faltan en la
