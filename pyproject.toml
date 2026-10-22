@@ -45,7 +45,7 @@ bronce-nlp = ["spacy==3.7.5", "numpy>=1.26,<2", "typer>=0.9,<0.10",
 
 [tool.setuptools]
 packages = ["grn_etl", "grn_bronce", "grn_comun", "grn_operones",
-            "grn_verificacion"]
+            "grn_verificacion", "grn_red"]
 
 [tool.setuptools.package-data]
 grn_bronce = ["secciones.tsv", "recursos/*.tsv", "recursos/*.csv",

@@ -1007,10 +1007,13 @@ td.nota details pre {
       <h2>Flujo</h2>
       <button class="boton suave mini" id="b-refrescar-flujo">Actualizar</button>
     </div>
-    <p class="sub">Operones, bronce, pares, BioBERT, red, sintaxis, capa y evaluación,
-      uno tras otro, sobre una corrida del bronce. Cada paso se salta si sus entradas
-      no cambiaron, así que correrlo dos veces seguidas no repite nada. Las salidas
-      quedan en una carpeta por corrida y modelo.</p>
+    <p class="sub">Operones, bronce, pares, BioBERT, red, sintaxis, capa, evaluación y
+      paquete de la red, uno tras otro, sobre una corrida del bronce. Cada paso se salta
+      si sus entradas no cambiaron, así que correrlo dos veces seguidas no repite nada.
+      Las salidas quedan en una carpeta por corrida y modelo; el paquete de la red deja
+      ahí los nodos unificados (<span class="mono">nodos.tsv</span>), la red para abrir
+      en un visor de grafos (<span class="mono">red.graphml</span>, siempre como
+      descarga) y su procedencia (<span class="mono">manifiesto.json</span>).</p>
 
     <div class="campos" style="margin-top:12px">
       <div class="campo crece">

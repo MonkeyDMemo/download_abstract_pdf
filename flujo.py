@@ -1,12 +1,16 @@
 """El flujo de punta a punta, con lo que ya existe.
 
     operones → bronce → pares → biobert → red → sintaxis → capa → evaluar
+    → paquete
 
 Cada paso es el CLI que ya tiene su paquete, corrido como proceso aparte
 (`grn_comun.proceso`), y deja sus archivos en una carpeta por corrida del
 bronce y modelo: `salidas/flujo/corrida4_run22/`. Es la respuesta a «correr el
 flujo con lo que tenemos» (asesor, 2-oct-2026): ningún paso reimplementa lo que
-ya hace otro.
+ya hace otro. El paso «paquete» (`grn_red`, 21-oct-2026) tampoco decide nada:
+deja la red de `etapa2/red.py` con los nodos unificados por id canónico
+(`nodos.tsv`), como GraphML (`red.graphml`) y con un manifiesto de su
+procedencia (`manifiesto.json`).
 
 **Idempotente por huella.** Cada paso declara sus entradas (archivos, su propio
 código y sus parámetros) y sus salidas; si las huellas de las entradas son las
@@ -43,8 +47,10 @@ if RAIZ not in sys.path:
 from grn_comun import procedencia, proceso   # noqa: E402
 from grn_comun.archivos import borrar, reemplazar     # noqa: E402
 
+# El paquete va al final y no justo después de la red, que es lo único que
+# lee: si falla, no corta la sintaxis, la capa ni la evaluación.
 PASOS = ("operones", "bronce", "pares", "biobert", "red", "sintaxis", "capa",
-         "evaluar")
+         "evaluar", "paquete")
 
 NOMBRES = {
     "operones": "Operones (base de pertenencia)",
@@ -55,6 +61,7 @@ NOMBRES = {
     "sintaxis": "Sintaxis con spaCy",
     "capa": "Capa: oración, funciones, operones y BioBERT",
     "evaluar": "Evaluación (44 % recalculado, oro)",
+    "paquete": "Paquete de la red",
 }
 
 RAIZ_FLUJO = os.path.join(RAIZ, "salidas", "flujo")
@@ -70,10 +77,12 @@ JUICIOS = [os.path.join(RAIZ, "etapa2", "evaluacion", "juicio_consolidado.csv"),
                         "muestra_precision_50.csv")]
 
 # Lo que el tablero puede listar y entregar de una carpeta del flujo. Igualdad
-# contra un patrón cerrado, sin subcarpetas: el nombre llega por HTTP.
+# contra un patrón cerrado, sin subcarpetas: el nombre llega por HTTP. El
+# `graphml` es el del paquete de la red; el servidor lo entrega siempre como
+# descarga (ver servidor.TIPOS_FLUJO).
 CARPETA_VALIDA = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
 ARCHIVO_VALIDO = re.compile(
-    r"^[A-Za-z0-9_.-]{1,160}\.(csv|tsv|json|jsonl|log|txt|xlsx)$")
+    r"^[A-Za-z0-9_.-]{1,160}\.(csv|tsv|json|jsonl|log|txt|xlsx|graphml)$")
 
 ESTATUS_HECHO = ("ok", "saltado")
 
@@ -354,6 +363,36 @@ def _plan(ctx, paso):
                 "salidas": [ctx.ruta("red.tsv"), ctx.ruta("red_evidencias.tsv"),
                             ctx.ruta("red_informe.json")]}
 
+    if paso == "paquete":
+        argv = [py, "-m", "grn_red.cli", "paquete", "--carpeta", ctx.carpeta]
+        salidas = [ctx.ruta("nodos.tsv"), ctx.ruta("red.graphml"),
+                   ctx.ruta("manifiesto.json")]
+        # El paquete entero y lo que importa de otros: las columnas y las
+        # celdas de `red.py`, las del diccionario de `lexico.py`, el lector
+        # del catálogo y lo de grn_comun. El catálogo es el versionado, nunca
+        # operones_base.tsv (datos de BioCyc que no se redistribuyen).
+        # `estado.json` no es entrada: el flujo lo reescribe después de cada
+        # paso, y con él adentro el paquete no se saltaría nunca. Lo único que
+        # el manifiesto toma de ahí es la corrida, que va en `parametros`.
+        codigo = sorted(
+            r for r in glob.glob(os.path.join(RAIZ, "grn_red", "*.py"))
+            if not os.path.basename(r).startswith("test_"))
+        return {"comandos": [(argv, (0,), False)],
+                "entradas": [ctx.ruta("red.tsv"), ctx.ruta("red_evidencias.tsv"),
+                             ctx.ruta("red_informe.json"),
+                             ctx.ruta("pares.jsonl"),
+                             ctx.ruta("predicciones_meta.json"),
+                             GENES, OPERONES_CATALOGO]
+                + codigo + _codigo("etapa2/red.py", "etapa2/lexico.py",
+                                   "grn_bronce/operones.py",
+                                   "grn_comun/procedencia.py",
+                                   "grn_comun/archivos.py"),
+                "parametros": {"corrida_bronce": ctx.corrida},
+                # Si falla, que no quede a la vista el manifiesto de antes:
+                # sus sha256 hablarían de otros archivos.
+                "borrar_antes": list(salidas),
+                "salidas": salidas}
+
     if paso == "sintaxis":
         if not ctx.python_nlp:
             return {"omitir": "no hay entorno de spaCy (.venv-nlp); se crea "
@@ -499,8 +538,10 @@ def _ubicar_candidatas(ctx):
 
 
 # Los pasos que unen pares.jsonl con predicciones.jsonl por `id_par`, que no
-# depende del texto marcado.
-LEEN_PREDICCIONES = ("red", "capa", "evaluar")
+# depende del texto marcado. El paquete lo hace a través de
+# red_evidencias.tsv: con unos pares rehechos y la red vieja, sus nodos
+# saldrían de las entidades de otro texto.
+LEEN_PREDICCIONES = ("red", "paquete", "capa", "evaluar")
 
 
 def _exigir_predicciones_al_dia(ctx, paso):
@@ -892,7 +933,7 @@ def estado_general(con=None, raiz=None):
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Corre el flujo: operones, bronce, BioBERT, red, sintaxis, "
-                    "capa y evaluación.")
+                    "capa, evaluación y paquete de la red.")
     ap.add_argument("--corrida", type=int, default=None,
                     help="Corrida del bronce (por omisión, la última terminada).")
     ap.add_argument("--pasos", default=None,

@@ -63,17 +63,22 @@ RAIZ = os.path.dirname(DIRECTORIO)
 # `grn_verificacion` entra el 8-oct-2026: lleva el bronce al BioBERT y arma la
 # capa que se evalua. Es tambien donde vive el lector de la base curada, que
 # recibe la ruta por argumento: aqui no puede aparecer su nombre.
+# `grn_red` entra el 21-oct-2026, el dia que se abre: arma la red que se
+# publica, y el paso 3 es donde la base curada entra para el diff. Si una
+# referencia entrara a sus nodos o a sus aristas, la red publicada diria lo
+# que le sopla la referencia.
 VIGILADOS = ("etapa2", "grn_bronce", "grn_comun", "grn_operones",
-             "grn_verificacion")
+             "grn_verificacion", "grn_red")
 
 # Donde viven los scripts de DEL_PIPELINE, que es un subconjunto de VIGILADOS
 # a proposito. `grn_operones` se escanea igual que los demas, pero no aloja
 # scripts del pipeline, y tiene un `red.py` propio (su cliente HTTP): si
 # `_ruta_de` lo buscara ahi, un `etapa2/red.py` renombrado o movido se daria
 # por encontrado con el archivo equivocado, y la prueba dejaria de vigilarlo
-# sin avisar.
+# sin avisar. `grn_red` si los aloja: su `paquete.py` arma la red que se
+# publica.
 DONDE_VIVE_EL_PIPELINE = ("etapa2", "grn_bronce", "grn_comun",
-                          "grn_verificacion")
+                          "grn_verificacion", "grn_red")
 
 # Los nombres que no se pueden teclear, cada uno con la expresion que lo
 # atrapa. Sin distinguir mayusculas: `ORO_PSEUDOMONAS` como constante o
@@ -134,7 +139,7 @@ LISTA_BLANCA = {
 DEL_PIPELINE = ("construir_diccionario.py", "extraer_pares.py",
                 "clasificar.py", "red.py", "lexico.py", "texto.py",
                 "particionar.py", "barrido.py", "diagnostico.py",
-                "puente.py", "capa.py", "sintaxis.py")
+                "puente.py", "capa.py", "sintaxis.py", "paquete.py")
 
 
 def _ruta_de(nombre):

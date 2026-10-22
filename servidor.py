@@ -819,6 +819,11 @@ TIPOS_FLUJO = {
     "txt": "text/plain; charset=utf-8",
     "xlsx": ("application/vnd.openxmlformats-officedocument."
              "spreadsheetml.sheet"),
+    # El GraphML del paquete de la red. Fuera de SE_PUEDEN_VER a propósito,
+    # así que siempre se descarga: abierto en la pestaña, el navegador lo
+    # interpretaría como XML en el origen del tablero, y lleva nombres y
+    # productos que llegaron de afuera; un XML así es una puerta a XSS.
+    "graphml": "application/graphml+xml; charset=utf-8",
 }
 
 # Lo que con ?ver=1 se abre en la pestaña en vez de bajarse: los JSON de

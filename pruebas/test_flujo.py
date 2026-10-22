@@ -265,7 +265,7 @@ class PruebasFlujo(unittest.TestCase):
 
     def test_una_lista_vacia_de_pasos_no_es_todos(self):
         """El tablero manda la lista de lo marcado; quien desmarcó todo no
-        pidió correr los ocho pasos."""
+        pidió correr los nueve pasos."""
         with self.assertRaises(ValueError):
             flujo.correr(corrida=4, pasos=[], salida=self.salida)
         self.assertEqual(self.pasos.corridas("bronce"), 0)
@@ -455,6 +455,50 @@ class PruebasPlanReal(unittest.TestCase):
         capa = flujo._plan(self.ctx(), "capa")
         self.assertEqual(set(capa["borrar_antes"]), set(capa["salidas"]))
 
+    def test_el_paquete_va_al_final(self):
+        """Solo lee la red, pero va al final: si falla, no corta la sintaxis,
+        la capa ni la evaluación. Y une por `id_par`: con unos pares rehechos
+        y la red vieja, sus nodos saldrían de otro texto."""
+        self.assertEqual(flujo.PASOS[-1], "paquete")
+        self.assertLess(flujo.PASOS.index("red"), flujo.PASOS.index("paquete"))
+        self.assertEqual(flujo.NOMBRES["paquete"], "Paquete de la red")
+        self.assertIn("paquete", flujo.LEEN_PREDICCIONES)
+
+    def test_el_paquete_declara_sus_entradas_y_borra_lo_que_escribe(self):
+        """Cambiar la red, sus evidencias, los pares, el meta del modelo, el
+        diccionario, el catálogo versionado o el código lo rehace. Y si
+        falla, no queda a la vista el manifiesto de antes, cuyos sha256
+        hablarían de otros archivos."""
+        plan = flujo._plan(self.ctx(), "paquete")
+        argv = plan["comandos"][0][0]
+        self.assertEqual(argv[1:], ["-m", "grn_red.cli", "paquete",
+                                    "--carpeta", self.tmp.name])
+        entradas = [os.path.normpath(e) for e in plan["entradas"]]
+        for nombre in ("red.tsv", "red_evidencias.tsv", "red_informe.json",
+                       "pares.jsonl", "predicciones_meta.json"):
+            self.assertIn(os.path.join(self.tmp.name, nombre), entradas)
+        for partes in (("grn_bronce", "recursos", "genes_pao1.tsv"),
+                       ("grn_bronce", "recursos", "operones_pao1.tsv"),
+                       ("grn_red", "paquete.py"), ("grn_red", "cli.py"),
+                       ("grn_red", "__init__.py"), ("etapa2", "red.py"),
+                       ("etapa2", "lexico.py"), ("grn_bronce", "operones.py")):
+            self.assertIn(self.rel(*partes), entradas)
+        # La base de operones lleva datos de BioCyc: no entra a un paquete
+        # hecho para salir de la máquina.
+        self.assertNotIn(os.path.normpath(flujo.OPERONES_BASE), entradas)
+        self.assertFalse(any(os.path.basename(e).startswith("test_")
+                             for e in entradas))
+        # estado.json se reescribe tras cada paso: como entrada, el paquete no
+        # se saltaría nunca. La corrida que toma de ahí va en los parámetros.
+        self.assertNotIn(os.path.join(self.tmp.name, "estado.json"), entradas)
+        for partes in (("grn_comun", "procedencia.py"),
+                       ("grn_comun", "archivos.py")):
+            self.assertIn(self.rel(*partes), entradas)
+        self.assertEqual(plan["parametros"], {"corrida_bronce": 4})
+        self.assertEqual([os.path.basename(s) for s in plan["salidas"]],
+                         ["nodos.tsv", "red.graphml", "manifiesto.json"])
+        self.assertEqual(set(plan["borrar_antes"]), set(plan["salidas"]))
+
     def test_cada_paso_declara_el_codigo_que_ejecuta(self):
         ctx = self.ctx()
         esperado = {
@@ -466,6 +510,8 @@ class PruebasPlanReal(unittest.TestCase):
             "evaluar": [("grn_bronce", "operones.py"),
                         ("grn_bronce", "texto.py"),
                         ("grn_bronce", "vocabulario.py")],
+            "paquete": [("grn_red", "paquete.py"), ("etapa2", "red.py"),
+                        ("etapa2", "lexico.py"), ("grn_bronce", "operones.py")],
         }
         for paso, archivos in esperado.items():
             entradas = [os.path.normpath(e)
@@ -524,6 +570,17 @@ class PruebasArchivosParaElTablero(unittest.TestCase):
         self.assertIn("capa_pares.csv", nombres)
         self.assertNotIn("secreto.key", nombres)
         self.assertIsNone(flujo.leer_carpeta(self.raiz, ".."))
+
+    def test_el_graphml_del_paquete_se_lista_y_se_entrega(self):
+        with io.open(os.path.join(self.carpeta, "red.graphml"), "w",
+                     encoding="utf-8") as f:
+            f.write('<?xml version="1.0" encoding="UTF-8"?>\n<graphml/>\n')
+        nombres = [a["nombre"] for a in flujo.leer_carpeta(
+            self.raiz, "corrida4_run22")["archivos"]]
+        self.assertIn("red.graphml", nombres)
+        ruta = flujo.ruta_archivo(self.raiz, "corrida4_run22", "red.graphml")
+        self.assertEqual(os.path.normcase(ruta), os.path.normcase(
+            os.path.realpath(os.path.join(self.carpeta, "red.graphml"))))
 
     def test_estado_general_sin_base_ni_carpetas(self):
         vacio = os.path.join(self.tmp.name, "vacio")
