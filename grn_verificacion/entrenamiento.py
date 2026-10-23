@@ -104,7 +104,7 @@ _TIPOS_RESERVA = {"pmid": "pmid", "oracion": "oracion", u"oración": "oracion"}
 
 # ------------------------------------------------------------------ reservas
 
-def _pmid_valido(valor):
+def pmid_valido(valor):
     """El PMID como texto sin ceros a la izquierda, o None si no es número."""
     if isinstance(valor, bool):
         return None
@@ -114,6 +114,11 @@ def _pmid_valido(valor):
     if not _PMID.match(texto) or int(texto) == 0:
         return None
     return str(int(texto))
+
+
+# El nombre con guion bajo se queda para los importadores de antes de que fuera
+# pública (la usan `muestra.py` y las pruebas).
+_pmid_valido = pmid_valido
 
 
 def leer_reservas(rutas):
@@ -176,6 +181,27 @@ def leer_reservas(rutas):
                "oraciones": len(oraciones)}
     return {"pmids": pmids, "oraciones": oraciones}, conteos
 
+
+
+def leer_pmids(rutas, flag):
+    """(pmids, conteos) de archivos con el formato de las reservas.
+
+    `leer_reservas` dice en su error la ruta y la línea; aquí sale la línea y
+    no la ruta, porque la usan comandos que corren en el servidor con archivos
+    confidenciales (`contraste`, `precision-ciega`) y su salida se publica. Las
+    líneas `oracion` se leen y no se usan: excluir una oración no quita un
+    artículo.
+    """
+    try:
+        reservas, conteos = leer_reservas(rutas)
+    except ValueError as e:
+        texto = str(e)
+        for ruta in rutas:
+            texto = texto.replace(ruta, "el archivo")
+        raise ValueError("%s: %s" % (flag, texto)) from None
+    except OSError:
+        raise ValueError("No pude leer el archivo de %s." % flag) from None
+    return set(reservas["pmids"]), conteos
 
 def _escribir_atomico(ruta, lineas):
     """Temporal y `os.replace`: si algo falla a media escritura, el archivo
@@ -439,7 +465,7 @@ def _indexar(interacciones, c):
 MINIMO_CONTENCION = 40
 
 
-def _reservada(oracion, oraciones_reservadas):
+def reservada(oracion, oraciones_reservadas):
     """Si la oración del par es una reservada, la contiene o es un pedazo de
     ella.
 
@@ -450,13 +476,17 @@ def _reservada(oracion, oraciones_reservadas):
     """
     if oracion in oraciones_reservadas:
         return True
-    for reservada in oraciones_reservadas:
-        if len(reservada) <= len(oracion):
-            if len(reservada) >= MINIMO_CONTENCION and reservada in oracion:
+    for otra in oraciones_reservadas:
+        if len(otra) <= len(oracion):
+            if len(otra) >= MINIMO_CONTENCION and otra in oracion:
                 return True
-        elif len(oracion) >= MINIMO_CONTENCION and oracion in reservada:
+        elif len(oracion) >= MINIMO_CONTENCION and oracion in otra:
             return True
     return False
+
+
+# El nombre con guion bajo se queda para los importadores de antes.
+_reservada = reservada
 
 
 def _filtrar_pares(pares, pmids_reservados, oraciones_reservadas, c):

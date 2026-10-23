@@ -1260,23 +1260,9 @@ def comprobar_procedencia_red(rutas):
     return []
 
 
-def _leer_pmids(rutas, flag):
-    """(pmids, conteos) de archivos con el formato de las reservas.
-
-    `leer_reservas` dice en su error la ruta y la línea; aquí sale la línea y
-    no la ruta. Las líneas `oracion` se leen y no se usan: excluir una
-    oración no quita una fila de la base.
-    """
-    try:
-        reservas, conteos = entrenamiento.leer_reservas(rutas)
-    except ValueError as e:
-        texto = str(e)
-        for ruta in rutas:
-            texto = texto.replace(ruta, "el archivo")
-        raise ValueError("%s: %s" % (flag, texto)) from None
-    except OSError:
-        raise ValueError("No pude leer el archivo de %s." % flag) from None
-    return set(reservas["pmids"]), conteos
+# Vive en `entrenamiento` desde el 23-oct: la usan también `precision-ciega`
+# y `verificar-contaminacion`.
+_leer_pmids = entrenamiento.leer_pmids
 
 
 def mensaje_publicable(error, rutas=()):
