@@ -10,6 +10,7 @@
     python -m grn_verificacion.cli contraste --base XLSX --carpeta DIR --informe MD --confidencial DIR ...
     python -m grn_verificacion.cli muestra --carpeta DIR --reservas TSV --n N --salida DIR [--semilla S] [--fraccion-doble F] [--tandas 1|2] [--excluir-muestra DIR ...]
     python -m grn_verificacion.cli precision-ciega --anotacion CSV --llave CSV --carpeta DIR [--json J]
+    python -m grn_verificacion.cli verificar-contaminacion (--lista ARCHIVO | --consulta NOMBRE) [--corpus NOMBRE | --sin-corpus] [--reservas TSV ...] [--muestra DIR ...] [--juzgadas CSV] [--particion DIR ...] [--base XLSX] [--json J]
 
 Lo normal es no llamarlo a mano: `python flujo.py` corre los pasos en orden y
 se salta lo que ya está hecho.
@@ -646,6 +647,85 @@ def _sub_precision_ciega(sub):
     pc.set_defaults(func=cmd_precision_ciega)
 
 
+def cmd_verificar_contaminacion(args):
+    """0 si ningún cruce pasa de 0; 1 si alguno sí, también el de la base; 2
+    si no se pudo verificar. Ningún error sale como traceback: uno de
+    `zipfile` o de `open` traería la ruta de la base."""
+    from grn_verificacion import contaminacion_nuevos, contraste
+    try:
+        resultado = contaminacion_nuevos.ejecutar(
+            lista=args.lista, consulta=args.consulta, corpus=args.corpus,
+            sin_corpus=args.sin_corpus, reservas=args.reservas,
+            muestras=args.muestra, juzgadas=args.juzgadas,
+            particiones=args.particion, base=args.base, hoja=args.hoja,
+            datos=args.datos, ruta_db=args.db, salida_json=args.json,
+            log=log)
+    except KeyboardInterrupt:
+        log("Interrumpido.")
+        return 3
+    except Exception as e:
+        rutas_dadas = ([args.base, args.lista, args.db, args.datos, args.json,
+                        args.juzgadas] + args.reservas + args.muestra
+                       + args.particion)
+        log("ERROR: %s" % contraste.mensaje_publicable(e, rutas_dadas))
+        return 2
+    return resultado["codigo"]
+
+
+def _sub_verificar_contaminacion(sub):
+    from grn_verificacion import contaminacion_nuevos as CN
+    vc = sub.add_parser(
+        "verificar-contaminacion",
+        help="Cuenta los cruces, por PMID y por DOI, de una lista de "
+             "artículos nuevos con el corpus de la corrida 4, las reservas, "
+             "las muestras, las juzgadas, la partición de un modelo y la base "
+             "curada. Solo conteos; sale con 1 si alguno no es 0.")
+    lista = vc.add_mutually_exclusive_group(required=True)
+    lista.add_argument("--lista", default=None, metavar="ARCHIVO",
+                       help="Los PMIDs nuevos: una columna pmid (y, si la "
+                            "trae, doi), o un PMID por línea.")
+    lista.add_argument("--consulta", default=None, metavar="NOMBRE",
+                       help="Los PMIDs nuevos son los documentos de esta "
+                            "consulta de la base del paso 0.")
+    corpus = vc.add_mutually_exclusive_group()
+    corpus.add_argument("--corpus", default=CN.CORPUS_POR_OMISION,
+                        help="Corpus de la corrida 4 en la base del paso 0; "
+                             "por omisión, %(default)s.")
+    corpus.add_argument("--sin-corpus", dest="sin_corpus",
+                        action="store_true",
+                        help="No cruzar con el corpus: para correr donde no "
+                             "está la base del paso 0.")
+    vc.add_argument("--reservas", action="append", default=[],
+                    metavar="ARCHIVO",
+                    help="Archivo con el formato de reservas.tsv; se puede "
+                         "repetir.")
+    vc.add_argument("--muestra", action="append", default=[], metavar="DIR",
+                    help="Carpeta de un sorteo con su llave.csv; se puede "
+                         "repetir.")
+    vc.add_argument("--juzgadas", default=CN.JUZGADAS_POR_OMISION,
+                    metavar="CSV",
+                    help="CSV con columna pmid de lo ya juzgado; por omisión, "
+                         "la muestra de 50 de etapa2/evaluacion.")
+    vc.add_argument("--particion", action="append", default=[],
+                    metavar="DIR",
+                    help="Carpeta con los entity_marked_{train,dev,test}.jsonl "
+                         "de un modelo; se puede repetir.")
+    vc.add_argument("--base", default=None, metavar="XLSX",
+                    help="Ruta del .xlsx de la base curada, solo en el "
+                         "servidor; de ella sale solo el conteo. No se toma "
+                         "del entorno. Nunca se imprime.")
+    vc.add_argument("--hoja", default=None,
+                    help="Nombre de la hoja de la base; por omisión, la "
+                         "primera del libro.")
+    vc.add_argument("--datos", default=None,
+                    help="Raíz de datos; gana sobre GRN_DATOS.")
+    vc.add_argument("--db", default=None,
+                    help="Ruta de la base del paso 0; gana sobre --datos.")
+    vc.add_argument("--json", default=None,
+                    help="Escribe ahí lo mismo, en JSON.")
+    vc.set_defaults(func=cmd_verificar_contaminacion)
+
+
 def consola_tolerante():
     """La consola de Windows imprime cp1252: los acentos caben, pero la barra
     de progreso de transformers («█») o una sigma no, y un `print` con ellos
@@ -741,6 +821,7 @@ def main(argv=None):
     _sub_contraste(sub)
     _sub_muestra(sub)
     _sub_precision_ciega(sub)
+    _sub_verificar_contaminacion(sub)
 
     args = ap.parse_args(argv)
     return args.func(args)
