@@ -6,6 +6,7 @@ humo, y se salta si el archivo no está.
 """
 
 import codecs
+import contextlib
 import csv
 import io
 import json
@@ -161,6 +162,61 @@ def leer_csv(ruta):
     with io.open(ruta, encoding="utf-8-sig", newline="") as f:
         lector = csv.DictReader(f)
         return lector.fieldnames, list(lector)
+
+
+def escribir_llave(carpeta, filas, columnas=None):
+    """Una `llave.csv` como la de un sorteo anterior, con BOM."""
+    os.makedirs(carpeta, exist_ok=True)
+    ruta = os.path.join(carpeta, muestra.LLAVE)
+    with io.open(ruta, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=columnas or muestra.COLUMNAS_LLAVE,
+                           extrasaction="ignore", restval="")
+        w.writeheader()
+        for fila in filas:
+            w.writerow(fila)
+    return ruta
+
+
+def huellas_de(carpeta):
+    return dict((nombre, procedencia.huella(os.path.join(carpeta, nombre)))
+                for nombre in sorted(os.listdir(carpeta)))
+
+
+# Las huellas de las salidas de esta población sintética con el código de
+# 09d2a13. No se pueden mover sin subir `muestra.VERSION`: la carpeta de la
+# tanda 1 se vuelve a sortear con la misma semilla, y `_exigir_mismo_sorteo`
+# compara la identidad del sorteo y no sus bytes, así que un cambio callado
+# reescribiría una hoja ya repartida. También cambian, y con razón, si cambian
+# los datos sintéticos de este archivo.
+HUELLAS_DE_SIEMPRE = {
+    "dos_tandas": ({"n": 20}, {
+        "dobles.csv": "6b4ea3f566850fd6",
+        "hoja_tanda1.csv": "93ccd8733fd4075d",
+        "hoja_tanda2_ciega.csv": "a8678cc5ab788317",
+        "llave.csv": "90c086b8efe09e63",
+        "resumen.json": "970d5cd92a218619"}),
+    "una_tanda": ({"n": 20, "tandas": 1, "fraccion_doble": 0}, {
+        "dobles.csv": "02a613d41785229a",
+        "hoja_tanda1.csv": "adf14f88e38280bf",
+        "llave.csv": "44f0f565fa2ae0c0",
+        "resumen.json": "65db3612e231e085"}),
+    "toda": ({"n": 50, "semilla": 7}, {
+        "dobles.csv": "5ffee37f6166b7dd",
+        "hoja_tanda1.csv": "0c090c86387260d2",
+        "hoja_tanda2_ciega.csv": "86c54fa47e2c2175",
+        "llave.csv": "8ceb34527bffb651",
+        "resumen.json": "21c2fdc30b36c826"}),
+}
+
+
+# Lo mismo para un sorteo con --excluir-muestra, con la semilla y las tandas
+# de la tanda 2: es como sale esa tanda, y volver a sortearla en su carpeta
+# con un cambio callado reescribiría una hoja que ya se está anotando.
+HUELLAS_CON_EXCLUSION = {
+    "dobles.csv": "02a613d41785229a",
+    "hoja_tanda1.csv": "65a4a50c47d4f3e9",
+    "llave.csv": "17f39a481e35feaa",
+    "resumen.json": "2fdc8f017846288b"}
 
 
 def columnas_de_la_rubrica():
@@ -464,6 +520,12 @@ class PruebasSalidas(Base):
         self.assertNotIn("90002", texto)
         self.assertNotIn("sample", texto)
 
+    def test_las_salidas_son_las_de_siempre(self):
+        for nombre, (kw, esperadas) in sorted(HUELLAS_DE_SIEMPRE.items()):
+            with self.subTest(nombre):
+                salida, _ = self.ejecutar(salida=nombre, **kw)
+                self.assertEqual(huellas_de(salida), esperadas)
+
     def test_la_misma_corrida_da_los_mismos_bytes(self):
         uno, _ = self.ejecutar(salida="uno")
         dos, _ = self.ejecutar(salida="dos")
@@ -532,6 +594,322 @@ class PruebasUnaTanda(Base):
             muestra.sortear(self.poblacion()[0], 20, tandas=3)
 
 
+class PruebasExcluirMuestra(Base):
+    """--excluir-muestra: otra tanda sin los artículos ni los códigos de una
+    muestra anterior."""
+
+    def anterior(self, nombre="anterior", n=5, semilla=3):
+        """Un sorteo anterior de verdad, en su carpeta, y su llave."""
+        salida, _ = self.ejecutar(n=n, salida=nombre, semilla=semilla)
+        _, llave = leer_csv(os.path.join(salida, muestra.LLAVE))
+        return salida, llave
+
+    def test_sin_la_opcion_las_salidas_son_las_de_antes(self):
+        """Ni con None ni con una lista vacía se mueve un byte, ni el resumen
+        gana claves vacías. Sin pasarla lo vigila PruebasSalidas."""
+        for nombre, (kw, esperadas) in sorted(HUELLAS_DE_SIEMPRE.items()):
+            for i, excluir in enumerate((None, [])):
+                with self.subTest(nombre=nombre, excluir=excluir):
+                    salida, resumen = self.ejecutar(
+                        salida="%s_%d" % (nombre, i),
+                        excluir_muestras=excluir, **kw)
+                    self.assertEqual(huellas_de(salida), esperadas)
+                    self.assertNotIn("muestras_excluidas", resumen)
+                    self.assertNotIn(muestra.OTRA_MUESTRA,
+                                     resumen["exclusiones"])
+
+    def test_fuera_los_articulos_de_la_llave_en_su_lugar_del_orden(self):
+        # Dos artículos de cuatro oraciones, el de la repetida, el del par
+        # que no llegó al clasificador y los dos de las reservas. Las
+        # reservas siguen contando como reservas, y lo demás de esos
+        # artículos, ni como sin par ni como repetido. Con un cero delante,
+        # el PMID es el mismo artículo, y la copia de la repetida en su mismo
+        # artículo cuenta por el PMID.
+        anterior = os.path.join(self.tmp, "anterior")
+        escribir_llave(anterior, [
+            {"id_item": "m-1000", "pmid": "90002", "fuente_texto": "xml",
+             "num_oracion": "1"},
+            {"id_item": "m-1001", "pmid": "90003", "fuente_texto": "xml",
+             "num_oracion": "1"},
+            {"id_item": "m-1002", "pmid": "090023",
+             "fuente_texto": "abstract", "num_oracion": "1"},
+            {"id_item": "m-1003", "pmid": "90022", "fuente_texto": "xml",
+             "num_oracion": "1"},
+            {"id_item": "m-1004", "pmid": "90001", "fuente_texto": "xml",
+             "num_oracion": "1"},
+            {"id_item": "m-1005", "pmid": "90020", "fuente_texto": "xml",
+             "num_oracion": "1"}])
+        salida, resumen = self.ejecutar(n=41, excluir_muestras=[anterior])
+        self.assertEqual(resumen["exclusiones"], {
+            "pmid_reservado": 3, "oracion_reservada_igual": 1,
+            "oracion_reservada_contenida": 2, "pmid_de_otra_muestra": 11,
+            "oracion_de_otra_muestra": 0, "sin_par_directo": 0,
+            "repetida": 0})
+        self.assertEqual(resumen["poblacion"], 41)
+        _, llave = leer_csv(os.path.join(salida, muestra.LLAVE))
+        self.assertEqual(len(llave), 41)
+        self.assertFalse({f["pmid"] for f in llave}
+                         & {"90002", "90003", "90023"})
+
+    def test_con_exclusion_las_salidas_son_las_de_hoy(self):
+        # Ejercita los tres apartados: el artículo (90002), la copia de su
+        # oración juzgada en otro (90030) y un código del rango (m-1000), que
+        # mueve las posiciones de todos los demás.
+        filas = filas_sinteticas()
+        original = [f for f in filas if f["pmid"] == "90002"
+                    and f["num_oracion"] == "1"][0]["oracion"]
+        filas.append(_fila(90030, 1, original.lower(), "reg0R", "tgt0Z",
+                           mencion_r="reg0R", locus=9800))
+        escribir_capa(self.carpeta, filas)
+        anterior = os.path.join(self.tmp, "anterior")
+        escribir_llave(anterior, [
+            {"id_item": "m-1000", "tanda": "1", "doble": "no",
+             "pmid": "90002", "fuente_texto": "xml", "num_oracion": "1"}])
+        salida, resumen = self.ejecutar(
+            n=20, salida="tanda2", semilla=20261023, tandas=1,
+            fraccion_doble=0, excluir_muestras=[anterior])
+        self.assertEqual(resumen["exclusiones"][muestra.OTRA_MUESTRA], 4)
+        self.assertEqual(
+            resumen["exclusiones"][muestra.COPIA_DE_OTRA_MUESTRA], 1)
+        self.assertEqual(huellas_de(salida), HUELLAS_CON_EXCLUSION)
+
+    def test_un_iterable_vacio_es_como_no_pasarla(self):
+        # Un generador vacío es verdadero en un `if`: el resumen ganaba los
+        # motivos de otra muestra en cero.
+        kw, esperadas = HUELLAS_DE_SIEMPRE["dos_tandas"]
+        salida, resumen = self.ejecutar(salida="vacio",
+                                        excluir_muestras=iter(()), **kw)
+        self.assertEqual(huellas_de(salida), esperadas)
+
+    def test_una_carpeta_suelta_es_una_lista_de_una(self):
+        anterior, _ = self.anterior()
+        suelta, _ = self.ejecutar(n=5, salida="suelta", semilla=4,
+                                  excluir_muestras=anterior)
+        lista, _ = self.ejecutar(n=5, salida="lista", semilla=4,
+                                 excluir_muestras=[anterior])
+        self.assertEqual(huellas_de(suelta), huellas_de(lista))
+
+    def test_fuera_las_copias_de_sus_oraciones_en_otros_articulos(self):
+        # La oración 1 de 90002, juzgada en la muestra anterior, copiada en
+        # 90030 con otras mayúsculas y sin el punto. Sin exclusiones la copia
+        # es `repetida`; si 90002 sale por su PMID, la copia se queda sin
+        # original y entraría. La de 90032 no llegó al clasificador, y aun
+        # así cuenta como copia, no como sin par. La oración 2 de 90002 no se
+        # juzgó: su copia en 90031 sí entra, porque nadie la vio.
+        filas = filas_sinteticas()
+        texto = dict(((f["pmid"], f["num_oracion"]), f["oracion"])
+                     for f in filas if f["par_del_bronce"] == "directo")
+        copia_juzgada = texto[("90002", "1")].replace(
+            "The regulator", "the  regulator").rstrip(".")
+        copia_libre = texto[("90002", "2")].replace("Expression", "expression")
+        filas.append(_fila(90030, 1, copia_juzgada, "reg0R", "tgt0Z",
+                           mencion_r="Reg0R", locus=9800))
+        filas.append(_fila(90031, 1, copia_libre, "reg1R", "tgt1Z",
+                           mencion_r="Reg1R", locus=9802))
+        filas.append(_fila(90032, 1, copia_juzgada.upper(), "reg0R", "tgt0Z",
+                           mencion_r="REG0R", par="otro", locus=9804))
+        escribir_capa(self.carpeta, filas)
+        _, conteos = muestra.poblacion(self.ruta_capa, self.reservas)
+        self.assertEqual(conteos["exclusiones"]["repetida"], 3)
+        self.assertEqual(conteos["exclusiones"]["sin_par_directo"], 2)
+        self.assertEqual(conteos["poblacion"], 50)
+
+        anterior = os.path.join(self.tmp, "anterior")
+        escribir_llave(anterior, [{"id_item": "m-1000", "pmid": "90002",
+                                   "fuente_texto": "xml", "num_oracion": "1"}])
+        salida, resumen = self.ejecutar(n=47, excluir_muestras=[anterior])
+        self.assertEqual(resumen["exclusiones"], {
+            "pmid_reservado": 3, "oracion_reservada_igual": 1,
+            "oracion_reservada_contenida": 2, "pmid_de_otra_muestra": 4,
+            "oracion_de_otra_muestra": 2, "sin_par_directo": 1,
+            "repetida": 1})
+        self.assertEqual(resumen["poblacion"], 47)
+        _, llave = leer_csv(os.path.join(salida, muestra.LLAVE))
+        pmids = {f["pmid"] for f in llave}
+        self.assertNotIn("90030", pmids)
+        self.assertIn("90031", pmids)
+
+    def test_una_oracion_de_la_llave_que_no_esta_en_la_capa_no_sortea(self):
+        # Sin su texto no se pueden apartar sus copias: la llave tiene que
+        # ser de un sorteo sobre esta misma capa.
+        anterior = os.path.join(self.tmp, "anterior")
+        escribir_llave(anterior, [{"id_item": "m-1000", "pmid": "90002",
+                                   "fuente_texto": "xml",
+                                   "num_oracion": "99"}])
+        salida = os.path.join(self.tmp, "nada")
+        with self.assertRaises(ValueError) as e:
+            muestra.ejecutar(self.carpeta, self.ruta_reservas, 5, salida,
+                             excluir_muestras=[anterior])
+        mensaje = str(e.exception)
+        self.assertIn("capa_pares.csv", mensaje)
+        self.assertNotIn(self.tmp, mensaje)
+        self.assertNotIn(os.sep, mensaje)
+        self.assertFalse(os.path.exists(salida))
+
+    def test_con_la_llave_de_un_sorteo_ningun_articulo_se_repite(self):
+        anterior, llave_anterior = self.anterior()
+        pmids = {f["pmid"] for f in llave_anterior}
+        salida, resumen = self.ejecutar(n=20, salida="nueva", semilla=4,
+                                        excluir_muestras=[anterior])
+        _, llave = leer_csv(os.path.join(salida, muestra.LLAVE))
+        self.assertFalse({f["pmid"] for f in llave} & pmids)
+        # Ninguna oración de esos artículos está reservada: el motivo las
+        # cuenta todas, y la población pierde justo las que eran sorteables.
+        oraciones = muestra._leer_capa(self.ruta_capa).values()
+        self.assertEqual(resumen["exclusiones"][muestra.OTRA_MUESTRA],
+                         sum(1 for o in oraciones if o["pmid"] in pmids))
+        items, _ = self.poblacion()
+        self.assertEqual(resumen["poblacion"],
+                         sum(1 for i in items if i["pmid"] not in pmids))
+
+    def test_ningun_codigo_choca_con_los_de_la_otra_muestra(self):
+        anterior, llave_anterior = self.anterior(semilla=11)
+        codigos = {f["id_item"] for f in llave_anterior}
+        pmids = {f["pmid"] for f in llave_anterior}
+        # Sin apartarlos, la misma semilla y el mismo n repiten los códigos
+        # aunque la población sea otra: dependen solo de esos dos.
+        items, _ = muestra.poblacion(self.ruta_capa, self.reservas, pmids)
+        sin_apartar = muestra.sortear(items, 5, semilla=11)
+        self.assertEqual({m["id_item"] for m in sin_apartar}, codigos)
+
+        salida, _ = self.ejecutar(n=5, salida="nueva", semilla=11,
+                                  excluir_muestras=[anterior])
+        _, llave = leer_csv(os.path.join(salida, muestra.LLAVE))
+        nuevos = {f["id_item"] for f in llave}
+        self.assertEqual(len(nuevos), 5)
+        self.assertFalse(nuevos & codigos)
+        self.assertTrue(all(re.match(r"^m-\d{4}$", c) for c in nuevos))
+        en_hojas = set()
+        for nombre in (muestra.HOJA_TANDA1, muestra.HOJA_TANDA2):
+            _, filas = leer_csv(os.path.join(salida, nombre))
+            en_hojas |= {f["id_item"] for f in filas}
+        self.assertEqual(en_hojas, nuevos)
+
+    def test_los_codigos_salen_de_los_que_quedan_libres(self):
+        items, _ = self.poblacion()
+        libres = ["m-1234", "m-5678", "m-9999"]
+        usados = {"m-%d" % c for c in range(1000, 10000)} - set(libres)
+        sorteo = muestra.sortear(items, 3, semilla=7, codigos_excluidos=usados)
+        self.assertEqual([m["id_item"] for m in sorteo], libres)
+        with self.assertRaises(ValueError) as e:
+            muestra.sortear(items, 4, semilla=7, codigos_excluidos=usados)
+        self.assertIn("no se sortea", str(e.exception))
+
+    def test_el_resumen_registra_la_exclusion_y_la_poblacion_que_queda(self):
+        anterior = os.path.join(self.tmp, "anterior")
+        ruta = escribir_llave(anterior, [
+            {"id_item": "m-1000", "pmid": "90002", "fuente_texto": "xml",
+             "num_oracion": "1"},
+            {"id_item": "m-1001", "pmid": "90002", "fuente_texto": "xml",
+             "num_oracion": "2"},
+            {"id_item": "m-1002", "pmid": "90003", "fuente_texto": "xml",
+             "num_oracion": "1"}])
+        salida, devuelto = self.ejecutar(n=10, excluir_muestras=[anterior])
+        with io.open(os.path.join(salida, muestra.RESUMEN),
+                     encoding="utf-8") as f:
+            resumen = json.load(f)
+        self.assertEqual(resumen, devuelto)
+        self.assertEqual(resumen["muestras_excluidas"], [
+            {"llave": procedencia.huella(ruta), "pmids": 2, "codigos": 3}])
+        self.assertEqual(resumen["exclusiones"][muestra.OTRA_MUESTRA], 8)
+        self.assertEqual(resumen["poblacion"], 42)
+        self.assertEqual(sum(resumen["exclusiones"].values())
+                         + resumen["poblacion"],
+                         resumen["oraciones_con_par_del_bronce"])
+        # La llave va en su propia clave; las entradas son las de siempre.
+        self.assertEqual(sorted(resumen["entradas"]),
+                         ["capa_pares.csv", "reservas"])
+        texto = json.dumps(resumen)
+        for marca in ("90002", "90003", "m-1000", "anterior"):
+            self.assertNotIn(marca, texto)
+
+    def test_la_misma_exclusion_se_repite_y_otra_no(self):
+        a, _ = self.anterior("a", semilla=1)
+        b, _ = self.anterior("b", semilla=2)
+        salida, _ = self.ejecutar(n=5, salida="nueva", semilla=3,
+                                  excluir_muestras=[a])
+        antes = huellas_de(salida)
+        self.ejecutar(n=5, salida="nueva", semilla=3, excluir_muestras=[a])
+        self.assertEqual(huellas_de(salida), antes)
+        for otra in ([a, b], [b], None):
+            with self.subTest(otra=otra):
+                with self.assertRaises(ValueError) as e:
+                    self.ejecutar(n=5, salida="nueva", semilla=3,
+                                  excluir_muestras=otra)
+                self.assertIn("muestras excluidas", str(e.exception))
+        self.assertEqual(huellas_de(salida), antes)
+
+    def test_una_carpeta_sin_muestras_excluidas_se_sigue_repitiendo(self):
+        # Como la de la tanda 1 de hoy: su resumen no tiene la clave.
+        salida, resumen = self.ejecutar(n=5, salida="tanda1")
+        self.assertNotIn("muestras_excluidas", resumen)
+        otra, _ = self.anterior("otra", semilla=9)
+        antes = huellas_de(salida)
+        self.ejecutar(n=5, salida="tanda1")
+        with self.assertRaises(ValueError):
+            self.ejecutar(n=5, salida="tanda1", excluir_muestras=[otra])
+        self.assertEqual(huellas_de(salida), antes)
+
+    def test_el_orden_de_las_carpetas_no_cambia_el_sorteo(self):
+        a, _ = self.anterior("a", semilla=1)
+        b, _ = self.anterior("b", semilla=2)
+        uno, resumen = self.ejecutar(n=5, salida="uno", semilla=3,
+                                     excluir_muestras=[a, b])
+        dos, _ = self.ejecutar(n=5, salida="dos", semilla=3,
+                               excluir_muestras=[b, a, b])
+        self.assertEqual(huellas_de(uno), huellas_de(dos))
+        self.assertEqual(len(resumen["muestras_excluidas"]), 2)
+        # En la misma carpeta es el mismo sorteo, no otro.
+        self.ejecutar(n=5, salida="uno", semilla=3, excluir_muestras=[b, a])
+
+    def test_una_llave_sin_columna_pmid_da_error_sin_ruta(self):
+        anterior = os.path.join(self.tmp, "anterior")
+        sin_pmid = [c for c in muestra.COLUMNAS_LLAVE if c != "pmid"]
+        escribir_llave(anterior, [{"id_item": "m-1000"}], columnas=sin_pmid)
+        salida = os.path.join(self.tmp, "nada")
+        with self.assertRaises(ValueError) as e:
+            muestra.ejecutar(self.carpeta, self.ruta_reservas, 5, salida,
+                             excluir_muestras=[anterior])
+        mensaje = str(e.exception)
+        self.assertIn("pmid", mensaje)
+        self.assertIn("«anterior»", mensaje)
+        self.assertNotIn(self.tmp, mensaje)
+        self.assertNotIn(os.sep, mensaje)
+        self.assertFalse(os.path.exists(salida))
+
+    def test_una_llave_que_no_sirve_da_error_sin_ruta(self):
+        sin_id = [c for c in muestra.COLUMNAS_LLAVE if c != "id_item"]
+        sin_num = [c for c in muestra.COLUMNAS_LLAVE if c != "num_oracion"]
+        casos = {
+            "sin_llave": None,
+            "sin_columna_id_item": (sin_id, [{"pmid": "90002"}]),
+            # Sin ella no hay texto con qué apartar sus copias.
+            "sin_columna_num_oracion": (sin_num, [{
+                "id_item": "m-1000", "pmid": "90002",
+                "fuente_texto": "xml"}]),
+            "pmid_que_no_es_numero": (None, [{"id_item": "m-1000",
+                                              "pmid": "PMC90002"}]),
+            "fila_sin_id_item": (None, [{"id_item": "", "pmid": "90002"}]),
+            "sin_filas": (None, []),
+        }
+        for nombre, caso in sorted(casos.items()):
+            with self.subTest(nombre):
+                carpeta = os.path.join(self.tmp, nombre)
+                if caso is None:
+                    os.makedirs(carpeta)
+                else:
+                    escribir_llave(carpeta, caso[1], columnas=caso[0])
+                salida = os.path.join(self.tmp, "nada_" + nombre)
+                with self.assertRaises(ValueError) as e:
+                    muestra.ejecutar(self.carpeta, self.ruta_reservas, 5,
+                                     salida, excluir_muestras=[carpeta])
+                mensaje = str(e.exception)
+                self.assertIn("«%s»" % nombre, mensaje)
+                self.assertNotIn(self.tmp, mensaje)
+                self.assertNotIn(os.sep, mensaje)
+                self.assertFalse(os.path.exists(salida))
+
+
 class PruebasCli(Base):
 
     def main(self, argv):
@@ -577,6 +955,54 @@ class PruebasCli(Base):
         codigo, lineas = self.main(self.argumentos(5))
         self.assertEqual(codigo, 1)
         self.assertIn("capa_pares.csv", lineas[-1])
+
+    def test_excluye_dos_muestras(self):
+        a, _ = self.ejecutar(n=5, salida="a", semilla=1)
+        b, _ = self.ejecutar(n=5, salida="b", semilla=2)
+        # La misma semilla que `a`: sin apartarlos, repetiría sus códigos.
+        codigo, lineas = self.main(self.argumentos(5) + [
+            "--semilla", "1", "--excluir-muestra", a, "--excluir-muestra", b])
+        self.assertEqual(codigo, 0)
+        salida = os.path.join(self.tmp, "por_cli")
+        with io.open(os.path.join(salida, muestra.RESUMEN),
+                     encoding="utf-8") as f:
+            resumen = json.load(f)
+        self.assertEqual(
+            sorted(m["llave"] for m in resumen["muestras_excluidas"]),
+            sorted(procedencia.huella(os.path.join(c, muestra.LLAVE))
+                   for c in (a, b)))
+        _, nueva = leer_csv(os.path.join(salida, muestra.LLAVE))
+        for anterior in (a, b):
+            _, vieja = leer_csv(os.path.join(anterior, muestra.LLAVE))
+            self.assertFalse({f["pmid"] for f in nueva}
+                             & {f["pmid"] for f in vieja})
+            self.assertFalse({f["id_item"] for f in nueva}
+                             & {f["id_item"] for f in vieja})
+        dicho = "\n".join(lineas)
+        self.assertIn("muestras excluidas: 2", dicho)
+        self.assertIn(muestra.ETIQUETAS[muestra.OTRA_MUESTRA], dicho)
+        self.assertNotIn(self.tmp, dicho)
+
+    def test_una_llave_sin_pmid_sale_con_1_y_sin_ruta(self):
+        anterior = os.path.join(self.tmp, "anterior")
+        escribir_llave(anterior, [{"id_item": "m-1000"}],
+                       columnas=["id_item", "tanda"])
+        codigo, lineas = self.main(self.argumentos(5)
+                                   + ["--excluir-muestra", anterior])
+        self.assertEqual(codigo, 1)
+        self.assertTrue(lineas[-1].startswith("ERROR"))
+        self.assertIn("pmid", lineas[-1])
+        self.assertNotIn(self.tmp, lineas[-1])
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "por_cli")))
+
+    def test_la_ayuda_ya_no_dice_que_la_tanda_2_se_baraje(self):
+        """Las tandas solo reparten la muestra en una o dos hojas."""
+        ayuda = io.StringIO()
+        with contextlib.redirect_stdout(ayuda), \
+                self.assertRaises(SystemExit):
+            cli.main(["muestra", "--help"])
+        self.assertIn("--excluir-muestra", ayuda.getvalue())
+        self.assertNotIn("baraja", ayuda.getvalue())
 
 
 def _capa_real():
