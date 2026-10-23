@@ -104,6 +104,9 @@ from grn_verificacion import entrenamiento
 VERSION = 1
 SEMILLA = 20261024
 FRACCION_DOBLE = 0.25
+# Dos tandas cuando la segunda se baraja con las candidatas nuevas (§8); una
+# para la muestra única de 200 del servicio social.
+TANDAS = 2
 
 NOMBRE_CAPA = "capa_pares.csv"
 HOJA_TANDA1 = "hoja_tanda1.csv"
@@ -285,9 +288,13 @@ def entidades(item):
     return bla, reg, "2>1"
 
 
-def sortear(items, n, semilla=SEMILLA, fraccion_doble=FRACCION_DOBLE):
+def sortear(items, n, semilla=SEMILLA, fraccion_doble=FRACCION_DOBLE,
+            tandas=TANDAS):
     """Los `n` ítems sorteados, ordenados por `id_item`, cada uno con su
     tanda, si es doble, sus entidades y la dirección del bronce.
+
+    Con `tandas=1` todo va a la tanda 1: es la muestra única del servicio
+    social, con un solo anotador y sin candidatas nuevas que barajar.
 
     `items` tiene que venir en el orden estable de `poblacion()`. Un tamaño
     mayor que la población es un error y no se sortea nada.
@@ -297,6 +304,8 @@ def sortear(items, n, semilla=SEMILLA, fraccion_doble=FRACCION_DOBLE):
                          "positivo.")
     if not 0 <= fraccion_doble <= 1:
         raise ValueError("La fracción doble tiene que estar entre 0 y 1.")
+    if tandas not in (1, 2):
+        raise ValueError("Las tandas son 1 o 2.")
     if n > len(items):
         raise ValueError(
             "Se pidieron %d ítems y la población, tras las exclusiones, "
@@ -305,7 +314,7 @@ def sortear(items, n, semilla=SEMILLA, fraccion_doble=FRACCION_DOBLE):
     ancho = max(4, len(str(n)) + 1)
     codigos = random.Random("id_item|%d" % semilla).sample(
         range(10 ** (ancho - 1), 10 ** ancho), n)
-    corte = (n + 1) // 2
+    corte = n if tandas == 1 else (n + 1) // 2
     muestra = []
     for i, (item, codigo) in enumerate(zip(elegidos, codigos)):
         entidad_1, entidad_2, direccion = entidades(item)
@@ -373,7 +382,8 @@ def _exigir_mismo_sorteo(ruta_resumen, resumen):
             previo = json.load(f)
     except ValueError:
         previo = {}
-    campos = ("version", "semilla", "n", "fraccion_doble", "entradas")
+    campos = ("version", "semilla", "n", "fraccion_doble", "num_tandas",
+              "entradas")
     if not isinstance(previo, dict) or any(
             previo.get(c) != resumen[c] for c in campos):
         raise ValueError(
@@ -383,7 +393,8 @@ def _exigir_mismo_sorteo(ruta_resumen, resumen):
 
 
 def ejecutar(carpeta, ruta_reservas, n, salida, semilla=SEMILLA,
-             fraccion_doble=FRACCION_DOBLE, log=lambda m: None):
+             fraccion_doble=FRACCION_DOBLE, tandas=TANDAS,
+             log=lambda m: None):
     """Lee la capa y las reservas, excluye, sortea y escribe las salidas en
     `salida`. Devuelve el resumen. Nada se escribe si algo falla antes del
     sorteo, incluido un tamaño mayor que la población."""
@@ -406,9 +417,10 @@ def ejecutar(carpeta, ruta_reservas, n, salida, semilla=SEMILLA,
                                  conteos["exclusiones"][motivo]))
     log("población tras las exclusiones: %d oraciones" % conteos["poblacion"])
 
-    muestra = sortear(items, n, semilla, fraccion_doble)
-    tandas = {}
-    for tanda in (1, 2):
+    muestra = sortear(items, n, semilla, fraccion_doble, tandas)
+    hojas = (HOJA_TANDA1,) if tandas == 1 else (HOJA_TANDA1, HOJA_TANDA2)
+    num_tandas, tandas = tandas, {}
+    for tanda in range(1, num_tandas + 1):
         de_la_tanda = [m for m in muestra if m["tanda"] == tanda]
         tandas[str(tanda)] = {"items": len(de_la_tanda),
                               "dobles": sum(1 for m in de_la_tanda
@@ -419,6 +431,7 @@ def ejecutar(carpeta, ruta_reservas, n, salida, semilla=SEMILLA,
         "semilla": semilla,
         "n": n,
         "fraccion_doble": fraccion_doble,
+        "num_tandas": num_tandas,
         "unidad": "oracion",
         "estratos": "ninguno: aleatorio simple",
         "minimo_contencion": entrenamiento.MINIMO_CONTENCION,
@@ -436,8 +449,9 @@ def ejecutar(carpeta, ruta_reservas, n, salida, semilla=SEMILLA,
     _exigir_mismo_sorteo(os.path.join(salida, RESUMEN), resumen)
     _escribir_csv(os.path.join(salida, HOJA_TANDA1), COLUMNAS_HOJA,
                   [fila_hoja(m) for m in muestra if m["tanda"] == 1])
-    _escribir_csv(os.path.join(salida, HOJA_TANDA2), COLUMNAS_HOJA,
-                  [fila_hoja(m) for m in muestra if m["tanda"] == 2])
+    if num_tandas == 2:
+        _escribir_csv(os.path.join(salida, HOJA_TANDA2), COLUMNAS_HOJA,
+                      [fila_hoja(m) for m in muestra if m["tanda"] == 2])
     ordenada = sorted(muestra, key=lambda m: (m["tanda"], m["id_item"]))
     _escribir_csv(os.path.join(salida, LLAVE), COLUMNAS_LLAVE,
                   [fila_llave(m) for m in ordenada])
@@ -446,16 +460,21 @@ def ejecutar(carpeta, ruta_reservas, n, salida, semilla=SEMILLA,
                    for m in ordenada if m["doble"]])
     resumen["salidas"] = dict(
         (nombre, procedencia.huella(os.path.join(salida, nombre)))
-        for nombre in (HOJA_TANDA1, HOJA_TANDA2, LLAVE, DOBLES))
+        for nombre in hojas + (LLAVE, DOBLES))
     # El resumen va al final: si está, las anteriores ya se escribieron.
     _escribir_json(os.path.join(salida, RESUMEN), resumen)
 
-    log("sorteo con semilla %d: %d ítems, %d en la tanda 1 y %d en la "
-        "tanda 2; %d dobles" % (semilla, n, tandas["1"]["items"],
-                                tandas["2"]["items"], resumen["dobles"]))
-    log("  %s: a los ayudantes" % HOJA_TANDA1)
-    log("  %s: al servidor, para barajarla con las candidatas nuevas"
-        % HOJA_TANDA2)
+    if num_tandas == 1:
+        log("sorteo con semilla %d: %d ítems en una sola tanda; %d dobles"
+            % (semilla, n, resumen["dobles"]))
+    else:
+        log("sorteo con semilla %d: %d ítems, %d en la tanda 1 y %d en la "
+            "tanda 2; %d dobles" % (semilla, n, tandas["1"]["items"],
+                                    tandas["2"]["items"], resumen["dobles"]))
+    log("  %s: a quien anota" % HOJA_TANDA1)
+    if num_tandas == 2:
+        log("  %s: al servidor, para barajarla con las candidatas nuevas"
+            % HOJA_TANDA2)
     log("  %s: a quien reparte y adjudica la parte doble" % DOBLES)
     log("  %s: solo para el análisis" % LLAVE)
     log("  %s: semilla, población, exclusiones y huellas" % RESUMEN)

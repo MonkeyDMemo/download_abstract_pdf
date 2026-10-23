@@ -487,6 +487,51 @@ class PruebasSalidas(Base):
             self.assertEqual(f.read(), antes)
 
 
+class PruebasUnaTanda(Base):
+    """La muestra única del servicio social: un anotador, una hoja, sin
+    parte doble y sin tanda que barajar con candidatas nuevas."""
+
+    def test_todo_va_a_la_tanda_1_y_no_hay_segunda_hoja(self):
+        salida, resumen = self.ejecutar(n=20, tandas=1, fraccion_doble=0)
+
+        self.assertEqual(resumen["num_tandas"], 1)
+        self.assertEqual(resumen["tandas"], {"1": {"items": 20, "dobles": 0}})
+        self.assertFalse(os.path.exists(
+            os.path.join(salida, muestra.HOJA_TANDA2)))
+        self.assertNotIn(muestra.HOJA_TANDA2, resumen["salidas"])
+        with io.open(os.path.join(salida, muestra.HOJA_TANDA1),
+                     encoding="utf-8-sig", newline="") as f:
+            self.assertEqual(len(list(csv.DictReader(f))), 20)
+
+    def test_sin_dobles_la_lista_de_dobles_va_vacia(self):
+        salida, resumen = self.ejecutar(n=20, tandas=1, fraccion_doble=0)
+
+        self.assertEqual(resumen["dobles"], 0)
+        with io.open(os.path.join(salida, muestra.DOBLES),
+                     encoding="utf-8-sig", newline="") as f:
+            self.assertEqual(list(csv.DictReader(f)), [])
+
+    def test_una_tanda_sortea_las_mismas_oraciones_que_dos(self):
+        """Las tandas solo reparten: el sorteo es el mismo."""
+        _, una = self.ejecutar(n=20, salida="una", tandas=1)
+        _, dos = self.ejecutar(n=20, salida="dos")
+        ids = lambda s: sorted(
+            m["id_item"] for m in muestra.sortear(
+                self.poblacion()[0], 20,
+                tandas=1 if s == "una" else 2))
+        self.assertEqual(ids("una"), ids("dos"))
+        self.assertEqual(una["poblacion"], dos["poblacion"])
+
+    def test_no_se_mezcla_con_un_sorteo_de_dos_tandas(self):
+        self.ejecutar(n=20, salida="misma")
+        with self.assertRaises(ValueError):
+            self.ejecutar(n=20, salida="misma", tandas=1)
+
+    def test_tandas_fuera_de_1_o_2_es_error(self):
+        with self.assertRaises(ValueError):
+            muestra.sortear(self.poblacion()[0], 20, tandas=3)
+
+
 class PruebasCli(Base):
 
     def main(self, argv):
