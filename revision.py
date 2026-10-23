@@ -346,10 +346,19 @@ def validar(valores):
     # especula (§9, punto 5), y un «sí» con especulativa = sí es una forma de
     # anotar un «suggest» leído como conclusión con reserva: bloquearlo
     # borraría el dato que hace falta para cerrar ese punto.
+    #
+    # El mensaje da las dos salidas porque desde aquí no se sabe cuál de los
+    # dos campos está mal: puede ser un efecto negado anotado «si» (F6) o una
+    # negación que no niega el efecto, como la de F7 o la del par de X con Y
+    # en «X activates Y but not Z» (§3.6), y ahí lo que se corrige es negada.
+    # Ofrecer solo «no» empujaría a «no» un «si» bien anotado; ese «no» se
+    # guarda sin aviso, y la precisión medida bajaría sin que nada lo dijera.
     if relacion == "si" and limpios["negada"] == "si":
-        errores.append("Con negada = sí, la relación no va «si»; va «no», o "
-                       "«dudoso» si además afirma la unión al promotor (F5; "
-                       "§3.6 y §4, paso 3).")
+        errores.append("Con negada = sí, la relación no va «si». Si la "
+                       "oración niega el efecto, la relación va «no», o "
+                       "«dudoso» si además afirma la unión al promotor (F5); "
+                       "si lo negado es otra cosa (F7) u otro par, negada va "
+                       "«no» (§3.6 y §4, paso 3).")
 
     if len(limpios["comentario"]) > MAX_COMENTARIO:
         errores.append("El comentario pasa de %d caracteres." % MAX_COMENTARIO)

@@ -282,7 +282,9 @@ class PruebasAnotar(BasePruebaRevision):
 class PruebasNegacion(BasePruebaRevision):
     """Una relación negada va «no», y solo la unión al promotor sin efecto
     (F5) va «dudoso» (rúbrica §3.6 y §4, paso 3). La página no deja guardar
-    un «si» negado; un «si» especulativo, en cambio, solo se avisa."""
+    un «si» negado; un «si» especulativo, en cambio, solo se avisa. Como el
+    error no sabe cuál de los dos campos está mal, da también la salida de
+    F7: la relación se queda en «si» y negada va «no»."""
 
     def test_si_con_negada_es_error_y_no_anexa_nada(self):
         codigo, r = self.guardar("m-1234", negada="si")
@@ -306,6 +308,25 @@ class PruebasNegacion(BasePruebaRevision):
         vigente = revision.anotaciones(self.carpeta)["m-1234"]["valores"]
         self.assertEqual((vigente["negada"], vigente["comentario"]),
                          ("no", ""))
+
+    def test_el_error_da_tambien_la_salida_de_f7(self):
+        """F7: «LasR is not the only activator of rhlR» niega «el único», no
+        la activación, y el «si» está bien: lo que se corrige es negada. Si
+        el mensaje ofreciera solo «no», empujaría ese «si» a un «no» que se
+        guarda sin aviso, y la precisión medida bajaría."""
+        codigo, r = self.guardar("m-1234", negada="si", comentario="F7")
+        self.assertEqual(codigo, 400, r)
+        error = r["errores"][0]
+        for pieza in ("F7", "otro par", "negada va «no»"):
+            self.assertIn(pieza, error)
+        r["error"].encode("cp1252")
+
+        codigo, r = self.guardar("m-1234", comentario="F7")
+        self.assertEqual(codigo, 200, r)
+        self.assertEqual(r["avisos"], [])
+        vigente = revision.anotaciones(self.carpeta)["m-1234"]["valores"]
+        self.assertEqual((vigente["relacion"], vigente["negada"]),
+                         ("si", "no"))
 
     def test_dudoso_con_negada_y_comentario_es_valido_sin_avisos(self):
         """F5: la oración afirma la unión y niega el efecto."""
