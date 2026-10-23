@@ -610,6 +610,11 @@ class PruebasRed(_ConEscenario):
         principal = r["estratos"][C.PRINCIPAL]
         self.assertEqual((2, 1), (principal["n"], principal["dirigido"]["k"]))
         self.assertEqual(0, principal["signo"]["n"])
+        # La 11 dirigida y nada al revés; sin signo que juzgar, la línea base
+        # queda sin denominador.
+        self.assertEqual((1, 1), (principal["orientacion"]["k"],
+                                  principal["orientacion"]["n"]))
+        self.assertIsNone(principal["signo"]["acuerdo_si_da_signo"]["valor"])
 
     def test_el_estrato_biobert_va_aparte(self):
         aristas, _ = self.aristas()
@@ -623,6 +628,49 @@ class PruebasRed(_ConEscenario):
         # La principal junta Histórica, Ambos y otro, y nada de BioBERT.
         self.assertEqual(e["historica"]["n"] + e["ambos"]["n"]
                          + e["otro"]["n"], e[C.PRINCIPAL]["n"])
+
+    def test_la_linea_base_y_la_orientacion_por_estrato(self):
+        """Las dirigidas con signo sin BioBERT son la 2 (+, acuerdo), la 4
+        (+, contrario), la 8 (+, mixto), la 13 (+, acuerdo) y la 15 (-,
+        acuerdo). Resueltas, las de acuerdo o contrario: 2, 4, 13 y 15; con
+        + en la base, 2, 4 y 13. Siempre activa acierta en 4 de las 5
+        dirigidas con signo. La orientación: 6 dirigidas de las 7 que la red
+        encuentra (la 3 va al revés).
+
+        Por estrato, (orientación, resueltas, resueltas con +, dirigidas con
+        signo y +, acuerdo cuando da signo, siempre activa en las resueltas,
+        siempre activa con abstención), con cada proporción como (k, n)."""
+        aristas, _ = self.aristas()
+        e = C.recall_red(self.exigibles(), aristas)["estratos"]
+
+        def kn(p):
+            return (p["k"], p["n"])
+
+        esperado = {
+            C.PRINCIPAL: ((6, 7), 4, 3, 4, (3, 4), (3, 4), (4, 5)),
+            "historica": ((5, 6), 3, 2, 3, (3, 3), (2, 3), (3, 4)),
+            "ambos": ((1, 1), 1, 1, 1, (0, 1), (1, 1), (1, 1)),
+            "otro": ((0, 0), 0, 0, 0, (0, 0), (0, 0), (0, 0)),
+            "biobert": ((1, 1), 1, 1, 1, (1, 1), (1, 1), (1, 1)),
+        }
+        for nombre, valores in esperado.items():
+            s = e[nombre]["signo"]
+            self.assertEqual(valores, (
+                kn(e[nombre]["orientacion"]), s["resueltas"],
+                s["resueltas_mas"], s["con_signo_mas"],
+                kn(s["acuerdo_si_da_signo"]), kn(s["linea_base_siempre_mas"]),
+                kn(s["linea_base_siempre_mas_con_abstencion"])), nombre)
+        p = e[C.PRINCIPAL]
+        # Resueltas es acuerdo más contrario; con abstención, el mismo
+        # denominador que el acuerdo de siempre; la orientación, dirigido
+        # entre cualquier dirección (642/674 en la corrida 4).
+        self.assertEqual(p["signo"]["acuerdo"]["k"] + p["signo"]["contrario"],
+                         p["signo"]["resueltas"])
+        self.assertEqual(p["signo"]["n"], p["signo"]
+                         ["linea_base_siempre_mas_con_abstencion"]["n"])
+        self.assertEqual((p["dirigido"]["k"], p["cualquiera"]["k"]),
+                         kn(p["orientacion"]))
+        self.assertIsNone(e["otro"]["orientacion"]["valor"])
 
     def test_una_red_con_otras_reglas(self):
         """red_prueba.tsv: las 12 aristas de red.tsv, la autorregulación de un
@@ -803,6 +851,28 @@ class PruebasEjecutar(_ConEscenario):
             texto = f.read()
         self.assertNotIn("citan el artículo excluido", texto)
         self.assertNotIn("cita el artículo excluido", texto)
+
+    def test_el_informe_lleva_la_linea_base_y_la_orientacion(self):
+        """Las cifras de test_la_linea_base_y_la_orientacion_por_estrato, en
+        las tablas de la red, en la línea de la abstención y en la terminal."""
+        _, lineas = self.correr()
+        with io.open(self.informe, encoding="utf-8") as f:
+            texto = f.read()
+        self.assertIn("| cualquier dirección | orientación | acuerdo de "
+                      "signo |", texto)
+        self.assertIn("6/7 (85.7 %)", texto)
+        self.assertIn("| sin BioBERT (la cifra principal) | 5 | 3 | 1 | 0 | "
+                      "1 | 3/4 (75.0 %) [30.1, 95.4] | 3/4 (75.0 %) "
+                      "[30.1, 95.4] |", texto)
+        self.assertIn("la red acuerda en 3/5 (60.0 %)", texto)
+        self.assertIn("acertaría en 4/5 (80.0 %)", texto)
+        self.assertIn("Con 9 `+` y 2 `-` entre las exigibles", texto)
+        self.assertSinContenido(texto)
+        todo = "\n".join(lineas)
+        self.assertIn("orientación 85.7 %; acuerdo cuando da signo 75.0 %, "
+                      "siempre activa en esas filas 75.0 %; siempre activa en "
+                      "las dirigidas con signo 80.0 %", todo)
+        self.assertSinContenido(todo)
 
     def test_la_conciliacion_con_un_locus_invalido(self):
         """Una fila 16 con un regulador sin forma de locus: cuenta entre las

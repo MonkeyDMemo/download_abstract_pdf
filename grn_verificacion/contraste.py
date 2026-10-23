@@ -35,6 +35,14 @@ receta del run 22 que el modelo que clasifica los pares de la red. Su recall
 mediría al modelo contra sus propias propuestas y saldría alto por
 construcción: van en su estrato y fuera de la cifra principal.
 
+El signo contra una línea base
+------------------------------
+Entre las exigibles hay más del doble de `+` que de `-` (1 238 contra 579 el
+23-oct-2026), así que un acuerdo de signo alto puede salir de decir siempre
+activates. Cada estrato lleva esa línea base: sobre las filas en que la red
+resolvió el signo (acuerdo o contrario) y sobre todas las dirigidas con signo
+en la base, donde la red se abstiene (regulates, mixto) y la línea base no.
+
 Otra red
 --------
 Con `red` (`--red NOMBRE`) se contrasta `red_<NOMBRE>.tsv`, la que arma
@@ -716,6 +724,16 @@ def recall_red(exigibles, aristas, solo_pmids=None):
     filas las propuso el modelo del asesor con la receta del run 22, la del
     modelo de la red: su recall sería circular.
 
+    Por estrato van también la `orientacion` (dirigido entre dirigido más
+    solo al revés: de lo que la red encuentra, cuánto va en la dirección de
+    la base) y la línea base de decir siempre activates, sin la cual un
+    acuerdo alto no dice si la red lee el signo (ver el docstring del
+    módulo). `acuerdo_si_da_signo` y `linea_base_siempre_mas` se miden en las
+    `resueltas`, las filas en que la red dijo activates o represses (acuerdo
+    más contrario); `linea_base_siempre_mas_con_abstencion`, en todas las
+    dirigidas con signo en la base, contra el `acuerdo` de siempre: ahí la
+    red se abstiene en las regulates y las mixtas, y la línea base no.
+
     `solo_pmids`, para una red armada con un modelo entrenado con la base: se
     evalúan solo las filas cuyos PMIDs están todos en ese conjunto (los de
     test), y de la red solo cuentan las aristas con evidencia en alguno de
@@ -741,6 +759,7 @@ def recall_red(exigibles, aristas, solo_pmids=None):
         estado, signo = en_red(fila, aristas, solo)
         juicio = juicio_signo(fila["signo"], signo) \
             if estado == "dirigido" else None
+        mas = fila["signo"] == "+"
         for d in destinos:
             c = acumulado[d]
             c["n"] += 1
@@ -750,6 +769,12 @@ def recall_red(exigibles, aristas, solo_pmids=None):
             if juicio:
                 c["con_signo"] += 1
                 c[juicio] += 1
+                if mas:
+                    c["con_signo_mas"] += 1
+                if juicio in ("acuerdo", "contrario"):
+                    c["resueltas"] += 1
+                    if mas:
+                        c["resueltas_mas"] += 1
     estratos = collections.OrderedDict()
     for nombre in (PRINCIPAL,) + ESTRATOS:
         c = acumulado[nombre]
@@ -759,12 +784,23 @@ def recall_red(exigibles, aristas, solo_pmids=None):
             ("inverso", evaluar.proporcion(c["inverso"], c["n"])),
             ("cualquiera", evaluar.proporcion(c["dirigido"] + c["inverso"],
                                               c["n"])),
+            ("orientacion", evaluar.proporcion(
+                c["dirigido"], c["dirigido"] + c["inverso"])),
             ("signo", collections.OrderedDict([
                 ("n", c["con_signo"]),
                 ("acuerdo", evaluar.proporcion(c["acuerdo"], c["con_signo"])),
                 ("contrario", c["contrario"]),
                 ("regulates", c["regulates"]),
-                ("mixto", c["mixto"])])),
+                ("mixto", c["mixto"]),
+                ("resueltas", c["resueltas"]),
+                ("resueltas_mas", c["resueltas_mas"]),
+                ("con_signo_mas", c["con_signo_mas"]),
+                ("acuerdo_si_da_signo", evaluar.proporcion(
+                    c["acuerdo"], c["resueltas"])),
+                ("linea_base_siempre_mas", evaluar.proporcion(
+                    c["resueltas_mas"], c["resueltas"])),
+                ("linea_base_siempre_mas_con_abstencion", evaluar.proporcion(
+                    c["con_signo_mas"], c["con_signo"]))])),
         ])
     return collections.OrderedDict([("solo_pmids", reparto),
                                     ("estratos", estratos)])
@@ -904,23 +940,26 @@ def _corrida(corrida):
 
 def _tabla_recall(w, recall):
     w("| estrato | filas | autorregulación | dirigido | solo al revés | "
-      "cualquier dirección | acuerdo de signo |")
-    w("|---|---:|---:|---|---|---|---|")
+      "cualquier dirección | orientación | acuerdo de signo |")
+    w("|---|---:|---:|---|---|---|---|---|")
     for nombre in (PRINCIPAL,) + ESTRATOS:
         e = recall["estratos"][nombre]
-        w("| %s | %s | %s | %s | %s | %s | %s |" % (
+        w("| %s | %s | %s | %s | %s | %s | %s | %s |" % (
             NOMBRE_ESTRATO[nombre], _n(e["n"]), _n(e["autorregulacion"]),
             _prop(e["dirigido"]), _prop(e["inverso"]), _prop(e["cualquiera"]),
-            _prop(e["signo"]["acuerdo"])))
+            _prop(e["orientacion"]), _prop(e["signo"]["acuerdo"])))
     w("")
     w("| estrato | dirigidas con signo en la base | acuerdo | contrario | "
-      "regulates | mixto |")
-    w("|---|---:|---:|---:|---:|---:|")
+      "regulates | mixto | acuerdo cuando da signo | siempre activa en esas "
+      "filas |")
+    w("|---|---:|---:|---:|---:|---:|---|---|")
     for nombre in (PRINCIPAL,) + ESTRATOS:
         s = recall["estratos"][nombre]["signo"]
-        w("| %s | %s | %s | %s | %s | %s |" % (
+        w("| %s | %s | %s | %s | %s | %s | %s | %s |" % (
             NOMBRE_ESTRATO[nombre], _n(s["n"]), _n(s["acuerdo"]["k"]),
-            _n(s["contrario"]), _n(s["regulates"]), _n(s["mixto"])))
+            _n(s["contrario"]), _n(s["regulates"]), _n(s["mixto"]),
+            _prop(s["acuerdo_si_da_signo"]),
+            _prop(s["linea_base_siempre_mas"])))
     w("")
 
 
@@ -1139,15 +1178,40 @@ def informe_markdown(resultado):
         w("")
         w("Por fila de la base: **dirigido** si la red tiene la arista del "
           "regulador al blanco; **solo al revés** si solo tiene la del blanco "
-          "al regulador. El signo se juzga en las dirigidas con `+` o `-` en "
+          "al regulador. La **orientación** es dirigido entre cualquier "
+          "dirección: de lo que la red encuentra, cuánto va en la dirección "
+          "de la base. El signo se juzga en las dirigidas con `+` o `-` en "
           "la base, contra activates y represses de la red. Una arista "
           "`regulates` o un par cuyas aristas no dicen lo mismo (mixto) no "
           "es acuerdo.")
+        w("")
+        w("Con %s `+` y %s `-` entre las exigibles, el signo se lee contra la "
+          "línea base de decir siempre activates. **Acuerdo cuando da signo** "
+          "cuenta solo las filas en que la red resolvió activates o represses "
+          "(acuerdo más contrario), y **siempre activa en esas filas** es lo "
+          "que acertaría la línea base en ellas: las que la base dice `+`."
+          % (_n(d["signo"]["+"]), _n(d["signo"]["-"])))
         w("")
         _tabla_recall(w, red["recall"])
         w("BioBERT va aparte: esas filas las propuso el modelo del asesor con "
           "la receta del run 22, la misma del clasificador de la red, y su "
           "recall sería circular. La cifra principal es la de «sin BioBERT».")
+        w("")
+        sp = red["recall"]["estratos"][PRINCIPAL]["signo"]
+        w("- Con abstención, sin BioBERT: de las %s dirigidas con signo en la "
+          "base, la red acuerda en %s y decir siempre activates acertaría en "
+          "%s. La red se abstiene en las regulates y las mixtas; la línea "
+          "base no."
+          % (_n(sp["n"]), _prop(sp["acuerdo"]),
+             _prop(sp["linea_base_siempre_mas_con_abstencion"])))
+        nv = red["candidatas_nuevas"]
+        ps = nv["por_signo"]
+        w("- Candidatas nuevas: %s pares de locus de la red que la base no "
+          "registra en ninguna dirección (activates %s; represses %s; "
+          "regulates %s; mixto %s). La lista se queda en la carpeta "
+          "confidencial: su complemento dice qué registra la base."
+          % (_n(nv["pares"]), _n(ps["activates"]), _n(ps["represses"]),
+             _n(ps["regulates"]), _n(ps["mixto"])))
         w("")
         rt = red.get("recall_test")
         if rt:
@@ -1165,15 +1229,6 @@ def informe_markdown(resultado):
                  _n(rp["mezcla"]), _n(rp["fuera"])))
             w("")
             _tabla_recall(w, rt)
-        nv = red["candidatas_nuevas"]
-        ps = nv["por_signo"]
-        w("- Candidatas nuevas: %s pares de locus de la red que la base no "
-          "registra en ninguna dirección (activates %s; represses %s; "
-          "regulates %s; mixto %s). La lista se queda en la carpeta "
-          "confidencial: su complemento dice qué registra la base."
-          % (_n(nv["pares"]), _n(ps["activates"]), _n(ps["represses"]),
-             _n(ps["regulates"]), _n(ps["mixto"])))
-        w("")
 
     w("## 5. Cautelas")
     w("")
@@ -1241,13 +1296,22 @@ def resumen(resultado):
     red = resultado.get("red")
     if red:
         e = red["recall"]["estratos"]
+        sp = e[PRINCIPAL]["signo"]
         lineas.append(
             "Red: %s aristas de %s, %s llevadas a locus. Sin BioBERT: "
             "dirigido %s, solo al revés %s, acuerdo de signo %s."
             % (_n(red["conteos"]["aristas"]), _archivo_red(red),
                _n(red["conteos"]["con_locus"]),
                _pct(e[PRINCIPAL]["dirigido"]), _pct(e[PRINCIPAL]["inverso"]),
-               _pct(e[PRINCIPAL]["signo"]["acuerdo"])))
+               _pct(sp["acuerdo"])))
+        lineas.append(
+            "  Sin BioBERT: orientación %s; acuerdo cuando da signo %s, "
+            "siempre activa en esas filas %s; siempre activa en las dirigidas "
+            "con signo %s."
+            % (_pct(e[PRINCIPAL]["orientacion"]),
+               _pct(sp["acuerdo_si_da_signo"]),
+               _pct(sp["linea_base_siempre_mas"]),
+               _pct(sp["linea_base_siempre_mas_con_abstencion"])))
         lineas.append("  BioBERT, aparte por circular: dirigido %s."
                       % _pct(e["biobert"]["dirigido"]))
         rt = red.get("recall_test")
