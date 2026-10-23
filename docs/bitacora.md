@@ -72,6 +72,17 @@ Para el detalle técnico de cada punto está
     cambiaban 8 PMIDs. Era un artefacto: PseudoCAP repite el gen una vez por
     artículo. La comparación buena es fila completa contra fila completa.
 
+- **Las 20 oraciones sintéticas de calibración** para la sesión del 24-oct
+  (`calibracion-anotacion.md`, la llave, y `calibracion-hoja.csv`, la hoja de
+  los ayudantes). Son 20 ítems en 19 oraciones: 11 `si`, 4 `dudoso` y 5 `no`.
+  - Ninguna comparte 40 caracteres con una candidata de la corrida 4 ni con
+    los XML de PMC. Tres reescritas por chocar con fórmulas de la literatura.
+  - Un revisor las anotó a ciegas solo con la rúbrica y coincidió con la
+    llave en todos los valores. Por su revisión entraron F5 y F7, c13 pasó a
+    «suggest» y c17 a solo actividad.
+  - Encontró dos huecos de la rúbrica v1 para el viernes: las fusiones
+    reporteras y cuándo es obligatoria la marca «condición».
+
 **Abierto:**
 - **`muestra.py` usa funciones privadas** de `entrenamiento.py` (`_reservada` y
   `_pmid_valido`): conviene hacerlas públicas al tocar ese archivo.

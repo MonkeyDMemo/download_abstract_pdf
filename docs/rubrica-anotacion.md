@@ -402,7 +402,10 @@ servidor.
    sintéticas**, escritas para la sesión como los casos del §5: ninguna sale
    del corpus, de `reservas.tsv`, del conjunto ciego ni de las 50 juzgadas.
    Así discutirlas no deja vista ninguna oración que luego se mida, y la
-   muestra de medición no pierde nada. Se versionan junto a esta rúbrica.
+   muestra de medición no pierde nada. Se versionan junto a esta rúbrica:
+   la llave, para quien dirige, en
+   [`calibracion-anotacion.md`](calibracion-anotacion.md), y la hoja de los
+   ayudantes en [`calibracion-hoja.csv`](calibracion-hoja.csv).
 3. **Anotación independiente.** Nadie ve lo que anotó otro.
 4. **Parte doble.** El 25 % de los ítems lo anotan dos personas para medir la
    concordancia con el κ de Cohen. Si hay más de dos ayudantes, las parejas se
