@@ -8,7 +8,7 @@ los que existen: nada de aquí viene de la base del laboratorio, ni como dato
 ni como forma.
 
 El escenario tiene una fila por caso, y las cifras esperadas se sacaron a
-mano de la tabla de abajo:
+mano de la tabla de abajo (las de las pruebas más nuevas, en su docstring):
 
     fila  par              cita            origen     qué prueba
      2    9001 -> 9002     XML             Histórica  cubierta por a y b; red dirigida, acuerdo
@@ -629,6 +629,14 @@ class PruebasRed(_ConEscenario):
         self.assertEqual(e["historica"]["n"] + e["ambos"]["n"]
                          + e["otro"]["n"], e[C.PRINCIPAL]["n"])
 
+    def test_el_estrato_de_una_fila(self):
+        filas = self.por_fila(self.exigibles())
+        self.assertEqual(("historica", "ambos", "biobert"),
+                         (C.estrato_de(filas[2]), C.estrato_de(filas[4]),
+                          C.estrato_de(filas[10])))
+        # Un valor que no es de los medidos cuenta como «otro».
+        self.assertEqual("otro", C.estrato_de(dict(filas[2], origen="nuevo")))
+
     def test_la_linea_base_y_la_orientacion_por_estrato(self):
         """Las dirigidas con signo sin BioBERT son la 2 (+, acuerdo), la 4
         (+, contrario), la 8 (+, mixto), la 13 (+, acuerdo) y la 15 (-,
@@ -671,6 +679,52 @@ class PruebasRed(_ConEscenario):
         self.assertEqual((p["dirigido"]["k"], p["cualquiera"]["k"]),
                          kn(p["orientacion"]))
         self.assertIsNone(e["otro"]["orientacion"]["valor"])
+
+    def test_el_techo_sin_biobert(self):
+        """Sin BioBERT son 11 filas, todas menos la 10: 9 en el corpus (no la
+        9 ni la 14), 7 con XML y 2 solo abstract (la 3 y la 8). La regla a)
+        con expansión cubre la 2, 3, 4, 8, 9, 11, 13 y 15; sin expansión
+        pierde la 4 y la 15. La b) con expansión, la 2, 4, 8, 11, 13 y 15;
+        sin expansión, la 2, 8, 11 y 13. La red encuentra en alguna
+        dirección la 2, 3, 4, 8, 11, 13 y 15, todas dentro de la a)."""
+        aristas, _ = self.aristas()
+        exigibles, docs, pares = self.exigibles(), self.docs(), self.pares()
+        techo = C.techo_sin_biobert(exigibles, docs, pares, aristas)
+        self.assertEqual(11, techo["n"])
+        cob = techo["cobertura"]
+        self.assertEqual({"todas": 11, "en_corpus": 9, "con_xml": 7,
+                          "solo_abstract": 2}, dict(cob["n"]))
+        esperado = {
+            ("con_expansion", "a"): (8, 7, 5, 2),
+            ("con_expansion", "b"): (6, 6, 5, 1),
+            ("sin_expansion", "a"): (6, 5, 3, 2),
+            ("sin_expansion", "b"): (4, 4, 3, 1),
+        }
+        for (v, regla), ks in esperado.items():
+            self.assertEqual(ks, tuple(cob[v][regla][g]["k"]
+                                       for g in C.GRUPOS), (v, regla))
+        self.assertEqual(0, techo["red_cualquiera_fuera_de_a"])
+        # Las mismas filas que la cifra principal de la red.
+        principal = C.recall_red(exigibles, aristas)["estratos"][C.PRINCIPAL]
+        self.assertEqual(principal["n"], techo["n"])
+
+        # Una arista que la a) no cubre, al revés de la fila 12 (que no tiene
+        # candidata): la red la encuentra y queda fuera. Es un dato.
+        otra = dict(aristas)
+        otra[("PA9021", "PA9020")] = [{"tf": "x", "blanco": "y",
+                                       "signo": "activates",
+                                       "pmids": frozenset()}]
+        self.assertEqual(1, C.techo_sin_biobert(
+            exigibles, docs, pares, otra)["red_cualquiera_fuera_de_a"])
+        # La misma fila con Origen BioBERT no entra al techo.
+        con_biobert = [dict(f, origen="biobert") if f["fila_origen"] == 12
+                       else f for f in exigibles]
+        techo = C.techo_sin_biobert(con_biobert, docs, pares, otra)
+        self.assertEqual((10, 0), (techo["n"],
+                                   techo["red_cualquiera_fuera_de_a"]))
+        # Sin red no hay cruce.
+        self.assertIsNone(C.techo_sin_biobert(
+            exigibles, docs, pares)["red_cualquiera_fuera_de_a"])
 
     def test_una_red_con_otras_reglas(self):
         """red_prueba.tsv: las 12 aristas de red.tsv, la autorregulación de un
@@ -790,6 +844,9 @@ class PruebasEjecutar(_ConEscenario):
         self.assertEqual("red.tsv", red["archivo"])
         self.assertEqual((0, 0), (red["conteos"]["expandidas_omitidas"],
                                   red["conteos"]["solo_autorregulacion"]))
+        self.assertEqual((11, 0), (resultado["techo_sin_biobert"]["n"],
+                                   resultado["techo_sin_biobert"]
+                                   ["red_cualquiera_fuera_de_a"]))
 
         with io.open(os.path.join(self.confidencial, C.ARCHIVO_POR_FILA),
                      encoding="utf-8", newline="") as f:
@@ -852,6 +909,34 @@ class PruebasEjecutar(_ConEscenario):
         self.assertNotIn("citan el artículo excluido", texto)
         self.assertNotIn("cita el artículo excluido", texto)
 
+    def test_el_informe_lleva_el_techo_sin_biobert(self):
+        """Las cifras de test_el_techo_sin_biobert, junto al dirigido y a
+        cualquier dirección de la cifra principal; en la terminal, una
+        línea."""
+        _, lineas = self.correr()
+        with io.open(self.informe, encoding="utf-8") as f:
+            texto = f.read()
+        self.assertIn("### El techo de la regla a), sin BioBERT", texto)
+        self.assertIn("las mismas 11 filas de la cifra principal", texto)
+        self.assertIn("| a) cualquier oración candidata | con expansión | "
+                      "8/11 (72.7 %)", texto)
+        self.assertIn("dirigido 6/11 (54.5 %)", texto)
+        self.assertIn("cualquier dirección 7/11 (63.6 %)", texto)
+        self.assertIn("no cubre: 0, como debe ser.", texto)
+        self.assertSinContenido(texto)
+        todo = "\n".join(lineas)
+        self.assertIn("Techo sin BioBERT: la regla a con expansión cubre "
+                      "72.7 %; la red encuentra 63.6 % en cualquier "
+                      "dirección; fuera de la regla a: 0.", todo)
+        self.assertSinContenido(todo)
+        # Sin red, el techo sigue en el resultado y no en el informe.
+        resultado, _ = self.correr(sin_red=True)
+        self.assertEqual(11, resultado["techo_sin_biobert"]["n"])
+        self.assertIsNone(resultado["techo_sin_biobert"]
+                          ["red_cualquiera_fuera_de_a"])
+        with io.open(self.informe, encoding="utf-8") as f:
+            self.assertNotIn("El techo de la regla a)", f.read())
+
     def test_el_informe_lleva_la_linea_base_y_la_orientacion(self):
         """Las cifras de test_la_linea_base_y_la_orientacion_por_estrato, en
         las tablas de la red, en la línea de la abstención y en la terminal."""
@@ -896,8 +981,8 @@ class PruebasEjecutar(_ConEscenario):
 
     def test_con_otra_red(self):
         """`red_prueba.tsv` da los mismos pares de locus que `red.tsv`: el
-        mismo recall, también el de test. El informe y el registro dicen qué
-        red se midió."""
+        mismo recall, también el de test, y el mismo techo. El informe y el
+        registro dicen qué red se midió."""
         self.con_reglas()
         normal, _ = self.correr(solo=[self.solo])
         resultado, lineas = self.correr(solo=[self.solo], red="prueba")
@@ -908,6 +993,8 @@ class PruebasEjecutar(_ConEscenario):
                                       red["conteos"]["solo_autorregulacion"]))
         self.assertEqual(normal["red"]["recall"], red["recall"])
         self.assertEqual(normal["red"]["recall_test"], red["recall_test"])
+        self.assertEqual(normal["techo_sin_biobert"],
+                         resultado["techo_sin_biobert"])
         with io.open(self.informe, encoding="utf-8") as f:
             texto = f.read()
         self.assertIn("- Red: 14 aristas de `red_prueba.tsv`", texto)

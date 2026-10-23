@@ -35,13 +35,18 @@ receta del run 22 que el modelo que clasifica los pares de la red. Su recall
 mediría al modelo contra sus propias propuestas y saldría alto por
 construcción: van en su estrato y fuera de la cifra principal.
 
-El signo contra una línea base
-------------------------------
+El signo contra una línea base, y el techo de la red
+----------------------------------------------------
 Entre las exigibles hay más del doble de `+` que de `-` (1 238 contra 579 el
 23-oct-2026), así que un acuerdo de signo alto puede salir de decir siempre
 activates. Cada estrato lleva esa línea base: sobre las filas en que la red
 resolvió el signo (acuerdo o contrario) y sobre todas las dirigidas con signo
 en la base, donde la red se abstiene (regulates, mixto) y la línea base no.
+
+La red sale de las oraciones candidatas del bronce: una fila que encuentra,
+en cualquier dirección, tiene sus dos locus juntos en alguna candidata. La
+cobertura de la regla a) con expansión sobre las filas de la cifra principal
+es su techo (`techo_sin_biobert`).
 
 Otra red
 --------
@@ -498,6 +503,43 @@ def cobertura_bronce(exigibles, docs, pares):
     return salida
 
 
+def estrato_de(fila):
+    """'historica', 'ambos', 'biobert' u 'otro': el estrato de `Origen`.
+
+    Una sola definición para el recall de la red y para su techo: si cada uno
+    decidiera por su cuenta qué filas son «sin BioBERT», el techo se mediría
+    sobre otras filas que la cifra que acota.
+    """
+    return fila["origen"] if fila["origen"] in ESTRATOS else "otro"
+
+
+def techo_sin_biobert(exigibles, docs, pares, aristas=None):
+    """La cobertura del bronce en las filas de la cifra principal de la red.
+
+    La red sale de las oraciones candidatas del bronce, que el puente vuelve a
+    leer con el léxico de etapa2: una fila que la red encuentra, en cualquier
+    dirección, tiene sus dos locus juntos en alguna candidata. La regla a)
+    con expansión es su techo. Se mide sobre las mismas filas que el recall
+    «sin BioBERT» (`estrato_de`), con las reglas, variantes y grupos de
+    `cobertura_bronce`.
+
+    `red_cualquiera_fuera_de_a` cuenta las filas que la red encuentra y la
+    regla a) con expansión no cubre. Por construcción debería ser 0; si no lo
+    es, es un dato y no un error: el puente llevó a locus en una oración algo
+    que el bronce no llevó, o lo llevó a otro. None sin red.
+    """
+    filas = [f for f in exigibles if estrato_de(f) != "biobert"]
+    fuera = None
+    if aristas is not None and "con_expansion" in pares:
+        fuera = sum(1 for f in filas
+                    if en_red(f, aristas)[0] != "no"
+                    and not cubierta(f, pares["con_expansion"], "a"))
+    return collections.OrderedDict([
+        ("n", len(filas)),
+        ("cobertura", cobertura_bronce(filas, docs, pares)),
+        ("red_cualquiera_fuera_de_a", fuera)])
+
+
 # --------------------------------------------------------------------- red
 
 def _locus_de_pares(ruta_pares, necesarios):
@@ -753,7 +795,7 @@ def recall_red(exigibles, aristas, solo_pmids=None):
             ("mezcla", clases["mezcla"]), ("fuera", clases["fuera"])])
     acumulado = collections.defaultdict(collections.Counter)
     for fila in filas:
-        estrato = fila["origen"] if fila["origen"] in ESTRATOS else "otro"
+        estrato = estrato_de(fila)
         destinos = ((estrato,) if estrato == "biobert"
                     else (estrato, PRINCIPAL))
         estado, signo = en_red(fila, aristas, solo)
@@ -963,10 +1005,48 @@ def _tabla_recall(w, recall):
     w("")
 
 
+def _tabla_cobertura(w, cob):
+    w("| regla | variante | todas | en el corpus | con XML | solo abstract |")
+    w("|---|---|---|---|---|---|")
+    for regla in REGLAS:
+        for v in VARIANTES:
+            if v in cob:
+                w("| %s | %s | %s |" % (
+                    NOMBRE_REGLA[regla], NOMBRE_VARIANTE[v],
+                    " | ".join(_prop(cob[v][regla][g]) for g in GRUPOS)))
+    w("")
+
+
 def _archivo_red(red):
     """El nombre del archivo de la red contrastada, `red.tsv` o el de
     `--red`: el informe dice cuál midió."""
     return red.get("archivo") or redes.RED
+
+
+def _techo_markdown(w, techo, principal):
+    """La subsección del techo, con la red de la cifra principal al lado."""
+    w("### El techo de la regla a), sin BioBERT")
+    w("")
+    w("La red sale de las oraciones candidatas del bronce: una fila que "
+      "encuentra, en cualquier dirección, tiene sus dos locus juntos en "
+      "alguna candidata, así que la regla a) con expansión es su techo. Es "
+      "la cobertura de la sección 3 sobre las mismas %s de la cifra "
+      "principal." % _cuantas(techo["n"], "fila", "filas"))
+    w("")
+    _tabla_cobertura(w, techo["cobertura"])
+    w("- La red en esas filas: dirigido %s; cualquier dirección %s."
+      % (_prop(principal["dirigido"]), _prop(principal["cualquiera"])))
+    fuera = techo["red_cualquiera_fuera_de_a"]
+    if fuera == 0:
+        w("- Filas que la red encuentra en alguna dirección y la regla a) "
+          "con expansión no cubre: 0, como debe ser.")
+    elif fuera:
+        w("- Filas que la red encuentra en alguna dirección y la regla a) "
+          "con expansión no cubre: **%s**. Debería ser 0, y es un dato, no "
+          "un error: el puente vuelve a leer las oraciones del bronce con el "
+          "léxico de etapa2, y en esas filas llevó a locus algo que el bronce "
+          "no llevó, o lo llevó a otro." % _n(fuera))
+    w("")
 
 
 def informe_markdown(resultado):
@@ -1095,15 +1175,7 @@ def informe_markdown(resultado):
       "oración del artículo que la fila cita: es si el paso 1 recupera la "
       "evidencia citada. Con expansión, un operón cuenta por sus genes.")
     w("")
-    w("| regla | variante | todas | en el corpus | con XML | solo abstract |")
-    w("|---|---|---|---|---|---|")
-    for regla in REGLAS:
-        for v in VARIANTES:
-            if v in cob:
-                w("| %s | %s | %s |" % (
-                    NOMBRE_REGLA[regla], NOMBRE_VARIANTE[v],
-                    " | ".join(_prop(cob[v][regla][g]) for g in GRUPOS)))
-    w("")
+    _tabla_cobertura(w, cob)
     if "solo_por_expansion" in cob:
         se = cob["solo_por_expansion"]
         w("- Solo por la expansión de operones: regla a) %s filas (%s con "
@@ -1213,6 +1285,9 @@ def informe_markdown(resultado):
           % (_n(nv["pares"]), _n(ps["activates"]), _n(ps["represses"]),
              _n(ps["regulates"]), _n(ps["mixto"])))
         w("")
+        techo = resultado.get("techo_sin_biobert")
+        if techo:
+            _techo_markdown(w, techo, red["recall"]["estratos"][PRINCIPAL])
         rt = red.get("recall_test")
         if rt:
             rp = rt["solo_pmids"]
@@ -1312,6 +1387,15 @@ def resumen(resultado):
                _pct(sp["acuerdo_si_da_signo"]),
                _pct(sp["linea_base_siempre_mas"]),
                _pct(sp["linea_base_siempre_mas_con_abstencion"])))
+        techo = resultado.get("techo_sin_biobert")
+        if techo and "con_expansion" in techo["cobertura"]:
+            lineas.append(
+                "  Techo sin BioBERT: la regla a con expansión cubre %s; la "
+                "red encuentra %s en cualquier dirección; fuera de la regla "
+                "a: %s."
+                % (_pct(techo["cobertura"]["con_expansion"]["a"]["todas"]),
+                   _pct(e[PRINCIPAL]["cualquiera"]),
+                   _n(techo["red_cualquiera_fuera_de_a"])))
         lineas.append("  BioBERT, aparte por circular: dirigido %s."
                       % _pct(e["biobert"]["dirigido"]))
         rt = red.get("recall_test")
@@ -1649,6 +1733,7 @@ def ejecutar(base, carpeta, confidencial, informe=None, hoja=None,
             ("recall_test", recall_test),
             ("candidatas_nuevas", _conteo_nuevas(nuevas)),
         ])
+    techo = techo_sin_biobert(exigibles, docs, pares, aristas)
 
     resultado = collections.OrderedDict([
         ("generado_en", _ahora()),
@@ -1676,6 +1761,7 @@ def ejecutar(base, carpeta, confidencial, informe=None, hoja=None,
                 (v, len(pares[v][0])) for v in VARIANTES))])),
         ("cobertura", cobertura),
         ("homologia", homologia),
+        ("techo_sin_biobert", techo),
         ("red", contrastada),
         ("avisos", avisos),
     ])
