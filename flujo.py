@@ -1,16 +1,20 @@
 """El flujo de punta a punta, con lo que ya existe.
 
-    operones → bronce → pares → biobert → red → sintaxis → capa → evaluar
-    → paquete
+    operones → bronce → pares → biobert → red → red_recomendada → sintaxis
+    → capa → evaluar → paquete
 
 Cada paso es el CLI que ya tiene su paquete, corrido como proceso aparte
 (`grn_comun.proceso`), y deja sus archivos en una carpeta por corrida del
 bronce y modelo: `salidas/flujo/corrida4_run22/`. Es la respuesta a «correr el
 flujo con lo que tenemos» (asesor, 2-oct-2026): ningún paso reimplementa lo que
-ya hace otro. El paso «paquete» (`grn_red`, 21-oct-2026) tampoco decide nada:
-deja la red de `etapa2/red.py` con los nodos unificados por id canónico
-(`nodos.tsv`), como GraphML (`red.graphml`) y con un manifiesto de su
-procedencia (`manifiesto.json`).
+ya hace otro. El paso «red» es `grn_red.cli consolidar` con la configuración
+por omisión, que es `etapa2/red.py` byte por byte; «red_recomendada» es la
+misma red con las reglas del perfil recomendado (autorregulación marcada,
+nivel de soporte y operones expandidos) en `red_recomendada*.tsv`, sin tocar
+`red.tsv`, que es la que miden la evaluación y el paquete. El paso «paquete»
+(`grn_red`, 21-oct-2026) tampoco decide nada: deja la red de `etapa2/red.py`
+con los nodos unificados por id canónico (`nodos.tsv`), como GraphML
+(`red.graphml`) y con un manifiesto de su procedencia (`manifiesto.json`).
 
 **Idempotente por huella.** Cada paso declara sus entradas (archivos, su propio
 código y sus parámetros) y sus salidas; si las huellas de las entradas son las
@@ -49,8 +53,8 @@ from grn_comun.archivos import borrar, reemplazar     # noqa: E402
 
 # El paquete va al final y no justo después de la red, que es lo único que
 # lee: si falla, no corta la sintaxis, la capa ni la evaluación.
-PASOS = ("operones", "bronce", "pares", "biobert", "red", "sintaxis", "capa",
-         "evaluar", "paquete")
+PASOS = ("operones", "bronce", "pares", "biobert", "red", "red_recomendada",
+         "sintaxis", "capa", "evaluar", "paquete")
 
 NOMBRES = {
     "operones": "Operones (base de pertenencia)",
@@ -58,6 +62,7 @@ NOMBRES = {
     "pares": "Pares para BioBERT",
     "biobert": "Clasificación con BioBERT",
     "red": "Red preliminar",
+    "red_recomendada": "Red con las reglas recomendadas",
     "sintaxis": "Sintaxis con spaCy",
     "capa": "Capa: oración, funciones, operones y BioBERT",
     "evaluar": "Evaluación (44 % recalculado, oro)",
@@ -348,20 +353,42 @@ def _plan(ctx, paso):
                             ctx.ruta("predicciones_meta.json")]}
 
     if paso == "red":
-        argv = [py, os.path.join(RAIZ, "etapa2", "red.py"),
-                "--predicciones", ctx.ruta("predicciones.jsonl"),
-                "--pares", ctx.ruta("pares.jsonl"),
-                "--salida", ctx.ruta("red.tsv"),
-                "--evidencias", ctx.ruta("red_evidencias.tsv"),
-                "--informe", ctx.ruta("red_informe.json")]
+        # La configuración por omisión de `consolidar` es `etapa2/red.py` con
+        # los argumentos que este paso le pasaba antes, y escribe lo mismo.
+        argv = [py, "-m", "grn_red.cli", "consolidar",
+                "--carpeta", ctx.carpeta]
         return {"comandos": [(argv, (0,), False)],
                 "entradas": [ctx.ruta("predicciones.jsonl"),
                              ctx.ruta("predicciones_meta.json"),
                              ctx.ruta("pares.jsonl")]
-                + _codigo("etapa2/red.py", "grn_bronce/texto.py"),
+                + _codigo("grn_red/consolidar.py", "grn_red/cli.py",
+                          "etapa2/red.py", "grn_bronce/texto.py",
+                          "grn_comun/procedencia.py"),
                 "parametros": {},
                 "salidas": [ctx.ruta("red.tsv"), ctx.ruta("red_evidencias.tsv"),
                             ctx.ruta("red_informe.json")]}
+
+    if paso == "red_recomendada":
+        argv = [py, "-m", "grn_red.cli", "consolidar",
+                "--carpeta", ctx.carpeta, "--perfil", "recomendado"]
+        salidas = [ctx.ruta("red_recomendada.tsv"),
+                   ctx.ruta("red_recomendada_evidencias.tsv"),
+                   ctx.ruta("red_recomendada_informe.json")]
+        # Lo de «red» más lo que expande los operones: el catálogo versionado
+        # del paso 1 y su lector, y el lector de TSV del paquete.
+        return {"comandos": [(argv, (0,), False)],
+                "entradas": [ctx.ruta("predicciones.jsonl"),
+                             ctx.ruta("predicciones_meta.json"),
+                             ctx.ruta("pares.jsonl"), OPERONES_CATALOGO]
+                + _codigo("grn_red/consolidar.py", "grn_red/cli.py",
+                          "grn_red/paquete.py", "etapa2/red.py",
+                          "grn_bronce/texto.py", "grn_bronce/operones.py",
+                          "grn_comun/procedencia.py", "grn_comun/archivos.py"),
+                "parametros": {"perfil": "recomendado"},
+                # Si falla, que no quede a la vista la red de antes junto a
+                # una red.tsv nueva.
+                "borrar_antes": list(salidas),
+                "salidas": salidas}
 
     if paso == "paquete":
         argv = [py, "-m", "grn_red.cli", "paquete", "--carpeta", ctx.carpeta]
@@ -541,7 +568,7 @@ def _ubicar_candidatas(ctx):
 # depende del texto marcado. El paquete lo hace a través de
 # red_evidencias.tsv: con unos pares rehechos y la red vieja, sus nodos
 # saldrían de las entidades de otro texto.
-LEEN_PREDICCIONES = ("red", "paquete", "capa", "evaluar")
+LEEN_PREDICCIONES = ("red", "red_recomendada", "paquete", "capa", "evaluar")
 
 
 def _exigir_predicciones_al_dia(ctx, paso):
@@ -932,8 +959,9 @@ def estado_general(con=None, raiz=None):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(
-        description="Corre el flujo: operones, bronce, BioBERT, red, sintaxis, "
-                    "capa, evaluación y paquete de la red.")
+        description="Corre el flujo: operones, bronce, BioBERT, red, red "
+                    "recomendada, sintaxis, capa, evaluación y paquete de la "
+                    "red.")
     ap.add_argument("--corrida", type=int, default=None,
                     help="Corrida del bronce (por omisión, la última terminada).")
     ap.add_argument("--pasos", default=None,

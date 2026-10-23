@@ -265,7 +265,7 @@ class PruebasFlujo(unittest.TestCase):
 
     def test_una_lista_vacia_de_pasos_no_es_todos(self):
         """El tablero manda la lista de lo marcado; quien desmarcó todo no
-        pidió correr los nueve pasos."""
+        pidió correr los diez pasos."""
         with self.assertRaises(ValueError):
             flujo.correr(corrida=4, pasos=[], salida=self.salida)
         self.assertEqual(self.pasos.corridas("bronce"), 0)
@@ -464,6 +464,51 @@ class PruebasPlanReal(unittest.TestCase):
         self.assertEqual(flujo.NOMBRES["paquete"], "Paquete de la red")
         self.assertIn("paquete", flujo.LEEN_PREDICCIONES)
 
+    def test_la_red_es_consolidar_con_la_configuracion_por_omision(self):
+        """La misma red de `etapa2/red.py`, ahora por `grn_red.cli
+        consolidar`: mismas salidas, y cambiar el código de cualquiera de los
+        dos la rehace."""
+        plan = flujo._plan(self.ctx(), "red")
+        argv = plan["comandos"][0][0]
+        self.assertEqual(argv[1:], ["-m", "grn_red.cli", "consolidar",
+                                    "--carpeta", self.tmp.name])
+        entradas = [os.path.normpath(e) for e in plan["entradas"]]
+        for nombre in ("predicciones.jsonl", "predicciones_meta.json",
+                       "pares.jsonl"):
+            self.assertIn(os.path.join(self.tmp.name, nombre), entradas)
+        for partes in (("grn_red", "consolidar.py"), ("grn_red", "cli.py"),
+                       ("etapa2", "red.py"), ("grn_bronce", "texto.py")):
+            self.assertIn(self.rel(*partes), entradas)
+        self.assertEqual(plan["parametros"], {})
+        self.assertEqual([os.path.basename(s) for s in plan["salidas"]],
+                         ["red.tsv", "red_evidencias.tsv", "red_informe.json"])
+
+    def test_la_red_recomendada_va_justo_despues_y_no_toca_red_tsv(self):
+        """Une pares y predicciones como la red, lee el catálogo versionado
+        (nunca operones_base.tsv) y escribe solo sus archivos; si falla, no
+        queda a la vista la de antes."""
+        self.assertEqual(flujo.PASOS.index("red_recomendada"),
+                         flujo.PASOS.index("red") + 1)
+        self.assertIn("red_recomendada", flujo.NOMBRES)
+        self.assertIn("red_recomendada", flujo.LEEN_PREDICCIONES)
+        plan = flujo._plan(self.ctx(), "red_recomendada")
+        argv = plan["comandos"][0][0]
+        self.assertEqual(argv[1:], ["-m", "grn_red.cli", "consolidar",
+                                    "--carpeta", self.tmp.name,
+                                    "--perfil", "recomendado"])
+        self.assertEqual([os.path.basename(s) for s in plan["salidas"]],
+                         ["red_recomendada.tsv",
+                          "red_recomendada_evidencias.tsv",
+                          "red_recomendada_informe.json"])
+        self.assertEqual(set(plan["borrar_antes"]), set(plan["salidas"]))
+        entradas = [os.path.normpath(e) for e in plan["entradas"]]
+        for partes in (("grn_bronce", "recursos", "operones_pao1.tsv"),
+                       ("grn_red", "consolidar.py"), ("grn_red", "paquete.py"),
+                       ("etapa2", "red.py"), ("grn_bronce", "operones.py")):
+            self.assertIn(self.rel(*partes), entradas)
+        self.assertNotIn(os.path.normpath(flujo.OPERONES_BASE), entradas)
+        self.assertEqual(plan["parametros"], {"perfil": "recomendado"})
+
     def test_el_paquete_declara_sus_entradas_y_borra_lo_que_escribe(self):
         """Cambiar la red, sus evidencias, los pares, el meta del modelo, el
         diccionario, el catálogo versionado o el código lo rehace. Y si
@@ -530,6 +575,57 @@ class PruebasPlanReal(unittest.TestCase):
                     os.path.join(self.tmp.name, "no", "python"))
             with self.assertRaises(flujo.ErrorFlujo):
                 flujo._python_nlp_pedido("python_que_no_existe_xyz")
+
+
+class PruebasRedDeVerdad(unittest.TestCase):
+    """Los pasos «red» y «red_recomendada» con su `_plan` de verdad y sus
+    subprocesos, sobre las entradas sintéticas de `grn_red.test_consolidar`:
+    la segunda corrida sale toda «saltado», y `red.tsv` es la de
+    `etapa2/red.py`."""
+
+    def test_dos_corridas_y_la_segunda_no_repite_nada(self):
+        from grn_comun import procedencia
+        from grn_red import test_consolidar as tc
+        from grn_red.consolidar import _red
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        salida = os.path.join(tmp.name, "flujo")
+        os.makedirs(salida)
+        carpeta = tc._carpeta(salida, "corrida4_run22")
+        meta = os.path.join(carpeta, "predicciones_meta.json")
+        with io.open(meta, encoding="utf-8") as f:
+            datos = json.load(f)
+        datos["huella_pares"] = procedencia.huella(
+            os.path.join(carpeta, "pares.jsonl"))
+        with io.open(meta, "w", encoding="utf-8") as f:
+            json.dump(datos, f)
+        with io.open(os.path.join(carpeta, "estado.json"), "w",
+                     encoding="utf-8") as f:
+            json.dump({"archivos": {"candidatas": "c.csv"}, "pasos": {}}, f)
+
+        def correr():
+            return flujo.correr(corrida=4, pasos=["red", "red_recomendada"],
+                                salida=salida, modelo=flujo.MODELO_POR_OMISION,
+                                sin_reusar=True)
+
+        self.assertEqual(correr()["pasos"], {"red": "ok",
+                                             "red_recomendada": "ok"})
+        self.assertEqual(correr()["pasos"], {"red": "saltado",
+                                             "red_recomendada": "saltado"})
+        directa = tc._carpeta(tmp.name, "directa")
+        _red.main(["--predicciones", os.path.join(directa, "predicciones.jsonl"),
+                   "--pares", os.path.join(directa, "pares.jsonl"),
+                   "--salida", os.path.join(directa, "red.tsv"),
+                   "--evidencias", os.path.join(directa, "red_evidencias.tsv"),
+                   "--informe", os.path.join(directa, "red_informe.json")],
+                  log=lambda m: None)
+        for nombre in ("red.tsv", "red_evidencias.tsv"):
+            with io.open(os.path.join(carpeta, nombre), "rb") as f:
+                mio = f.read()
+            with io.open(os.path.join(directa, nombre), "rb") as f:
+                self.assertEqual(mio, f.read(), nombre)
+        self.assertTrue(os.path.isfile(os.path.join(
+            carpeta, "red_recomendada.tsv")))
 
 
 class PruebasArchivosParaElTablero(unittest.TestCase):

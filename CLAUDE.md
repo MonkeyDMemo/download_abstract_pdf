@@ -21,7 +21,8 @@ El pipeline tiene cuatro pasos y tres capas. `PLAN.md` los define en detalle.
 | 3 | Consolidacion | gold | `grn_red/` | abierto el 21-oct-2026: el paquete de la red; la consolidacion sigue |
 
 **El flujo de punta a punta es `python flujo.py`** (8-oct-2026): operones →
-bronce → pares → BioBERT → red → sintaxis → capa → evaluacion, cada paso con
+bronce → pares → BioBERT → red → red recomendada → sintaxis → capa →
+evaluacion → paquete, cada paso con
 el CLI que ya tenia su paquete, en una carpeta por corrida del bronce y modelo
 (`salidas/flujo/corrida4_run22/`). Se salta lo que ya esta hecho por huella de
 entradas y salidas; ver el docstring de `flujo.py`.
@@ -253,6 +254,11 @@ grn_verificacion/      paso 2, en construccion
   muestra.py             el sorteo de la muestra ciega para anotar con
                          ayudantes (docs/rubrica-anotacion.md §6 a §8)
 grn_red/               paso 3; solo estandar y compatible con 3.8
+  consolidar.py          las reglas de consolidacion como parametros
+                         (autorregulacion, nivel de soporte, operones, mayoria,
+                         umbrales, minimos); por omision es etapa2/red.py byte
+                         por byte (paso `red`), y el perfil recomendado va a
+                         red_recomendada*.tsv (paso `red_recomendada`)
   paquete.py             nodos.tsv, red.graphml y manifiesto.json desde la red
                          de etapa2/red.py, con los nodos unificados por id
                          canonico; es el ultimo paso del flujo (`paquete`)
@@ -538,6 +544,7 @@ python3 flujo.py --corrida 4            # operones -> bronce -> BioBERT -> capa 
 python3 flujo.py --corrida 4 --limite 200   # prueba rapida en su propia carpeta
 python3 flujo.py --pasos capa,evaluar --forzar capa
 python3 flujo.py --pasos operones --rehacer-operones   # operones_base.tsv, sin red; corre siempre
+python3 -m grn_red.cli consolidar --carpeta C [--perfil recomendado]   # pasos red y red_recomendada del flujo
 python3 -m grn_red.cli paquete --carpeta salidas/flujo/corrida4_run22   # tambien es el ultimo paso del flujo
 python3 -m grn_verificacion.cli verificar --carpeta salidas/flujo/corrida4_run22 [--contra J] [--html H]
 python3 -m grn_bronce.cli sintaxis --comparar ANTES --salida DESPUES [--json R]   # sin spaCy
@@ -763,9 +770,12 @@ Las pruebas que no pueden faltar:
   `reentrenar` escribe `datos/`, `runs/` y `resultados/`.
 - Usar `sudo`, cambiar configuracion del sistema o instalar paquetes globales.
 - Ejecutar Playwright u otros navegadores. Desactivado por omision.
-- **Las reglas de consolidacion en `grn_red/`** hasta que el asesor revise el
-  borrador (`docs/reunion-asesor-23oct.md`, decision f). `grn_red/` se abrio el
-  21-oct-2026 con el usuario, solo para empaquetar la red que ya existe.
+- **Las reglas de consolidacion como decision.** Desde el 22-oct-2026 entran
+  como parametros en `grn_red/consolidar.py`; por omision la red es la de
+  `etapa2/red.py`, byte por byte, y toda otra configuracion escribe
+  `red_<nombre>*` sin tocar `red.tsv`. Cual queda como la red del proyecto
+  espera a que el asesor revise el borrador (`docs/reunion-asesor-23oct.md`,
+  decision f).
 - **`etapa2/` se conserva congelada**: sin cambios funcionales, solo lo que
   exija una mudanza de modulos, una correccion de error o una prueba. El paso 2
   la usa sin modificarla: `grn_verificacion` importa sus funciones y corre sus
