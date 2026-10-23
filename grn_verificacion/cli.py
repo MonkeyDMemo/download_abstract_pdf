@@ -3,7 +3,7 @@
     python -m grn_verificacion.cli pares --bronce CSV --carpeta DIR [--limite N]
     python -m grn_verificacion.cli biobert --carpeta DIR --modelo DIR [--reusar-de DIR]
     python -m grn_verificacion.cli capa --carpeta DIR --bronce CSV [--sintaxis JSONL]
-    python -m grn_verificacion.cli evaluar --carpeta DIR --bronce CSV
+    python -m grn_verificacion.cli evaluar --carpeta DIR --bronce CSV [--particion DIR]
     python -m grn_verificacion.cli verificar --carpeta DIR [--datos D] [--particion P] [--contra J] [--json J] [--html H]
     python -m grn_verificacion.cli datos-entrenamiento --pares JSONL --base XLSX ...
     python -m grn_verificacion.cli reentrenar correr|estado|detener --raiz DIR ...
@@ -121,7 +121,8 @@ def cmd_capa(args):
 
 def cmd_evaluar(args):
     from grn_verificacion import evaluar
-    evaluar.evaluar_carpeta(args.carpeta, args.bronce, log=log)
+    evaluar.evaluar_carpeta(args.carpeta, args.bronce, log=log,
+                            particion=args.particion)
     return 0
 
 
@@ -696,6 +697,10 @@ def main(argv=None):
     ev = sub.add_parser("evaluar", help="Recalcula el 44 %% con BioBERT.")
     ev.add_argument("--carpeta", required=True)
     ev.add_argument("--bronce", required=True)
+    ev.add_argument("--particion", default=None, metavar="DIR",
+                    help="Carpeta con los entity_marked_{train,dev}.jsonl del "
+                         "modelo: separa el P1 de las 50 en par visto y par "
+                         "no visto al entrenar. Solo conteos.")
     ev.set_defaults(func=cmd_evaluar)
 
     vf = sub.add_parser(
