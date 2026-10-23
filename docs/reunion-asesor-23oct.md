@@ -1,9 +1,10 @@
 # Entrega del servicio social — red de regulación de *P. aeruginosa*
 
-Del 22 de octubre de 2026. La reunión del 23 se canceló, y esta hoja reemplaza
+Del 22 de octubre de 2026, actualizada el 23 con el contraste, el 44 % con los
+tres modelos y la tanda 1. La reunión del 23 se canceló, y esta hoja reemplaza
 el guion. **Cada decisión que estaba abierta va decidida por omisión**, con la
 forma: «decidí X porque…; si prefiere Y, cambie el parámetro Z, y la cifra
-pasa a W». Solo se pregunta antes lo que es permiso (§4).
+pasa a W». Solo se pregunta lo que es permiso (§4).
 
 Cada cifra dice de dónde sale: un archivo versionado, un commit o una salida
 del flujo. Ninguna es de memoria. De la base curada aquí van solo conteos ya
@@ -40,9 +41,11 @@ no son las medidas. Lo que dice, y lo que vale:
 El servicio social cierra con la capa determinista:
 - el pipeline corre de punta a punta;
 - la red sale versionada, y sus reglas de consolidación son parámetros;
-- el recall contra la base curada está listo para correr;
-- la muestra ciega de 200 está sorteada, con su rúbrica, su calibración, su
-  página de revisión y su cálculo de precisión.
+- el recall contra la base curada está medido: 41.2 % dirigido, sin el estrato
+  BioBERT;
+- la tanda 1 de la muestra ciega está anotada: la red sube la precisión del
+  bronce de 53.0 % a 61.3 %, con la diferencia pareada en [+3.7, +12.6];
+- la tanda 2, de prueba, está sorteada y se anota en la página.
 
 El LLM sobre la oración pasa a la tesis (`decisiones.md`, «El LLM sobre la
 oración es trabajo de tesis»).
@@ -57,21 +60,46 @@ oración es trabajo de tesis»).
 | Red versionada | 8 827 aristas, y el paquete con 1 809 nodos (`nodos.tsv`, `red.graphml`, `manifiesto.json`) | el paso `paquete` del flujo |
 | Reglas de consolidación como parámetros | por omisión, la red de `etapa2/red.py` byte a byte; la configuración recomendada en `red_recomendada.tsv` (§5, f) | `python -m grn_red.cli consolidar --carpeta C [--perfil recomendado]` |
 | Invariantes de la corrida | `verificar` sale con 0 | `python -m grn_verificacion.cli verificar --carpeta C` |
-| Recall contra la base curada | script probado con bases sintéticas; falta correrlo (§4) | `docs/contraste-curada.md` |
-| Precisión en una muestra ciega | 200 sorteadas de 4 864 (semilla 20261024); rúbrica con enmienda 1, calibración de 21 ítems; falta anotar | `cli muestra --tandas 1 --fraccion-doble 0`; la pestaña «Revisión» (`servidor.py --revision`); `cli precision-ciega` |
+| Recall contra la base curada | medido el 23-oct: dirigido 41.2 % (642/1 560) sin el estrato BioBERT; regla b) con XML 30.2 % (259/859); §5 d | `docs/contraste-curada.md` |
+| Precisión en una muestra ciega | tanda 1 (desarrollo) anotada: 198 de 200; tanda 2 (prueba) sorteada sin los PMIDs ni los códigos de la tanda 1; rúbrica con enmiendas 1 y 2; calibración v1.2 de 27 ítems | `cli muestra --tandas 1 --fraccion-doble 0 [--excluir-muestra D]`; la pestaña «Revisión» (`servidor.py --revision`); `cli precision-ciega` |
 | Informe (formato FES Zaragoza) | se redacta en noviembre | — |
 
 **La precisión es pareada.** Sobre los mismos 200 ítems salen dos cifras:
 - **la del bronce**, que se compara con el 44 %;
 - **la de la red final**, sobre los ítems cuya oración sostiene una arista.
 
-Junto a la de la red va su retención. Con la red de hoy, 144 de las 200
-oraciones sorteadas sostienen una arista (72 %, IC95 [65.4, 77.8]). Sus pares
-están en la red por cualquier oración en 194 de 200 casos. El anotador no ve
-ninguna salida de modelo.
+Junto a la de la red va su retención. El anotador no ve ninguna salida de
+modelo.
 
-**El tiempo del anotador** se registra por ítem en la página y por bloque de 25
-en la hoja. Es el primer dato de esfuerzo.
+**Tanda 1** (el experto, con la red de *E. coli*):
+
+| | con dirección | sin exigirla |
+|---|---|---|
+| bronce, los 198 anotados | **53.0 % (105/198) [46.1, 59.9]** | 72.7 % |
+| red, los 142 cuya oración sostiene una arista | **61.3 % (87/142) [53.1, 68.9]** | 77.5 % |
+
+- **La diferencia pareada,** red menos bronce, es **[+3.7, +12.6]** puntos,
+  por bootstrap. Se calcula sobre los mismos ítems.
+- **La red retiene** el 71.7 % del total y el **82.9 % de las verdaderas
+  (87/105)**.
+- **La pérdida más grande son las inversiones:** 39 de 144 relaciones
+  verdaderas (27.1 %) [20.5, 34.9] tienen la dirección contraria a la que
+  propuso el bronce.
+- **El signo de la red** acierta 42/48 = 87.5 % cuando lo da, y 42/60 = 70.0 %
+  si la abstención cuenta como error.
+  - La «siempre +» reportada, 70.7 %, no sale de la misma base: no puede ser
+    k/60.
+  - Se recalcula sobre los mismos ítems antes de concluir.
+- **Sensibilidad.** Con las 5 negadas anotadas `si` tratadas como `no`, el
+  bronce da 51.0 % y la red 59.9 %, con diferencia [+4.3, +13.2]. La
+  conclusión no cambia.
+- **Normalización.** Se corrigieron solo códigos: 46 direcciones vacías pasaron
+  a `ninguna` y 43 signos `0` a `?`.
+
+**El tiempo del anotador.** La tanda 1 se anotó en la hoja CSV y no tiene
+tiempos, ni por bloque, lo que es una desviación del protocolo (rúbrica,
+enmienda 2). La tanda 2 se anota en la página, que registra el tiempo por ítem:
+será el primer dato de esfuerzo.
 
 ### El BioBERT reentrenado con la base curada: v1 (16-oct) y v2 (21-oct)
 
@@ -85,6 +113,8 @@ en la hoja. Es el primer dato de esfuerzo.
 | oro: acierto de signo | 38/82 = 46.3 % | 90/126 = 71.4 % | 92/105 = 87.6 % |
 | «siempre activa» en esas mismas filas | 70.7 % | 70.6 % | 77.1 % |
 | criterio 2 de la enmienda 1 | no | no (p = 0.47) | sí |
+| las 50 juzgadas: precisión del filtro | 5/9 = 55.6 % [26.7, 81.1] | 16/28 = 57.1 % [39.1, 73.5] | 16/37 = 43.2 % |
+| las 50 juzgadas: correctas que retiene, de 22 | 5 | 16 | 16 |
 
 Fuente: `bitacora.md:21-31`; `resultados-curada-v1.md:197`,
 `resultados-curada-v2.md:200`; para *E. coli*,
@@ -101,27 +131,37 @@ antes de entrenar la v2, **ninguna reemplaza al modelo de *E. coli***
 La enmienda 1 es **posterior a ver las cifras de la v1**: la comparación v1
 contra v2 es exploratoria (`protocolo-curada-v1.md:245-248`).
 
+**Sobre las 50 juzgadas** (el 44 %, recalculado el 23-oct en el servidor):
+- **La v2 filtra mejor que *E. coli*:** con la misma retención, 16 de las 22
+  correctas, acepta 28 y no 37.
+- **La v1 retiene solo 5 de las 22.**
+- **El signo de la v2:** 9/12 = 75 % contra 73.3 % de «siempre +», que tampoco
+  es k/12.
+- **La v2 se eligió después de ver las 50,** así que es exploratoria.
+- **Falta separar** los pares que el modelo vio en su entrenamiento
+  (memorización): `precision-ciega` y `evaluar --particion`, fase 2.
+
 ---
 
-## 4. Lo único que se pregunta: permiso para correr en su servidor con la base curada
+## 4. Permisos
 
-1. **El contraste** (`docs/contraste-curada.md`): el recall del bronce y de la
-   red contra la base curada.
-   - Lo que mide: exigibles sin homología, con el estrato `Origen` BioBERT
-     aparte y el PMID B excluido por archivo.
-   - Lo que vuelve: solo el informe filtrado (`CONTRASTE.md`), sin filas,
-     locus ni PMIDs. Las candidatas nuevas se quedan en la carpeta
-     confidencial.
-2. **La evaluación externa:** el 44 % con los tres modelos (*E. coli*, curada
-   v1 y v2), con `flujo.py --modelo` en el servidor.
-   - Hace falta subir la carpeta del flujo de la corrida 4.
-   - Las salidas se quedan en el servidor; vuelven solo conteos.
+**Concedido el 23-oct.** El asesor dio su visto bueno para operar el servidor
+por SSH con llave. Con eso, la sesión «Hermes» corrió el contraste
+(`docs/contraste-curada.md`) y el 44 % con los tres modelos, siempre con
+informes filtrados: sin filas, locus ni PMIDs. Las cifras están en el §3 y en
+el §5 d y g. Las candidatas nuevas se quedan en la carpeta confidencial.
 
-| respuesta | qué hacemos |
-|---|---|
-| sí, a las dos | Se corren y la hoja se completa con el recall y el 44 % por modelo |
-| solo el contraste | La ficha de la curada queda con la validación cruzada como única cifra |
-| no | El recall queda con el cruce del 10-sep (`PLAN.md` §2.4) |
+**Lo que falta preguntar:**
+1. **¿Se puede usar Bedrock?**
+   - Por omisión, no: todo corre local, con Ollama en el servidor, y ningún
+     juez es Claude.
+   - Si lo autoriza, Ouroboros podría comparar contra un modelo grande. Hoy no
+     hace falta.
+2. **¿Se publican las oraciones de evidencia y los juicios del experto?**
+   - Por omisión, no: hasta decidirlo, los juicios no van al repositorio
+     público. Lo publicable son las cifras.
+   - Si lo autoriza, se puede versionar la hoja anotada con sus oraciones,
+     que son del corpus público.
 
 ---
 
@@ -151,8 +191,31 @@ contra v2 es exploratoria (`protocolo-curada-v1.md:245-248`).
 - **Lo medido:** de las 572 marcas `es_tf`, 29 traen `collectf` y ninguna
   depende solo de esa fuente, así que excluirla cambia 0 marcas.
 
-**d) El contraste**, con el método de `docs/contraste-curada.md`. Las cifras
-llegan con el permiso del §4.
+**d) El contraste**, con el método de `docs/contraste-curada.md`, corrido el
+23-oct.
+- **Denominador: 2 077 exigibles.** Son 1 562 en el corpus (859 con XML y 703
+  solo abstract) y 46 de autorregulación.
+  - PLAN §2.4 daba 2 003. La conciliación es 2 077 = 2 003 − 6 + 80.
+  - Las 6 son filas sin dos locus válidos (5 578 de 5 584).
+  - Las 80 se explican porque `motivo_de` excluye una fila solo si **todos**
+    sus PMIDs están en el archivo de exclusiones: son 651 frente a 731.
+- **Cobertura del bronce:**
+  - regla b) con XML, 30.2 % (259/859) [27.2, 33.3];
+  - 24.8 % sin la expansión de operones;
+  - regla a), 43.1 % en todas.
+- **La red:**
+  - **dirigido,** sin el estrato BioBERT, 41.2 % (642/1 560) [38.7, 43.6];
+  - **orientación,** 95.3 % (642/674);
+  - **el signo,** cuando lo da, acierta 319/366 [83.3, 90.2], y el 39.5 % de
+    las dirigidas con signo se queda sin él;
+  - **candidatas nuevas:** 7 849 pares que la base no registra, reportados como
+    candidatas y no como hallazgos.
+- **Pendiente en el servidor** (fase 2):
+  - la línea base «siempre activa» sobre las 366 y las 605;
+  - el techo de la regla a) en el estrato sin BioBERT;
+  - la red recomendada;
+  - la medición de tablas en los 5 artículos con más filas, que reúnen 672 de
+    las 2 077.
 
 **e) La evidencia de PA14 se anota como cualquier otra, con su cepa en el comentario.**
 - **Decidí eso porque** es *P. aeruginosa* (rúbrica, paso 5 del árbol), y la
@@ -187,12 +250,17 @@ llegan con el permiso del §4.
 - **Si prefiere la recomendada como red oficial,** las reglas ya son
   parámetros (`grn_red.cli consolidar`). Falta que el paquete y la evaluación
   lean `red_recomendada.tsv`, que es un cambio pequeño en `flujo.py`.
+- **Su contraste está pendiente.** Hoy `contraste --red` se detiene con las
+  aristas expandidas, que no tienen evidencia propia; se arregla en la fase 2.
+  Ninguna cifra suya se escribe hasta medirla.
 
 **g) El modelo del flujo sigue siendo el de *E. coli*.**
 - **Decidí eso porque** ninguna versión curada cumple el criterio 2 de la
   enmienda 1 (tabla del §3).
 - **El signo se decide con la muestra ciega:** `precision-ciega` mide el del
-  bronce y el de la red contra el anotador.
+  bronce y el de la red contra el anotador. En la tanda 1, la red acierta 42/48
+  cuando da signo. El signo léxico y el voto por artículo entran como
+  parámetros apagados (§5 j), y se miden en la tanda 2.
 - **Si prefiere** otro modelo: `flujo.py --modelo <checkpoint>`. Toda la
   cadena se rehace por huella.
 
@@ -211,6 +279,31 @@ llegan con el permiso del §4.
 
 **i) El LLM sobre la oración pasa a la tesis**, con su puerta de decisión
 (`plan-tesis-plata-llm.md`). En el servicio social no se usa EC2.
+- **Ouroboros v0 se adelanta como comparación exploratoria:** un CLI aparte, en
+  el servidor, con qwen3:8b local y fuera del flujo y de la red.
+- **Decidí** las herramientas apagadas por omisión y la corrida principal sin
+  think, con T = 0. Con think, T = 0.6, como secundaria.
+- **Si prefiere** que juzgue con herramientas: `--herramientas todas`. La
+  corrida queda como secundaria, porque un juez que sabe más que el experto
+  deja de medir lo mismo (`decisiones.md`).
+
+**j) El signo de la red como parámetro, apagado por omisión.**
+- **Decidí** el voto léxico por evidencia como regla principal, que es la
+  lectura literal de «cuando la predicción sea `regulates`». La variante por
+  arista, que solo toca las aristas que `red.py` dejó `regulates`, va como
+  secundaria.
+- **Voto por artículo:** solo en las aristas con votos + y −.
+- **Si prefiere otra,** se cambia `--signo-lexico` en `grn_red.cli
+  consolidar`. Ninguna toca la red oficial.
+- **Las cifras salen de la tanda 2,** con la abstención como error y contra
+  «siempre +» sobre la misma base.
+
+**k) La tanda 1 es de desarrollo y la tanda 2 de prueba.**
+- **Decidí eso porque** la tanda 1 ya se vio. Una regla nueva ajustada mirándola
+  inflaría su cifra (rúbrica, enmienda 2).
+- **Cómo:** la tanda 2 excluye los PMIDs y los códigos de la tanda 1, y nada se
+  ajusta mirándola. Para el bronce y la red por omisión, que se fijaron antes,
+  la tanda 1 sí es de prueba.
 
 ---
 
@@ -239,12 +332,19 @@ llegan con el permiso del §4.
   57.7]) del bronce, juzgada a mano; con el BioBERT de *E. coli* y umbral,
   16/37 = 43.2 %: el filtro no la sube» (`PLAN.md:89`, `PLAN.md:180`).
 - No «la base curada tiene ~3 500 interacciones». Sí: «5 584 filas, de las
-  que 2 003 son exigibles al pipeline».
+  que 2 077 son exigibles con la regla versionada (2 003 en PLAN §2.4)».
+- No «el signo de la red acierta 87.2 %» sin su base. Sí: «319/366 cuando da
+  signo; con la abstención como error, 319/605». «Siempre activa», sobre la
+  misma base, está por medirse.
+- No «la precisión subió del 44 % al 53 %». Sí: «53.0 % [46.1, 59.9] en la
+  tanda 1, contra 44.0 % [31.2, 57.7] en las 50. Son muestras distintas y los
+  intervalos se solapan».
+- No «la red es más precisa» sin la retención. Sí: «61.3 % contra 53.0 %, con
+  la diferencia pareada en [+3.7, +12.6], y retiene el 82.9 % de las
+  verdaderas».
 - No «el LLM saca 91.4 % y por eso va el multiagente». Sí: «91.4 % en 93
   oraciones difíciles de un solo subsistema; para decidir si entra hace falta
   una puerta que no cabe en el servicio social» (decisión i).
-
----
 
 ---
 
@@ -252,8 +352,9 @@ llegan con el permiso del §4.
 
 | cuándo | qué | depende de |
 |---|---|---|
-| al arrancar la anotación | sesión de calibración con las 21 sintéticas y la rúbrica v1.1 congelada | — |
-| unas 6 horas de anotación | los 200 ítems, por la pestaña «Revisión» o por la hoja CSV | la calibración |
-| al terminar | `precision-ciega` sobre lo anotado: bronce, red y retención | la anotación |
-| con su permiso | el contraste y el 44 % con los tres modelos, en el servidor | §4 |
+| hoy | «Calibración 2»: 12 ítems, unos 30 minutos (`calibracion-anotacion.md` v1.2) | — |
+| unas 6 horas de anotación | la tanda 2, en la pestaña «Revisión», con el tiempo por ítem | la calibración 2 |
+| en el servidor (Hermes) | «siempre activa», techo de la regla a), la red recomendada, las tablas, y la precisión de v1 y v2 sin su entrenamiento (`docs/servidor-cierre.md`) | la fase 2 |
+| antes de evaluar la tanda 2 | `docs/protocolo-tanda2.md`: qué se mide y con qué reglas, commiteado | las fases 3 y 4 |
+| al terminar la tanda 2 | `precision-ciega` sobre la tanda 2: bronce, red, el signo como parámetro y Ouroboros | la tanda 2 |
 | noviembre | el informe del servicio social | todo lo anterior |

@@ -599,3 +599,40 @@ a ver alguna cifra de la muestra.
   «El LLM sobre la oración es trabajo de tesis»). La reunión del 23-oct se
   canceló, así que la rúbrica se entrega con estos valores por omisión
   (`reunion-asesor-23oct.md`).
+
+**Enmienda 2, 23-oct-2026, posterior a ver las cifras de la tanda 1.**
+- **Qué cambia:**
+  - **Hay dos tandas de 200.** La tanda 1 (`salidas/revision/muestra200`,
+    semilla 20261024) pasa a ser de **desarrollo**. La tanda 2
+    (`salidas/revision/muestra200_t2`, semilla 20261023) es de **prueba**:
+    - sale de la misma población;
+    - excluye los PMIDs y los códigos de la tanda 1
+      (`cli muestra --excluir-muestra`), para que ningún artículo esté en las
+      dos.
+  - **Toda regla nueva se reporta en la tanda 2,** que se pre-registra en
+    `docs/protocolo-tanda2.md` antes de evaluar. Nada se ajusta mirándola.
+  - **La tanda 2 se anota en la página de revisión** (`servidor.py
+    --revision`), que valida los códigos y registra el tiempo por ítem. Antes,
+    la sesión «Calibración 2» de `calibracion-anotacion.md` v1.2.
+- **Qué no cambia:** ninguna regla. Las cuatro desviaciones de la tanda 1 ya
+  eran reglas de la v1:
+  - `?` y no `0` (§3.5);
+  - `ninguna` en los `no` (§4);
+  - la relación negada se anota `no` (§3.6);
+  - «activates» sin mecanismo va `no_se` (§3.3).
+
+  Desde ahora la página rechaza `si` con `negada = si`; `dudoso` con
+  `negada = si` (F5) sigue valiendo.
+- **Desviaciones de protocolo en la tanda 1, declaradas:**
+  - se anotó sin calibración previa y en la hoja CSV, así que **no hay
+    tiempos**, ni siquiera por bloque, que la enmienda 1 pedía como mínimo;
+  - las fallas de código se normalizaron solo como código, con el original
+    guardado: 46 direcciones vacías pasaron a `ninguna` y 43 signos `0` a `?`;
+  - las 5 negadas anotadas `si` se reportan con una sensibilidad que las
+    trata como `no`.
+- **Para qué sirve la tanda 1:** el bronce y la red por omisión se fijaron
+  antes de ella, así que para ellos esa tanda sí es de prueba. Para cualquier
+  regla posterior (el signo como parámetro, la dirección, el prompt de
+  Ouroboros) es de desarrollo.
+- **Por qué:** se medirán reglas nuevas, y una regla ajustada mirando la misma
+  muestra con la que se reporta infla su cifra. La tanda 1 ya se vio.

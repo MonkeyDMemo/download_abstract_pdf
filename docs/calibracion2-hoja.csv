@@ -1,0 +1,13 @@
+﻿id_item,oracion,entidad_1,entidad_2,relacion,direccion,signo,tipo,negada,especulativa,comentario
+c07,"AlgU binds directly upstream of mucA and activates its transcription, as shown by ChIP and EMSA.",AlgU,mucA,,,,,,,
+c22,rhlI transcription is regulated by MvaU in a growth-phase dependent manner.,rhlI,MvaU,,,,,,,
+c10,Deletion of pprB did not alter cupE1 transcription in planktonic cultures.,pprB,cupE1,,,,,,,
+c25,QscR represses phzA1 transcription during exponential growth.,QscR,phzA1,,,,,,,
+c01,RpoN is not the only sigma factor needed for pilA expression.,RpoN,pilA,,,,,,,
+c24,"Contrary to earlier reports, we found no evidence that RsmA controls rhlR expression.",RsmA,rhlR,,,,,,,
+c09,Transcriptome analysis placed hcnB among the genes under the control of Anr.,hcnB,Anr,,,,,,,
+c26,pqsA transcription was undetectable in a pqsR deletion mutant.,pqsA,pqsR,,,,,,,
+c16,"NorR bound a site upstream of norC in EMSA, yet norC mRNA levels did not differ between the wild type and a norR mutant.",NorR,norC,,,,,,,
+c27,PhoB activates phoA transcription when phosphate is limiting.,PhoB,phoA,,,,,,,
+c11,NarL activated narK1 but not nirS under anaerobic conditions.,NarL,nirS,,,,,,,
+c23,The anr and dnr genes are located in different regions of the PAO1 chromosome.,anr,dnr,,,,,,,

@@ -115,6 +115,18 @@ cualquier particion en la que detecte esa contaminacion. El panorama esta en
   numpy 2 de torch; se declara en el extra `[bronce-nlp]` y se invoca por
   subproceso (`python -m grn_bronce.cli sintaxis`), como `clasificar.py`. Sin
   ese entorno, el flujo marca el paso como omitido y sigue.
+- **`grn_ouroboros/` puede usar Strands, y nada mas fuera de el.** Es una
+  excepcion explicita del usuario (23-oct-2026; `docs/decisiones.md`, entrada
+  de Ouroboros v0), y queda aislada en ese paquete.
+  - **Paquetes aprobados:** `strands-agents[ollama]`, `strands-agents-evals`,
+    el cliente `ollama` y pydantic, con versiones fijas.
+  - **Donde corre:** en `.venv-ouroboros`, con Python 3.10 o mas, en el
+    servidor, porque Ollama vive ahi. El extra es `[ouroboros]`.
+  - **Que no se cruza:** el nucleo no importa `grn_ouroboros`, y el paquete
+    importa sus terceros dentro de las funciones. Asi las pruebas del
+    repositorio pasan sin ellos.
+  - **El juez nunca es Claude:** el modelo va siempre explicito, y una prueba
+    falla si se construye uno de Bedrock.
 
 La excepcion no es una puerta abierta: lo que se apoya en un tercero deja de
 correr donde no se puede instalar. Los CSV son el producto canonico de toda
@@ -212,6 +224,32 @@ barata de romper algo sin enterarse.
   estan bajo deny en `.claude/settings.local.json`. Lo que se publica es
   `RESULTADOS.md`, no la salida de la terminal. Ver
   `docs/entrenamiento-curada.md`.
+- **Hermes** es la sesion de Claude del usuario que opera el servidor del
+  asesor por SSH con llave, con el VoBo del asesor del 23-oct-2026.
+  - Trabaja solo en `~/grn-guillermo`, con las mismas reglas de este archivo.
+  - Corre los comandos de `docs/servidor-cierre.md`, incluidos los que leen la
+    base curada (`contraste`, `tablas`, `precision-ciega --particion`), y
+    reporta solo conteos e informes filtrados.
+  - Nunca abre la base, `datos/`, `runs/`, las carpetas `--confidencial` ni
+    los juicios del experto.
+  - El host, la cuenta y la llave no se escriben en el repositorio.
+- **Nada se ajusta mirando `cobertura_por_fila.tsv` ni
+  `candidatas_nuevas.tsv`.** Son lo que el contraste deja, fila por fila, en
+  la carpeta confidencial. Ninguna regla, umbral, entrada del diccionario,
+  regla de consolidacion ni prompt se cambia por lo que digan. Si se ajusta
+  mirando la referencia, la cifra mide la referencia y no el pipeline.
+- **Los juicios del experto no van al repositorio publico** hasta que se
+  decida si se publican las oraciones. Eso cubre:
+  - las hojas anotadas, `anotaciones*` y sus normalizaciones;
+  - las salidas de Ouroboros sobre las tandas.
+
+  Viven en `salidas/`, que esta ignorado, y con respaldo en el servidor. No
+  se copian a docs, pruebas, prompts ni mensajes. Lo publicable son las cifras.
+- **La tanda 2 es ciega para toda sesion de Claude, la principal y Hermes,
+  hasta evaluarla.** Esas sesiones escriben las reglas y el prompt que se van a
+  medir. Ninguna abre la hoja de la tanda 2 ni lo que Ouroboros diga de ella.
+  Los programas la leen; las sesiones solo ven sus conteos, y solo despues de
+  commitear `docs/protocolo-tanda2.md`.
 
 ## Estructura
 
@@ -654,7 +692,8 @@ completo y donde deja el zip son rutas del servidor.
 
 La quinta es la revisión ciega: `/api/revision/...` (cola, ítem, inicio,
 guardado y `exportar`). La carpeta sale de `--revision` al arrancar, nunca de
-una petición; de ella se lee **solo `hoja_tanda1.csv`** y se anexa
+una petición; de ella se lee **solo `hoja_tanda1.csv`** (una carpeta por
+tanda: la tanda 2 vive en `muestra200_t2/` con su propia `hoja_tanda1.csv`) y se anexa
 `anotaciones.jsonl` (gana el último guardado de cada ítem), y `exportar`
 entrega `anotaciones_exportadas.csv`. La llave, los dobles y el resumen viven
 al lado y `revision.py` no los nombra: la página ve id, oración y las dos
@@ -770,8 +809,9 @@ Las pruebas que no pueden faltar:
   en una carpeta propia (`~/grn-guillermo`, clon por git) y `GRN_DATOS` fuera
   del repositorio. No se tocan las carpetas ajenas, ni `~/pseudomonas-trn`, ni
   el ambiente `pseudoRE` del asesor: se usan para correr, sin instalar nada en
-  ellos. Los comandos los corre el usuario por SSH o, desde el 9-oct-2026,
-  una sesion de Claude abierta en `~/grn-guillermo` (ver Confidencialidad).
+  ellos. Los comandos los corre el usuario por SSH, desde el 9-oct-2026 una
+  sesion de Claude abierta en `~/grn-guillermo`, y desde el 23-oct-2026 Hermes,
+  con la guia `docs/servidor-cierre.md` (ver Confidencialidad).
   **El servidor no tiene tmux ni screen**: lo largo se lanza con
   `reentrenar correr --desprender`, que corre en su propia sesion y sobrevive
   a un corte de SSH. **El host y la cuenta no se escriben en el repositorio,

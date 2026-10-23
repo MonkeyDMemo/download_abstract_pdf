@@ -224,9 +224,13 @@ por su mensaje filtrado, o solo por su tipo, y nunca como traceback.
 
 ## Cómo correrlo
 
-Lo corre el usuario. Una sesión de Claude no lo lanza: prueba el código con
-la base sintética de `grn_verificacion/test_contraste.py` y lee solo el
-informe. Nadie abre la carpeta confidencial en una sesión.
+Lo corre el usuario o, desde el 23-oct-2026, Hermes, la sesión de Claude del
+usuario en el servidor, que entra por SSH con llave y tiene el VoBo del asesor.
+Lo hace con los comandos de `docs/servidor-cierre.md` y reporta solo el informe
+filtrado. La sesión de la laptop no lo lanza: prueba el código con la base
+sintética de `grn_verificacion/test_contraste.py` y lee solo el informe. Nadie
+abre la carpeta confidencial en una sesión, ni ajusta nada mirando lo que hay
+en ella (`CLAUDE.md`, Confidencialidad).
 
 Antes de darle la base, las pruebas con el mismo intérprete. Son datos
 sintéticos y no leen la base:

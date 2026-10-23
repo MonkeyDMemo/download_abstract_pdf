@@ -8,6 +8,120 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 23 de octubre de 2026 — resultados del contraste y de la tanda 1, y el diseño de desarrollo y prueba
+
+La reunión se canceló y el servicio social se entrega con decisiones por
+omisión. Las instrucciones del día están en un mensaje del usuario; se revisó
+contra el código antes de ejecutarlo.
+
+**Lo que subió Hermes** (la sesión de Claude del usuario en el servidor, por
+SSH con llave y con el VoBo del asesor del 23-oct):
+- `f7ac777`: en `revision.py`, `segundos` suma los tramos de inicio a
+  guardado. Un guardado sin inicio propio ya no borra el tiempo medido.
+- `13c24a4`: `precision_ciega` cuenta y reporta `items_sin_tiempo`.
+- `09d2a13`: el merge.
+- Con eso la raíz da 1 308 pruebas en verde.
+
+**Contraste con la base curada** (`salidas/contraste/CONTRASTE.md`, del
+23-oct; corrió en el servidor):
+- **La base** coincide en los 14 conteos de PLAN §2.4.
+- **El denominador versionado es 2 077:** 1 562 en el corpus (859 con XML y
+  703 solo abstract) y 46 de autorregulación.
+- **La conciliación con los 2 003 de PLAN** es 2 077 = 2 003 − 6 + 80.
+  - **Las 6:** el lector cuenta 5 578 filas con dos locus válidos frente a 5
+    584 con valores; las 6 son `locus_invalido`.
+  - **Las 80:** `motivo_de` excluye una fila solo si todos sus PMIDs están en
+    el archivo (651 frente a 731) y pone la homología primero.
+  - **Lo que falta medir:** el reparto exacto de las 80, con conteos en el
+    servidor.
+- **Cobertura, con expansión de operones:**
+  - regla a), 43.1 % en todas y 45.3 % con XML;
+  - **regla b), 17.6 % en todas y 30.2 % con XML (259/859) [27.2, 33.3]**;
+  - regla b) sin expansión, con XML, 24.8 %.
+- **La red: 8 827 aristas, 8 700 llevadas a locus.**
+  - **Dirigido, sin el estrato BioBERT: 41.2 % (642/1 560) [38.7, 43.6]**.
+    Solo al revés, 2.1 %. El estrato BioBERT es circular y va aparte, con
+    30.2 %.
+  - **Orientación:** 95.3 % (642/674).
+  - **Signo:** de 605 dirigidas con signo en la base, 319 coinciden, 47
+    contradicen, 155 son `regulates` y 84 mixtas. Cuando la red da signo
+    acierta 319/366 [83.3, 90.2], y el 39.5 % se queda sin signo.
+  - **Ojo:** «87.2 %» ya significa otra cosa en PLAN.md:111, así que esta cifra
+    se escribe siempre 319/366.
+- **7 849 candidatas nuevas.** Se reportan como candidatas, no como hallazgos.
+- **Concentración:** 5 artículos reúnen 672 de las 2 077 (32.4 %), así que
+  los intervalos son optimistas.
+
+**El 44 % sobre las 50 juzgadas, con los tres modelos:**
+
+| modelo | precisión del filtro | IC 95 % | correctas que retiene |
+|---|---:|---|---:|
+| *E. coli* | 16/37 = 43.2 % | | 16 de 22 |
+| curada v1 | 5/9 = 55.6 % | [26.7, 81.1] | 5 de 22 |
+| curada v2 | 16/28 = 57.1 % | [39.1, 73.5] | 16 de 22 |
+
+- **Signo de la v2:** 9/12 = 75 %, contra 73.3 % de «siempre +».
+- **La v2 se eligió después de ver las 50**, así que es exploratoria.
+- **La línea base no tiene la misma base:** 73.3 % no puede ser k/12.
+
+**Precisión ciega, tanda 1** (el experto, con la red de *E. coli*). El JSON está
+en `salidas/revision/muestra200/`, ignorado por git y respaldado en el
+servidor.
+- **Lo anotado:** 198 de 200, de 152 PMIDs: `si` 144, `dudoso` 23 y `no` 31.
+- **Bronce: 53.0 % (105/198) [46.1, 59.9]** con dirección; 72.7 % sin
+  exigirla.
+- **Red: 61.3 % (87/142) [53.1, 68.9]** con dirección; 77.5 % sin exigirla.
+- **La diferencia pareada,** red menos bronce, es **[+3.7, +12.6]** puntos,
+  por bootstrap.
+- **Retención:** 71.7 % del total y **82.9 % de las verdaderas (87/105)**.
+- **Inversiones:** 39 de 144 (27.1 %) [20.5, 34.9]. Es la pérdida más
+  grande.
+- **Signo de la red:** acierta 42/48 = 87.5 % cuando lo da, y 42/60 = 70.0 %
+  si la abstención cuenta como error. La comparación es contra 70.7 % de
+  «siempre +».
+  - **Esas dos cifras no salen de la misma base:** 70.7 % no puede ser k/60.
+  - Hasta recalcularla sobre los mismos ítems (P4), no se concluye que el
+    signo de la red empate con «siempre +».
+- **Normalización, solo de códigos:** 46 direcciones vacías pasaron a
+  `ninguna` y 43 signos `0` a `?`. El original se conserva.
+- **Sensibilidad,** con las 5 negadas anotadas `si` tratadas como `no`: bronce
+  51.0 %, red 59.9 %, diferencia [+4.3, +13.2]. La conclusión no cambia.
+- **Sin tiempos,** porque se anotó en la hoja. Un solo anotador, sin κ.
+
+**El diseño desde hoy** (rúbrica, enmienda 2; `decisiones.md`):
+- **La tanda 1 es de desarrollo y la tanda 2 de prueba.** Toda regla nueva se
+  reporta en la tanda 2, y nada se ajusta mirándola.
+- **La tanda 2 sale de la misma población**, excluyendo los PMIDs y los
+  códigos de la tanda 1. La semilla, 20261023, se fija aquí, antes de
+  sortear.
+- **Antes de anotar, la «Calibración 2»:** 12 ítems y unos 30 minutos, sobre
+  las cuatro desviaciones de la tanda 1 (`calibracion-anotacion.md` v1.2, con
+  c22 a c27).
+- **Se anota en la página**, que desde hoy rechaza `si` con negada = sí.
+
+**Revisión del mensaje antes de ejecutarlo.** Lo que se corrigió:
+- la línea base «siempre +» se calcula sobre la misma base que la cifra con
+  la que se compara;
+- la página bloquea la negada marcada `si`;
+- los códigos de `id_item` no chocan entre tandas;
+- el signo de la red en `precision_ciega` se toma por (par, oración);
+- `contraste --red` hoy se detiene con las aristas expandidas;
+- la prueba con abstracts nuevos filtra por fecha de alta y no de
+  publicación;
+- el congelamiento se hace al final.
+
+**Decisiones del usuario sobre Ouroboros** (ver `decisiones.md`):
+- **Es un CLI aparte,** fuera del flujo.
+- **Las cinco herramientas van apagadas por omisión,** con un límite de
+  tiempo.
+- **La corrida principal** va sin think, a T = 0. La secundaria va con think,
+  a T = 0.6.
+
+**Abierto:**
+- el sorteo y la sesión de calibración 2;
+- las fases 2 a 4: mediciones en el servidor, el signo como parámetro y
+  Ouroboros.
+
 ## 22 de octubre de 2026 — el sorteo de la muestra ciega, la tesis al día y la pregunta de operones reescrita
 
 - **`grn_verificacion/muestra.py`**, con el subcomando `cli muestra`, sortea la

@@ -1616,3 +1616,96 @@ Además, los modelos abiertos del plan no son ese LLM.
 
 **Lo que queda opcional antes del 4-nov:** el LLM sobre las mismas 200, como
 comparación exploratoria, sin puerta y declarado así en el informe.
+
+## La tanda 1 es de desarrollo y la tanda 2 de prueba, sin artículos compartidos
+
+Decidido el 23-oct-2026, después de ver las cifras de la tanda 1 (rúbrica,
+enmienda 2).
+
+- **La tanda 1 ya se vio.** Una regla nueva ajustada mirándola (el signo como
+  parámetro, una regla de dirección, el prompt de Ouroboros) inflaría su cifra
+  si se reportara con la misma tanda.
+- **La tanda 2 sale de la misma población que la tanda 1 y que el 44 %:** las
+  oraciones con regulador y blanco de la corrida 4, con las mismas reservas.
+- **Se excluyen los PMIDs de la tanda 1, y no solo sus oraciones.** Si un
+  artículo cae en las dos, la tanda 2 deja de ser una prueba independiente:
+  su redacción y sus pares ya se vieron. Es la misma regla de partición por
+  PMID del entrenamiento con la base curada.
+- **También se excluyen sus códigos de `id_item`.** Con códigos de 4 dígitos,
+  dos sorteos de 200 comparten unos 4 en promedio, y la probabilidad de que
+  no compartan ninguno es de 1 %. Un mismo código en las dos tandas confunde
+  cualquier análisis conjunto.
+- **La semilla de la tanda 2, 20261023, se escribió en la bitácora antes de
+  sortear.**
+- **Los PMIDs del entrenamiento de las curadas v1 y v2 no se excluyen al
+  sortear,** porque esa lista es confidencial y vive en el servidor. Salen en
+  el análisis: `precision-ciega --particion`.
+
+## Ouroboros v0: un CLI aparte, con las herramientas apagadas y sin think en la corrida principal
+
+Decidido por el usuario el 23-oct-2026. Concilia «El LLM sobre la oración es
+trabajo de tesis» (22-oct), que dejaba abierta una comparación exploratoria,
+sin puerta y declarada así.
+
+- **Fuera del flujo.** `grn_ouroboros` es un CLI que corre en el servidor, donde
+  vive Ollama. Un paso del flujo en la laptop se saltaría siempre. Nada de la
+  red ni de la entrega depende de él.
+- **Su salida lleva exactamente las columnas de la hoja del experto.** Así el
+  acuerdo se calcula con el mismo lector que valida la rúbrica
+  (`precision_ciega.leer_anotacion`). Lo demás (fragmento, motivo, tiempos,
+  huellas) va en archivos aparte.
+- **Herramientas.**
+  - Las cinco (`buscar_locus`, `es_tf`, `operon_de`, `funcion_anotada` y
+    `contexto`) se implementan y se prueban, pero van apagadas por omisión.
+  - El motivo: el experto juzga solo la oración (rúbrica §2). `es_tf` empuja
+    justo a la heurística que el §3.4 prohíbe y que explica las inversiones.
+    Un juez que sabe más que el experto deja de medir lo mismo.
+  - La corrida con herramientas es secundaria y pre-registrada. Contesta si el
+    conocimiento cambia el veredicto o reproduce los errores del bronce.
+  - Con límite de tiempo: si hay atraso, solo `buscar_locus`, y las otras
+    cuatro pasan a la tesis.
+- **Decodificación.**
+  - La principal va sin think, con T = 0 y semilla fija. La secundaria va con
+    think, T = 0.6, top_p 0.95 y top_k 20, lo que recomienda Qwen: con T = 0 y
+    think se degrada y entra en repeticiones.
+  - La reproducibilidad no depende de T = 0. La da la caché con la huella de
+    todas las entradas.
+  - Las dos llevan un tope de tokens de salida (`num_predict`).
+  - Una respuesta truncada o sin JSON válido es abstención, y la abstención
+    cuenta como error. Se fija antes de correr.
+  - El `num_ctx` de la corrida con think es 8 192. Si no cabe en los 8 GB
+    compartidos, se comprime la caché con `OLLAMA_KV_CACHE_TYPE=q8_0` antes
+    de recortarlo; lo mide Hermes en la calibración. Si sobra tiempo, la
+    corrida con think se repite con tres semillas.
+- **El juez nunca es Claude.**
+  - Sin modelo explícito, Strands y Strands Evals caen en Bedrock con Claude
+    sin avisar. Una prueba falla si se construye un `BedrockModel`.
+  - No se usa `OutputEvaluator`. Los evaluadores son propios y deterministas.
+- **Dependencias.** Strands (`strands-agents[ollama]==1.62.0`),
+  `strands-agents-evals==1.7.0`, el cliente `ollama==0.6.3` y pydantic son una
+  excepción explícita del usuario. Viven solo en `grn_ouroboros`, en
+  `.venv-ouroboros` (Python ≥ 3.10) en el servidor. El núcleo no los importa,
+  y las pruebas del repositorio pasan sin ellos.
+- **El prompt** se ajusta solo con los ítems de calibración, que son
+  sintéticos y escritos con Claude, y con la tanda 1 si hace falta. Se congela
+  con un commit antes de correr sobre la tanda 2.
+
+## El signo de la red como parámetro: dos alcances del voto léxico y el voto por artículo
+
+Decidido por omisión el 23-oct-2026; se mide solo en la tanda 2.
+
+- **Por omisión, apagado:** la red oficial sigue siendo la de `red.py`, byte a
+  byte.
+- **El voto léxico tiene dos alcances, y los dos son valor del parámetro:**
+  - **Por evidencia, el principal.** Toda evidencia cuya predicción sea
+    `regulates` vota con el signo del control léxico. Es la lectura literal
+    de «cuando la predicción sea regulates».
+  - **Por arista, el secundario.** Solo vota en las aristas que `red.py` dejó
+    `regulates`, para no tocar las que ya tienen signo de BioBERT, que
+    aciertan 42/48 en la tanda 1.
+- **«Mixta» es una arista con votos + y −.** Es la que el voto por artículo
+  decide: cada artículo vota con la mayoría de sus oraciones. El «mixto» del
+  contraste es otra cosa: un par cuyas aristas, con distintas formas de
+  nombre, no dicen lo mismo.
+- **Cómo se reporta:** con abstención como error y frente a «siempre +» sobre
+  la misma base. Cada regla también sola.

@@ -11,6 +11,34 @@ Es una foto con fecha, no un segundo tablero. El estado de cada punto se lleva
 en `PLAN.md`: cuando algo se cierre, se marca allá y en la bitácora. Los
 números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
 
+**Lo que cambió el 23-oct-2026** (detalle en la bitácora de ese día):
+
+- **Cerrados:**
+  - 7.2 [12] y [14]: el contraste corrió en el servidor. El denominador
+    versionado es 2 077 (conciliado con 2 003), la regla b) con XML da 30.2 %
+    y la red dirigida 41.2 %. Hay 7 849 candidatas nuevas.
+  - 7.3 [33]: el 44 % con los tres modelos (PLAN §2.3).
+  - 7.6: la tanda 1 de la muestra ciega está anotada (PLAN §2.5).
+- **Avanzados:**
+  - 2.3 [30]: 39 de 144 inversiones en la tanda 1 (27.1 %). Es la pérdida
+    más grande; las reglas se proponen con la tanda 1 y se miden en la 2.
+  - 2.1 [18]: el voto léxico y el voto por artículo entran como parámetros
+    apagados de `consolidar`.
+- **Nuevos:**
+  - sortear y anotar la tanda 2 (de prueba), en la página, con la calibración 2
+    antes;
+  - las mediciones del servidor: «siempre activa» sobre las 366 y las 605, el
+    techo de la regla a), el contraste de la red recomendada, la medición de
+    tablas, y la precisión de v1 y v2 sin su entrenamiento;
+  - recalcular la línea base «siempre +» del signo sobre los mismos ítems
+    (70.7 % no sale de la misma base que 70.0 %);
+  - Ouroboros v0, exploratorio y fuera del flujo;
+  - `docs/protocolo-tanda2.md` antes de evaluar la tanda 2;
+  - la prueba con abstracts nuevos: protocolo, `verificar-contaminacion` y el
+    congelamiento;
+  - preguntar al asesor dos permisos: Bedrock (por omisión no) y publicar las
+    oraciones con los juicios (por omisión no).
+
 **Lo que cambió el 21 y el 22-oct-2026** (detalle en la bitácora de esos días):
 
 - **Cerrados:**
