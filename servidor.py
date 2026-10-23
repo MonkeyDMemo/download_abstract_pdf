@@ -37,6 +37,7 @@ import webbrowser
 from pathlib import Path
 
 import flujo
+import revision
 from grn_bronce import rutas
 from grn_etl import credenciales, db, etl, exportar, pubmed, trabajos
 
@@ -129,11 +130,16 @@ class Contexto:
              exportaciones). Mismo criterio que 'salida': de ahí se sirven
              descargas y ahí escribe el trabajo de exportar, así que sale
              de la línea de comandos y jamás de una petición.
+    revision: carpeta de la muestra para la revisión ciega (--revision),
+             absoluta, o None si el tablero arrancó sin ella. De ahí se lee
+             solo hoja_tanda1.csv y ahí se anexan las anotaciones; la llave
+             vive al lado, y por eso la carpeta nunca llega por HTTP.
     """
 
     def __init__(self, con, gestor, cliente=None, salida=None,
                  correo_explicito=None, al_cambiar_cliente=None,
-                 flujo_raiz=None, datos=None, exportaciones=None):
+                 flujo_raiz=None, datos=None, exportaciones=None,
+                 revision=None):
         self.con = con
         self.gestor = gestor
         self.cliente = cliente
@@ -141,6 +147,7 @@ class Contexto:
         self.flujo_raiz = flujo_raiz or flujo.RAIZ_FLUJO
         self.datos = datos
         self.exportaciones = exportaciones or exportaciones_por_omision(datos)
+        self.revision = revision
         # El Contexto se arma de nuevo en cada peticion, asi que un cliente
         # nuevo tiene que subir a quien lo guarda entre peticiones o se
         # perderia al terminar esta. El callable lo pone la capa HTTP; en
@@ -882,6 +889,110 @@ def _archivo_exportacion(ctx, nombre):
     return 200, Archivo(ruta, exportar.tipo_mime(nombre), descarga_como=nombre)
 
 
+# --------------------------------------------------------------- revisión
+
+def _carpeta_revision(ctx):
+    if not ctx.revision:
+        raise ErrorPeticion(
+            404, "La revisión no está activa: arranca el tablero con "
+                 "--revision <carpeta de la muestra>.")
+    return ctx.revision
+
+
+def _cola_revision(ctx):
+    """(carpeta, ítems, anotaciones vigentes), con la hoja ya validada.
+
+    La hoja se relee en cada petición: son 200 filas, y así un tablero
+    abierto nunca sirve una hoja vieja si alguien la regeneró.
+    """
+    carpeta = _carpeta_revision(ctx)
+    raiz = Path(carpeta)
+    if not (_dentro_de(raiz, Path(revision.ruta_hoja(carpeta)))
+            and _dentro_de(raiz, Path(revision.ruta_anotaciones(carpeta)))):
+        raise ErrorPeticion(404, "La carpeta de revisión no es válida.")
+    try:
+        items = revision.leer_cola(carpeta)
+    except revision.HojaAusente as e:
+        raise ErrorPeticion(404, str(e))
+    except revision.HojaInvalida as e:
+        raise ErrorPeticion(500, str(e))
+    return carpeta, items, revision.anotaciones(carpeta)
+
+
+def _avance(items, vigentes):
+    return {"hechos": sum(1 for i in items if i["id_item"] in vigentes),
+            "total": len(items)}
+
+
+def _item_revision(ctx, id_item):
+    """(carpeta, ítem, ítems, vigentes). El id se valida antes de buscarlo:
+    nunca toca una ruta, pero un 400 dice mejor que un 404 que vino mal
+    escrito."""
+    if not revision.id_valido(id_item):
+        raise ErrorPeticion(
+            400, "El id del ítem tiene que tener la forma m-NNNN.")
+    carpeta, items, vigentes = _cola_revision(ctx)
+    for item in items:
+        if item["id_item"] == id_item:
+            return carpeta, item, items, vigentes
+    raise ErrorPeticion(404, f"No hay un ítem {id_item} en la hoja.")
+
+
+def _vista_item(item, vigentes):
+    """Lo que la página puede ver de un ítem: la hoja y nada más. Se arma
+    campo por campo, no copiando el dict, para que una columna nueva de la
+    hoja no llegue a la anotadora sin que alguien lo decida aquí."""
+    return {"id_item": item["id_item"], "oracion": item["oracion"],
+            "entidad_1": item["entidad_1"], "entidad_2": item["entidad_2"],
+            "posiciones": item["posiciones"],
+            "anotado": item["id_item"] in vigentes}
+
+
+def _ver_cola_revision(ctx):
+    _, items, vigentes = _cola_revision(ctx)
+    return 200, {"items": [_vista_item(i, vigentes) for i in items],
+                 "avance": _avance(items, vigentes)}
+
+
+def _ver_item_revision(ctx, id_item):
+    _, item, _, vigentes = _item_revision(ctx, id_item)
+    hecho = vigentes.get(id_item)
+    return 200, {"item": _vista_item(item, vigentes),
+                 "valores": hecho["valores"] if hecho else None}
+
+
+def _inicio_revision(ctx, id_item, cuerpo):
+    # Cuerpo JSON obligatorio, aunque sea {}: la misma defensa que la de
+    # cancelar. Un POST sin cuerpo lo manda cualquier página sin preflight,
+    # y aquí ensuciaría los tiempos de la anotadora.
+    _objeto(cuerpo)
+    carpeta, _, _, _ = _item_revision(ctx, id_item)
+    hora = revision.registrar_inicio(carpeta, id_item)
+    return 200, {"ok": True, "inicio": hora}
+
+
+def _guardar_revision(ctx, id_item, cuerpo):
+    cuerpo = _objeto(cuerpo)
+    carpeta, _, items, _ = _item_revision(ctx, id_item)
+    limpios, errores, avisos = revision.validar(cuerpo)
+    if errores:
+        return 400, {"error": "La anotación no se guardó: "
+                              + " ".join(errores),
+                     "errores": errores}
+    revision.guardar(carpeta, id_item, limpios)
+    return 200, {"ok": True, "avisos": avisos,
+                 "avance": _avance(items, revision.anotaciones(carpeta))}
+
+
+def _exportar_revision(ctx):
+    carpeta, _, _ = _cola_revision(ctx)
+    ruta = revision.exportar_csv(carpeta)
+    if not _dentro_de(Path(carpeta), Path(ruta)):
+        raise ErrorPeticion(404, "La exportación quedó fuera de su carpeta.")
+    return 200, Archivo(ruta, "text/csv; charset=utf-8",
+                        descarga_como=revision.EXPORTADA)
+
+
 # ------------------------------------------------------------------ ruteo
 
 def _rutear(metodo, ruta, params, cuerpo, ctx):
@@ -992,6 +1103,23 @@ def _rutear(metodo, ruta, params, cuerpo, ctx):
             return _listar_exportaciones(ctx)
         if len(resto) == 1:
             return _archivo_exportacion(ctx, resto[0])
+
+    # Quinta familia que entrega un archivo: la exportación de la revisión
+    # ciega. La carpeta sale de --revision al arrancar; de ella solo se lee
+    # la hoja y se anexa el JSONL de anotaciones. El id del ítem se valida
+    # contra m-NNNN y se busca en la hoja: nunca se pega a una ruta.
+    if recurso == "revision":
+        if resto == ["cola"] and metodo == "GET":
+            return _ver_cola_revision(ctx)
+        if resto == ["exportar"] and metodo == "GET":
+            return _exportar_revision(ctx)
+        if len(resto) == 2 and resto[0] == "item" and metodo == "GET":
+            return _ver_item_revision(ctx, resto[1])
+        if len(resto) == 2 and resto[0] == "item" and metodo == "POST":
+            return _guardar_revision(ctx, resto[1], cuerpo)
+        if (len(resto) == 3 and resto[0] == "item" and resto[2] == "inicio"
+                and metodo == "POST"):
+            return _inicio_revision(ctx, resto[1], cuerpo)
 
     _no_encontrado(metodo, ruta)
 
@@ -1108,7 +1236,8 @@ class ManejadorHTTP(http.server.BaseHTTPRequestHandler):
                            al_cambiar_cliente=guardar_cliente,
                            flujo_raiz=self.server.flujo_raiz,
                            datos=self.server.datos,
-                           exportaciones=self.server.exportaciones)
+                           exportaciones=self.server.exportaciones,
+                           revision=self.server.revision)
             codigo, objeto = manejar(metodo, url.path, params, cuerpo, ctx)
         except Exception:
             # El detalle va a la terminal y no a la respuesta: un traceback
@@ -1245,7 +1374,7 @@ class Servidor(http.server.ThreadingHTTPServer):
 
     def __init__(self, puerto, ruta_db, gestor, cliente, salida,
                  correo_explicito=None, flujo_raiz=None, datos=None,
-                 exportaciones=None):
+                 exportaciones=None, revision=None):
         self.ruta_db = ruta_db
         self.gestor = gestor
         self.cliente = cliente
@@ -1254,6 +1383,7 @@ class Servidor(http.server.ThreadingHTTPServer):
         self.flujo_raiz = flujo_raiz
         self.datos = datos
         self.exportaciones = exportaciones
+        self.revision = revision
         # 127.0.0.1 y nada mas. Ver el docstring del modulo: sin
         # autenticacion, con capacidad de borrar y de gastar el limite de
         # NCBI de todo el laboratorio, atarlo a 0.0.0.0 seria abrirle eso a
@@ -1321,6 +1451,10 @@ def main():
     ap.add_argument("--flujo", default=flujo.RAIZ_FLUJO,
                     help="Raíz de las carpetas del flujo (por omisión, "
                          "salidas/flujo del repositorio).")
+    ap.add_argument("--revision", default=None,
+                    help="Carpeta de la muestra para la revisión ciega (la "
+                         "que deja `grn_verificacion.cli muestra`). Sin ella, "
+                         "la pestaña Revisión no tiene nada que mostrar.")
     ap.add_argument("--abrir", action="store_true",
                     help="Abrir el navegador al arrancar.")
     args = ap.parse_args()
@@ -1332,6 +1466,8 @@ def main():
     salida = args.salida or salida_por_omision(args.datos)
     exportaciones = os.path.abspath(exportaciones_por_omision(args.datos))
     flujo_raiz = os.path.abspath(args.flujo)
+    carpeta_revision = (os.path.abspath(args.revision) if args.revision
+                        else None)
     # El flujo lee su base de <datos>/grn.db. Si --db apunta a otra, el
     # tablero listaría corridas del bronce que el flujo no encuentra.
     db_del_flujo = os.path.join(raiz_datos, "grn.db")
@@ -1360,7 +1496,8 @@ def main():
                             correo_explicito=args.email,
                             flujo_raiz=flujo_raiz,
                             datos=os.path.abspath(raiz_datos),
-                            exportaciones=exportaciones)
+                            exportaciones=exportaciones,
+                            revision=carpeta_revision)
     except OSError as e:
         sys.exit(f"No se pudo abrir el puerto {args.puerto}: {e}\n"
                  f"Si ya hay otro tablero corriendo, usa --puerto.")
@@ -1375,6 +1512,8 @@ def main():
         f"Salida : {salida}",
         f"Export : {exportaciones}",
         f"Flujo  : {flujo_raiz}",
+        f"Revisión: {carpeta_revision}" if carpeta_revision else
+        "Revisión: sin carpeta (--revision la activa)",
         # Se dice si hay API key, nunca cual.
         "API key: " + ("sí (10 peticiones/segundo)"
                        if api_key else "no (3 peticiones/segundo)"),
