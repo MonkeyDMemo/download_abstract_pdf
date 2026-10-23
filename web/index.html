@@ -488,6 +488,59 @@ td.nota details pre {
 .bloque-cifras h3 { text-transform: none; letter-spacing: 0; }
 .bloque-cifras .resultado { margin-top: 8px; }
 
+/* -------------------------------------------------------------- revision */
+
+/* La cola a la izquierda y el ítem a la derecha, como el lector. La oración
+   va grande y sobre su propio fondo: es lo único que se juzga (rúbrica §2). */
+.revision-cuerpo {
+  display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px;
+  align-items: start;
+}
+.revision-cola { position: sticky; top: 56px; max-height: calc(100vh - 80px); overflow: auto; }
+.lista-cola { list-style: none; margin: 0; padding: 0; }
+.lista-cola button {
+  appearance: none; width: 100%; display: flex; justify-content: space-between; gap: 8px;
+  background: none; border: 0; border-left: 2px solid transparent;
+  border-radius: var(--radio-sm); padding: 4px 8px; cursor: pointer;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12.5px;
+  color: var(--tenue); text-align: left;
+}
+.lista-cola button:hover { color: var(--texto); background: var(--panel2); }
+.lista-cola button.actual { color: var(--acento); border-left-color: var(--acento); }
+.lista-cola .hecho { color: var(--ok); }
+.revision-oracion {
+  font-size: 17px; line-height: 1.75; max-width: 80ch;
+  margin: 0 0 10px; padding: 14px 16px;
+  background: var(--panel2); border: 1px solid var(--borde2); border-radius: var(--radio);
+}
+/* Las dos entidades con el mismo acento y distinto trazo: relleno la 1,
+   contorno la 2. Un color de estatus en una de ellas se leería como juicio. */
+mark.e1, mark.e2 { color: var(--texto); border-radius: 3px; padding: 0 2px; }
+mark.e1 { background: color-mix(in srgb, var(--acento) 32%, transparent); }
+mark.e2 { background: transparent; box-shadow: inset 0 0 0 1px var(--acento); }
+mark.e1::after, mark.e2::after {
+  font-size: 10px; font-weight: 700; color: var(--acento);
+  vertical-align: super; margin-left: 1px;
+}
+mark.e1::after { content: "1"; }
+mark.e2::after { content: "2"; }
+.rubrica {
+  display: grid; gap: 10px 14px; margin-top: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+.rubrica fieldset { border: 1px solid var(--borde2); border-radius: var(--radio); margin: 0; padding: 6px 12px 10px; }
+.rubrica legend { font-size: 12px; font-weight: 650; color: var(--tenue); padding: 0 6px; }
+.opciones { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.opciones label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.opciones span { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13.5px; }
+.opciones input:disabled + span { color: var(--tenue); text-decoration: line-through; }
+.opciones input:disabled, .opciones input:disabled + span { cursor: not-allowed; }
+
+@media (max-width: 900px) {
+  .revision-cuerpo { grid-template-columns: 1fr; }
+  .revision-cola { position: static; max-height: 200px; }
+}
+
 /* ---------------------------------------------------------------- avisos */
 
 .avisos { position: fixed; right: 16px; top: 14px; z-index: 90; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, 90vw); }
@@ -572,6 +625,7 @@ td.nota details pre {
   <button class="pestana" role="tab" aria-selected="false" data-seccion="descargas">Descargas</button>
   <button class="pestana" role="tab" aria-selected="false" data-seccion="bitacora">Bitácora</button>
   <button class="pestana" role="tab" aria-selected="false" data-seccion="pipeline">Pipeline</button>
+  <button class="pestana" role="tab" aria-selected="false" data-seccion="revision">Revisión</button>
 </nav>
 
 <div class="avisos" id="avisos"></div>
@@ -1107,6 +1161,62 @@ td.nota details pre {
   </div>
 </section>
 
+<!-- =========================================================== REVISION -->
+<section class="seccion" id="sec-revision">
+
+  <div class="tarjeta">
+    <div class="tarjeta-cabeza">
+      <h2>Revisión ciega</h2>
+      <div class="acciones">
+        <span class="ins gris" id="v-avance">-</span>
+        <a class="boton suave mini" id="b-revision-exportar" href="/api/revision/exportar"
+           download="anotaciones_exportadas.csv" hidden>Exportar CSV</a>
+      </div>
+    </div>
+    <p><strong>Juzga solo lo que afirma la oración, no lo que sabes; no consultes bases curadas mientras anotas.</strong></p>
+    <p class="sub" style="margin-top:6px">Cada ítem es una oración y dos entidades
+      suyas, marcadas con 1 y 2 en el orden en que aparecen; el orden no dice quién
+      regula. Se sigue el árbol de la rúbrica (§4). Con relación <span class="mono">no</span>,
+      la dirección es <span class="mono">ninguna</span> y signo y tipo van vacíos; el
+      comentario es obligatorio en un <span class="mono">dudoso</span>, en un caso frontera
+      (F1 a F15) y con las marcas de la rúbrica. Cada guardado queda en la carpeta de la
+      muestra y se retoma solo al volver.</p>
+    <div class="caja-error" id="v-error" hidden></div>
+  </div>
+
+  <div class="revision-cuerpo" id="v-cuerpo" hidden>
+    <div class="tarjeta revision-cola">
+      <div class="tarjeta-cabeza"><h2>Ítems</h2></div>
+      <ul class="lista-cola" id="v-cola"></ul>
+    </div>
+
+    <div class="tarjeta">
+      <div class="tarjeta-cabeza">
+        <h2 class="mono" id="v-id">-</h2>
+        <span class="ins gris" id="v-estado"></span>
+      </div>
+      <p class="revision-oracion" id="v-oracion"></p>
+      <p class="sub" id="v-entidades"></p>
+
+      <form id="v-form" autocomplete="off">
+        <div class="rubrica" id="v-campos"></div>
+        <div class="campo" style="margin-top:12px">
+          <label for="v-comentario">Comentario</label>
+          <textarea id="v-comentario" rows="3" maxlength="2000"
+                    placeholder="F1 a F15, «otro organismo: …», «cepa …», «recíproca», «condición …», «entidad mal reconocida»"></textarea>
+        </div>
+        <div class="acciones" style="margin-top:12px">
+          <button class="boton" type="submit" id="b-revision-guardar">Guardar y siguiente</button>
+        </div>
+        <ul class="avisos-flujo" id="v-avisos"></ul>
+      </form>
+      <p class="pista"><span class="mono">1&gt;2</span>: la entidad 1 actúa sobre la 2.
+        <span class="mono">2&gt;1</span>: la 2 sobre la 1. El signo menos es el guion del
+        teclado.</p>
+    </div>
+  </div>
+</section>
+
 </main>
 
 <div class="capa" id="capa" hidden>
@@ -1355,6 +1465,7 @@ function mostrarSeccion(nombre) {
     if (nombre === "descargas") { buscarDescargas(1); }
     if (nombre === "bitacora") { cargarEjecuciones(); }
     if (nombre === "pipeline") { cargarFlujo(); }
+    if (nombre === "revision") { cargarRevision(); }
   } else if (nombre === "pipeline") {
     // Volver a la pestaña refresca en silencio: alguien pudo correr el
     // flujo desde la terminal mientras tanto.
@@ -3403,6 +3514,251 @@ function arrancarRed() {
 }
 
 var redAlCambiarSeccion = function () {};
+
+/* =========================================================== REVISION */
+
+/* La revisión ciega de la muestra (docs/rubrica-anotacion.md). La página ve
+   solo lo que la hoja trae: id, oración y las dos entidades. Ni el PMID, ni
+   la capa que propuso el par, ni un veredicto de modelo: el servidor no los
+   manda y aquí no hay dónde pintarlos. Los valores son los de §6, tal cual
+   se escriben en la hoja; la página los ofrece cerrados para que no haya
+   un «sí» con acento ni un signo menos tipográfico que la cuenta no lea. */
+var CAMPOS_REVISION = [
+  { campo: "relacion", titulo: "Relación", opciones: ["si", "no", "dudoso"] },
+  { campo: "direccion", titulo: "Dirección", opciones: ["1>2", "2>1", "ninguna"] },
+  { campo: "signo", titulo: "Signo", opciones: ["+", "-", "?"] },
+  { campo: "tipo", titulo: "Tipo", opciones: ["directa", "indirecta", "no_se"] },
+  { campo: "negada", titulo: "Negada", opciones: ["si", "no"] },
+  { campo: "especulativa", titulo: "Especulativa", opciones: ["si", "no"] }
+];
+
+var rev = { items: [], actual: null, sucio: false, armada: false };
+
+function armarCamposRevision() {
+  if (rev.armada) { return; }
+  rev.armada = true;
+  var caja = $("v-campos");
+  CAMPOS_REVISION.forEach(function (c) {
+    var fs = el("fieldset");
+    fs.appendChild(el("legend", null, c.titulo));
+    var ops = el("div", "opciones");
+    c.opciones.forEach(function (valor) {
+      var lab = el("label");
+      var r = el("input");
+      r.type = "radio";
+      r.name = "v-" + c.campo;
+      r.value = valor;
+      r.addEventListener("change", function () {
+        rev.sucio = true;
+        if (c.campo === "relacion") { aplicarReglasRevision(); }
+      });
+      lab.appendChild(r);
+      lab.appendChild(el("span", null, valor));
+      ops.appendChild(lab);
+    });
+    fs.appendChild(ops);
+    caja.appendChild(fs);
+  });
+  $("v-comentario").addEventListener("input", function () { rev.sucio = true; });
+}
+
+function radiosRevision(campo) {
+  return document.querySelectorAll('input[name="v-' + campo + '"]');
+}
+
+function valorRevision(campo) {
+  var rs = radiosRevision(campo);
+  for (var i = 0; i < rs.length; i++) { if (rs[i].checked) { return rs[i].value; } }
+  return "";
+}
+
+function ponerRevision(campo, valor) {
+  var rs = radiosRevision(campo);
+  for (var i = 0; i < rs.length; i++) { rs[i].checked = (rs[i].value === valor); }
+}
+
+/* Lo que §4 deja escrito según la relación, aplicado en el formulario para
+   que la combinación imposible ni se pueda marcar. El servidor lo valida
+   igual: esto ahorra el viaje, no lo sustituye. */
+function aplicarReglasRevision() {
+  var relacion = valorRevision("relacion");
+  var rs = radiosRevision("direccion");
+  for (var i = 0; i < rs.length; i++) {
+    var esNinguna = rs[i].value === "ninguna";
+    rs[i].disabled = (relacion === "no" && !esNinguna)
+                     || ((relacion === "si" || relacion === "dudoso") && esNinguna);
+    if (rs[i].disabled) { rs[i].checked = false; }
+  }
+  if (relacion === "no") { ponerRevision("direccion", "ninguna"); }
+  ["signo", "tipo"].forEach(function (campo) {
+    var xs = radiosRevision(campo);
+    for (var j = 0; j < xs.length; j++) {
+      xs[j].disabled = (relacion === "no");
+      if (xs[j].disabled) { xs[j].checked = false; }
+    }
+  });
+}
+
+function pintarAvanceRevision(avance) {
+  var ins = $("v-avance");
+  ins.textContent = avance.hechos + " de " + avance.total + " anotados";
+  ins.className = "ins " + (avance.total && avance.hechos === avance.total ? "ok" : "gris");
+}
+
+function pintarColaRevision() {
+  var ul = vaciar($("v-cola"));
+  rev.items.forEach(function (it) {
+    var li = el("li");
+    var b = el("button", it.id_item === rev.actual ? "actual" : "");
+    b.type = "button";
+    b.appendChild(el("span", null, it.id_item));
+    b.appendChild(el("span", it.anotado ? "hecho" : "", it.anotado ? "hecho" : "pendiente"));
+    b.addEventListener("click", function () { cambiarItemRevision(it.id_item); });
+    li.appendChild(b);
+    ul.appendChild(li);
+  });
+}
+
+/* La oración con sus dos marcas, armada con nodos de texto y <mark>: nunca
+   como HTML, porque la oración viene del corpus y trae < > de fórmulas.
+   Las posiciones son de puntos de código (las calcula Python), y por eso se
+   corta con Array.from y no con los índices UTF-16 de String.slice. */
+function pintarOracionRevision(nodo, oracion, posiciones) {
+  vaciar(nodo);
+  var cps = Array.from(oracion);
+  var tramos = [];
+  (posiciones || []).forEach(function (p, i) {
+    if (p) { tramos.push({ a: p[0], b: p[1], n: i + 1 }); }
+  });
+  tramos.sort(function (x, y) { return x.a - y.a; });
+  var cursor = 0;
+  tramos.forEach(function (t) {
+    if (t.a < cursor) { return; }
+    if (t.a > cursor) { nodo.appendChild(document.createTextNode(cps.slice(cursor, t.a).join(""))); }
+    var m = el("mark", "e" + t.n, cps.slice(t.a, t.b).join(""));
+    m.title = "Entidad " + t.n;
+    nodo.appendChild(m);
+    cursor = t.b;
+  });
+  if (cursor < cps.length) { nodo.appendChild(document.createTextNode(cps.slice(cursor).join(""))); }
+}
+
+function pintarItemRevision(r) {
+  var it = r.item;
+  rev.actual = it.id_item;
+  rev.sucio = false;
+  $("v-id").textContent = it.id_item;
+  var estado = $("v-estado");
+  estado.textContent = it.anotado ? "anotado" : "pendiente";
+  estado.className = "ins " + (it.anotado ? "ok" : "gris");
+  pintarOracionRevision($("v-oracion"), it.oracion, it.posiciones);
+
+  var ent = vaciar($("v-entidades"));
+  [it.entidad_1, it.entidad_2].forEach(function (nombre, i) {
+    if (i) { ent.appendChild(document.createTextNode("   ")); }
+    ent.appendChild(document.createTextNode("Entidad " + (i + 1) + ": "));
+    ent.appendChild(el("mark", "e" + (i + 1), nombre));
+    if (!it.posiciones[i]) {
+      ent.appendChild(document.createTextNode(" (no aparece como palabra entera; búscala en la oración)"));
+    }
+  });
+
+  var v = r.valores || {};
+  CAMPOS_REVISION.forEach(function (c) { ponerRevision(c.campo, v[c.campo] || ""); });
+  $("v-comentario").value = v.comentario || "";
+  aplicarReglasRevision();
+  vaciar($("v-avisos"));
+  pintarColaRevision();
+}
+
+function primeroPendienteRevision(desde) {
+  var n = rev.items.length;
+  var inicio = 0;
+  if (desde) {
+    for (var i = 0; i < n; i++) { if (rev.items[i].id_item === desde) { inicio = i + 1; break; } }
+  }
+  for (var k = 0; k < n; k++) {
+    var it = rev.items[(inicio + k) % n];
+    if (!it.anotado) { return it.id_item; }
+  }
+  return null;
+}
+
+/* Abrir un ítem anota su inicio en el servidor, con la hora del servidor:
+   así el tiempo por ítem no depende del reloj de la laptop. */
+function abrirItemRevision(id) {
+  var ruta = "/api/revision/item/" + encodeURIComponent(id);
+  return api("GET", ruta).then(function (r) {
+    pintarItemRevision(r);
+    return api("POST", ruta + "/inicio", {});
+  }).catch(avisarError);
+}
+
+function cambiarItemRevision(id) {
+  if (id === rev.actual) { return; }
+  if (!rev.sucio) { abrirItemRevision(id); return; }
+  confirmar("¿Descartar lo que marcaste en " + rev.actual + "?",
+            ["Los valores sin guardar de este ítem se pierden."], "Descartar")
+    .then(function (si) { if (si) { abrirItemRevision(id); } });
+}
+
+function cargarRevision() {
+  armarCamposRevision();
+  return api("GET", "/api/revision/cola").then(function (r) {
+    rev.items = r.items;
+    $("v-error").hidden = true;
+    $("v-cuerpo").hidden = false;
+    $("b-revision-exportar").hidden = false;
+    pintarAvanceRevision(r.avance);
+    pintarColaRevision();
+    if (!rev.items.length) { return; }
+    var destino = rev.actual || primeroPendienteRevision(null) || rev.items[0].id_item;
+    return abrirItemRevision(destino);
+  }, function (e) {
+    $("v-cuerpo").hidden = true;
+    $("b-revision-exportar").hidden = true;
+    var caja = $("v-error");
+    caja.textContent = e.message;
+    caja.hidden = false;
+  });
+}
+
+$("v-form").addEventListener("submit", function (ev) {
+  ev.preventDefault();
+  if (!rev.actual) { return; }
+  var id = rev.actual;
+  var valores = {};
+  CAMPOS_REVISION.forEach(function (c) { valores[c.campo] = valorRevision(c.campo); });
+  valores.comentario = $("v-comentario").value;
+  var boton = $("b-revision-guardar");
+  boton.disabled = true;
+  api("POST", "/api/revision/item/" + encodeURIComponent(id), valores).then(function (r) {
+    rev.sucio = false;
+    rev.items.forEach(function (it) { if (it.id_item === id) { it.anotado = true; } });
+    pintarAvanceRevision(r.avance);
+    var lista = vaciar($("v-avisos"));
+    // Con aviso se queda en el ítem: casi siempre falta el comentario, y
+    // es más barato escribirlo ahora que volver a buscarlo.
+    if (r.avisos && r.avisos.length) {
+      r.avisos.forEach(function (a) { lista.appendChild(el("li", null, a)); });
+      $("v-estado").textContent = "anotado";
+      $("v-estado").className = "ins ok";
+      pintarColaRevision();
+      avisar("Guardado con avisos", "Corrige y guarda otra vez si hace falta.", "alerta");
+      return;
+    }
+    var siguiente = primeroPendienteRevision(id);
+    if (!siguiente) {
+      pintarColaRevision();
+      $("v-estado").textContent = "anotado";
+      $("v-estado").className = "ins ok";
+      avisar("Muestra completa", "Ya no quedan ítems pendientes. Exporta el CSV.", "ok");
+      return;
+    }
+    avisar("Guardado", id, "ok");
+    return abrirItemRevision(siguiente);
+  }).catch(avisarError).then(function () { boton.disabled = false; });
+});
 
 /* =========================================================== ARRANQUE */
 
