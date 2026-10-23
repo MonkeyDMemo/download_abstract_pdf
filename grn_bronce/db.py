@@ -416,6 +416,40 @@ def menciones_de_unidad(con, unidad_id):
     return con.execute(SQL_MENCIONES_DE_UNIDAD, (unidad_id,)).fetchall()
 
 
+SQL_VECINAS = """
+SELECT num_oracion, texto
+  FROM texto_unidades
+ WHERE corrida_id = ? AND pmid = ? AND fuente_texto = ?
+   AND num_oracion BETWEEN ? AND ?
+"""
+
+
+def vecinas(con, corrida_id, pmid, fuente_texto, num_oracion):
+    """{"anterior", "oracion", "siguiente"}: el texto de la oración en esa
+    posición y el de las dos que la rodean, o None donde no hay.
+
+    Solo lee. La usa la herramienta `contexto` de `grn_ouroboros`, que juzga
+    la oración de una hoja de anotación y puede pedir su contexto inmediato.
+
+    La fuente entra en la consulta aunque `num_oracion` sea correlativo en
+    todo el documento: la última oración del resumen y la primera del texto
+    completo no son vecinas, y la clave única de la tabla la incluye. Una sola
+    consulta por la clave única de `texto_unidades`, no tres.
+
+    El resto de la fila (sección, offsets, corrida) no sale de aquí: quien
+    pide contexto necesita el texto, y nada más.
+    """
+    num = int(num_oracion)
+    filas = con.execute(SQL_VECINAS, (corrida_id, str(pmid), fuente_texto,
+                                      num - 1, num + 1)).fetchall()
+    # Por posición y no por nombre de columna: sirve igual con la conexión de
+    # `conectar()` que con la de solo lectura, o con una sin `row_factory`.
+    por_numero = dict((f[0], f[1]) for f in filas)
+    return {"anterior": por_numero.get(num - 1),
+            "oracion": por_numero.get(num),
+            "siguiente": por_numero.get(num + 1)}
+
+
 SQL_PARES = """
 SELECT c.regulador_candidato tf, c.blanco_candidato blanco,
        COUNT(*)                 n_oraciones,
