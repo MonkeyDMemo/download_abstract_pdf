@@ -680,6 +680,32 @@ class PruebasRed(_ConEscenario):
                          kn(p["orientacion"]))
         self.assertIsNone(e["otro"]["orientacion"]["valor"])
 
+    def test_regulates_no_cuenta_entre_las_resueltas(self):
+        """En el escenario ninguna dirigida con signo en la base sale
+        regulates (la 11 es `?`), así que nada distinguía «resueltas» de
+        «acuerdo, contrario y regulates». Con la arista de la fila 2 en
+        regulates, las dirigidas con signo sin BioBERT siguen siendo 5, y las
+        resueltas son la 4 (+, contrario), la 13 (+, acuerdo) y la 15 (-,
+        acuerdo): 3, con 2 de +. La 8 sigue mixta."""
+        aristas, _ = self.aristas()
+        aristas = dict(aristas)
+        aristas[("PA9001", "PA9002")] = [
+            dict(a, signo="regulates") for a in aristas[("PA9001", "PA9002")]]
+        s = C.recall_red(self.exigibles(),
+                         aristas)["estratos"][C.PRINCIPAL]["signo"]
+
+        def kn(p):
+            return (p["k"], p["n"])
+
+        self.assertEqual((5, 2, 1, 1, 1), (s["n"], s["acuerdo"]["k"],
+                                           s["contrario"], s["regulates"],
+                                           s["mixto"]))
+        self.assertEqual((3, 2, 4), (s["resueltas"], s["resueltas_mas"],
+                                     s["con_signo_mas"]))
+        self.assertEqual(((2, 3), (2, 3), (4, 5)), (
+            kn(s["acuerdo_si_da_signo"]), kn(s["linea_base_siempre_mas"]),
+            kn(s["linea_base_siempre_mas_con_abstencion"])))
+
     def test_el_techo_sin_biobert(self):
         """Sin BioBERT son 11 filas, todas menos la 10: 9 en el corpus (no la
         9 ni la 14), 7 con XML y 2 solo abstract (la 3 y la 8). La regla a)

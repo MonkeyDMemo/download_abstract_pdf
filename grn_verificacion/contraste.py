@@ -1463,10 +1463,10 @@ def archivos_de_red(red=None, sin_red=False):
 
     Un nombre que `grn_red` acepta todavía puede no servir aquí: el informe y
     la terminal nombran el archivo de la red y pasan por el filtro de
-    publicación, que toma siete u ocho dígitos seguidos por un PMID
-    (`red_umbral_20261023.tsv`). Se dice antes de abrir la base; si no, el
-    contraste corría entero y se detenía al final con «posible PMID en la
-    línea 5».
+    publicación, que toma siete u ocho dígitos seguidos por un PMID (una
+    fecha en el nombre: `red_umbral_<aaaammdd>.tsv`). Se dice antes de abrir
+    la base; si no, el contraste corría entero y se detenía al final con
+    «posible PMID en la línea 5».
     """
     if red is None:
         return redes.archivos_de_red()
