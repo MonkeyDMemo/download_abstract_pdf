@@ -8,7 +8,7 @@
     python -m grn_verificacion.cli datos-entrenamiento --pares JSONL --base XLSX ...
     python -m grn_verificacion.cli reentrenar correr|estado|detener --raiz DIR ...
     python -m grn_verificacion.cli contraste --base XLSX --carpeta DIR --informe MD --confidencial DIR ...
-    python -m grn_verificacion.cli muestra --carpeta DIR --reservas TSV --n N --salida DIR [--semilla S] [--fraccion-doble F] [--tandas 1|2]
+    python -m grn_verificacion.cli muestra --carpeta DIR --reservas TSV --n N --salida DIR [--semilla S] [--fraccion-doble F] [--tandas 1|2] [--excluir-muestra DIR ...]
     python -m grn_verificacion.cli precision-ciega --anotacion CSV --llave CSV --carpeta DIR [--json J]
 
 Lo normal es no llamarlo a mano: `python flujo.py` corre los pasos en orden y
@@ -569,7 +569,8 @@ def cmd_muestra(args):
         muestra.ejecutar(args.carpeta, args.reservas, args.n, args.salida,
                          semilla=args.semilla,
                          fraccion_doble=args.fraccion_doble,
-                         tandas=args.tandas, log=log)
+                         tandas=args.tandas,
+                         excluir_muestras=args.excluir_muestra, log=log)
     except (ValueError, OSError) as e:
         log("ERROR: %s" % e)
         return 1
@@ -601,9 +602,17 @@ def _sub_muestra(sub):
                          "por omisión, %(default)s.")
     mu.add_argument("--tandas", type=int, choices=(1, 2),
                     default=muestra.TANDAS,
-                    help="1: una sola hoja, la muestra única con un "
-                         "anotador; 2: la segunda se baraja con las "
-                         "candidatas nuevas. Por omisión, %(default)s.")
+                    help="En cuántas hojas se reparte la muestra: 1, toda en "
+                         "hoja_tanda1.csv; 2, la mitad en hoja_tanda1.csv y "
+                         "la otra en hoja_tanda2_ciega.csv. Solo reparte: "
+                         "con 1 o con 2 salen los mismos ítems. Por "
+                         "omisión, %(default)s.")
+    mu.add_argument("--excluir-muestra", dest="excluir_muestra",
+                    action="append", default=None, metavar="DIR",
+                    help="Carpeta de un sorteo anterior, con su llave.csv: "
+                         "ni sus artículos (por PMID) ni sus id_item salen "
+                         "en este, como pide una tanda de prueba. Se puede "
+                         "repetir.")
     mu.set_defaults(func=cmd_muestra)
 
 

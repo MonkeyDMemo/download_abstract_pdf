@@ -6,6 +6,7 @@ humo, y se salta si el archivo no está.
 """
 
 import codecs
+import contextlib
 import csv
 import io
 import json
@@ -833,6 +834,54 @@ class PruebasCli(Base):
         codigo, lineas = self.main(self.argumentos(5))
         self.assertEqual(codigo, 1)
         self.assertIn("capa_pares.csv", lineas[-1])
+
+    def test_excluye_dos_muestras(self):
+        a, _ = self.ejecutar(n=5, salida="a", semilla=1)
+        b, _ = self.ejecutar(n=5, salida="b", semilla=2)
+        # La misma semilla que `a`: sin apartarlos, repetiría sus códigos.
+        codigo, lineas = self.main(self.argumentos(5) + [
+            "--semilla", "1", "--excluir-muestra", a, "--excluir-muestra", b])
+        self.assertEqual(codigo, 0)
+        salida = os.path.join(self.tmp, "por_cli")
+        with io.open(os.path.join(salida, muestra.RESUMEN),
+                     encoding="utf-8") as f:
+            resumen = json.load(f)
+        self.assertEqual(
+            sorted(m["llave"] for m in resumen["muestras_excluidas"]),
+            sorted(procedencia.huella(os.path.join(c, muestra.LLAVE))
+                   for c in (a, b)))
+        _, nueva = leer_csv(os.path.join(salida, muestra.LLAVE))
+        for anterior in (a, b):
+            _, vieja = leer_csv(os.path.join(anterior, muestra.LLAVE))
+            self.assertFalse({f["pmid"] for f in nueva}
+                             & {f["pmid"] for f in vieja})
+            self.assertFalse({f["id_item"] for f in nueva}
+                             & {f["id_item"] for f in vieja})
+        dicho = "\n".join(lineas)
+        self.assertIn("muestras excluidas: 2", dicho)
+        self.assertIn(muestra.ETIQUETAS[muestra.OTRA_MUESTRA], dicho)
+        self.assertNotIn(self.tmp, dicho)
+
+    def test_una_llave_sin_pmid_sale_con_1_y_sin_ruta(self):
+        anterior = os.path.join(self.tmp, "anterior")
+        escribir_llave(anterior, [{"id_item": "m-1000"}],
+                       columnas=["id_item", "tanda"])
+        codigo, lineas = self.main(self.argumentos(5)
+                                   + ["--excluir-muestra", anterior])
+        self.assertEqual(codigo, 1)
+        self.assertTrue(lineas[-1].startswith("ERROR"))
+        self.assertIn("pmid", lineas[-1])
+        self.assertNotIn(self.tmp, lineas[-1])
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "por_cli")))
+
+    def test_la_ayuda_ya_no_dice_que_la_tanda_2_se_baraje(self):
+        """Las tandas solo reparten la muestra en una o dos hojas."""
+        ayuda = io.StringIO()
+        with contextlib.redirect_stdout(ayuda), \
+                self.assertRaises(SystemExit):
+            cli.main(["muestra", "--help"])
+        self.assertIn("--excluir-muestra", ayuda.getvalue())
+        self.assertNotIn("baraja", ayuda.getvalue())
 
 
 def _capa_real():
