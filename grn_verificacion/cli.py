@@ -623,7 +623,7 @@ def cmd_precision_ciega(args):
     from grn_verificacion import precision_ciega
     try:
         precision_ciega.ejecutar(args.anotacion, args.llave, args.carpeta,
-                                 args.json, log=log)
+                                 args.json, log=log, red=args.red)
     except (ValueError, OSError, KeyError) as e:
         log("ERROR: %s" % e)
         return 1
@@ -644,6 +644,10 @@ def _sub_precision_ciega(sub):
                     help="Carpeta del flujo: capa_pares.csv, red.tsv y "
                          "red_evidencias.tsv.")
     pc.add_argument("--json", help="Escribe ahí el resultado completo.")
+    pc.add_argument("--red", default=None, metavar="NOMBRE",
+                    help="Mide la red con otras reglas red_NOMBRE.tsv "
+                         "(grn_red consolidar) en vez de red.tsv; sus "
+                         "aristas expandidas no se leen.")
     pc.set_defaults(func=cmd_precision_ciega)
 
 
