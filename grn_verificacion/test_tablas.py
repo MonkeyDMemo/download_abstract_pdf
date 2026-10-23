@@ -46,6 +46,7 @@ from unittest import mock
 
 from grn_bronce import operones
 from grn_comun import procedencia
+from grn_verificacion import cli
 from grn_verificacion import contraste as C
 from grn_verificacion import entrenamiento as E
 from grn_verificacion import reentrenar as R
@@ -680,6 +681,81 @@ class PruebasImportar(unittest.TestCase):
                                stderr=subprocess.PIPE)
         self.assertEqual(0, hecho.returncode,
                          hecho.stderr.decode("utf-8", "replace"))
+
+
+class PruebasCli(_ConEscenario):
+
+    def argv(self, *extra):
+        return (["tablas", "--base", self.base, "--carpeta", self.carpeta,
+                 "--xml", self.xml, "--excluir-pmids", self.excluir,
+                 "--informe", self.informe, "--confidencial",
+                 self.confidencial] + list(extra))
+
+    def main(self, argv):
+        lineas = []
+        with mock.patch.object(cli, "log", lineas.append):
+            codigo = cli.main(argv)
+        return codigo, lineas
+
+    def test_la_ayuda(self):
+        salida = io.StringIO()
+        with contextlib.redirect_stdout(salida):
+            with self.assertRaises(SystemExit) as ctx:
+                cli.main(["tablas", "--help"])
+        self.assertEqual(0, ctx.exception.code)
+        for buscado in ("--base", "--carpeta", "--xml", "--excluir-pmids",
+                        "--informe", "--confidencial", "--cuantos", "--hoja",
+                        "--aceptar-base-distinta"):
+            self.assertIn(buscado, salida.getvalue())
+
+    def test_corre_y_no_imprime_rutas_ni_contenido(self):
+        codigo, lineas = self.main(self.argv("--aceptar-base-distinta",
+                                             "--cuantos", "2"))
+        self.assertEqual(0, codigo, lineas)
+        self.assertSinContenido("\n".join(lineas))
+        self.assertTrue(os.path.isfile(self.informe))
+        with io.open(os.path.join(self.confidencial, T.ARCHIVO_REGISTRO),
+                     encoding="utf-8") as f:
+            self.assertEqual(2, json.load(f)["parametros"]["cuantos"])
+
+    def test_cuantos_por_omision(self):
+        """El parser no importa `tablas` (traería el puente a cada comando):
+        el valor por omisión lo pone `cmd_tablas`."""
+        with mock.patch.object(T, "ejecutar") as ejecutar:
+            codigo, _ = self.main(self.argv())
+        self.assertEqual(0, codigo)
+        self.assertEqual(T.CUANTOS, ejecutar.call_args[1]["cuantos"])
+
+    def test_un_error_sale_con_1_y_el_mensaje_filtrado(self):
+        codigo, lineas = self.main(self.argv())
+        self.assertEqual(1, codigo)
+        self.assertTrue(lineas[-1].startswith("ERROR: La base no coincide"))
+        self.assertSinContenido("\n".join(lineas))
+        self.assertFalse(os.path.exists(self.informe))
+
+    def test_un_error_inesperado_sale_sin_la_ruta(self):
+        ruta = os.path.join(self.xml, "%s_PMC9100001.xml" % P1)
+        error = FileNotFoundError(2, "No such file or directory", ruta)
+        with mock.patch.object(T, "ejecutar", side_effect=error):
+            codigo, lineas = self.main(self.argv())
+        self.assertEqual(1, codigo)
+        self.assertEqual(["ERROR: FileNotFoundError: No such file or "
+                          "directory"], lineas)
+        # Un ValueError con la ruta de --xml la cambia por <ruta>.
+        error = ValueError("No pude con %s." % self.xml)
+        with mock.patch.object(T, "ejecutar", side_effect=error):
+            codigo, lineas = self.main(self.argv())
+        self.assertEqual((1, ["ERROR: No pude con <ruta>."]),
+                         (codigo, lineas))
+
+    def test_sin_base(self):
+        argv = self.argv()
+        del argv[argv.index("--base"):argv.index("--base") + 2]
+        with mock.patch.dict(os.environ):
+            os.environ.pop("BASE_CURADA", None)
+            codigo, lineas = self.main(argv)
+        self.assertEqual(2, codigo)
+        self.assertIn("falta --base", lineas[-1])
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@
     python -m grn_verificacion.cli datos-entrenamiento --pares JSONL --base XLSX ...
     python -m grn_verificacion.cli reentrenar correr|estado|detener --raiz DIR ...
     python -m grn_verificacion.cli contraste --base XLSX --carpeta DIR --informe MD --confidencial DIR ...
+    python -m grn_verificacion.cli tablas --base XLSX --carpeta DIR --xml DIR --informe MD --confidencial DIR [--cuantos N] ...
     python -m grn_verificacion.cli muestra --carpeta DIR --reservas TSV --n N --salida DIR [--semilla S] [--fraccion-doble F] [--tandas 1|2] [--excluir-muestra DIR ...]
     python -m grn_verificacion.cli precision-ciega --anotacion CSV --llave CSV --carpeta DIR [--json J]
 
@@ -562,6 +563,72 @@ def _sub_contraste(sub):
     co.set_defaults(func=cmd_contraste)
 
 
+def cmd_tablas(args):
+    """Como `contraste`: ningún error sale como traceback, que traería la ruta
+    de la base, la de la carpeta confidencial o el nombre de un XML, que lleva
+    el PMID de uno de los artículos mayores."""
+    from grn_verificacion import contraste, tablas
+    if not args.base:
+        log("ERROR: falta --base (o BASE_CURADA en el entorno).")
+        return 2
+    cuantos = tablas.CUANTOS if args.cuantos is None else args.cuantos
+    try:
+        tablas.ejecutar(
+            args.base, args.carpeta, args.xml, args.confidencial,
+            informe=args.informe, excluir=args.excluir_pmids, hoja=args.hoja,
+            aceptar_base_distinta=args.aceptar_base_distinta,
+            cuantos=cuantos, log=log)
+    except KeyboardInterrupt:
+        log("Interrumpido.")
+        return 3
+    except Exception as e:
+        log("ERROR: %s" % contraste.mensaje_publicable(
+            e, [args.base, args.confidencial, args.xml, args.carpeta,
+                args.informe] + list(args.excluir_pmids)))
+        return 1
+    return 0
+
+
+def _sub_tablas(sub):
+    # Sin importar `tablas` aquí: trae el puente y `etapa2/`, y el parser se
+    # arma en cada comando, también en el `reentrenar` del servidor.
+    ta = sub.add_parser(
+        "tablas",
+        help="De las filas de la base que citan los artículos con más filas, "
+             "cuántas tienen sus dos locus en una tabla del XML y cuántas en "
+             "el texto (PLAN.md 3.4, punto 27); publica solo conteos.")
+    ta.add_argument("--base", default=os.environ.get("BASE_CURADA"),
+                    help="Ruta del .xlsx de la base curada; por omisión "
+                         "$BASE_CURADA. Nunca se imprime.")
+    ta.add_argument("--carpeta", required=True,
+                    help="Carpeta del flujo: los dos CSV del bronce "
+                         "(candidatas y menciones).")
+    ta.add_argument("--xml", required=True,
+                    help="Carpeta con los XML de PMC, <pmid>_<pmcid>.xml, "
+                         "como los deja `cli.py fulltext --tipo xml`.")
+    ta.add_argument("--excluir-pmids", dest="excluir_pmids", action="append",
+                    default=[], metavar="ARCHIVO",
+                    help="PMIDs fuera del denominador, como en contraste "
+                         "(pmid<TAB>número), fuera del repositorio. Se puede "
+                         "repetir.")
+    ta.add_argument("--cuantos", type=int, default=None,
+                    help="Cuántos artículos, de más filas exigibles a menos. "
+                         "Por omisión, los de la concentración del contraste.")
+    ta.add_argument("--hoja", default=None,
+                    help="Nombre de la hoja de la base; por omisión, la "
+                         "primera del libro.")
+    ta.add_argument("--aceptar-base-distinta", dest="aceptar_base_distinta",
+                    action="store_true",
+                    help="Seguir aunque la base no coincida con PLAN.md 2.4.")
+    ta.add_argument("--informe", required=True,
+                    help="Dónde escribir el informe en Markdown (TABLAS.md): "
+                         "lo único publicable.")
+    ta.add_argument("--confidencial", required=True,
+                    help="Carpeta fuera de todo repositorio para tablas.json. "
+                         "Nunca se imprime.")
+    ta.set_defaults(func=cmd_tablas)
+
+
 def cmd_muestra(args):
     """Solo conteos: el módulo nunca le pasa una oración a `log`."""
     from grn_verificacion import muestra
@@ -739,6 +806,7 @@ def main(argv=None):
 
     _sub_reentrenar(sub)
     _sub_contraste(sub)
+    _sub_tablas(sub)
     _sub_muestra(sub)
     _sub_precision_ciega(sub)
 
