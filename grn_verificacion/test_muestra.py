@@ -209,6 +209,16 @@ HUELLAS_DE_SIEMPRE = {
 }
 
 
+# Lo mismo para un sorteo con --excluir-muestra, con la semilla y las tandas
+# de la tanda 2: es como sale esa tanda, y volver a sortearla en su carpeta
+# con un cambio callado reescribiría una hoja que ya se está anotando.
+HUELLAS_CON_EXCLUSION = {
+    "dobles.csv": "02a613d41785229a",
+    "hoja_tanda1.csv": "65a4a50c47d4f3e9",
+    "llave.csv": "17f39a481e35feaa",
+    "resumen.json": "2fdc8f017846288b"}
+
+
 def columnas_de_la_rubrica():
     """Las columnas de la tabla del §6 de la rúbrica, en su orden."""
     ruta = os.path.join(RAIZ, "docs", "rubrica-anotacion.md")
@@ -640,6 +650,28 @@ class PruebasExcluirMuestra(Base):
         self.assertEqual(len(llave), 41)
         self.assertFalse({f["pmid"] for f in llave}
                          & {"90002", "90003", "90023"})
+
+    def test_con_exclusion_las_salidas_son_las_de_hoy(self):
+        # Ejercita los tres apartados: el artículo (90002), la copia de su
+        # oración juzgada en otro (90030) y un código del rango (m-1000), que
+        # mueve las posiciones de todos los demás.
+        filas = filas_sinteticas()
+        original = [f for f in filas if f["pmid"] == "90002"
+                    and f["num_oracion"] == "1"][0]["oracion"]
+        filas.append(_fila(90030, 1, original.lower(), "reg0R", "tgt0Z",
+                           mencion_r="reg0R", locus=9800))
+        escribir_capa(self.carpeta, filas)
+        anterior = os.path.join(self.tmp, "anterior")
+        escribir_llave(anterior, [
+            {"id_item": "m-1000", "tanda": "1", "doble": "no",
+             "pmid": "90002", "fuente_texto": "xml", "num_oracion": "1"}])
+        salida, resumen = self.ejecutar(
+            n=20, salida="tanda2", semilla=20261023, tandas=1,
+            fraccion_doble=0, excluir_muestras=[anterior])
+        self.assertEqual(resumen["exclusiones"][muestra.OTRA_MUESTRA], 4)
+        self.assertEqual(
+            resumen["exclusiones"][muestra.COPIA_DE_OTRA_MUESTRA], 1)
+        self.assertEqual(huellas_de(salida), HUELLAS_CON_EXCLUSION)
 
     def test_un_iterable_vacio_es_como_no_pasarla(self):
         # Un generador vacío es verdadero en un `if`: el resumen ganaba los
