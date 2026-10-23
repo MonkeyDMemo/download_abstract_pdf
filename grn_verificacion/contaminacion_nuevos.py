@@ -23,7 +23,9 @@ lleva tabuladores; la exportación de `cli.py export` sirve tal cual, y su
 columna `doi` se usa) o con un PMID por línea. `--consulta` la toma de los
 documentos ligados a una consulta de la base del paso 0, con su DOI. Las
 líneas vacías y las que empiezan con `#` no cuentan. Un PMID que no es número
-detiene la lectura: ignorarlo dejaría fuera justo el que podía cruzar.
+detiene la lectura: ignorarlo dejaría fuera justo el que podía cruzar. Por lo
+mismo la detienen, en un archivo con encabezado, una fila sin PMID (una
+columna corrida) y una que empieza con `#` pero trae un PMID (un título).
 
 Las fuentes
 ===========
@@ -203,8 +205,10 @@ def leer_lista(ruta):
 
     Con encabezado si la primera línea con algo nombra una columna `pmid`, en
     cualquier mayúscula; si no, un PMID por línea. En los dos formatos se
-    saltan las líneas vacías y las que empiezan con `#`. Los errores dicen la
-    línea y no su contenido.
+    saltan las líneas vacías y las que empiezan con `#`. Con encabezado, una
+    fila con algo y sin PMID, o una que empieza con `#` y trae uno, detienen
+    la lectura, como un PMID que no es número. Los errores dicen la línea y
+    no su contenido.
     """
     with io.open(ruta, encoding="utf-8-sig", newline="") as f:
         texto = f.read()
@@ -224,14 +228,26 @@ def leer_lista(ruta):
         lector = csv.reader(io.StringIO("".join(lineas[inicio + 1:])),
                             delimiter=delimitador)
         for fila in lector:
-            if not any(c.strip() for c in fila) or \
-                    fila[0].lstrip().startswith("#"):
+            if not any(c.strip() for c in fila):
                 continue
+            donde = "--lista, línea %d" % (inicio + 1 + lector.line_num)
             valor = fila[i_pmid].strip() if i_pmid < len(fila) else ""
-            if not valor:
+            if fila[0].lstrip().startswith("#"):
+                # Un comentario no trae PMID. Si lo trae, puede ser un
+                # artículo cuya primera celda empieza con # (un título):
+                # saltarlo dejaría fuera justo el que podía cruzar, y no hay
+                # cómo saber cuál de las dos cosas es.
+                if entrenamiento._pmid_valido(valor) is not None:
+                    raise ValueError(
+                        "%s: empieza con # como un comentario y trae un PMID. "
+                        "Si es un artículo, que no empiece con #; si es un "
+                        "comentario, quítale el PMID." % donde)
                 continue
-            pmid = _pmid(valor, "--lista, línea %d" % (inicio + 1
-                                                       + lector.line_num))
+            if not valor:
+                # Una fila con algo y sin PMID es casi siempre una corrida de
+                # columna: el PMID está en otra celda y se perdería callado.
+                raise ValueError("%s: la fila no trae PMID." % donde)
+            pmid = _pmid(valor, donde)
             pmids.add(pmid)
             if i_doi is not None and i_doi < len(fila):
                 doi = normalizar_doi(fila[i_doi])

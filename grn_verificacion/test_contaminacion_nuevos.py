@@ -530,6 +530,36 @@ class PruebasLista(Base):
         self.assertIn("línea 3", str(e.exception))
         self.assertNotIn("x12", str(e.exception))
 
+    def test_con_encabezado_ninguna_fila_con_algo_se_salta_callada(self):
+        """Un título que empieza con # o un PMID en la columna equivocada:
+        saltar la fila dejaría fuera justo el artículo que podía cruzar."""
+        casos = {
+            "gato.csv": ("titulo,pmid\n#MeToo en bacterias,%s\n" % NUEVOS[0],
+                         "línea 2"),
+            "corrida.csv": ("pmid,doi\n%s,\n,%s\n" % (NUEVOS[0], NUEVOS[1]),
+                            "línea 3"),
+            "corta.csv": ("doi,pmid\n10.9999/x,%s\n10.9999/y\n" % NUEVOS[0],
+                          "línea 3"),
+        }
+        for nombre, (texto, linea) in sorted(casos.items()):
+            with self.subTest(nombre):
+                ruta = escribir(os.path.join(self.tmp, nombre), texto)
+                with self.assertRaises(ValueError) as e:
+                    CN.leer_lista(ruta)
+                self.assertIn(linea, str(e.exception))
+                self.assertNotIn(NUEVOS[0], str(e.exception))
+                self.assertNotIn("MeToo", str(e.exception))
+
+    def test_con_encabezado_los_comentarios_sin_pmid_se_saltan(self):
+        ruta = escribir(os.path.join(self.tmp, "comentados.csv"),
+                        "titulo,pmid\n# a mano, sin pmid\n#%s\nUno,%s\n"
+                        % (NUEVOS[1], NUEVOS[0]))
+        self.assertEqual(CN.leer_lista(ruta), ({NUEVOS[0]}, {}))
+        ruta = escribir(os.path.join(self.tmp, "comentado.csv"),
+                        "pmid,doi\n#%s,10.9999/x\n%s,\n"
+                        % (NUEVOS[1], NUEVOS[0]))
+        self.assertEqual(CN.leer_lista(ruta), ({NUEVOS[0]}, {}))
+
     def test_normalizar_doi(self):
         self.assertEqual(CN.normalizar_doi(" https://doi.org/10.9999/AbC. "),
                          "10.9999/abc")
