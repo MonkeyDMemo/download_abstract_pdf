@@ -163,6 +163,38 @@ def leer_csv(ruta):
         return lector.fieldnames, list(lector)
 
 
+def huellas_de(carpeta):
+    return dict((nombre, procedencia.huella(os.path.join(carpeta, nombre)))
+                for nombre in sorted(os.listdir(carpeta)))
+
+
+# Las huellas de las salidas de esta población sintética con el código de
+# 09d2a13. No se pueden mover sin subir `muestra.VERSION`: la carpeta de la
+# tanda 1 se vuelve a sortear con la misma semilla, y `_exigir_mismo_sorteo`
+# compara la identidad del sorteo y no sus bytes, así que un cambio callado
+# reescribiría una hoja ya repartida. También cambian, y con razón, si cambian
+# los datos sintéticos de este archivo.
+HUELLAS_DE_SIEMPRE = {
+    "dos_tandas": ({"n": 20}, {
+        "dobles.csv": "6b4ea3f566850fd6",
+        "hoja_tanda1.csv": "93ccd8733fd4075d",
+        "hoja_tanda2_ciega.csv": "a8678cc5ab788317",
+        "llave.csv": "90c086b8efe09e63",
+        "resumen.json": "970d5cd92a218619"}),
+    "una_tanda": ({"n": 20, "tandas": 1, "fraccion_doble": 0}, {
+        "dobles.csv": "02a613d41785229a",
+        "hoja_tanda1.csv": "adf14f88e38280bf",
+        "llave.csv": "44f0f565fa2ae0c0",
+        "resumen.json": "65db3612e231e085"}),
+    "toda": ({"n": 50, "semilla": 7}, {
+        "dobles.csv": "5ffee37f6166b7dd",
+        "hoja_tanda1.csv": "0c090c86387260d2",
+        "hoja_tanda2_ciega.csv": "86c54fa47e2c2175",
+        "llave.csv": "8ceb34527bffb651",
+        "resumen.json": "21c2fdc30b36c826"}),
+}
+
+
 def columnas_de_la_rubrica():
     """Las columnas de la tabla del §6 de la rúbrica, en su orden."""
     ruta = os.path.join(RAIZ, "docs", "rubrica-anotacion.md")
@@ -463,6 +495,12 @@ class PruebasSalidas(Base):
         texto = json.dumps(resumen)
         self.assertNotIn("90002", texto)
         self.assertNotIn("sample", texto)
+
+    def test_las_salidas_son_las_de_siempre(self):
+        for nombre, (kw, esperadas) in sorted(HUELLAS_DE_SIEMPRE.items()):
+            with self.subTest(nombre):
+                salida, _ = self.ejecutar(salida=nombre, **kw)
+                self.assertEqual(huellas_de(salida), esperadas)
 
     def test_la_misma_corrida_da_los_mismos_bytes(self):
         uno, _ = self.ejecutar(salida="uno")
