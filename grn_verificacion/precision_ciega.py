@@ -296,8 +296,16 @@ def _leer_particion(particion):
         if not os.path.isfile(ruta):
             raise ValueError("Falta %s en la carpeta de --particion." % nombre)
         rutas.append(ruta)
-    _, pmids_train, textos_train = verificar._leer_parte(rutas[0])
-    _, pmids_dev, _ = verificar._leer_parte(rutas[1])
+    partes = []
+    for nombre, ruta in zip(entrenamiento.ARCHIVOS, rutas):
+        try:
+            partes.append(verificar._leer_parte(ruta))
+        except OSError:
+            # El OSError trae la ruta, que es del servidor, y la salida de
+            # este comando se publica: como `entrenamiento.leer_pmids`.
+            raise ValueError("No pude leer %s de --particion." % nombre) \
+                from None
+    (_, pmids_train, textos_train), (_, pmids_dev, _) = partes
     pmids = set(entrenamiento.pmid_valido(p) for p in pmids_train | pmids_dev)
     pmids.discard(None)
     return pmids, textos_train

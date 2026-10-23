@@ -476,6 +476,18 @@ class PruebasExclusion(Base):
         self.assertIn("entity_marked_dev.jsonl", str(ctx.exception))
         self.assertNotIn(p, str(ctx.exception))
 
+    def test_una_particion_que_no_se_puede_abrir_no_dice_la_ruta(self):
+        """El OSError trae la ruta del servidor; el error del comando no."""
+        p = self.particion(train=[], dev=[])
+        secreta = os.path.join(p, "entity_marked_train.jsonl")
+        with mock.patch("grn_verificacion.verificar._leer_parte",
+                        side_effect=PermissionError(13, "Permission denied",
+                                                    secreta)):
+            with self.assertRaises(ValueError) as ctx:
+                self.calcular(particion=p)
+        self.assertIn("entity_marked_train.jsonl", str(ctx.exception))
+        self.assertNotIn(p, str(ctx.exception))
+
     def test_ni_pmids_ni_ids_salen_por_el_log_ni_al_json(self):
         p = self.particion(train=[(PMID["m-1002"], "<e1>A</e1> <e2>B</e2>")],
                            dev=[(PMID["m-1003"], "<e1>C</e1> <e2>D</e2>")])
