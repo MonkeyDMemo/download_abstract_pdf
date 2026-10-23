@@ -32,6 +32,13 @@ receta del run 22 que el modelo que clasifica los pares de la red. Su recall
 mediría al modelo contra sus propias propuestas y saldría alto por
 construcción: van en su estrato y fuera de la cifra principal.
 
+Otra red
+--------
+Con `red` (`--red NOMBRE`) se contrasta `red_<NOMBRE>.tsv`, la que arma
+`grn_red.consolidar` con otras reglas, en vez de `red.tsv`. Sus aristas
+expandidas de un operón se omiten: no tienen evidencia propia, y la arista
+del operón, que se queda en la red, ya da un par de locus por gen.
+
 Confidencialidad
 ----------------
 La base llega solo por argumento y su ruta no se imprime. Lo que sale fila por
@@ -59,7 +66,7 @@ import json
 import os
 import re
 
-from grn_comun import archivos, procedencia
+from grn_comun import archivos, procedencia, redes
 from grn_verificacion import entrenamiento, evaluar, reentrenar, validacion
 
 GRUPOS = ("todas", "en_corpus", "con_xml", "solo_abstract")
@@ -493,6 +500,11 @@ def _locus_de_pares(ruta_pares, necesarios):
     return locus
 
 
+def _verdadero(valor):
+    """Un booleano de los TSV de `red.py`, que escribe true/false."""
+    return (valor or "").strip().lower() in ("true", "1")
+
+
 def aristas_en_locus(ruta_red, ruta_evidencias, ruta_pares):
     """({(regulador, blanco): [arista, ...]}, conteos).
 
@@ -509,15 +521,27 @@ def aristas_en_locus(ruta_red, ruta_evidencias, ruta_pares):
     autorregulación). Un `id_par` de las evidencias que no está en
     `pares.jsonl` detiene todo: la red y los pares no son de la misma
     corrida.
+
+    Una red de `grn_red.consolidar` con otras reglas trae dos columnas que
+    aquí son opcionales. Las filas con `expandida_de` se omiten y se cuentan
+    en `expandidas_omitidas`: no tienen evidencia propia (la suya es la de la
+    arista del operón, que se queda en la red) y esa arista ya da un par de
+    locus por gen. Una fila con `autorregulacion` cuyo par queda en un solo
+    locus se cuenta en `solo_autorregulacion` y no en `sin_locus`: tiene
+    locus de PAO1, lo que no tiene es un segundo gen.
     """
+    nombre_red = os.path.basename(ruta_red)
+    nombre_evidencias = os.path.basename(ruta_evidencias)
     _, red = _filas_csv(ruta_red, ("tf", "blanco", "signo", "pmids"),
-                        "red.tsv", delimitador="\t", sin_comillas=True)
+                        nombre_red, opcionales=("expandida_de",
+                                                "autorregulacion"),
+                        delimitador="\t", sin_comillas=True)
     red = list(red)
     ids = collections.defaultdict(set)
     pmids_ev = collections.defaultdict(set)
     _, evidencias = _filas_csv(ruta_evidencias,
                                ("tf", "blanco", "id_par", "pmid"),
-                               "red_evidencias.tsv", delimitador="\t",
+                               nombre_evidencias, delimitador="\t",
                                sin_comillas=True)
     for fila in evidencias:
         clave = (fila["tf"], fila["blanco"])
@@ -532,9 +556,9 @@ def aristas_en_locus(ruta_red, ruta_evidencias, ruta_pares):
     faltan = len(necesarios - set(locus))
     if faltan:
         raise ValueError(
-            "%d id_par de red_evidencias.tsv no están en pares.jsonl: la red "
-            "y los pares no son de la misma corrida. Corre antes el paso red "
-            "del flujo." % faltan)
+            "%d id_par de %s no están en pares.jsonl: la red y los pares no "
+            "son de la misma corrida. Corre antes el paso red del flujo."
+            % (faltan, nombre_evidencias))
 
     c = collections.Counter()
     por_signo = collections.Counter()
@@ -544,20 +568,36 @@ def aristas_en_locus(ruta_red, ruta_evidencias, ruta_pares):
         clave = (fila["tf"], fila["blanco"])
         signo = fila["signo"].strip()
         if signo not in SIGNOS_RED:
-            raise ValueError("red.tsv trae una arista con un signo que no es "
-                             "activates, represses ni regulates.")
+            raise ValueError("%s trae una arista con un signo que no es "
+                             "activates, represses ni regulates." % nombre_red)
+        if (fila.get("expandida_de") or "").strip():
+            # Antes de exigir evidencia: en red_recomendada.tsv de la corrida
+            # 4, 838 de las 1 533 expandidas no tienen ninguna bajo su nombre,
+            # y el contraste se detenía en la primera. Las otras la tienen
+            # porque una arista observada se llama igual, y esa se cuenta
+            # sola.
+            c["expandidas_omitidas"] += 1
+            continue
         if clave not in ids:
-            raise ValueError("Una arista de red.tsv no tiene evidencias en "
-                             "red_evidencias.tsv: no son de la misma corrida.")
+            raise ValueError("Una arista de %s no tiene evidencias en %s: no "
+                             "son de la misma corrida."
+                             % (nombre_red, nombre_evidencias))
         dirigidos = set()
+        de_tf, de_blanco = set(), set()
         for i in ids[clave]:
             tf_locus, target_locus = locus[i]
+            de_tf |= tf_locus
+            de_blanco |= target_locus
             for a in tf_locus:
                 for b in target_locus:
                     if a != b:
                         dirigidos.add((a, b))
         if not dirigidos:
-            c["sin_locus"] += 1
+            if (_verdadero(fila.get("autorregulacion")) and de_tf
+                    and de_tf == de_blanco and len(de_tf) == 1):
+                c["solo_autorregulacion"] += 1
+            else:
+                c["sin_locus"] += 1
             continue
         c["con_locus"] += 1
         por_signo[signo] += 1
@@ -569,9 +609,14 @@ def aristas_en_locus(ruta_red, ruta_evidencias, ruta_pares):
                   "pmids": frozenset(pmids | pmids_ev[clave])}
         for par in dirigidos:
             por_par[par].append(arista)
+    # aristas = con_locus + sin_locus + solo_autorregulacion +
+    # expandidas_omitidas; `expandidas` son las de más de un par de locus.
     conteos = collections.OrderedDict([
         ("aristas", c["aristas"]), ("con_locus", c["con_locus"]),
-        ("sin_locus", c["sin_locus"]), ("expandidas", c["expandidas"]),
+        ("sin_locus", c["sin_locus"]),
+        ("solo_autorregulacion", c["solo_autorregulacion"]),
+        ("expandidas_omitidas", c["expandidas_omitidas"]),
+        ("expandidas", c["expandidas"]),
         ("pares_locus", len(por_par)),
         ("por_signo", collections.OrderedDict(
             (s, por_signo[s]) for s in SIGNOS_RED)),
@@ -810,6 +855,13 @@ def _cuantas(n, singular, plural):
     return "%s %s" % (_n(n), singular if n == 1 else plural)
 
 
+def _enumerar(partes):
+    """«a», «a y b», «a, b y c»."""
+    if len(partes) < 2:
+        return "".join(partes)
+    return "%s y %s" % (", ".join(partes[:-1]), partes[-1])
+
+
 def _pct(p):
     if not p or not p.get("n"):
         return "—"
@@ -855,6 +907,12 @@ def _tabla_recall(w, recall):
     w("")
 
 
+def _archivo_red(red):
+    """El nombre del archivo de la red contrastada, `red.tsv` o el de
+    `--red`: el informe dice cuál midió."""
+    return red.get("archivo") or redes.RED
+
+
 def informe_markdown(resultado):
     """El informe publicable: solo conteos, proporciones e intervalos.
 
@@ -879,8 +937,8 @@ def informe_markdown(resultado):
       % (_corrida(b["corrida"]), _n(b["documentos"]), _n(b["con_xml"]),
          _n(b["solo_abstract"]), _n(b["oraciones"])))
     if red:
-        w("- Red: %s aristas de `red.tsv`%s."
-          % (_n(red["conteos"]["aristas"]),
+        w("- Red: %s aristas de `%s`%s."
+          % (_n(red["conteos"]["aristas"]), _archivo_red(red),
              "; con `--solo-pmids`" if red.get("recall_test") else ""))
     else:
         w("- Red: no se contrastó (`--sin-red`).")
@@ -1016,12 +1074,32 @@ def informe_markdown(resultado):
         w("")
     else:
         cr = red["conteos"]
-        w("- %s de `red.tsv`: %s llevadas a locus por `id_par` y "
-          "`pares.jsonl` (%s con más de un par porque un extremo es un "
-          "operón) y %s sin locus de PAO1; en total, %s de locus dirigidos."
-          % (_cuantas(cr["aristas"], "arista", "aristas"),
-             _n(cr["con_locus"]), _n(cr["expandidas"]), _n(cr["sin_locus"]),
-             _cuantas(cr["pares_locus"], "par", "pares")))
+        partes = ["%s llevadas a locus por `id_par` y `pares.jsonl` (%s con "
+                  "más de un par porque un extremo es un operón)"
+                  % (_n(cr["con_locus"]), _n(cr["expandidas"])),
+                  "%s sin locus de PAO1" % _n(cr["sin_locus"])]
+        # Solo las trae una red con otras reglas: en la de red.py serían
+        # dos ceros que no dicen nada.
+        auto = cr.get("solo_autorregulacion")
+        omitidas = cr.get("expandidas_omitidas")
+        if auto:
+            partes.append("%s de autorregulación con un solo locus"
+                          % _n(auto))
+        if omitidas:
+            partes.append("%s de un operón" % _cuantas(
+                omitidas, "expandida", "expandidas"))
+        w("- %s de `%s`: %s; en total, %s de locus dirigidos."
+          % (_cuantas(cr["aristas"], "arista", "aristas"), _archivo_red(red),
+             _enumerar(partes), _cuantas(cr["pares_locus"], "par", "pares")))
+        if auto:
+            w("- La autorregulación con un solo locus no da par: no tiene un "
+              "segundo gen.")
+        if omitidas:
+            w("- %s: no %s evidencia propia, y la arista del operón, que "
+              "sigue en la red, ya da un par de locus por gen."
+              % ("La expandida se omite" if omitidas == 1
+                 else "Las expandidas se omiten",
+                 "tiene" if omitidas == 1 else "tienen"))
         w("")
         w("Por fila de la base: **dirigido** si la red tiene la arista del "
           "regulador al blanco; **solo al revés** si solo tiene la del blanco "
@@ -1128,9 +1206,10 @@ def resumen(resultado):
     if red:
         e = red["recall"]["estratos"]
         lineas.append(
-            "Red: %s aristas, %s llevadas a locus. Sin BioBERT: dirigido %s, "
-            "solo al revés %s, acuerdo de signo %s."
-            % (_n(red["conteos"]["aristas"]), _n(red["conteos"]["con_locus"]),
+            "Red: %s aristas de %s, %s llevadas a locus. Sin BioBERT: "
+            "dirigido %s, solo al revés %s, acuerdo de signo %s."
+            % (_n(red["conteos"]["aristas"]), _archivo_red(red),
+               _n(red["conteos"]["con_locus"]),
                _pct(e[PRINCIPAL]["dirigido"]), _pct(e[PRINCIPAL]["inverso"]),
                _pct(e[PRINCIPAL]["signo"]["acuerdo"])))
         lineas.append("  BioBERT, aparte por circular: dirigido %s."
@@ -1190,13 +1269,35 @@ def exigir_confidencial_fuera(ruta):
             "$GRN_DATOS.") from None
 
 
-def ubicar_archivos(carpeta, sin_red=False):
+def archivos_de_red(red=None, sin_red=False):
+    """(red, evidencias, informe) de la red que se contrasta, o ValueError.
+
+    Sin `red`, los de la red por omisión (`red.tsv`); con él, los de
+    `grn_comun.redes`, la misma fuente de los nombres que usa
+    `grn_red.consolidar` para escribirlos. El mensaje de error no repite el
+    nombre: lo que llega por --red puede ser una ruta.
+    """
+    if red is None:
+        return redes.archivos_de_red()
+    if sin_red:
+        raise ValueError("--red y --sin-red se excluyen: --red elige qué red "
+                         "se contrasta y --sin-red no contrasta ninguna.")
+    try:
+        return redes.archivos_de_red(red)
+    except ValueError as e:
+        raise ValueError("--red: %s" % e) from None
+
+
+def ubicar_archivos(carpeta, sin_red=False, red=None):
     """Las rutas de lo que se lee de la carpeta del flujo.
 
     El CSV de candidatas es el que `flujo.py` anotó en `estado.json` (el
     nombre lleva la fecha y en una carpeta puede haber varios); si no hay
-    estado, el más reciente. Las menciones son las del mismo volcado.
+    estado, el más reciente. Las menciones son las del mismo volcado. La red
+    es `red.tsv`, o con `red` la `red_<red>.tsv` de `grn_red.consolidar`, con
+    sus evidencias y su informe (`archivos_de_red`).
     """
+    nombres_red = archivos_de_red(red, sin_red)
     if not os.path.isdir(carpeta):
         raise ValueError("No encuentro la carpeta de --carpeta.")
     candidatas = None
@@ -1228,15 +1329,24 @@ def ubicar_archivos(carpeta, sin_red=False):
     rutas = {"carpeta": carpeta, "candidatas": candidatas,
              "menciones": menciones}
     if not sin_red:
-        for llave, nombre in (("red", "red.tsv"),
-                              ("evidencias", "red_evidencias.tsv"),
+        nombre_red, nombre_evidencias, nombre_informe = nombres_red
+        if red is None:
+            pista = "corre antes el paso red del flujo, o usa --sin-red"
+        else:
+            pista = ("arma antes esa red con `python -m grn_red.cli "
+                     "consolidar` (la recomendada la arma el paso "
+                     "red_recomendada del flujo)")
+        for llave, nombre in (("red", nombre_red),
+                              ("evidencias", nombre_evidencias),
                               ("pares", "pares.jsonl")):
             ruta = os.path.join(carpeta, nombre)
             if not os.path.isfile(ruta):
-                raise ValueError("Falta %s en la carpeta: corre antes el paso "
-                                 "red del flujo, o usa --sin-red." % nombre)
+                # Solo el nombre: con --red, ya pasó por el patrón cerrado de
+                # `redes` y no es una ruta.
+                raise ValueError("Falta %s en la carpeta: %s." % (nombre,
+                                                                  pista))
             rutas[llave] = ruta
-        rutas["red_informe"] = os.path.join(carpeta, "red_informe.json")
+        rutas["red_informe"] = os.path.join(carpeta, nombre_informe)
     return rutas
 
 
@@ -1327,23 +1437,29 @@ def _escribir_texto(ruta, texto):
 
 def ejecutar(base, carpeta, confidencial, informe=None, hoja=None,
              excluir=(), solo=(), sin_red=False, aceptar_base_distinta=False,
-             log=_nada):
+             red=None, log=_nada):
     """Contrasta el bronce y la red de `carpeta` con la base y escribe.
 
     `base`: el .xlsx, por ruta. `carpeta`: la del flujo (CSV del bronce y,
     salvo `sin_red`, `red.tsv`, `red_evidencias.tsv` y `pares.jsonl`).
-    `excluir` y `solo`: archivos con el formato de `reservas.tsv`.
+    `red`: el nombre de una red con otras reglas, para contrastar
+    `red_<red>.tsv` y sus evidencias en vez de `red.tsv`; no va con
+    `sin_red`. `excluir` y `solo`: archivos con el formato de `reservas.tsv`.
     `confidencial`: carpeta fuera de todo repositorio para
     `cobertura_por_fila.tsv`, `candidatas_nuevas.tsv` y `contraste.json`.
     `informe`: dónde va el Markdown publicable, o None para no escribirlo.
 
-    Las comprobaciones van antes de abrir la base: la carpeta confidencial,
-    que existan las entradas y que la red sea de estos pares. Después, la
-    base se coteja con `reentrenar.BASE_ESPERADA` y, si no cuadra, se detiene
-    con ValueError salvo `aceptar_base_distinta`. El informe y las líneas de
-    `log` pasan por `verificar_publicable` antes de escribir nada. Devuelve
-    el resultado: solo conteos, proporciones e intervalos.
+    Las comprobaciones van antes de abrir la base: los argumentos, la carpeta
+    confidencial, que existan las entradas y que la red sea de estos pares.
+    Después, la base se coteja con `reentrenar.BASE_ESPERADA` y, si no
+    cuadra, se detiene con ValueError salvo `aceptar_base_distinta`. El
+    informe y las líneas de `log` pasan por `verificar_publicable` antes de
+    escribir nada. Devuelve el resultado: solo conteos, proporciones e
+    intervalos.
     """
+    # Primero: es un error de argumentos, y no hace falta tocar nada para
+    # decirlo.
+    archivos_de_red(red, sin_red)
     confidencial = _expandir(confidencial, "--confidencial")
     exigir_confidencial_fuera(confidencial)
     base = _expandir(base, "--base")
@@ -1360,7 +1476,7 @@ def ejecutar(base, carpeta, confidencial, informe=None, hoja=None,
             raise ValueError("No encuentro el archivo de %s. Usa una ruta "
                              "absoluta; entre comillas simples, ~ y $HOME no "
                              "se expanden." % flag)
-    rutas = ubicar_archivos(carpeta, sin_red)
+    rutas = ubicar_archivos(carpeta, sin_red, red)
     avisos = []
     if not sin_red:
         avisos.extend(comprobar_procedencia_red(rutas))
@@ -1413,7 +1529,9 @@ def ejecutar(base, carpeta, confidencial, informe=None, hoja=None,
     homologia = cobertura_bronce([f for f in interacciones if f["homologia"]],
                                  docs, pares)
 
-    red, aristas, nuevas = None, None, []
+    # `contrastada` y no `red`, que es el nombre que llegó por argumento y va
+    # a los parámetros del registro.
+    contrastada, aristas, nuevas = None, None, []
     if not sin_red:
         aristas, c_red = aristas_en_locus(rutas["red"], rutas["evidencias"],
                                           rutas["pares"])
@@ -1424,7 +1542,8 @@ def ejecutar(base, carpeta, confidencial, informe=None, hoja=None,
                 not recall_test["solo_pmids"]["evaluadas"]:
             avisos.append("ninguna fila exigible tiene todos sus PMIDs en "
                           "--solo-pmids: el recall de test queda vacío.")
-        red = collections.OrderedDict([
+        contrastada = collections.OrderedDict([
+            ("archivo", os.path.basename(rutas["red"])),
             ("conteos", c_red),
             ("recall", recall_red(exigibles, aristas)),
             ("recall_test", recall_test),
@@ -1454,7 +1573,7 @@ def ejecutar(base, carpeta, confidencial, informe=None, hoja=None,
                 (v, len(pares[v][0])) for v in VARIANTES))])),
         ("cobertura", cobertura),
         ("homologia", homologia),
-        ("red", red),
+        ("red", contrastada),
         ("avisos", avisos),
     ])
     texto = informe_markdown(resultado)
@@ -1487,7 +1606,7 @@ def ejecutar(base, carpeta, confidencial, informe=None, hoja=None,
     huellas["solo"] = [procedencia.huella(r) for r in solo]
     registro = collections.OrderedDict([
         ("parametros", collections.OrderedDict([
-            ("hoja", hoja), ("sin_red", bool(sin_red)),
+            ("hoja", hoja), ("sin_red", bool(sin_red)), ("red", red),
             ("aceptar_base_distinta", bool(aceptar_base_distinta)),
             ("archivos_excluir", len(excluir)),
             ("archivos_solo", len(solo))])),

@@ -25,6 +25,11 @@ mano de la tabla de abajo:
     13    9024 -> 9025     TEST            Histórica  su arista solo tiene evidencia de XML
     14    9026 -> 9027     un DOI          Histórica  sin PMID
     15    9040 -> 9042     XML             Histórica  la red llega por un operón
+
+`red_prueba.tsv` es una red con otras reglas, como las de
+`grn_red.consolidar`: las aristas de `red.tsv`, una autorregulación de un solo
+locus (9043) y una arista expandida del operón de la fila 15, sin evidencia
+propia.
 """
 
 import collections
@@ -41,7 +46,7 @@ import unittest
 from unittest import mock
 
 from grn_bronce.exportar import COLUMNAS_CANDIDATAS, COLUMNAS_MENCIONES
-from grn_comun import procedencia
+from grn_comun import procedencia, redes
 from grn_verificacion import cli
 from grn_verificacion import contraste as C
 from grn_verificacion import entrenamiento as E
@@ -141,6 +146,14 @@ ARISTAS = [
      [("e12", P_ABS, ["PA9012"], ["PA9013"])]),
 ]
 
+# Para una red con otras reglas (`grn_red.consolidar`): una autorregulación
+# que el perfil recomendado marca en vez de descartar, con sus dos lados en
+# el mismo locus, y una expansión del operón de la e07, que copia su fila y
+# no tiene evidencia propia.
+AUTORREGULADA = ("QzpR", "qzpR", "activates", [P_XML],
+                 [("e13", P_XML, ["PA9043"], ["PA9043"])])
+OPERON, GEN_EXPANDIDO = ARISTAS[6], "wvnB"
+
 # Lo que no puede salir en nada publicable.
 _LOCUS = re.compile(r"PA[0-9]{4}")
 _SIETE_U_OCHO = re.compile(r"(?<![0-9])[0-9]{7,8}(?![0-9])")
@@ -177,52 +190,120 @@ def escribir_menciones(ruta, unidades):
     return ruta
 
 
+def _oracion(tf, blanco):
+    # Una oración que empieza con comillas: leída con el csv por omisión, se
+    # comería las líneas siguientes.
+    return u'"%s" controla a %s, dice el texto.' % (tf, blanco)
+
+
+def _fila_red(tf, blanco, signo, pmids, evidencias, autorregulacion=False):
+    """Una fila de red.tsv con las columnas de etapa2/red.py."""
+    return {"tf": tf, "blanco": blanco, "signo": signo,
+            "conflicto": "false", "n_evidencias": len(evidencias),
+            "n_activates": int(signo == "activates"),
+            "n_represses": int(signo == "represses"),
+            "n_regulates": int(signo == "regulates"),
+            "n_articulos": len(pmids), "confianza": "0.9000",
+            "autorregulacion": "true" if autorregulacion else "false",
+            "secciones": "results", "pmids": "|".join(pmids),
+            "oracion_representativa": _oracion(tf, blanco)}
+
+
+def _escribir_evidencias(fe, fp, tf, blanco, signo, evidencias,
+                         autorregulacion=False):
+    """Las filas de red_evidencias.tsv de una arista y, si `fp` no es None,
+    sus pares en pares.jsonl."""
+    for id_par, pmid, tf_locus, target_locus in evidencias:
+        ev = {"tf": tf, "blanco": blanco, "id_par": id_par, "pmid": pmid,
+              "seccion": "results", "fuente": "fulltext",
+              "prediccion": signo, "probabilidad": "0.900000",
+              "redaccion": "directa", "oracion": _oracion(tf, blanco)}
+        fe.write("\t".join(str(ev[c]) for c in RED.COLUMNAS_EVIDENCIAS)
+                 + "\n")
+        if fp is not None:
+            fp.write(json.dumps({
+                "id_par": id_par, "pmid": int(pmid), "tf": tf,
+                "target": blanco,
+                "text": "<e1> %s </e1> controla a <e2> %s </e2> ."
+                        % (tf, blanco),
+                "tf_locus": tf_locus, "target_locus": target_locus,
+                "autorregulacion": autorregulacion},
+                ensure_ascii=False) + "\n")
+
+
+def sellar_red(carpeta, informe=redes.INFORME):
+    """El sello de `red.py` en su informe: la huella del pares.jsonl."""
+    huella = procedencia.huella(os.path.join(carpeta, "pares.jsonl"))
+    with io.open(os.path.join(carpeta, informe), "w", encoding="utf-8") as f:
+        json.dump({"huellas": {"pares": {"huella": huella}}}, f)
+
+
 def escribir_red(carpeta, aristas, sellar=True):
     """red.tsv y red_evidencias.tsv con las columnas de etapa2/red.py, el
     pares.jsonl del puente y el sello de red_informe.json."""
-    ruta_pares = os.path.join(carpeta, "pares.jsonl")
     with io.open(os.path.join(carpeta, "red.tsv"), "w", encoding="utf-8",
                  newline="\n") as fr, \
             io.open(os.path.join(carpeta, "red_evidencias.tsv"), "w",
                     encoding="utf-8", newline="\n") as fe, \
-            io.open(ruta_pares, "w", encoding="utf-8", newline="\n") as fp:
+            io.open(os.path.join(carpeta, "pares.jsonl"), "w",
+                    encoding="utf-8", newline="\n") as fp:
         fr.write("\t".join(RED.COLUMNAS_RED) + "\n")
         fe.write("\t".join(RED.COLUMNAS_EVIDENCIAS) + "\n")
         for tf, blanco, signo, pmids, evidencias in aristas:
-            # Una oración que empieza con comillas: leída con el csv por
-            # omisión, se comería las líneas siguientes.
-            oracion = u'"%s" controla a %s, dice el texto.' % (tf, blanco)
-            fila = {"tf": tf, "blanco": blanco, "signo": signo,
-                    "conflicto": "false", "n_evidencias": len(evidencias),
-                    "n_activates": int(signo == "activates"),
-                    "n_represses": int(signo == "represses"),
-                    "n_regulates": int(signo == "regulates"),
-                    "n_articulos": len(pmids), "confianza": "0.9000",
-                    "autorregulacion": "false", "secciones": "results",
-                    "pmids": "|".join(pmids),
-                    "oracion_representativa": oracion}
+            fila = _fila_red(tf, blanco, signo, pmids, evidencias)
             fr.write("\t".join(str(fila[c]) for c in RED.COLUMNAS_RED)
                      + "\n")
-            for id_par, pmid, tf_locus, target_locus in evidencias:
-                ev = {"tf": tf, "blanco": blanco, "id_par": id_par,
-                      "pmid": pmid, "seccion": "results",
-                      "fuente": "fulltext", "prediccion": signo,
-                      "probabilidad": "0.900000", "redaccion": "directa",
-                      "oracion": oracion}
-                fe.write("\t".join(str(ev[c])
-                                   for c in RED.COLUMNAS_EVIDENCIAS) + "\n")
-                fp.write(json.dumps({
-                    "id_par": id_par, "pmid": int(pmid), "tf": tf,
-                    "target": blanco,
-                    "text": "<e1> %s </e1> controla a <e2> %s </e2> ."
-                            % (tf, blanco),
-                    "tf_locus": tf_locus, "target_locus": target_locus,
-                    "autorregulacion": False}, ensure_ascii=False) + "\n")
+            _escribir_evidencias(fe, fp, tf, blanco, signo, evidencias)
     if sellar:
-        with io.open(os.path.join(carpeta, "red_informe.json"), "w",
-                     encoding="utf-8") as f:
-            json.dump({"huellas": {"pares": {
-                "huella": procedencia.huella(ruta_pares)}}}, f)
+        sellar_red(carpeta)
+
+
+def escribir_red_con_reglas(carpeta, nombre, aristas, autorreguladas=(),
+                            expandidas=()):
+    """red_<nombre>.tsv, sus evidencias y su informe, como los deja
+    `grn_red.consolidar` con el perfil recomendado.
+
+    Las columnas son las de etapa2/red.py más `nivel_soporte` y
+    `expandida_de`. Las evidencias son las de red.py, de las aristas
+    observadas: una expandida, dada como (arista del operón, gen), copia la
+    fila del operón y no tiene ninguna. Los pares de las autorreguladas se
+    agregan a pares.jsonl, y los dos informes se vuelven a sellar con la
+    huella nueva. Va después de `escribir_red`, que escribe pares.jsonl.
+    """
+    archivo_red, archivo_evidencias, archivo_informe = \
+        redes.archivos_de_red(nombre)
+    filas = []
+    with io.open(os.path.join(carpeta, archivo_evidencias), "w",
+                 encoding="utf-8", newline="\n") as fe, \
+            io.open(os.path.join(carpeta, "pares.jsonl"), "a",
+                    encoding="utf-8", newline="\n") as fp:
+        fe.write("\t".join(RED.COLUMNAS_EVIDENCIAS) + "\n")
+        for tf, blanco, signo, pmids, evidencias in aristas:
+            filas.append(_fila_red(tf, blanco, signo, pmids, evidencias))
+            # Sus pares ya están: los escribió escribir_red.
+            _escribir_evidencias(fe, None, tf, blanco, signo, evidencias)
+        for tf, blanco, signo, pmids, evidencias in autorreguladas:
+            filas.append(_fila_red(tf, blanco, signo, pmids, evidencias,
+                                   autorregulacion=True))
+            _escribir_evidencias(fe, fp, tf, blanco, signo, evidencias,
+                                 autorregulacion=True)
+    for (tf, blanco, signo, pmids, evidencias), gen in expandidas:
+        fila = _fila_red(tf, gen, signo, pmids, evidencias)
+        fila["oracion_representativa"] = _oracion(tf, blanco)
+        fila["expandida_de"] = blanco
+        filas.append(fila)
+    columnas = list(RED.COLUMNAS_RED) + ["nivel_soporte", "expandida_de"]
+    with io.open(os.path.join(carpeta, archivo_red), "w", encoding="utf-8",
+                 newline="\n") as fr:
+        fr.write("\t".join(columnas) + "\n")
+        for fila in filas:
+            fila.setdefault("expandida_de", "")
+            fila["nivel_soporte"] = ("candidata" if fila["n_articulos"] == 1
+                                     else "soporte_multiple")
+            fr.write("\t".join(str(fila[c]) for c in columnas) + "\n")
+    if os.path.isfile(os.path.join(carpeta, redes.INFORME)):
+        sellar_red(carpeta)
+    sellar_red(carpeta, archivo_informe)
 
 
 def escribir_lista(ruta, pmids):
@@ -274,11 +355,17 @@ class _ConEscenario(unittest.TestCase):
     def docs(self):
         return C.documentos_del_bronce(self.menciones)
 
-    def aristas(self):
+    def aristas(self, red=None):
+        nombre_red, nombre_evidencias, _ = redes.archivos_de_red(red)
         return C.aristas_en_locus(
-            os.path.join(self.carpeta, "red.tsv"),
-            os.path.join(self.carpeta, "red_evidencias.tsv"),
+            os.path.join(self.carpeta, nombre_red),
+            os.path.join(self.carpeta, nombre_evidencias),
             os.path.join(self.carpeta, "pares.jsonl"))
+
+    def con_reglas(self):
+        """Escribe `red_prueba.tsv` junto a `red.tsv`."""
+        escribir_red_con_reglas(self.carpeta, "prueba", ARISTAS,
+                                [AUTORREGULADA], [(OPERON, GEN_EXPANDIDO)])
 
     def correr(self, **kwargs):
         lineas = []
@@ -520,6 +607,49 @@ class PruebasRed(_ConEscenario):
         self.assertEqual(e["historica"]["n"] + e["ambos"]["n"]
                          + e["otro"]["n"], e[C.PRINCIPAL]["n"])
 
+    def test_una_red_con_otras_reglas(self):
+        """red_prueba.tsv: las 12 aristas de red.tsv, la autorregulación de un
+        solo locus y la expandida sin evidencia propia, 14 filas. No se
+        detiene, y da los mismos pares de locus que red.tsv."""
+        self.con_reglas()
+        normal, c_normal = self.aristas()
+        otra, c = self.aristas("prueba")
+        self.assertEqual((14, 11, 1, 1, 1, 1, 11),
+                         (c["aristas"], c["con_locus"], c["sin_locus"],
+                          c["solo_autorregulacion"], c["expandidas_omitidas"],
+                          c["expandidas"], c["pares_locus"]))
+        self.assertEqual(normal, otra)
+        self.assertEqual(c_normal["por_signo"], c["por_signo"])
+        self.assertEqual((0, 0), (c_normal["solo_autorregulacion"],
+                                  c_normal["expandidas_omitidas"]))
+        # Lo que decide es la marca y no el locus: la misma arista sin marcar
+        # cuenta como sin locus, como en red.tsv.
+        escribir_red_con_reglas(self.carpeta, "sin_marca",
+                                ARISTAS + [AUTORREGULADA])
+        _, c = self.aristas("sin_marca")
+        self.assertEqual((13, 2, 0), (c["aristas"], c["sin_locus"],
+                                      c["solo_autorregulacion"]))
+
+    def test_sin_expandida_de_una_arista_sin_evidencias_detiene(self):
+        """La expandida se omite por su columna, no por faltarle evidencia:
+        vacía la marca y la misma fila detiene el contraste, con el mensaje
+        en los archivos de esa red."""
+        self.con_reglas()
+        ruta = os.path.join(self.carpeta, "red_prueba.tsv")
+        with io.open(ruta, encoding="utf-8") as f:
+            lineas = f.readlines()
+        marca = "\t" + OPERON[1] + "\n"
+        lineas = [l[:-len(marca)] + "\t\n" if l.endswith(marca) else l
+                  for l in lineas]
+        with io.open(ruta, "w", encoding="utf-8", newline="\n") as f:
+            f.writelines(lineas)
+        with self.assertRaises(ValueError) as ctx:
+            self.aristas("prueba")
+        mensaje = str(ctx.exception)
+        self.assertIn("red_prueba.tsv", mensaje)
+        self.assertIn("red_prueba_evidencias.tsv", mensaje)
+        self.assertNotIn(self.tmp, mensaje)
+
     def test_candidatas_nuevas(self):
         aristas, _ = self.aristas()
         nuevas = C.candidatas_nuevas(aristas,
@@ -587,6 +717,9 @@ class PruebasEjecutar(_ConEscenario):
         self.assertEqual({"archivos": 1, "pmids": 1, "pmids_citados": 1,
                           "oraciones_ignoradas": 0},
                          dict(resultado["exclusiones"]))
+        self.assertEqual("red.tsv", red["archivo"])
+        self.assertEqual((0, 0), (red["conteos"]["expandidas_omitidas"],
+                                  red["conteos"]["solo_autorregulacion"]))
 
         with io.open(os.path.join(self.confidencial, C.ARCHIVO_POR_FILA),
                      encoding="utf-8", newline="") as f:
@@ -612,6 +745,7 @@ class PruebasEjecutar(_ConEscenario):
             registro = json.load(f)
         self.assertEqual(procedencia.huella(self.base),
                          registro["huellas"]["base"])
+        self.assertIsNone(registro["parametros"]["red"])
         self.assertTrue(lineas[-1].startswith("Escritos en la carpeta de "
                                               "--confidencial"))
 
@@ -628,6 +762,90 @@ class PruebasEjecutar(_ConEscenario):
         self.assertIn("**DIFIERE**", texto)
         # La corrida 4 no se compara con la 1.
         self.assertNotIn("Frente a PLAN.md 2.4", texto)
+
+    def test_con_otra_red(self):
+        """`red_prueba.tsv` da los mismos pares de locus que `red.tsv`: el
+        mismo recall, también el de test. El informe y el registro dicen qué
+        red se midió."""
+        self.con_reglas()
+        normal, _ = self.correr(solo=[self.solo])
+        resultado, lineas = self.correr(solo=[self.solo], red="prueba")
+        red = resultado["red"]
+        self.assertEqual("red_prueba.tsv", red["archivo"])
+        self.assertEqual((14, 1, 1), (red["conteos"]["aristas"],
+                                      red["conteos"]["expandidas_omitidas"],
+                                      red["conteos"]["solo_autorregulacion"]))
+        self.assertEqual(normal["red"]["recall"], red["recall"])
+        self.assertEqual(normal["red"]["recall_test"], red["recall_test"])
+        with io.open(self.informe, encoding="utf-8") as f:
+            texto = f.read()
+        self.assertIn("- Red: 14 aristas de `red_prueba.tsv`", texto)
+        self.assertIn("- 14 aristas de `red_prueba.tsv`: 11 llevadas a locus",
+                      texto)
+        self.assertIn(", 1 sin locus de PAO1, 1 de autorregulación con un "
+                      "solo locus y 1 expandida de un operón; en total, 11 "
+                      "pares de locus dirigidos.", texto)
+        self.assertIn("- La expandida se omite: no tiene evidencia propia",
+                      texto)
+        self.assertNotIn("`red.tsv`", texto)
+        self.assertSinContenido(texto)
+        self.assertSinContenido("\n".join(lineas))
+        self.assertIn("Red: 14 aristas de red_prueba.tsv", "\n".join(lineas))
+        with io.open(os.path.join(self.confidencial, C.ARCHIVO_REGISTRO),
+                     encoding="utf-8") as f:
+            registro = json.load(f)
+        self.assertEqual("prueba", registro["parametros"]["red"])
+        self.assertEqual(procedencia.huella(
+            os.path.join(self.carpeta, "red_prueba.tsv")),
+            registro["huellas"]["red"])
+
+    def test_otra_red_de_otros_pares_se_detiene(self):
+        """La procedencia se comprueba con el informe de esa red."""
+        self.con_reglas()
+        with io.open(os.path.join(self.carpeta, "red_prueba_informe.json"),
+                     "w", encoding="utf-8") as f:
+            json.dump({"huellas": {"pares": {"huella": "abcdefabcdefabcd"}}},
+                      f)
+        with self.assertRaises(ValueError) as ctx:
+            self.correr(red="prueba")
+        self.assertIn("otro pares.jsonl", str(ctx.exception))
+        # La red por omisión sigue sellada con los pares de la carpeta.
+        self.correr()
+
+    def test_red_y_sin_red_se_excluyen(self):
+        self.con_reglas()
+        with mock.patch.object(V, "leer_base",
+                               side_effect=AssertionError("abrió la base")):
+            with self.assertRaises(ValueError) as ctx:
+                self.correr(red="prueba", sin_red=True)
+        mensaje = str(ctx.exception)
+        self.assertIn("--red", mensaje)
+        self.assertIn("--sin-red", mensaje)
+        self.assertFalse(os.path.exists(self.confidencial))
+        self.assertFalse(os.path.exists(self.informe))
+
+    def test_un_nombre_de_red_invalido_no_dice_cual(self):
+        for nombre in (os.path.join(self.tmp, "secreta"), "evidencias",
+                       "Prueba", "prueba\n", ""):
+            with mock.patch.object(V, "leer_base",
+                                   side_effect=AssertionError("abrió la "
+                                                              "base")):
+                with self.assertRaises(ValueError) as ctx:
+                    self.correr(red=nombre)
+            mensaje = str(ctx.exception)
+            self.assertTrue(mensaje.startswith("--red: "), mensaje)
+            self.assertNotIn(self.tmp, mensaje)
+            self.assertNotIn("secreta", mensaje)
+            self.assertNotIn("Prueba", mensaje)
+            self.assertFalse(os.path.exists(self.confidencial))
+
+    def test_una_red_que_no_esta_dice_como_armarla(self):
+        with self.assertRaises(ValueError) as ctx:
+            self.correr(red="otra")
+        mensaje = str(ctx.exception)
+        self.assertIn("Falta red_otra.tsv", mensaje)
+        self.assertIn("grn_red.cli consolidar", mensaje)
+        self.assertNotIn(self.tmp, mensaje)
 
     def test_el_informe_pasa_con_entradas_de_forma_real(self):
         """Los CSV llevan fecha en el nombre (el prefijo de `setUp`) y un
@@ -749,9 +967,9 @@ class PruebasCli(_ConEscenario):
     def test_la_ayuda(self):
         for argv, buscados in ((["contraste", "--help"],
                                 ("--base", "--carpeta", "--excluir-pmids",
-                                 "--solo-pmids", "--sin-red", "--hoja",
-                                 "--aceptar-base-distinta", "--informe",
-                                 "--confidencial")),
+                                 "--solo-pmids", "--sin-red", "--red",
+                                 "--hoja", "--aceptar-base-distinta",
+                                 "--informe", "--confidencial")),
                                (["--help"], ("contraste", "reentrenar"))):
             salida = io.StringIO()
             with contextlib.redirect_stdout(salida):
@@ -769,6 +987,31 @@ class PruebasCli(_ConEscenario):
         self.assertTrue(os.path.isfile(self.informe))
         self.assertTrue(os.path.isfile(os.path.join(self.confidencial,
                                                     C.ARCHIVO_NUEVAS)))
+
+    def test_otra_red(self):
+        self.con_reglas()
+        codigo, lineas = self.main(self.argv("--red", "prueba",
+                                             "--aceptar-base-distinta"))
+        self.assertEqual(0, codigo, lineas)
+        self.assertSinContenido("\n".join(lineas))
+        self.assertTrue(any("red_prueba.tsv" in l for l in lineas))
+        with io.open(self.informe, encoding="utf-8") as f:
+            self.assertIn("`red_prueba.tsv`", f.read())
+
+    def test_red_con_sin_red_o_un_nombre_invalido_sale_sin_ruta(self):
+        self.con_reglas()
+        secreta = os.path.join(self.tmp, "secreta", "red_prueba.tsv")
+        for extra in (("--red", "prueba", "--sin-red"), ("--red", secreta),
+                      ("--red", "evidencias")):
+            codigo, lineas = self.main(self.argv(*(extra + (
+                "--aceptar-base-distinta",))))
+            self.assertEqual(1, codigo, extra)
+            self.assertTrue(lineas[-1].startswith("ERROR: --red"), lineas)
+            todo = "\n".join(lineas)
+            self.assertSinContenido(todo)
+            self.assertNotIn("secreta", todo)
+            self.assertFalse(os.path.exists(self.informe))
+            self.assertFalse(os.path.exists(self.confidencial))
 
     def test_un_cotejo_que_no_cuadra_sale_con_error_y_sin_rutas(self):
         codigo, lineas = self.main(self.argv())
