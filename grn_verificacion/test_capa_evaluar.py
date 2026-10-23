@@ -452,6 +452,13 @@ class PruebasParVisto(unittest.TestCase):
         self.assertEqual(m["juzgadas_con_pmid_en_train_dev"], 1)
         self.assertEqual(m["juzgadas_con_texto_en_train_dev"], 1)
 
+        # P1 es con el umbral: una vista que no lo pasa sale de P1 y no de P0.
+        unidas[juicios[0]["_linea"]]["pasa_umbral"] = "no"
+        m = evaluar.por_par_visto(juicios, unidas,
+                                  evaluar.leer_particion(self.particion))
+        self.assertEqual(_kn(m["P1_par_visto"]), (11, 11))
+        self.assertEqual(_kn(m["P0_par_visto"]), (12, 12))
+
     def test_sin_dev_se_detiene_sin_decir_la_ruta(self):
         os.remove(os.path.join(self.particion, "entity_marked_dev.jsonl"))
         with self.assertRaises(evaluar.ErrorEvaluacion) as ctx:

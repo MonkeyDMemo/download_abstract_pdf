@@ -220,9 +220,13 @@ class PruebasCifras(Base):
     def test_siempre_mas_va_sobre_la_misma_base(self):
         """Tres `si` bien orientados con signo; en m-1004 el bronce dice
         `+;-` y se abstiene. «Siempre +» tiene que tener el denominador de la
-        cifra con la que se compara: 3 con la abstención, 2 en los comunes."""
-        r = self.calcular(cambios={"m-1003": ("si", "1>2", "-"),
-                                   "m-1004": ("si", "1>2", "+")})
+        cifra con la que se compara: 3 con la abstención, 2 en los comunes.
+        Un `dudoso` con `+` (m-1002, que la red retiene) y un `si` invertido
+        con `+` (m-1005) no entran a ninguna de las dos bases."""
+        r = self.calcular(cambios={"m-1002": ("dudoso", "1>2", "+"),
+                                   "m-1003": ("si", "1>2", "-"),
+                                   "m-1004": ("si", "1>2", "+"),
+                                   "m-1005": ("si", "2>1", "+")})
         s = r["bronce"]["signo"]
 
         self.assertEqual(_kn(s["abstencion_es_error"]), (2, 3))
@@ -389,6 +393,10 @@ class PruebasExclusion(Base):
         self.assertEqual(r["exclusion"],
                          {"archivos": 1, "pmids": 1, "items_excluidos": 1,
                           "items_con_texto_en_train": None})
+        # Los avisos de la rúbrica tampoco cuentan al excluido: quedan los
+        # tres anotados que siguen.
+        self.assertEqual(r["avisos_rubrica"]["negada_o_especulativa_vacia"],
+                         3)
         # Una ruta suelta, sin lista, no se recorre letra por letra.
         suelta = self.calcular(excluir=self.excluir(PMID["m-1001"]))
         self.assertEqual(suelta["exclusion"], r["exclusion"])
@@ -433,7 +441,8 @@ class PruebasExclusion(Base):
 
         with self.assertRaises(ValueError) as ctx:
             self.calcular(excluir=[self.excluir(PMID["m-1001"])])
-        self.assertIn("pmid", str(ctx.exception))
+        # Y por la columna que falta, no por los PMIDs vacíos que deja.
+        self.assertIn("columna pmid", str(ctx.exception))
 
     def test_un_pmid_que_no_es_numero_detiene_sin_decir_cual(self):
         with io.open(self.llave, encoding="utf-8-sig") as f:
@@ -483,6 +492,20 @@ class PruebasExclusion(Base):
                         log=lineas.append, etiqueta="PMID 31415926")
         self.assertEqual(lineas, [])
         self.assertFalse(os.path.exists(destino))
+
+    def test_una_linea_que_no_se_puede_publicar_no_sale(self):
+        """Sin --json también se filtra: una red cuyo nombre tiene forma de
+        PMID sale en la primera línea, y entonces no sale ninguna."""
+        for sufijo in ("", "_evidencias"):
+            shutil.copy(os.path.join(self.carpeta, "red%s.tsv" % sufijo),
+                        os.path.join(self.carpeta,
+                                     "red_31415926%s.tsv" % sufijo))
+        lineas = []
+        with self.assertRaises(ValueError) as ctx:
+            pc.ejecutar(self.anotacion(), self.llave, self.carpeta,
+                        log=lineas.append, red="31415926")
+        self.assertEqual(lineas, [])
+        self.assertNotIn("31415926", str(ctx.exception))
 
 
 class PruebasEntrada(Base):
