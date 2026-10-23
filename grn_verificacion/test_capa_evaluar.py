@@ -459,6 +459,15 @@ class PruebasParVisto(unittest.TestCase):
         self.assertEqual(_kn(m["P1_par_visto"]), (11, 11))
         self.assertEqual(_kn(m["P0_par_visto"]), (12, 12))
 
+    def test_expande_la_tilde_como_precision_ciega(self):
+        """Desde una variable entre comillas simples `~` llega sin expandir;
+        `precision-ciega --particion` ya lo expandía."""
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"HOME": self.tmp,
+                                          "USERPROFILE": self.tmp}):
+            vista = evaluar.leer_particion(os.path.join("~", "particion"))
+        self.assertEqual(vista["ejemplos"], 3)
+
     def test_sin_dev_se_detiene_sin_decir_la_ruta(self):
         os.remove(os.path.join(self.particion, "entity_marked_dev.jsonl"))
         with self.assertRaises(evaluar.ErrorEvaluacion) as ctx:

@@ -434,6 +434,18 @@ class PruebasExclusion(Base):
                           "items_con_texto_en_train": 0})
         self.assertEqual(r["n_anotados"], 1)
 
+    def test_expande_la_tilde_en_los_archivos_y_la_particion(self):
+        """Desde una variable entre comillas simples `~` llega sin expandir."""
+        archivo = self.excluir(PMID["m-1001"])
+        p = self.particion(train=[(PMID["m-1002"], "<e1>A</e1> <e2>B</e2>")],
+                           dev=[])
+        with mock.patch.dict(os.environ, {"HOME": self.tmp,
+                                          "USERPROFILE": self.tmp}):
+            r = self.calcular(
+                excluir=[os.path.join("~", os.path.basename(archivo))],
+                particion=os.path.join("~", os.path.basename(p)))
+        self.assertEqual(r["exclusion"]["items_excluidos"], 2)
+
     def test_sin_columna_pmid_en_la_llave_no_se_puede_excluir(self):
         self.escribir_llave(ITEMS, columnas=[c for c in LLAVE if c != "pmid"])
         # Sin exclusión la llave no necesita el PMID.

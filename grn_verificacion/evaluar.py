@@ -272,7 +272,12 @@ def leer_particion(carpeta):
     archivo y la línea, nunca la ruta ni el contenido, que deriva de la base
     curada. El par está explícito en cada ejemplo: `tf` y `target`, los
     campos que `particionar.py` exige y con los que mide la fuga por par.
+
+    `~` se expande, como en `precision-ciega --particion`: desde una variable
+    entre comillas simples llega sin expandir, y la misma ruta que allá
+    funciona aquí decía que faltaba train.
     """
+    carpeta = os.path.expanduser(carpeta)
     vista = {"ejemplos": 0, "pares": set(), "pmids": set(), "textos": set()}
     for nombre in entrenamiento.ARCHIVOS[:2]:
         ruta = os.path.join(carpeta, nombre)
