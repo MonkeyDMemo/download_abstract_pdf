@@ -1460,6 +1460,13 @@ def archivos_de_red(red=None, sin_red=False):
     `grn_comun.redes`, la misma fuente de los nombres que usa
     `grn_red.consolidar` para escribirlos. El mensaje de error no repite el
     nombre: lo que llega por --red puede ser una ruta.
+
+    Un nombre que `grn_red` acepta todavía puede no servir aquí: el informe y
+    la terminal nombran el archivo de la red y pasan por el filtro de
+    publicación, que toma siete u ocho dígitos seguidos por un PMID
+    (`red_umbral_20261023.tsv`). Se dice antes de abrir la base; si no, el
+    contraste corría entero y se detenía al final con «posible PMID en la
+    línea 5».
     """
     if red is None:
         return redes.archivos_de_red()
@@ -1467,9 +1474,21 @@ def archivos_de_red(red=None, sin_red=False):
         raise ValueError("--red y --sin-red se excluyen: --red elige qué red "
                          "se contrasta y --sin-red no contrasta ninguna.")
     try:
-        return redes.archivos_de_red(red)
+        nombres = redes.archivos_de_red(red)
     except ValueError as e:
         raise ValueError("--red: %s" % e) from None
+    try:
+        reentrenar.verificar_publicable(nombres[0])
+    except ValueError:
+        # Con el patrón de `redes` (minúsculas, dígitos y «_») no cabe una
+        # ruta, un locus ni un marcador: lo único que el filtro puede ver es
+        # la forma de un PMID.
+        raise ValueError("--red: el nombre lleva siete u ocho dígitos "
+                         "seguidos, con forma de PMID, y el informe que lo "
+                         "nombra no pasaría el filtro de publicación. Arma "
+                         "esa red con otro nombre (`python -m grn_red.cli "
+                         "consolidar --nombre`).") from None
+    return nombres
 
 
 def ubicar_archivos(carpeta, sin_red=False, red=None):

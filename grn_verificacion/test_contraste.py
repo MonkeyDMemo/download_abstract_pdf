@@ -1030,6 +1030,28 @@ class PruebasEjecutar(_ConEscenario):
         # La red por omisión sigue sellada con los pares de la carpeta.
         self.correr()
 
+    def test_un_nombre_de_red_con_forma_de_pmid_se_rechaza_antes(self):
+        """`x_20990101` vale para `grn_red` (`consolidar --nombre`), pero el
+        informe y la terminal nombran `red_x_20990101.tsv`, y ocho dígitos
+        seguidos tienen forma de PMID: el filtro de publicación rechazaría el
+        informe al final, con la base ya leída. Se dice antes de abrirla, y
+        sin repetir el nombre."""
+        escribir_red_con_reglas(self.carpeta, "x_20990101", ARISTAS)
+        with mock.patch.object(V, "leer_base",
+                               side_effect=AssertionError("abrió la base")):
+            with self.assertRaises(ValueError) as ctx:
+                self.correr(red="x_20990101")
+        mensaje = str(ctx.exception)
+        self.assertTrue(mensaje.startswith("--red: "), mensaje)
+        self.assertNotIn("20990101", mensaje)
+        self.assertSinContenido(mensaje)
+        self.assertFalse(os.path.exists(self.confidencial))
+        self.assertFalse(os.path.exists(self.informe))
+        # Con letras pegadas no tiene forma de PMID, y corre.
+        escribir_red_con_reglas(self.carpeta, "v20990101", ARISTAS)
+        resultado, _ = self.correr(red="v20990101")
+        self.assertEqual("red_v20990101.tsv", resultado["red"]["archivo"])
+
     def test_red_y_sin_red_se_excluyen(self):
         self.con_reglas()
         with mock.patch.object(V, "leer_base",
@@ -1220,7 +1242,7 @@ class PruebasCli(_ConEscenario):
         self.con_reglas()
         secreta = os.path.join(self.tmp, "secreta", "red_prueba.tsv")
         for extra in (("--red", "prueba", "--sin-red"), ("--red", secreta),
-                      ("--red", "evidencias")):
+                      ("--red", "evidencias"), ("--red", "x_20990101")):
             codigo, lineas = self.main(self.argv(*(extra + (
                 "--aceptar-base-distinta",))))
             self.assertEqual(1, codigo, extra)
