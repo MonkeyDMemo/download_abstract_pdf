@@ -338,6 +338,62 @@ class PruebasCorpus(BasePruebaDb):
             db.crear_corpus(self.con, "v1")
 
 
+class PruebasIdentificadores(BasePruebaDb):
+    """PMIDs y DOIs de un corpus o de una consulta, y los DOIs de una lista:
+    con eso se cruza una lista de artículos nuevos con lo que ya se usó."""
+
+    def setUp(self):
+        super().setUp()
+        self.pa, _ = db.alta_consulta(self.con, "pa", "query pa")
+        otra, _ = db.alta_consulta(self.con, "otra", "query otra")
+        db.guardar_documentos(self.con, [
+            {"pmid": "111", "doi": "10.1000/a"},
+            {"pmid": "222", "doi": ""},
+            {"pmid": "333", "doi": "10.1000/C"},
+            {"pmid": "444", "doi": "10.1000/d"},
+        ])
+        db.vincular(self.con, self.pa, ["333", "111", "222"])
+        db.vincular(self.con, otra, ["444"])
+
+    def test_pmids_y_dois_del_corpus(self):
+        cid, _ = db.crear_corpus(self.con, "v1", consulta_id=self.pa)
+
+        self.assertEqual(db.pmids_y_dois_del_corpus(self.con, cid), [
+            ("111", "10.1000/a"), ("222", ""), ("333", "10.1000/C")])
+        self.assertEqual(db.pmids_y_dois_del_corpus(self.con, 9999), [])
+
+    def test_pmids_y_dois_de_consulta(self):
+        self.assertEqual(db.pmids_y_dois_de_consulta(self.con, "pa"), [
+            ("111", "10.1000/a"), ("222", ""), ("333", "10.1000/C")])
+        self.assertEqual(db.pmids_y_dois_de_consulta(self.con, "otra"),
+                         [("444", "10.1000/d")])
+        self.assertEqual(db.pmids_y_dois_de_consulta(self.con, "no_hay"), [])
+
+    def test_dois_de_pmids_deja_fuera_los_que_no_estan_o_no_traen(self):
+        self.assertEqual(
+            db.dois_de_pmids(self.con, ["111", "222", "444", "999"]),
+            {"111": "10.1000/a", "444": "10.1000/d"})
+        self.assertEqual(db.dois_de_pmids(self.con, []), {})
+
+    def test_dois_de_pmids_cruza_el_tope_de_parametros_de_sqlite(self):
+        universo = [str(i) for i in range(5000, 6500)]      # 1500, más de 800
+        db.guardar_documentos(self.con, [
+            {"pmid": p, "doi": "10.2000/%s" % p} for p in universo])
+
+        dois = db.dois_de_pmids(self.con, universo)
+
+        self.assertEqual(len(dois), 1500)
+        self.assertEqual(dois["6499"], "10.2000/6499")
+
+    def test_la_huella_de_un_conjunto_es_la_del_corpus(self):
+        db.crear_corpus(self.con, "v1", consulta_id=self.pa)
+
+        self.assertEqual(db.huella_pmids(["333", "111", "222", "111"]),
+                         db.obtener_corpus(self.con, "v1")["hash_pmids"])
+        self.assertNotEqual(db.huella_pmids(["111", "222"]),
+                            db.huella_pmids(["111", "222", "333"]))
+
+
 class PruebasResumen(BasePruebaDb):
 
     def test_el_resumen_distingue_documentos_de_vinculos(self):
