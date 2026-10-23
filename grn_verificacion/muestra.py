@@ -31,7 +31,7 @@ como repetido.
    normalizados (`entrenamiento.leer_reservas`).
 3. `oracion_reservada_contenida`: contiene una reservada o es un pedazo de
    ella, de `entrenamiento.MINIMO_CONTENCION` caracteres o más
-   (`entrenamiento._reservada`). El bronce y el conjunto ciego no siempre
+   (`entrenamiento.reservada`). El bronce y el conjunto ciego no siempre
    cortan igual la oración.
 4. `pmid_de_otra_muestra`: su artículo está en la llave de una muestra
    anterior (`--excluir-muestra`, más abajo). El motivo solo existe, y solo
@@ -247,7 +247,7 @@ def _leer_capa(ruta):
             blanco = (fila["blanco_candidato"] or "").strip()
             if not regulador or not blanco:
                 continue
-            pmid = entrenamiento._pmid_valido(fila["pmid"])
+            pmid = entrenamiento.pmid_valido(fila["pmid"])
             if pmid is None:
                 raise ValueError("Una fila de %s trae un pmid que no es un "
                                  "número." % NOMBRE_CAPA)
@@ -290,7 +290,7 @@ def _motivo(item, pmids, reservadas, vistas, otras=frozenset(),
     oracion = item["normalizada"]
     if oracion in reservadas:
         return "oracion_reservada_igual"
-    if entrenamiento._reservada(oracion, reservadas):
+    if entrenamiento.reservada(oracion, reservadas):
         return "oracion_reservada_contenida"
     # Después de las reservas, que siguen primero: así sus conteos dependen
     # solo de la capa y de reservas.tsv, y dos sorteos con las mismas
@@ -395,7 +395,7 @@ def _leer_llave_excluida(carpeta):
                              "columnas: %s." % (LLAVE, nombre,
                                                 ", ".join(faltan)))
         for fila in lector:
-            pmid = entrenamiento._pmid_valido(fila["pmid"])
+            pmid = entrenamiento.pmid_valido(fila["pmid"])
             if pmid is None:
                 raise ValueError("Una fila de %s de la muestra excluida «%s» "
                                  "trae un pmid que no es un número."

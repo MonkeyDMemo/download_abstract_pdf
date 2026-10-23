@@ -87,7 +87,6 @@ import datetime
 import io
 import json
 import os
-import re
 import shutil
 import sys
 import tempfile
@@ -100,7 +99,7 @@ for _p in (_RAIZ, _ETAPA2):
 
 import red as _red                             # noqa: E402  (etapa2/red.py)
 from grn_bronce import operones as _operones   # noqa: E402
-from grn_comun import procedencia              # noqa: E402
+from grn_comun import procedencia, redes       # noqa: E402
 from grn_comun.archivos import borrar, reemplazar   # noqa: E402
 
 # Sube cuando, con las mismas entradas y los mismos parámetros, una red con
@@ -116,11 +115,10 @@ META = "predicciones_meta.json"
 PARES = "pares.jsonl"
 
 NOMBRE_POR_OMISION = "recomendada"
-# El nombre va en un nombre de archivo que el tablero lista y entrega: patrón
-# cerrado. `evidencias` e `informe` quedan fuera porque `red_evidencias.tsv`
-# y `red_informe.json` son de la red por omisión.
-NOMBRE_VALIDO = re.compile(r"^[a-z0-9_]{1,40}$")
-NOMBRES_RESERVADOS = ("evidencias", "informe")
+# El patrón del nombre vive en `grn_comun/redes.py`, una sola fuente para el
+# paso 3, que escribe la red, y para el paso 2, que la lee.
+NOMBRE_VALIDO = redes.NOMBRE_VALIDO
+NOMBRES_RESERVADOS = redes.NOMBRES_RESERVADOS
 
 AUTORREGULACION = ("excluir", "marcar")
 OPERONES = ("nodo", "expandir")
@@ -394,8 +392,7 @@ def _escribir_json(ruta, objeto):
 
 def nombres_de_salida(nombre):
     """(red, evidencias, informe) de una red con otras reglas."""
-    return ("red_%s.tsv" % nombre, "red_%s_evidencias.tsv" % nombre,
-            "red_%s_informe.json" % nombre)
+    return redes.archivos_de_red(nombre)
 
 
 # ------------------------------------------------------------- consolidar
@@ -438,7 +435,7 @@ def consolidar(carpeta, cfg=None, nombre=None, log=_nada, catalogo=None):
             ("parametros", cfg)])
 
     nombre = NOMBRE_POR_OMISION if nombre is None else nombre
-    if not NOMBRE_VALIDO.match(nombre) or nombre in NOMBRES_RESERVADOS:
+    if not redes.nombre_valido(nombre):
         raise ErrorConsolidar(
             "El nombre %r no sirve: minúsculas, dígitos y «_», hasta 40, y "
             "ni «evidencias» ni «informe», que son de la red por omisión."

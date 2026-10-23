@@ -387,6 +387,31 @@ class PruebasReservas(unittest.TestCase):
             f.write(contenido)
         return self.ruta(nombre)
 
+    def test_leer_pmids_da_los_pmids_y_su_error_no_lleva_la_ruta(self):
+        """La usan comandos del servidor cuya salida se publica: el error dice
+        la bandera y la línea, nunca la ruta del archivo confidencial."""
+        E.escribir_reservas(self.ruta("r.tsv"), ["00123", "456"], ["una oración"])
+        pmids, conteos = E.leer_pmids([self.ruta("r.tsv")], "--excluir-pmids")
+        self.assertEqual({"123", "456"}, pmids)
+        self.assertEqual(1, conteos["oraciones"])
+
+        malo = self.escribir("malo.tsv", "pmid\tno-es-numero\n")
+        with self.assertRaises(ValueError) as ctx:
+            E.leer_pmids([malo], "--excluir-pmids")
+        self.assertIn("--excluir-pmids", str(ctx.exception))
+        self.assertNotIn(self.carpeta, str(ctx.exception))
+
+    def test_los_nombres_publicos_y_los_viejos_son_la_misma_funcion(self):
+        """`muestra.py` ya usa los públicos; los de guion bajo siguen para no
+        romper a quien los importaba."""
+        self.assertIs(E.pmid_valido, E._pmid_valido)
+        self.assertIs(E.reservada, E._reservada)
+        self.assertEqual("123", E.pmid_valido(" 00123 "))
+        self.assertIsNone(E.pmid_valido(True))
+        larga = "x" * E.MINIMO_CONTENCION
+        self.assertTrue(E.reservada("antes " + larga + " después", {larga}))
+        self.assertFalse(E.reservada("corta", {"otra corta"}))
+
     def test_ida_y_vuelta(self):
         conteos = E.escribir_reservas(
             self.ruta("r.tsv"), ["12345678", 2345678],
