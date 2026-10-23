@@ -1567,3 +1567,52 @@ conocimiento del agente todavía no existe; esto fija cómo se construirá.
   idénticas entre artículos.
 - **S3 Vectors u OpenSearch** solo si la capa de agentes vive en la nube y
   hace falta búsqueda híbrida; es trabajo de la tesis, no del servicio social.
+
+## El LLM sobre la oración es trabajo de tesis: el servicio social cierra con la capa determinista
+
+Decidido el 22-oct-2026, tras una revisión externa de la arquitectura
+multiagente del Documento de Tesis v1. Se presenta al asesor el viernes 23-oct
+(`reunion-asesor-23oct.md`, decisión j).
+
+**La contradicción que había.** La bitácora, en «Lo que no vamos a hacer, y por
+qué» (entrada del bloque 1, sin fecha propia), descarta «automatizar el pipeline con Strands o con
+varios LLMs», porque el pipeline es determinista a propósito. La tesis v1
+propuso justo eso: un multiagente con Strands, AgentCore y un juez.
+
+El cambio venía de un dato. En las 93 oraciones evaluables de la trampa del
+signo, un LLM sin ajuste acierta el 91.4 % y el BioBERT de *E. coli* el 36.6 %;
+en el fenotipo del mutante, 91.7 % contra 8.3 % (bitácora, «Línea base: un LLM
+sin ajuste fino contra el BioBERT ajustado»). Pero
+ese dato tiene tres límites, que la misma bitácora escribe:
+- es un solo subsistema;
+- es un conjunto difícil a propósito;
+- el LLM es de la familia del sistema que preparó el conjunto.
+
+Además, los modelos abiertos del plan no son ese LLM.
+
+**Lo que se decidió:**
+- **El servicio social cierra con la capa determinista:** el pipeline, la red
+  versionada, el recall contra la base curada y la precisión en una muestra
+  ciega de 200 con un anotador, registrando su tiempo por bloque. La regla de
+  la bitácora sigue valiendo para él sin excepciones.
+- **El LLM entra a la tesis, detrás de una puerta**
+  (`plan-tesis-plata-llm.md`). Sobre la oración, y en otro proceso, como
+  `etapa2/clasificar.py`. El bronce y las herramientas siguen deterministas.
+- **La reproducibilidad del LLM es por caché, no por volver a llamarlo.**
+  Cada veredicto se guarda con la huella de todo lo que lo decide (modelo,
+  pesos, cuantización, motor, prompt y decodificación), como la caché del
+  BioBERT en `puente.py`. Regenerar puede variar; reconstruir la red desde lo
+  guardado, no.
+- **La puerta no cabe en el servicio social, y está medido.**
+  - De 200 oraciones al azar salen unos 35-65 ítems con signo, y contra
+    «siempre activa» la potencia es de 0.24 a 0.54.
+  - Hacen falta 150-250 ítems con signo para una ventaja de 10 puntos, así
+    que la puerta pide un estrato aparte.
+  - El cálculo está en `plan-tesis-plata-llm.md`.
+- **Cada agente gana su lugar:** entra solo si quitarlo empeora una métrica
+  medida. AgentCore y Gateway son despliegue: van a trabajo futuro.
+- **El juez es local y de otra familia que el extractor y que Claude**, y esa
+  regla manda sobre «el juez por omisión es Claude».
+
+**Lo que queda opcional antes del 4-nov:** el LLM sobre las mismas 200, como
+comparación exploratoria, sin puerta y declarado así en el informe.

@@ -304,6 +304,40 @@ Las otras decisiones de operones, D1 a D9, siguen en `operones-asesor.md` §7.
 ### i) Permiso para enviar oraciones del corpus público a EC2
 
 Solo se lista: no se prepara nada de AWS para esta reunión (tesis, p. 15-17).
+Si se aprueba la j, el permiso es para la tesis y no hace falta antes del
+4-nov.
+
+### j) ¿El servicio social cierra con la capa determinista y el LLM pasa a la tesis?
+
+Una revisión externa del multiagente de la tesis v1 encontró que contradice la
+regla de la bitácora («el pipeline es determinista a propósito»). Además, el
+cálculo de potencia del 22-oct muestra que la puerta para decidir si el LLM
+entra no cabe en una muestra de 200: salen unos 35-65 ítems con signo, y hacen
+falta 150-250. El detalle está en `decisiones.md` («El LLM sobre la oración es
+trabajo de tesis») y en `plan-tesis-plata-llm.md`.
+
+- **Recomendación:** sí. El servicio social entrega:
+  - el pipeline funcionando, con su documentación de uso;
+  - la red versionada;
+  - el recall contra la base curada;
+  - la precisión en una muestra ciega de 200 con un anotador, con su IC
+    (± 6.8 puntos) y el tiempo por bloque, que es el primer dato de esfuerzo;
+  - el informe.
+
+  Pasan a la tesis el LLM sobre el residuo y su puerta, el juez y el κ, el
+  estrato sobremuestreado, el multiagente, AgentCore y EC2, y el experimento
+  de esfuerzo y confianza.
+- **Costo:** ninguno nuevo. Se recorta trabajo, no se agrega.
+- **Lo que cambia en la rúbrica:** con un anotador no hay parte doble ni κ (§7,
+  puntos 4 y 5). Se reporta como limitación, y `cli muestra` corre con
+  `--fraccion-doble 0`. La calibración (24-oct) sigue: es la que fija las
+  reglas.
+
+| respuesta | qué hacemos |
+|---|---|
+| sí | Lo de arriba; el LLM opcional sobre las mismas 200, como exploración y declarado así |
+| sí, pero con el LLM en el servicio social | La puerta necesita el estrato de unas 300 oraciones más (≈ 9 horas-persona) y EC2 o el modelo local de 8 GB; el calendario no alcanza para el 4-nov |
+| no | Se queda el plan de la tesis v1, con la contradicción declarada en `decisiones.md` |
 
 ---
 
@@ -333,6 +367,9 @@ Solo se lista: no se prepara nada de AWS para esta reunión (tesis, p. 15-17).
   16/37 = 43.2 %: el filtro no la sube» (`PLAN.md:89`, `PLAN.md:180`).
 - No «la base curada tiene ~3 500 interacciones». Sí: «5 584 filas, de las
   que 2 003 son exigibles al pipeline».
+- No «el LLM saca 91.4 % y por eso va el multiagente». Sí: «91.4 % en 93
+  oraciones difíciles de un solo subsistema; para decidir si entra hace falta
+  una puerta que no cabe antes del 4-nov» (decisión j).
 
 ---
 
@@ -342,10 +379,10 @@ Solo se lista: no se prepara nada de AWS para esta reunión (tesis, p. 15-17).
 |---|---|---|
 | 23-oct | esta reunión | — |
 | 24-oct | 20 oraciones sintéticas de calibración y la sesión | a |
-| 24-oct al 2-nov | anotación: 200 ciegas y 100 candidatas nuevas | a, b, d |
+| 24-oct al 2-nov | anotación: 200 ciegas, un anotador, con tiempo por bloque; las 100 candidatas nuevas si alcanza | a, b, d, j |
 | 21 al 27-oct | fusionar alineación v2, paquete de la red y `verificar-corrida`; correr el contraste en el servidor | d, f |
 | esta semana | subir la carpeta del flujo al servidor; el 44 % con los tres modelos | g |
-| 28-oct al 3-nov | LLM sobre el residuo y consolidación con las reglas de f | f, i |
+| 28-oct al 3-nov | consolidación con las reglas de f; el LLM sobre las 200 solo como exploración opcional | f, j |
 | 2 al 3-nov | el signo con la muestra ciega: *E. coli*, control léxico y sintaxis | g, anotación |
 | 4-nov | cierre técnico | — |
 
