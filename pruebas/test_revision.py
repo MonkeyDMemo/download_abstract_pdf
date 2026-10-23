@@ -335,6 +335,24 @@ class PruebasExportar(BasePruebaRevision):
             self.assertEqual(filas[0][c], "", c)
         self.assertIn("β-lactamase", filas[2]["oracion"])
 
+    def test_lo_exportado_lo_lee_el_calculo_de_precision(self):
+        """La página y la hoja CSV tienen que dar la misma entrada a
+        `precision_ciega`: si el anotador cambia de una a otra a medio
+        camino, las cifras no pueden depender de por dónde anotó."""
+        from grn_verificacion import precision_ciega
+        self.ok("POST", "/api/revision/item/m-1234/inicio", cuerpo={})
+        self.guardar("m-1234")
+        self.guardar("m-2345", relacion="no", direccion="ninguna", signo="",
+                     tipo="", negada="si")
+        _, archivo = self.pedir("GET", "/api/revision/exportar")
+
+        leidas = precision_ciega.leer_anotacion(str(archivo.ruta))
+
+        self.assertEqual(sorted(leidas), ["m-1234", "m-2345", "m-3456"])
+        self.assertEqual(leidas["m-1234"]["relacion"], VALIDOS["relacion"])
+        self.assertEqual(leidas["m-2345"]["relacion"], "no")
+        self.assertEqual(leidas["m-3456"]["relacion"], "")
+
 
 class PruebasContratos(unittest.TestCase):
 
