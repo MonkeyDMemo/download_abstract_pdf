@@ -115,8 +115,9 @@ Este es el paso que hace el trabajo interesante:
 
 1. `esearch` trae la lista completa de PMIDs, sin descargar contenido. PubMed
    solo entrega los primeros 10 000 de un conjunto: si la consulta trae más,
-   se parte sola por fecha de publicación en tramos que quepan (alineados al
-   año; por días solo si un año rebasa el tope) y se unen sin duplicar.
+   se parte sola por fecha de publicación (o la de `--tipo-fecha`) en tramos
+   que quepan (alineados al año; por días solo si un año rebasa el tope) y se
+   unen sin duplicar.
 2. Se resta contra lo que ya está en la tabla `documentos`.
 3. `efetch` baja solo la diferencia, por lotes de 200, **guardando y
    vinculando cada lote** en cuanto llega: una corrida que se corta conserva
@@ -130,8 +131,12 @@ volver a descargarlo.
 Opciones útiles: `--limite N` para probar con pocos (ojo: con límite se
 recorta sin partir, y la corrida queda registrada con ese límite),
 `--orden pub_date` para traer primero lo reciente, `--desde 2010 --hasta 2024`
-para acotar por fecha de publicación (también `2024/06` o `2024/06/15`), y
-`--pausa 5` para esperar cinco segundos entre lotes además del límite de tasa.
+para acotar por fecha de publicación (también `2024/06` o `2024/06/15`),
+`--tipo-fecha edat` (o `crdt`) para que esas fechas sean las de alta en PubMed
+(o de creación del registro), que es lo que sirve para pedir lo nuevo desde la
+última descarga: con la de publicación se pierde lo que se dio de alta después
+con una fecha anterior, y `--pausa 5` para esperar cinco segundos entre lotes
+además del límite de tasa.
 Lo que se pidió en cada corrida queda en la bitácora (`log`), tramos incluidos.
 
 NCBI pide correr los trabajos grandes (más de 100 peticiones) en fin de semana
