@@ -492,10 +492,13 @@ def _plan(ctx, paso):
         # viejas. Lo mismo los vocabularios que lee el control léxico.
         entradas += sorted(glob.glob(os.path.join(RAIZ, "etapa2", "*.tsv")))
         entradas += _vocabularios()
+        # `signo_lexico.py` es el algoritmo del control léxico, que evaluar.py
+        # ya no lleva dentro: cambiarlo cambia el punto 18.
         entradas += JUICIOS + _codigo("grn_verificacion/evaluar.py",
                                       "grn_verificacion/capa.py",
                                       "grn_verificacion/puente.py",
                                       "grn_verificacion/cli.py",
+                                      "grn_comun/signo_lexico.py",
                                       "grn_bronce/vocabulario.py",
                                       "grn_bronce/operones.py",
                                       "grn_bronce/texto.py",

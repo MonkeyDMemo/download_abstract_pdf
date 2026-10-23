@@ -554,7 +554,8 @@ class PruebasPlanReal(unittest.TestCase):
                          ("grn_bronce", "texto.py")],
             "evaluar": [("grn_bronce", "operones.py"),
                         ("grn_bronce", "texto.py"),
-                        ("grn_bronce", "vocabulario.py")],
+                        ("grn_bronce", "vocabulario.py"),
+                        ("grn_comun", "signo_lexico.py")],
             "paquete": [("grn_red", "paquete.py"), ("etapa2", "red.py"),
                         ("etapa2", "lexico.py"), ("grn_bronce", "operones.py")],
         }
