@@ -746,10 +746,32 @@ class PruebasEjecutar(_ConEscenario):
     def test_sin_ningun_xml_se_avisa(self):
         os.remove(self.xml_1)
         os.remove(self.xml_3)
+        # Queda el de un artículo que no está entre los mayores.
+        escribir(os.path.join(self.xml, "%s_PMC9100005.xml" % P_OTRO),
+                 u"<article/>")
         resultado, _ = self.correr()
         self.assertEqual(14, resultado["juntos"]["categorias"]["sin_xml"])
         self.assertTrue(any("ninguno de los artículos tiene su XML" in a
                             for a in resultado["avisos"]))
+
+    def test_una_carpeta_de_xml_sin_xml_no_abre_la_base(self):
+        """La carpeta de arriba del texto completo, con los XML en su
+        subcarpeta xml: todo habría salido «sin XML»."""
+        arriba = os.path.join(self.tmp, "texto_completo_secreto")
+        os.makedirs(os.path.join(arriba, "xml"))
+        os.makedirs(os.path.join(arriba, "pdf"))
+        shutil.copy(self.xml_1, os.path.join(arriba, "xml"))
+        with mock.patch.object(V, "leer_base",
+                               side_effect=AssertionError("abrió la base")):
+            with self.assertRaises(ValueError) as ctx:
+                T.ejecutar(self.base, self.carpeta, arriba, self.confidencial,
+                           excluir=[self.excluir], aceptar_base_distinta=True)
+        mensaje = str(ctx.exception)
+        self.assertIn("--xml", mensaje)
+        self.assertIn("subcarpeta xml", mensaje)
+        self.assertNotIn("secreto", mensaje)
+        R.verificar_publicable(mensaje)
+        self.assertFalse(os.path.exists(self.confidencial))
 
 
 class PruebasImportar(unittest.TestCase):

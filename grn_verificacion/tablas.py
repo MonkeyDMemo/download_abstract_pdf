@@ -723,8 +723,9 @@ def ejecutar(base, carpeta, xml, confidencial, informe=None, excluir=(),
     """Mide tablas y texto de los `cuantos` artículos mayores y escribe.
 
     `base`: el .xlsx, por ruta. `carpeta`: la del flujo (los dos CSV del
-    bronce). `xml`: la carpeta con los `<pmid>_<pmcid>.xml` de PMC, que son
-    datos públicos. `excluir`: archivos con el formato de `reservas.tsv`,
+    bronce). `xml`: la carpeta con los `<pmid>_<pmcid>.xml` de PMC (la
+    subcarpeta `xml` del texto completo, o una copia suya), que son datos
+    públicos. `excluir`: archivos con el formato de `reservas.tsv`,
     como en el contraste. `confidencial`: carpeta fuera de todo repositorio
     para `tablas.json`. `informe`: dónde va el Markdown publicable, o None.
 
@@ -755,6 +756,13 @@ def ejecutar(base, carpeta, xml, confidencial, informe=None, excluir=(),
                              "se expanden." % flag)
     if not os.path.isdir(xml):
         raise ValueError("No encuentro la carpeta de --xml.")
+    if not glob.glob(os.path.join(glob.escape(xml), "*_*.xml")):
+        # Antes de abrir la base: `cli.py fulltext` deja los XML en la
+        # subcarpeta xml de su salida, y con la carpeta de arriba todo salía
+        # «sin XML» después de haber leído la base para nada.
+        raise ValueError("La carpeta de --xml no tiene ningún "
+                         "<pmid>_<pmcid>.xml. Si es la del texto completo, "
+                         "los XML están en su subcarpeta xml.")
     rutas = contraste.ubicar_archivos(carpeta, sin_red=True)
     # El lector del contraste (en `main`, alias de `entrenamiento.leer_pmids`):
     # un error dice la línea del archivo y no su ruta.

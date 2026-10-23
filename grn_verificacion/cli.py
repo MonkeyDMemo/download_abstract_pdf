@@ -604,8 +604,9 @@ def _sub_tablas(sub):
                     help="Carpeta del flujo: los dos CSV del bronce "
                          "(candidatas y menciones).")
     ta.add_argument("--xml", required=True,
-                    help="Carpeta con los XML de PMC, <pmid>_<pmcid>.xml, "
-                         "como los deja `cli.py fulltext --tipo xml`.")
+                    help="Carpeta con los XML de PMC, <pmid>_<pmcid>.xml: "
+                         "la subcarpeta xml de la salida de `cli.py fulltext "
+                         "--tipo xml`, o una copia suya.")
     ta.add_argument("--excluir-pmids", dest="excluir_pmids", action="append",
                     default=[], metavar="ARCHIVO",
                     help="PMIDs fuera del denominador, como en contraste "
