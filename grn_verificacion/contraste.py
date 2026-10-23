@@ -20,10 +20,13 @@ Salen las filas de homología: el artículo citado no reporta la relación, y
 aun con el texto completo a la mano la regla b cubre el 0.3 % de ellas. Salen
 también las filas cuyos PMIDs están todos en el archivo de exclusiones, que es
 por donde llega el artículo de 731 filas que el bronce no puede leer (PDF sin
-XML): su PMID no se escribe en el repositorio. La autorregulación se queda en
-el denominador y nunca cuenta como cubierta: el bronce exige dos genes
-distintos por oración y `red.py` la descarta, así que no es que no se
-encuentre, es que la regla la excluye por construcción.
+XML): su PMID no se escribe en el repositorio. Una fila que cita ese artículo
+junto con otro se queda, porque la regla es «todos sus PMIDs», y se cuenta
+aparte (`citan_excluido_y_otro`), como las de homología que lo citan: con esa
+regla y la homología primero salen 651 filas y no las 731 de PLAN.md 2.4. La
+autorregulación se queda en el denominador y nunca cuenta como cubierta: el
+bronce exige dos genes distintos por oración y `red.py` la descarta, así que
+no es que no se encuentre, es que la regla la excluye por construcción.
 
 El estrato BioBERT
 ------------------
@@ -349,11 +352,18 @@ def denominador(interacciones, excluir=()):
     las reconoce porque `Reference` dice «homolog») y las filas cuyos PMIDs
     están todos en `excluir`. La autorregulación se queda y se cuenta aparte,
     porque nunca puede contar como cubierta. Los conteos son solo números.
+
+    Dos conteos concilian con PLAN.md 2.4, que restó 731 filas por el
+    artículo excluido: `citan_excluido_y_otro`, las exigibles que lo citan
+    junto con otro artículo y se quedan por la regla «todos sus PMIDs», y
+    `homologia_que_cita_excluido`, las que lo citan pero ya salieron por
+    homología. Citar el excluido es citar algún PMID de `excluir`.
     """
     excluir = set(excluir or ())
     c = collections.OrderedDict([
         ("base", 0), ("homologia", 0), ("excluidas_por_archivo", 0),
         ("exigibles", 0), ("autorregulacion", 0), ("sin_pmid", 0),
+        ("citan_excluido_y_otro", 0), ("homologia_que_cita_excluido", 0),
         ("signo", collections.OrderedDict(
             (s, 0) for s in validacion.SIGNOS + ("ilegible",))),
         ("origen", collections.OrderedDict(
@@ -363,15 +373,22 @@ def denominador(interacciones, excluir=()):
     exigibles = []
     for fila in interacciones:
         c["base"] += 1
+        cita_excluido = any(p in excluir for p in fila["pmids"])
         motivo = motivo_de(fila, excluir)
         if motivo == "homologia":
             c["homologia"] += 1
+            if cita_excluido:
+                c["homologia_que_cita_excluido"] += 1
             continue
         if motivo == "excluida_por_archivo":
             c["excluidas_por_archivo"] += 1
             continue
         exigibles.append(fila)
         c["exigibles"] += 1
+        if cita_excluido:
+            # Exigible y citando al excluido: tiene por fuerza otro PMID
+            # fuera del archivo.
+            c["citan_excluido_y_otro"] += 1
         if fila["regulador"] == fila["blanco"]:
             c["autorregulacion"] += 1
         if not fila["pmids"]:
@@ -992,6 +1009,12 @@ def informe_markdown(resultado):
       "corrida 1: referencia, no criterio. Con otro corpus cambian los "
       "artículos con XML, y una base nueva cambia todo.")
     w("")
+    if "locus_invalido" in base:
+        # La primera fila de la tabla contra las filas de PLAN.md 2.4: la
+        # diferencia son filas que el lector descarta, no filas perdidas.
+        w("- %s con valores, %s con los dos locus: %s con un locus inválido."
+          % (_cuantas(base["filas"], "fila", "filas"),
+             _n(base["interacciones"]), _n(base["locus_invalido"])))
     sg, og = d["signo"], d["origen"]
     w("- Signo de las exigibles: + %s; - %s; ? %s; d %s; ilegible %s."
       % (_n(sg["+"]), _n(sg["-"]), _n(sg["?"]), _n(sg["d"]),
@@ -1010,6 +1033,19 @@ def informe_markdown(resultado):
       % (_cuantas(ex["archivos"], "archivo", "archivos"),
          _cuantas(ex["pmids"], "PMID", "PMIDs"),
          _cuantas(ex["pmids_citados"], "citado", "citados")))
+    if ex["archivos"] and "citan_excluido_y_otro" in d:
+        # Concilia la fila del archivo con las 731 de PLAN.md 2.4: la
+        # diferencia sale de «todos sus PMIDs» y de descontar antes la
+        # homología, y aquí se cuentan las dos en vez de deducirlas.
+        otro = d["citan_excluido_y_otro"]
+        uno = ex["pmids_citados"] <= 1
+        w("- %s %s %s junto con otro y %s, porque la regla es «todos sus "
+          "PMIDs». Las de homología que %s citan (%s) salen antes, por "
+          "homología."
+          % (_n(otro), "cita" if otro == 1 else "citan",
+             "el artículo excluido" if uno else "un artículo excluido",
+             "se queda" if otro == 1 else "se quedan", "lo" if uno else "los",
+             _n(d["homologia_que_cita_excluido"])))
     w("")
 
     w("## 3. Cobertura del bronce")
@@ -1553,7 +1589,10 @@ def ejecutar(base, carpeta, confidencial, informe=None, hoja=None,
     resultado = collections.OrderedDict([
         ("generado_en", _ahora()),
         ("base", collections.OrderedDict([
-            ("filas", c_base["filas"]), ("cotejo", cotejo),
+            ("filas", c_base["filas"]),
+            ("interacciones", c_base["interacciones"]),
+            ("locus_invalido", c_base["locus_invalido"]),
+            ("cotejo", cotejo),
             ("diferencias", len(distintas)),
             ("aceptada_distinta", bool(distintas))])),
         ("exclusiones", collections.OrderedDict([

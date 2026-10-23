@@ -422,6 +422,23 @@ class PruebasDenominador(_ConEscenario):
         exigibles, c = C.denominador(self.interacciones())
         self.assertEqual((0, 13), (c["excluidas_por_archivo"],
                                    c["exigibles"]))
+        self.assertEqual((0, 0), (c["citan_excluido_y_otro"],
+                                  c["homologia_que_cita_excluido"]))
+
+    def test_la_conciliacion_con_el_archivo_de_exclusiones(self):
+        """Con P_B sale la fila 7 y se queda la 8, que cita además P_ABS:
+        es la que separa «todos sus PMIDs» de «cita el artículo». Con P_XML
+        salen las 2, 4, 5 y 15, se queda la 12 (cita también P_TEST) y la 6,
+        que lo cita, ya había salido por homología: 14 - 1 - 4 = 9."""
+        _, c = C.denominador(self.interacciones(), {P_B})
+        self.assertEqual((1, 1, 0), (c["excluidas_por_archivo"],
+                                     c["citan_excluido_y_otro"],
+                                     c["homologia_que_cita_excluido"]))
+        _, c = C.denominador(self.interacciones(), {P_XML})
+        self.assertEqual((1, 4, 1, 1, 9),
+                         (c["homologia"], c["excluidas_por_archivo"],
+                          c["citan_excluido_y_otro"],
+                          c["homologia_que_cita_excluido"], c["exigibles"]))
 
 
 class PruebasBronce(_ConEscenario):
@@ -717,6 +734,11 @@ class PruebasEjecutar(_ConEscenario):
         self.assertEqual({"archivos": 1, "pmids": 1, "pmids_citados": 1,
                           "oraciones_ignoradas": 0},
                          dict(resultado["exclusiones"]))
+        self.assertEqual((1, 0), (d["citan_excluido_y_otro"],
+                                  d["homologia_que_cita_excluido"]))
+        self.assertEqual((14, 14, 0), (resultado["base"]["filas"],
+                                       resultado["base"]["interacciones"],
+                                       resultado["base"]["locus_invalido"]))
         self.assertEqual("red.tsv", red["archivo"])
         self.assertEqual((0, 0), (red["conteos"]["expandidas_omitidas"],
                                   red["conteos"]["solo_autorregulacion"]))
@@ -762,6 +784,45 @@ class PruebasEjecutar(_ConEscenario):
         self.assertIn("**DIFIERE**", texto)
         # La corrida 4 no se compara con la 1.
         self.assertNotIn("Frente a PLAN.md 2.4", texto)
+
+    def test_el_informe_lleva_la_conciliacion_del_denominador(self):
+        """Las cifras de las pruebas del denominador, en la sección 2."""
+        _, lineas = self.correr()
+        with io.open(self.informe, encoding="utf-8") as f:
+            texto = f.read()
+        self.assertIn("- 14 filas con valores, 14 con los dos locus: 0 con un "
+                      "locus inválido.", texto)
+        self.assertIn("- 1 cita el artículo excluido junto con otro y se "
+                      "queda, porque la regla es «todos sus PMIDs». Las de "
+                      "homología que lo citan (0) salen antes", texto)
+        self.assertSinContenido(texto)
+        # El aviso sin archivo de exclusiones conserva su 731, y entonces no
+        # hay nada que conciliar.
+        self.correr(excluir=[])
+        with io.open(self.informe, encoding="utf-8") as f:
+            texto = f.read()
+        self.assertNotIn("citan el artículo excluido", texto)
+        self.assertNotIn("cita el artículo excluido", texto)
+
+    def test_la_conciliacion_con_un_locus_invalido(self):
+        """Una fila 16 con un regulador sin forma de locus: cuenta entre las
+        filas con valores y no entre las de los dos locus, y el resto del
+        denominador no cambia."""
+        filas = dict(FILAS_BASE)
+        filas[16] = ["qzoR", "wvoA", "+", P_XML, "PA12", "PA9043", HIST, "x"]
+        self.base = construir_xlsx(os.path.join(self.tmp, "base_sintetica_16"
+                                                ".xlsx"), [("Hoja1", filas)])
+        resultado, _ = self.correr()
+        self.assertEqual((15, 14, 1), (resultado["base"]["filas"],
+                                       resultado["base"]["interacciones"],
+                                       resultado["base"]["locus_invalido"]))
+        self.assertEqual((14, 12), (resultado["denominador"]["base"],
+                                    resultado["denominador"]["exigibles"]))
+        with io.open(self.informe, encoding="utf-8") as f:
+            texto = f.read()
+        self.assertIn("- 15 filas con valores, 14 con los dos locus: 1 con un "
+                      "locus inválido.", texto)
+        self.assertSinContenido(texto)
 
     def test_con_otra_red(self):
         """`red_prueba.tsv` da los mismos pares de locus que `red.tsv`: el
