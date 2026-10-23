@@ -331,6 +331,21 @@ class PruebasRed(Base):
         self.assertEqual(_kn(r["red"]["con_direccion"]), (1, 2))
         self.assertEqual(r["red"]["signo"]["abstencion_es_error"]["k"], 1)
 
+    def test_lee_la_red_con_bom_y_crlf(self):
+        """Como queda un TSV guardado otra vez en Windows: con BOM la primera
+        columna se llamaba «\\ufefftf» y no se encontraba `tf`."""
+        for nombre in ("red.tsv", "red_evidencias.tsv"):
+            ruta = os.path.join(self.carpeta, nombre)
+            with io.open(ruta, encoding="utf-8", newline="") as f:
+                texto = f.read()
+            with io.open(ruta, "w", encoding="utf-8-sig", newline="") as f:
+                f.write(texto.replace("\n", "\r\n"))
+
+        r = self.calcular()
+
+        self.assertEqual(_kn(r["retencion_de_la_red"]["total"]), (2, 4))
+        self.assertEqual(r["red"]["signo"]["abstencion_es_error"]["k"], 1)
+
     def test_cuenta_las_evidencias_sin_par_en_la_capa(self):
         with io.open(os.path.join(self.carpeta, "red_evidencias.tsv"), "a",
                      encoding="utf-8", newline="\n") as f:

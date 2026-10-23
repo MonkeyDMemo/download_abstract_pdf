@@ -136,8 +136,12 @@ def _leer_tsv(ruta):
     """Los TSV de `etapa2/red.py` no entrecomillan (su `celda` solo colapsa
     los blancos). Con el `csv` por omisión, una oración que empezaba con
     comillas se leía sin ellas, y con unas comillas sin cerrar se comía las
-    líneas siguientes: la evidencia dejaba de casar con la oración del ítem."""
-    with io.open(ruta, encoding="utf-8", newline="") as f:
+    líneas siguientes: la evidencia dejaba de casar con la oración del ítem.
+
+    `utf-8-sig`, como `grn_red/paquete.py` y `contraste`: un TSV guardado de
+    nuevo en Windows trae BOM, y con `utf-8` la primera columna se llamaba
+    «\\ufefftf» y todo terminaba en un KeyError de `tf`."""
+    with io.open(ruta, encoding="utf-8-sig", newline="") as f:
         return list(csv.DictReader(f, delimiter="\t",
                                    quoting=csv.QUOTE_NONE))
 
