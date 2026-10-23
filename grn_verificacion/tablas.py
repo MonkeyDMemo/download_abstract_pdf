@@ -493,7 +493,9 @@ def medir(exigibles, pares, indices, mayores):
     citan alguno de `mayores`, todos juntos y artículo por artículo.
 
     En `juntos` cada fila cuenta una vez; en `por_articulo`, en cada artículo
-    que cita, con la categoría que le da ese artículo solo.
+    que cita, con la categoría que le da ese artículo solo. La regla b no
+    cambia: mira todos los artículos que la fila cita, porque una fila que el
+    bronce cubre en otro no está por explicar en este.
     """
     juntos = _vacio()
     por_articulo = [_vacio() for _ in mayores]
@@ -641,7 +643,9 @@ def informe_markdown(resultado):
           "PMID, como en la concentración del contraste. Una fila que cita "
           "dos de estos artículos cuenta en las dos columnas, cada una con "
           "la categoría que le da ese artículo, y una sola vez en la "
-          "sección 1. Los porcentajes son sobre las filas de cada artículo.")
+          "sección 1; la regla b mira, como en el contraste, todos los "
+          "artículos que la fila cita. Los porcentajes son sobre las filas "
+          "de cada artículo.")
         w("")
         _seccion_por_articulo(w, articulos)
     w("## 3. Cautelas")
@@ -653,6 +657,14 @@ def informe_markdown(resultado):
       "no se distingue de una de resultados: «misma fila» es la señal más "
       "fuerte de que el artículo reporta el par en una tabla; «misma tabla» "
       "y «tabla y texto», las más débiles.")
+    w("- La expansión de operones sale del catálogo y no del texto: una "
+      "celda u oración que nombra un operón pone juntos a todos sus genes, "
+      "así que una fila entre dos genes del mismo operón cae en «misma "
+      "fila» (o en una misma oración) sin que el artículo la diga, como en "
+      "la regla b del contraste.")
+    w("- Un regulador que va en el encabezado de una columna (la cepa "
+      "mutante del experimento) comparte tabla con sus blancos pero no "
+      "fila: cuenta como «misma tabla».")
     w("- Es un piso: un gen que el artículo nombra de una forma que el "
       "diccionario no conoce (un nombre de la cepa PA14, un sinónimo) no "
       "cuenta, ni en las tablas ni en el texto.")
@@ -831,11 +843,14 @@ def ejecutar(base, carpeta, xml, confidencial, informe=None, excluir=(),
     ilegibles = sum(1 for e in estados.values() if e == "ilegible")
     con_xml = sum(1 for e in estados.values() if e == "si")
     if ilegibles:
-        avisos.append("%s de los artículos tiene un XML que no se pudo leer: "
-                      "cuenta como sin XML." % _n(ilegibles))
+        avisos.append("%s de los artículos %s un XML que no se pudo leer: "
+                      "cuenta como sin XML."
+                      % (_n(ilegibles), "tiene" if ilegibles == 1
+                         else "tienen"))
     if mayores and not con_xml:
         avisos.append("ninguno de los artículos tiene su XML en --xml: revisa "
-                      "que la carpeta sea la del texto completo.")
+                      "que la carpeta sea la de los XML del corpus de este "
+                      "bronce.")
 
     juntos, por_articulo = medir(exigibles, pares, indices, mayores)
     articulos = []

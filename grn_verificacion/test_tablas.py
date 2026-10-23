@@ -675,6 +675,10 @@ class PruebasEjecutar(_ConEscenario):
         self.assertIn("- Solo texto: en una misma oración que el bronce no "
                       "tomó como candidata, 1; en oraciones distintas, 2.",
                       texto)
+        # Las cautelas que dicen dónde «misma fila» y «misma tabla» engañan.
+        self.assertIn("una fila entre dos genes del mismo operón cae en "
+                      "«misma fila»", texto)
+        self.assertIn("encabezado de una columna", texto)
 
     def test_una_codificacion_desconocida_cuenta_como_ilegible(self):
         """Antes tumbaba la corrida: `ET.parse` lanza LookupError."""
@@ -686,6 +690,15 @@ class PruebasEjecutar(_ConEscenario):
                           resultado["por_articulo"][2]["xml"],
                           resultado["por_articulo"][2]["categorias"]
                           ["sin_xml"]))
+
+    def test_el_aviso_de_ilegibles_concuerda_en_numero(self):
+        _, lineas = self.correr()
+        self.assertIn("AVISO: 1 de los artículos tiene un XML que no se pudo "
+                      "leer: cuenta como sin XML.", lineas)
+        escribir(self.xml_1, u"<article><body>")
+        _, lineas = self.correr()
+        self.assertIn("AVISO: 2 de los artículos tienen un XML que no se "
+                      "pudo leer: cuenta como sin XML.", lineas)
 
     def test_cuantos(self):
         resultado, _ = self.correr(cuantos=1)
