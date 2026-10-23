@@ -36,6 +36,7 @@ Las fuentes
   (`entrenamiento.leer_reservas`). Sus líneas de oración se leen y no se usan:
   una oración no es un artículo.
 - `muestra`: la columna `pmid` de la `llave.csv` de cada carpeta de sorteo.
+  Una fila sin PMID la detiene, como al excluir una muestra en `muestra`.
 - `juzgadas`: la columna `pmid` de la muestra de 50 juzgada
   (`etapa2/evaluacion/muestra_precision_50.csv`, por omisión).
 - `particion`: train, dev y test de un modelo (`entity_marked_*.jsonl`), con el
@@ -319,6 +320,34 @@ def _columna_pmid(ruta, donde):
     return pmids
 
 
+def _pmids_de_llave(ruta, donde):
+    """Los PMIDs de una `llave.csv`, que trae uno en cada fila.
+
+    El sorteo escribe un PMID por ítem, y `muestra` no acepta al excluir una
+    llave con una fila sin él: es una llave tocada a mano o cortada. Saltar
+    la fila, como hace `reservas_de_csv` con una celda vacía, dejaría fuera
+    un artículo que la muestra sí vio. Los errores dicen la línea y no su
+    contenido.
+    """
+    try:
+        with io.open(ruta, encoding="utf-8-sig", newline="") as f:
+            lector = csv.DictReader(f)
+            if "pmid" not in (lector.fieldnames or []):
+                raise ValueError("%s: %s no tiene la columna pmid."
+                                 % (donde, muestra.LLAVE))
+            pmids = set()
+            for fila in lector:
+                linea = "%s, línea %d" % (donde, lector.line_num)
+                valor = (fila.get("pmid") or "").strip()
+                if not valor:
+                    raise ValueError("%s: la fila no trae PMID." % linea)
+                pmids.add(_pmid(valor, linea))
+    except OSError:
+        raise ValueError("No pude leer %s de %s." % (muestra.LLAVE, donde)) \
+            from None
+    return pmids
+
+
 def _pmids_de_muestras(carpetas):
     pmids = set()
     for carpeta in carpetas:
@@ -328,7 +357,7 @@ def _pmids_de_muestras(carpetas):
             raise ValueError("No está %s en la carpeta «%s» de --muestra."
                              % (muestra.LLAVE, nombre))
         donde = "--muestra «%s»" % nombre
-        pmids |= _exigir_pmids(_columna_pmid(ruta, donde), donde)
+        pmids |= _exigir_pmids(_pmids_de_llave(ruta, donde), donde)
     return pmids
 
 

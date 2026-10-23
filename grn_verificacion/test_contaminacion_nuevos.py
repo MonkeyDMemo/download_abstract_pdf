@@ -422,6 +422,34 @@ class PruebasErrores(Base):
         self.assertNoVerificable(self.todas(self.lista(NUEVOS)),
                                  "llave.csv", "«sorteo»")
 
+    def test_una_llave_con_una_fila_sin_pmid_o_con_uno_malo(self):
+        """El sorteo escribe un PMID por ítem: una fila sin él es una llave
+        tocada a mano, y saltarla dejaba fuera un artículo que la muestra
+        vio, con «Ningún cruce» si era justo el de la lista."""
+        columnas = muestra.COLUMNAS_LLAVE
+        for nombre, pmid in (("sorteo_sin_pmid", ""),
+                             ("sorteo_pmid_malo", "x12")):
+            with self.subTest(nombre):
+                carpeta = os.path.join(self.tmp, nombre)
+                llave = io.StringIO()
+                w = csv.DictWriter(llave, fieldnames=columnas,
+                                   lineterminator="\n")
+                w.writeheader()
+                for id_item, valor in (("m-1", EN_MUESTRA), ("m-2", pmid)):
+                    fila = dict((c, "") for c in columnas)
+                    fila.update({"id_item": id_item, "pmid": valor,
+                                 "fuente_texto": "abstract",
+                                 "num_oracion": "1"})
+                    w.writerow(fila)
+                escribir(os.path.join(carpeta, muestra.LLAVE),
+                         llave.getvalue())
+                argv = self.todas(self.lista(NUEVOS))
+                argv[argv.index("--muestra") + 1] = carpeta
+
+                mensaje = self.assertNoVerificable(argv, "«%s»" % nombre,
+                                                   "línea 3")
+                self.assertNotIn("x12", mensaje)
+
     def test_unas_reservas_mal_escritas(self):
         escribir(self.reservas, "pmid %s\n" % RESERVADO)
         self.assertNoVerificable(self.todas(self.lista(NUEVOS)),
