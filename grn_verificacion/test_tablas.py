@@ -415,11 +415,19 @@ class PruebasJats(_ConEscenario):
                          T.oraciones_de_jats(ruta))
 
     def test_un_xml_ilegible_no_dice_cual(self):
-        for funcion in (T.tablas_de_jats, T.oraciones_de_jats):
-            with self.assertRaises(ValueError) as ctx:
-                funcion(self.xml_3)
-            self.assertNotIn(P3, str(ctx.exception))
-            self.assertIn("--xml", str(ctx.exception))
+        for contenido in (u"<article><body><p>cortado",
+                          # Una codificación que Python no conoce y una
+                          # multibyte que expat no lee.
+                          u'<?xml version="1.0" encoding="x-inventada"?><a/>',
+                          u'<?xml version="1.0" encoding="Shift_JIS"?><a/>'):
+            escribir(self.xml_3, contenido)
+            for funcion in (T.tablas_de_jats, T.oraciones_de_jats):
+                with self.subTest(contenido=contenido[:40],
+                                  funcion=funcion.__name__):
+                    with self.assertRaises(ValueError) as ctx:
+                        funcion(self.xml_3)
+                    self.assertNotIn(P3, str(ctx.exception))
+                    self.assertIn("--xml", str(ctx.exception))
 
     def test_los_xml_de_un_pmid(self):
         self.assertEqual([self.xml_1], T.xml_de(self.xml, P1))
@@ -667,6 +675,17 @@ class PruebasEjecutar(_ConEscenario):
         self.assertIn("- Solo texto: en una misma oración que el bronce no "
                       "tomó como candidata, 1; en oraciones distintas, 2.",
                       texto)
+
+    def test_una_codificacion_desconocida_cuenta_como_ilegible(self):
+        """Antes tumbaba la corrida: `ET.parse` lanza LookupError."""
+        escribir(self.xml_3,
+                 u'<?xml version="1.0" encoding="x-inventada"?><article/>')
+        resultado, _ = self.correr()
+        self.assertEqual((1, "ilegible", 1),
+                         (resultado["por_articulo"][2]["filas"],
+                          resultado["por_articulo"][2]["xml"],
+                          resultado["por_articulo"][2]["categorias"]
+                          ["sin_xml"]))
 
     def test_cuantos(self):
         resultado, _ = self.correr(cuantos=1)

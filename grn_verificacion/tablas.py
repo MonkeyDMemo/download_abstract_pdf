@@ -161,7 +161,10 @@ def _leer_xml(ruta):
     """La raíz del XML, o ValueError sin la ruta: su nombre lleva el PMID."""
     try:
         return ET.parse(ruta).getroot()
-    except ET.ParseError:
+    except (ET.ParseError, LookupError, ValueError):
+        # LookupError es una codificación declarada que Python no conoce, y
+        # ValueError una multibyte que expat no lee: la primera tumbaba la
+        # corrida entera en vez de dejar ilegible un artículo.
         raise ValueError("Un XML de --xml no es XML válido.") from None
 
 
