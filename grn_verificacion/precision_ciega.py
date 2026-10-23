@@ -174,6 +174,8 @@ def _bootstrap_diferencia(items, repeticiones=REPETICIONES_BOOTSTRAP,
 
 
 def _tiempos(anotados):
+    """Tiempo de anotación, o None si ningún ítem trae `segundos`. Cuenta
+    también los anotados sin tiempo: si faltan muchos, la cifra no vale."""
     segundos = []
     for it in anotados:
         try:
@@ -185,6 +187,7 @@ def _tiempos(anotados):
     bloques = [round(sum(segundos[i:i + BLOQUE]) / 60.0, 1)
                for i in range(0, len(segundos), BLOQUE)]
     return {"items_con_tiempo": len(segundos),
+            "items_sin_tiempo": len(anotados) - len(segundos),
             "minutos_total": round(sum(segundos) / 60.0, 1),
             "segundos_mediana_por_item": round(statistics.median(segundos), 1),
             "minutos_por_bloque_de_%d" % BLOQUE: bloques}
@@ -280,6 +283,14 @@ def ejecutar(ruta_anotacion, ruta_llave, carpeta, ruta_json=None,
         % fmt(r["retencion_de_la_red"]["de_los_verdaderos"]))
     log("diferencia red − bronce, IC95 por bootstrap pareado: %s"
         % r["pareado"]["diferencia_red_menos_bronce_ic95"])
+    t = r["tiempo"]
+    if t:
+        log("tiempo: %.1f min en %d ítems (mediana %.1f s por ítem); "
+            "sin tiempo: %d" % (t["minutos_total"], t["items_con_tiempo"],
+                                t["segundos_mediana_por_item"],
+                                t["items_sin_tiempo"]))
+    else:
+        log("tiempo: ningún ítem trae `segundos` (¿se anotó en la hoja?)")
     if ruta_json:
         tmp = ruta_json + ".tmp"
         with io.open(tmp, "w", encoding="utf-8", newline="\n") as f:

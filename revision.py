@@ -21,12 +21,21 @@ Las anotaciones van en un JSONL de solo anexar, una línea por evento:
 - `guardado`: los valores que dio, con la hora del servidor como fin.
 
 Nada se reescribe. Retomar es releer el archivo: **gana el último `guardado`
-de cada ítem**, y su `inicio` es el primer `inicio` posterior al `guardado`
-anterior del mismo ítem (o el primero de todos, si es su primer guardado).
+de cada ítem** para los valores. El tiempo se mide por tramos: un tramo va
+del primer `inicio` posterior al `guardado` anterior del mismo ítem (o del
+primero de todos, si es su primer guardado) hasta ese `guardado`.
+
+- `segundos` es la **suma de los tramos** del ítem: corregir un ítem es
+  esfuerzo de curación y se suma; el rato entre tramos no cuenta.
+- Un `guardado` sin `inicio` propio (corregir tras retomar sin reabrir) no
+  aporta tramo, pero **no borra** lo ya medido: una corrección nunca deja al
+  ítem sin tiempo. Sin ningún tramo, `inicio` y `segundos` quedan vacíos.
+- `inicio` es el del primer tramo y `fin` el último `guardado`; con varios
+  tramos, `segundos` no es `fin − inicio`.
+
 Si la anotadora abre un ítem, pasa a otro y vuelve, el tiempo de en medio
 cuenta para el primero: es una simplificación a sabiendas, porque medir
 foco de ventana desde el navegador es más frágil que la cifra que corrige.
-Un `guardado` sin `inicio` previo queda con `inicio` y `segundos` vacíos.
 
 Biblioteca estándar y Python 3.8, como el núcleo. Sin print(): lo que haya
 que decir sale como excepción o como valor de retorno.
@@ -235,8 +244,9 @@ def _eventos(carpeta):
 
 
 def anotaciones(carpeta):
-    """{id_item: {"valores", "inicio", "fin"}} con el último guardado de cada
-    ítem. La regla del inicio está en el docstring del módulo."""
+    """{id_item: {"valores", "inicio", "fin", "segundos"}} con el último
+    guardado de cada ítem. `segundos` es un entero o None. Las reglas del
+    tiempo están en el docstring del módulo."""
     abierto = {}     # id -> primer inicio desde su último guardado
     vigentes = {}
     for ev in _eventos(carpeta):
@@ -246,9 +256,16 @@ def anotaciones(carpeta):
             continue
         valores = dict((c, str(ev["valores"].get(c) or ""))
                        for c in COLUMNAS_VALORES)
+        previo = vigentes.get(id_item) or {}
+        inicio_tramo = abierto.pop(id_item, None)
+        tramo = _segundos(inicio_tramo, ev["hora"])
+        segundos = previo.get("segundos")
+        if tramo is not None:
+            segundos = (segundos or 0) + tramo
         vigentes[id_item] = {"valores": valores,
-                             "inicio": abierto.pop(id_item, None),
-                             "fin": ev["hora"]}
+                             "inicio": previo.get("inicio") or inicio_tramo,
+                             "fin": ev["hora"],
+                             "segundos": segundos}
     return vigentes
 
 
@@ -337,12 +354,14 @@ def validar(valores):
 # ------------------------------------------------------------- exportación
 
 def _segundos(inicio, fin):
+    """Segundos enteros de `inicio` a `fin`, o None si falta o no se lee
+    alguna de las dos horas."""
     try:
         a = datetime.fromisoformat(inicio)
         b = datetime.fromisoformat(fin)
     except (TypeError, ValueError):
-        return ""
-    return str(max(0, int((b - a).total_seconds())))
+        return None
+    return max(0, int((b - a).total_seconds()))
 
 
 def exportar_csv(carpeta):
@@ -370,7 +389,8 @@ def exportar_csv(carpeta):
                 fila.update(hecho["valores"])
                 fila["inicio"] = hecho["inicio"] or ""
                 fila["fin"] = hecho["fin"]
-                fila["segundos"] = _segundos(hecho["inicio"], hecho["fin"])
+                fila["segundos"] = ("" if hecho["segundos"] is None
+                                    else str(hecho["segundos"]))
             w.writerow(fila)
     archivos.reemplazar(tmp, ruta)
     return ruta

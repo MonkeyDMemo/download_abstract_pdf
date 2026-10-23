@@ -167,7 +167,20 @@ class PruebasEntrada(Base):
 
         self.assertEqual(r["bronce"]["con_direccion"]["k"], 1)
         self.assertEqual(r["tiempo"]["items_con_tiempo"], 4)
+        self.assertEqual(r["tiempo"]["items_sin_tiempo"], 0)
         self.assertEqual(r["tiempo"]["minutos_total"], 4.0)
+
+    def test_cuenta_los_anotados_sin_tiempo(self):
+        """Un anotado sin `segundos` no se inventa ni se esconde: se cuenta,
+        para que se vea cuánto de la cifra de esfuerzo falta."""
+        extra = dict((i, {"inicio": "", "fin": "",
+                          "segundos": "" if n == 0 else "60"})
+                     for n, (i, *_) in enumerate(ITEMS))
+        r = self.calcular(extra=extra,
+                          columnas=HOJA + ["inicio", "fin", "segundos"])
+        self.assertEqual(r["tiempo"]["items_con_tiempo"], 3)
+        self.assertEqual(r["tiempo"]["items_sin_tiempo"], 1)
+        self.assertEqual(r["tiempo"]["minutos_total"], 3.0)
 
     def test_sin_tiempos_no_inventa_cifra(self):
         self.assertIsNone(self.calcular()["tiempo"])

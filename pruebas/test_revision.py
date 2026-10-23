@@ -279,7 +279,7 @@ class PruebasAnotar(BasePruebaRevision):
 
 class PruebasTiempos(BasePruebaRevision):
 
-    def test_inicio_es_el_primero_despues_del_guardado_anterior(self):
+    def test_los_tramos_se_suman_y_el_inicio_es_el_del_primero(self):
         c = self.carpeta
         revision.registrar_inicio(c, "m-1234", "2026-10-22T10:00:00+00:00")
         revision.registrar_inicio(c, "m-1234", "2026-10-22T10:00:30+00:00")
@@ -292,17 +292,47 @@ class PruebasTiempos(BasePruebaRevision):
         revision.guardar(c, "m-2345", dict(VALIDOS),
                          "2026-10-22T12:00:00+00:00")
         v = revision.anotaciones(c)
-        self.assertEqual(v["m-1234"]["inicio"], "2026-10-22T11:00:00+00:00")
+        # Dos tramos: 60 s y 45 s; la hora entre los dos no cuenta.
+        self.assertEqual(v["m-1234"]["segundos"], 105)
+        self.assertEqual(v["m-1234"]["inicio"], "2026-10-22T10:00:00+00:00")
         self.assertEqual(v["m-1234"]["fin"], "2026-10-22T11:00:45+00:00")
         self.assertEqual(v["m-1234"]["valores"]["signo"], "-")
         self.assertIsNone(v["m-2345"]["inicio"])
+        self.assertIsNone(v["m-2345"]["segundos"])
 
         ruta = revision.exportar_csv(c)
         with io.open(ruta, encoding="utf-8-sig", newline="") as f:
             filas = list(csv.DictReader(f))
-        self.assertEqual(filas[0]["segundos"], "45")
+        self.assertEqual(filas[0]["segundos"], "105")
+        self.assertEqual(filas[0]["inicio"], "2026-10-22T10:00:00+00:00")
         self.assertEqual(filas[1]["inicio"], "")
         self.assertEqual(filas[1]["segundos"], "")
+
+    def test_corregir_sin_reabrir_no_borra_el_tiempo(self):
+        """Lo que pasó en la prueba del 23-oct: se guarda, se reinicia el
+        tablero y se corrige el mismo ítem sin un `inicio` nuevo. Antes el
+        ítem se quedaba sin `segundos`; las correcciones suelen ser los ítems
+        difíciles, y perderlas subestima el esfuerzo."""
+        c = self.carpeta
+        revision.registrar_inicio(c, "m-1234", "2026-10-22T10:00:00+00:00")
+        revision.guardar(c, "m-1234", dict(VALIDOS),
+                         "2026-10-22T10:01:20+00:00")
+        # Reinicio: retomar es releer el archivo; la corrección llega sola.
+        revision.guardar(c, "m-1234", dict(VALIDOS, signo="-"),
+                         "2026-10-22T10:30:00+00:00")
+        v = revision.anotaciones(c)["m-1234"]
+        self.assertEqual(v["segundos"], 80)
+        self.assertEqual(v["valores"]["signo"], "-")
+        self.assertEqual(v["inicio"], "2026-10-22T10:00:00+00:00")
+        self.assertEqual(v["fin"], "2026-10-22T10:30:00+00:00")
+        # Si después se reabre y se vuelve a guardar, el tramo nuevo se suma.
+        revision.registrar_inicio(c, "m-1234", "2026-10-22T11:00:00+00:00")
+        revision.guardar(c, "m-1234", dict(VALIDOS),
+                         "2026-10-22T11:00:10+00:00")
+        self.assertEqual(revision.anotaciones(c)["m-1234"]["segundos"], 90)
+        ruta = revision.exportar_csv(c)
+        with io.open(ruta, encoding="utf-8-sig", newline="") as f:
+            self.assertEqual(list(csv.DictReader(f))[0]["segundos"], "90")
 
 
 class PruebasExportar(BasePruebaRevision):
