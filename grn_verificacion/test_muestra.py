@@ -641,6 +641,22 @@ class PruebasExcluirMuestra(Base):
         self.assertFalse({f["pmid"] for f in llave}
                          & {"90002", "90003", "90023"})
 
+    def test_un_iterable_vacio_es_como_no_pasarla(self):
+        # Un generador vacío es verdadero en un `if`: el resumen ganaba los
+        # motivos de otra muestra en cero.
+        kw, esperadas = HUELLAS_DE_SIEMPRE["dos_tandas"]
+        salida, resumen = self.ejecutar(salida="vacio",
+                                        excluir_muestras=iter(()), **kw)
+        self.assertEqual(huellas_de(salida), esperadas)
+
+    def test_una_carpeta_suelta_es_una_lista_de_una(self):
+        anterior, _ = self.anterior()
+        suelta, _ = self.ejecutar(n=5, salida="suelta", semilla=4,
+                                  excluir_muestras=anterior)
+        lista, _ = self.ejecutar(n=5, salida="lista", semilla=4,
+                                 excluir_muestras=[anterior])
+        self.assertEqual(huellas_de(suelta), huellas_de(lista))
+
     def test_fuera_las_copias_de_sus_oraciones_en_otros_articulos(self):
         # La oración 1 de 90002, juzgada en la muestra anterior, copiada en
         # 90030 con otras mayúsculas y sin el punto. Sin exclusiones la copia

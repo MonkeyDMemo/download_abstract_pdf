@@ -611,6 +611,10 @@ def ejecutar(carpeta, ruta_reservas, n, salida, semilla=SEMILLA,
         NOMBRE_CAPA: procedencia.huella(ruta_capa),
         "reservas": procedencia.huella(ruta_reservas),
     }
+    if excluir_muestras and not isinstance(excluir_muestras, str):
+        # Un generador vacío es verdadero en el `if` de abajo, y el resumen
+        # ganaría los motivos de otra muestra en cero.
+        excluir_muestras = list(excluir_muestras)
     pmids_excluidos = claves_excluidas = None
     codigos_excluidos, excluidas = (), []
     if excluir_muestras:
