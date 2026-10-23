@@ -263,6 +263,9 @@ grn_red/               paso 3; solo estandar y compatible con 3.8
                          de etapa2/red.py, con los nodos unificados por id
                          canonico; es el ultimo paso del flujo (`paquete`)
 flujo.py               el flujo de punta a punta; idempotente por huella
+revision.py            la revisión ciega de la muestra para la pestaña
+                       «Revisión»: cola desde hoja_tanda1.csv, anotaciones
+                       en un JSONL de solo anexar y su CSV exportado
 grn_comun/             lo que usan los tres pasos
   rutas.py               la precedencia de GRN_DATOS; grn_bronce/rutas.py es
                          su puente desde el 20-oct-2026
@@ -539,6 +542,7 @@ python3 cli.py --datos D estado         # --db y fulltext --salida salen de D
 
 python3 servidor.py --abrir             # tablero en http://127.0.0.1:8765
 python3 servidor.py --datos D --flujo salidas/flujo   # --db y --salida salen de D
+python3 servidor.py --revision salidas/revision/muestra200   # pestaña Revisión
 
 python3 flujo.py --corrida 4            # operones -> bronce -> BioBERT -> capa -> evaluacion
 python3 flujo.py --corrida 4 --limite 200   # prueba rapida en su propia carpeta
@@ -614,7 +618,7 @@ contra rutas fijas que salen de `__file__`, no por prefijo: en la raiz viven
 `.key`, la base y el codigo, y apuntar un manejador de archivos estatico ahi
 los expondria.
 
-Bajo `/api/` hay cuatro familias de rutas que si entregan archivos. Las dos del
+Bajo `/api/` hay cinco familias de rutas que si entregan archivos. Las dos del
 corpus son `/api/documentos/<pmid>/texto` y `/api/documentos/<pmid>/pdf`. La
 ruta de disco **se arma con el PMID y el PMCID validados** (`^\d{1,12}$` y
 `^PMC\d{1,12}$`) mas la convencion de nombres, nunca leyendo
@@ -644,6 +648,14 @@ comprueba otra vez con `_dentro_de`. El paquete lo arma el trabajo `exportar`
 (`POST /api/trabajo`), que no exige correo porque no sale a la red, y que
 recibe de la peticion solo que consulta y si lleva PDF: de donde lee el texto
 completo y donde deja el zip son rutas del servidor.
+
+La quinta es la revisión ciega: `/api/revision/...` (cola, ítem, inicio,
+guardado y `exportar`). La carpeta sale de `--revision` al arrancar, nunca de
+una petición; de ella se lee **solo `hoja_tanda1.csv`** y se anexa
+`anotaciones.jsonl` (gana el último guardado de cada ítem), y `exportar`
+entrega `anotaciones_exportadas.csv`. La llave, los dobles y el resumen viven
+al lado y `revision.py` no los nombra: la página ve id, oración y las dos
+entidades, nunca qué capa propuso el par ni un veredicto de modelo.
 
 El aspecto es el sistema Nocturne, cuya referencia esta en
 `web/UI mockups request/` (no se sirve ni se ejecuta: es un lienzo de diseno y

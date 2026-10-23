@@ -133,6 +133,10 @@ class BasePruebaServidor(PruebaSinRed):
                           Path(usado.salida).resolve(),
                           Path(usado.flujo_raiz).resolve(),
                           Path(usado.exportaciones).resolve()]
+            # La carpeta de la revisión ciega, si el tablero arrancó con
+            # --revision: de ahí se baja la exportación de las anotaciones.
+            if usado.revision:
+                permitidas.append(Path(usado.revision).resolve())
             real = objeto.ruta.resolve()
             self.assertTrue(
                 any(r == real or r in real.parents for r in permitidas),
