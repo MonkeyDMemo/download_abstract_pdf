@@ -613,25 +613,90 @@ class PruebasExcluirMuestra(Base):
         # que no llegó al clasificador y los dos de las reservas. Las
         # reservas siguen contando como reservas, y lo demás de esos
         # artículos, ni como sin par ni como repetido. Con un cero delante,
-        # el PMID es el mismo artículo.
+        # el PMID es el mismo artículo, y la copia de la repetida en su mismo
+        # artículo cuenta por el PMID.
         anterior = os.path.join(self.tmp, "anterior")
         escribir_llave(anterior, [
-            {"id_item": "m-1000", "pmid": "90002"},
-            {"id_item": "m-1001", "pmid": "90003"},
-            {"id_item": "m-1002", "pmid": "090023"},
-            {"id_item": "m-1003", "pmid": "90022"},
-            {"id_item": "m-1004", "pmid": "90001"},
-            {"id_item": "m-1005", "pmid": "90020"}])
+            {"id_item": "m-1000", "pmid": "90002", "fuente_texto": "xml",
+             "num_oracion": "1"},
+            {"id_item": "m-1001", "pmid": "90003", "fuente_texto": "xml",
+             "num_oracion": "1"},
+            {"id_item": "m-1002", "pmid": "090023",
+             "fuente_texto": "abstract", "num_oracion": "1"},
+            {"id_item": "m-1003", "pmid": "90022", "fuente_texto": "xml",
+             "num_oracion": "1"},
+            {"id_item": "m-1004", "pmid": "90001", "fuente_texto": "xml",
+             "num_oracion": "1"},
+            {"id_item": "m-1005", "pmid": "90020", "fuente_texto": "xml",
+             "num_oracion": "1"}])
         salida, resumen = self.ejecutar(n=41, excluir_muestras=[anterior])
         self.assertEqual(resumen["exclusiones"], {
             "pmid_reservado": 3, "oracion_reservada_igual": 1,
             "oracion_reservada_contenida": 2, "pmid_de_otra_muestra": 11,
-            "sin_par_directo": 0, "repetida": 0})
+            "oracion_de_otra_muestra": 0, "sin_par_directo": 0,
+            "repetida": 0})
         self.assertEqual(resumen["poblacion"], 41)
         _, llave = leer_csv(os.path.join(salida, muestra.LLAVE))
         self.assertEqual(len(llave), 41)
         self.assertFalse({f["pmid"] for f in llave}
                          & {"90002", "90003", "90023"})
+
+    def test_fuera_las_copias_de_sus_oraciones_en_otros_articulos(self):
+        # La oración 1 de 90002, juzgada en la muestra anterior, copiada en
+        # 90030 con otras mayúsculas y sin el punto. Sin exclusiones la copia
+        # es `repetida`; si 90002 sale por su PMID, la copia se queda sin
+        # original y entraría. La de 90032 no llegó al clasificador, y aun
+        # así cuenta como copia, no como sin par. La oración 2 de 90002 no se
+        # juzgó: su copia en 90031 sí entra, porque nadie la vio.
+        filas = filas_sinteticas()
+        texto = dict(((f["pmid"], f["num_oracion"]), f["oracion"])
+                     for f in filas if f["par_del_bronce"] == "directo")
+        copia_juzgada = texto[("90002", "1")].replace(
+            "The regulator", "the  regulator").rstrip(".")
+        copia_libre = texto[("90002", "2")].replace("Expression", "expression")
+        filas.append(_fila(90030, 1, copia_juzgada, "reg0R", "tgt0Z",
+                           mencion_r="Reg0R", locus=9800))
+        filas.append(_fila(90031, 1, copia_libre, "reg1R", "tgt1Z",
+                           mencion_r="Reg1R", locus=9802))
+        filas.append(_fila(90032, 1, copia_juzgada.upper(), "reg0R", "tgt0Z",
+                           mencion_r="REG0R", par="otro", locus=9804))
+        escribir_capa(self.carpeta, filas)
+        _, conteos = muestra.poblacion(self.ruta_capa, self.reservas)
+        self.assertEqual(conteos["exclusiones"]["repetida"], 3)
+        self.assertEqual(conteos["exclusiones"]["sin_par_directo"], 2)
+        self.assertEqual(conteos["poblacion"], 50)
+
+        anterior = os.path.join(self.tmp, "anterior")
+        escribir_llave(anterior, [{"id_item": "m-1000", "pmid": "90002",
+                                   "fuente_texto": "xml", "num_oracion": "1"}])
+        salida, resumen = self.ejecutar(n=47, excluir_muestras=[anterior])
+        self.assertEqual(resumen["exclusiones"], {
+            "pmid_reservado": 3, "oracion_reservada_igual": 1,
+            "oracion_reservada_contenida": 2, "pmid_de_otra_muestra": 4,
+            "oracion_de_otra_muestra": 2, "sin_par_directo": 1,
+            "repetida": 1})
+        self.assertEqual(resumen["poblacion"], 47)
+        _, llave = leer_csv(os.path.join(salida, muestra.LLAVE))
+        pmids = {f["pmid"] for f in llave}
+        self.assertNotIn("90030", pmids)
+        self.assertIn("90031", pmids)
+
+    def test_una_oracion_de_la_llave_que_no_esta_en_la_capa_no_sortea(self):
+        # Sin su texto no se pueden apartar sus copias: la llave tiene que
+        # ser de un sorteo sobre esta misma capa.
+        anterior = os.path.join(self.tmp, "anterior")
+        escribir_llave(anterior, [{"id_item": "m-1000", "pmid": "90002",
+                                   "fuente_texto": "xml",
+                                   "num_oracion": "99"}])
+        salida = os.path.join(self.tmp, "nada")
+        with self.assertRaises(ValueError) as e:
+            muestra.ejecutar(self.carpeta, self.ruta_reservas, 5, salida,
+                             excluir_muestras=[anterior])
+        mensaje = str(e.exception)
+        self.assertIn("capa_pares.csv", mensaje)
+        self.assertNotIn(self.tmp, mensaje)
+        self.assertNotIn(os.sep, mensaje)
+        self.assertFalse(os.path.exists(salida))
 
     def test_con_la_llave_de_un_sorteo_ningun_articulo_se_repite(self):
         anterior, llave_anterior = self.anterior()
@@ -685,9 +750,12 @@ class PruebasExcluirMuestra(Base):
     def test_el_resumen_registra_la_exclusion_y_la_poblacion_que_queda(self):
         anterior = os.path.join(self.tmp, "anterior")
         ruta = escribir_llave(anterior, [
-            {"id_item": "m-1000", "pmid": "90002"},
-            {"id_item": "m-1001", "pmid": "90002"},
-            {"id_item": "m-1002", "pmid": "90003"}])
+            {"id_item": "m-1000", "pmid": "90002", "fuente_texto": "xml",
+             "num_oracion": "1"},
+            {"id_item": "m-1001", "pmid": "90002", "fuente_texto": "xml",
+             "num_oracion": "2"},
+            {"id_item": "m-1002", "pmid": "90003", "fuente_texto": "xml",
+             "num_oracion": "1"}])
         salida, devuelto = self.ejecutar(n=10, excluir_muestras=[anterior])
         with io.open(os.path.join(salida, muestra.RESUMEN),
                      encoding="utf-8") as f:
@@ -763,9 +831,14 @@ class PruebasExcluirMuestra(Base):
 
     def test_una_llave_que_no_sirve_da_error_sin_ruta(self):
         sin_id = [c for c in muestra.COLUMNAS_LLAVE if c != "id_item"]
+        sin_num = [c for c in muestra.COLUMNAS_LLAVE if c != "num_oracion"]
         casos = {
             "sin_llave": None,
             "sin_columna_id_item": (sin_id, [{"pmid": "90002"}]),
+            # Sin ella no hay texto con qué apartar sus copias.
+            "sin_columna_num_oracion": (sin_num, [{
+                "id_item": "m-1000", "pmid": "90002",
+                "fuente_texto": "xml"}]),
             "pmid_que_no_es_numero": (None, [{"id_item": "m-1000",
                                               "pmid": "PMC90002"}]),
             "fila_sin_id_item": (None, [{"id_item": "", "pmid": "90002"}]),

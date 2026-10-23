@@ -36,10 +36,12 @@ como repetido.
 4. `pmid_de_otra_muestra`: su artículo está en la llave de una muestra
    anterior (`--excluir-muestra`, más abajo). El motivo solo existe, y solo
    sale en el resumen, cuando se pide.
-5. `sin_par_directo`: el bronce la orientó, pero su par no está entre los que
+5. `oracion_de_otra_muestra`: en otro artículo, el mismo texto canónico que
+   una oración de esa llave. Como el anterior, solo con la opción.
+6. `sin_par_directo`: el bronce la orientó, pero su par no está entre los que
    vio el clasificador (en la corrida 4, el bronce escribe `rsmZY` y el par
    `rsmYZ`). Sin `id_par` no se puede medir la plata sobre ella.
-6. `repetida`: el mismo texto canónico (`entrenamiento.canonico`) que otra
+7. `repetida`: el mismo texto canónico (`entrenamiento.canonico`) que otra
    que ya entró; se queda la primera del orden estable. Quien anota juzga
    igual la misma oración dos veces: serían dos ítems y un solo juicio.
 
@@ -75,6 +77,18 @@ sorteo anterior y deja fuera de la población todas las oraciones de sus
 artículos, con el PMID normalizado como en `entrenamiento.py`. Es para una
 tanda de prueba: un artículo que ya se vio en la anterior, al anotarla o al
 ajustar algo con ella, haría que la nueva midiera en parte lo ya visto.
+
+El PMID no aparta las copias de una oración juzgada en OTROS artículos (el
+mismo resumen bajo dos PMIDs, una revisión que la cita literal), y en la
+corrida 4 hay 44 textos canónicos que salen en dos PMIDs. Sin exclusiones la
+copia es `repetida` de su original, pero el original sale por su PMID y la
+copia entraría: quien anota juzgaría otra vez lo que ya juzgó. Por eso también
+salen las oraciones con el mismo texto canónico que una de la llave, el mismo
+criterio de `repetida`. Su texto sale de esta capa por la clave de cada fila
+(PMID, fuente y número de oración): la llave tiene que ser de un sorteo sobre
+la misma `capa_pares.csv`, y si una de sus oraciones no está, no se sortea. Se
+apartan las copias de lo juzgado, no las de las demás oraciones de esos
+artículos, que nadie vio.
 
 También deja fuera sus `id_item`. Los códigos dependen solo de la semilla y
 del tamaño, así que con la misma semilla y el mismo `n` saldrían los mismos, y
@@ -170,11 +184,13 @@ COLUMNAS_CAPA = ["pmid", "fuente_texto", "num_oracion", "id_par", "oracion",
 # muestra va donde va.
 MOTIVOS = ["pmid_reservado", "oracion_reservada_igual",
            "oracion_reservada_contenida", "pmid_de_otra_muestra",
-           "sin_par_directo", "repetida"]
+           "oracion_de_otra_muestra", "sin_par_directo", "repetida"]
 
-# Solo con --excluir-muestra. Sin la opción no aparece ni en cero: el resumen
+# Solo con --excluir-muestra. Sin la opción no aparecen ni en cero: el resumen
 # de un sorteo de antes tiene que salir igual byte a byte.
 OTRA_MUESTRA = "pmid_de_otra_muestra"
+COPIA_DE_OTRA_MUESTRA = "oracion_de_otra_muestra"
+DE_OTRA_MUESTRA = (OTRA_MUESTRA, COPIA_DE_OTRA_MUESTRA)
 
 ETIQUETAS = {
     "pmid_reservado": "PMID reservado",
@@ -183,12 +199,16 @@ ETIQUETAS = {
                                    "caracteres o más)"
                                    % entrenamiento.MINIMO_CONTENCION,
     "pmid_de_otra_muestra": "PMID de una muestra excluida",
+    "oracion_de_otra_muestra": "mismo texto que una oración de una muestra "
+                               "excluida",
     "sin_par_directo": "el par del bronce no llegó al clasificador",
     "repetida": "mismo texto que otra que ya entró",
 }
 
-# De la llave de una muestra excluida no hace falta más: lo demás puede faltar.
-COLUMNAS_LLAVE_EXCLUIDA = ["id_item", "pmid"]
+# De la llave de una muestra excluida no hace falta más: el código, el
+# artículo y dónde está la oración en la capa, que da el texto para apartar
+# sus copias. Lo demás puede faltar.
+COLUMNAS_LLAVE_EXCLUIDA = ["id_item", "pmid", "fuente_texto", "num_oracion"]
 
 FORMATO_ID = "m-%d"
 
@@ -263,7 +283,8 @@ def _orden(item):
             item["id_par"])
 
 
-def _motivo(item, pmids, reservadas, vistas, otras=frozenset()):
+def _motivo(item, pmids, reservadas, vistas, otras=frozenset(),
+            copias=frozenset()):
     if item["pmid"] in pmids:
         return "pmid_reservado"
     oracion = item["normalizada"]
@@ -281,31 +302,61 @@ def _motivo(item, pmids, reservadas, vistas, otras=frozenset()):
     # en qué motivo se cuenta cada oración.
     if item["pmid"] in otras:
         return OTRA_MUESTRA
+    canon = entrenamiento.canonico(oracion)
+    # La copia de una oración juzgada en otro artículo: su original salió por
+    # el PMID y nunca llega a `vistas`, así que sin esto la copia ya no sería
+    # repetida y entraría.
+    if canon in copias:
+        return COPIA_DE_OTRA_MUESTRA
     if not item["directo"]:
         return "sin_par_directo"
-    if entrenamiento.canonico(oracion) in vistas:
+    if canon in vistas:
         return "repetida"
     return None
 
 
-def poblacion(ruta_capa, reservas, pmids_excluidos=None):
+def _textos_excluidos(oraciones, claves):
+    """El texto canónico de las oraciones de las muestras excluidas, sacado de
+    la capa por su clave (pmid, fuente, número de oración).
+
+    Una clave que no está detiene el sorteo: sin su texto, sus copias en otros
+    artículos entrarían sin que nada avisara. Pasa si la llave salió de otra
+    capa. El mensaje no dice cuál, porque la clave lleva el PMID.
+    """
+    faltan = sum(1 for clave in claves if clave not in oraciones)
+    if faltan:
+        raise ValueError(
+            "Hay oraciones de las muestras excluidas que no están en %s (%d), "
+            "y sus copias en otros artículos no se podrían apartar: la llave "
+            "tiene que ser de un sorteo sobre esta misma capa."
+            % (NOMBRE_CAPA, faltan))
+    return frozenset(entrenamiento.canonico(oraciones[clave]["normalizada"])
+                     for clave in claves)
+
+
+def poblacion(ruta_capa, reservas, pmids_excluidos=None,
+              oraciones_excluidas=None):
     """(ítems, conteos): las oraciones sorteables en su orden estable, y
     cuántas había y cuántas quedaron fuera por cada motivo.
 
-    `reservas` es el primer valor de `entrenamiento.leer_reservas`, y
-    `pmids_excluidos`, los PMIDs de las muestras excluidas. Con None no hay
-    motivo `pmid_de_otra_muestra` en los conteos, ni en cero.
+    `reservas` es el primer valor de `entrenamiento.leer_reservas`;
+    `pmids_excluidos` y `oraciones_excluidas`, los PMIDs y las claves
+    (pmid, fuente, número de oración) de las muestras excluidas. Con los dos
+    en None no hay motivos de otra muestra en los conteos, ni en cero.
     """
     oraciones = _leer_capa(ruta_capa)
     pmids = reservas.get("pmids") or set()
     reservadas = reservas.get("oraciones") or set()
     otras = frozenset(pmids_excluidos or ())
-    fuera = dict.fromkeys((m for m in MOTIVOS if m != OTRA_MUESTRA
-                           or pmids_excluidos is not None), 0)
+    copias = _textos_excluidos(oraciones, oraciones_excluidas or ())
+    con_otras = (pmids_excluidos is not None
+                 or oraciones_excluidas is not None)
+    fuera = dict.fromkeys((m for m in MOTIVOS
+                           if con_otras or m not in DE_OTRA_MUESTRA), 0)
     vistas = set()
     items = []
     for item in sorted(oraciones.values(), key=_orden):
-        motivo = _motivo(item, pmids, reservadas, vistas, otras)
+        motivo = _motivo(item, pmids, reservadas, vistas, otras, copias)
         if motivo:
             fuera[motivo] += 1
             continue
@@ -318,7 +369,8 @@ def poblacion(ruta_capa, reservas, pmids_excluidos=None):
 # ------------------------------------------------------- muestras excluidas
 
 def _leer_llave_excluida(carpeta):
-    """(huella, pmids, códigos) de `llave.csv` de un sorteo anterior.
+    """(huella, pmids, códigos, claves) de `llave.csv` de un sorteo anterior.
+    Las claves son (pmid, fuente, número de oración), como en `_leer_capa`.
 
     Los errores nombran la carpeta y no su ruta, como los demás de este
     módulo: la ruta absoluta lleva la cuenta de quien corre, y el mensaje
@@ -333,7 +385,7 @@ def _leer_llave_excluida(carpeta):
                          % (LLAVE, nombre))
     # Antes de leer, como las de las entradas: describe lo que se leyó.
     huella = procedencia.huella(ruta)
-    pmids, codigos = set(), set()
+    pmids, codigos, claves = set(), set(), set()
     with open(ruta, encoding="utf-8-sig", newline="") as f:
         lector = csv.DictReader(f)
         cabecera = lector.fieldnames or []
@@ -354,27 +406,33 @@ def _leer_llave_excluida(carpeta):
                                  "no trae id_item." % (LLAVE, nombre))
             pmids.add(pmid)
             codigos.add(codigo)
+            # Sin recortar, como las escribe el sorteo y como las lee
+            # `_leer_capa`: así la clave es la misma.
+            claves.add((pmid, fila["fuente_texto"], fila["num_oracion"]))
     if not codigos:
         raise ValueError("La llave de la muestra excluida «%s» no tiene "
                          "ítems." % nombre)
-    return huella, pmids, codigos
+    return huella, pmids, codigos, claves
 
 
 def _muestras_excluidas(carpetas):
-    """(pmids, códigos, registro) de todas las llaves. El registro, que va al
-    resumen, lleva una entrada por llave distinta en el orden de su huella:
-    dar las carpetas en otro orden, o una dos veces, es el mismo sorteo."""
+    """(pmids, códigos, claves, registro) de todas las llaves. El registro,
+    que va al resumen, lleva una entrada por llave distinta en el orden de su
+    huella: dar las carpetas en otro orden, o una dos veces, es el mismo
+    sorteo."""
     if isinstance(carpetas, str):
         # Una sola carpeta suelta se recorrería letra por letra.
         carpetas = [carpetas]
-    pmids, codigos, registro = set(), set(), {}
+    pmids, codigos, claves, registro = set(), set(), set(), {}
     for carpeta in carpetas:
-        huella, de_la_llave, sus_codigos = _leer_llave_excluida(carpeta)
+        huella, de_la_llave, sus_codigos, sus_claves = _leer_llave_excluida(
+            carpeta)
         pmids |= de_la_llave
         codigos |= sus_codigos
+        claves |= sus_claves
         registro[huella] = {"llave": huella, "pmids": len(de_la_llave),
                             "codigos": len(sus_codigos)}
-    return pmids, codigos, [registro[h] for h in sorted(registro)]
+    return pmids, codigos, claves, [registro[h] for h in sorted(registro)]
 
 
 # ------------------------------------------------------------------- sorteo
@@ -539,9 +597,9 @@ def ejecutar(carpeta, ruta_reservas, n, salida, semilla=SEMILLA,
     sorteo, incluido un tamaño mayor que la población o una llave excluida
     que no se puede usar.
 
-    `excluir_muestras` son carpetas de sorteos anteriores: ni sus artículos
-    ni sus códigos salen en este. Vacío o None, todo queda como sin la
-    opción.
+    `excluir_muestras` son carpetas de sorteos anteriores sobre la misma
+    capa: ni sus artículos, ni las copias de sus oraciones en otros, ni sus
+    códigos salen en este. Vacío o None, todo queda como sin la opción.
     """
     ruta_capa = os.path.join(carpeta, NOMBRE_CAPA)
     if not os.path.isfile(ruta_capa):
@@ -553,14 +611,16 @@ def ejecutar(carpeta, ruta_reservas, n, salida, semilla=SEMILLA,
         NOMBRE_CAPA: procedencia.huella(ruta_capa),
         "reservas": procedencia.huella(ruta_reservas),
     }
-    pmids_excluidos, codigos_excluidos, excluidas = None, (), []
+    pmids_excluidos = claves_excluidas = None
+    codigos_excluidos, excluidas = (), []
     if excluir_muestras:
-        pmids_excluidos, codigos_excluidos, excluidas = _muestras_excluidas(
-            excluir_muestras)
+        (pmids_excluidos, codigos_excluidos, claves_excluidas,
+         excluidas) = _muestras_excluidas(excluir_muestras)
         log("muestras excluidas: %d, con %d PMIDs y %d códigos"
             % (len(excluidas), len(pmids_excluidos), len(codigos_excluidos)))
     reservas, conteos_reservas = entrenamiento.leer_reservas([ruta_reservas])
-    items, conteos = poblacion(ruta_capa, reservas, pmids_excluidos)
+    items, conteos = poblacion(ruta_capa, reservas, pmids_excluidos,
+                               claves_excluidas)
     log("%s: %d oraciones con el par del bronce"
         % (NOMBRE_CAPA, conteos["oraciones_con_par_del_bronce"]))
     for motivo in MOTIVOS:

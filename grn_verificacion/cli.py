@@ -609,10 +609,11 @@ def _sub_muestra(sub):
                          "omisión, %(default)s.")
     mu.add_argument("--excluir-muestra", dest="excluir_muestra",
                     action="append", default=None, metavar="DIR",
-                    help="Carpeta de un sorteo anterior, con su llave.csv: "
-                         "ni sus artículos (por PMID) ni sus id_item salen "
-                         "en este, como pide una tanda de prueba. Se puede "
-                         "repetir.")
+                    help="Carpeta de un sorteo anterior sobre la misma "
+                         "capa, con su llave.csv: ni sus artículos (por "
+                         "PMID), ni sus oraciones copiadas en otros, ni sus "
+                         "id_item salen en este, como pide una tanda de "
+                         "prueba. Se puede repetir.")
     mu.set_defaults(func=cmd_muestra)
 
 
