@@ -523,17 +523,19 @@ class PruebasErrores(Base):
         self.assertNoVerificable(argv, "--base")
 
     def test_lo_que_no_pasa_el_filtro_no_se_imprime(self):
-        """Un nombre de consulta con forma de PMID: lo demás son conteos."""
+        """Un nombre de consulta con forma de PMID: lo demás son conteos. El
+        mensaje dice dónde buscar, porque la línea que falló no se ve, y la
+        fecha sin guiones es el nombre natural de una consulta de lo nuevo."""
         con = db0.conectar(self.db)
         try:
-            q, _ = db0.alta_consulta(con, "lote 12345678", "query")
+            q, _ = db0.alta_consulta(con, "nuevos_20261023", "query")
             db0.vincular(con, q, NUEVOS)
         finally:
             con.close()
         self.assertNoVerificable(
-            ["verificar-contaminacion", "--consulta", "lote 12345678",
+            ["verificar-contaminacion", "--consulta", "nuevos_20261023",
              "--db", self.db, "--juzgadas", self.juzgadas],
-            "filtro de publicación")
+            "filtro de publicación", "nombres de la consulta y del corpus")
 
     def test_lista_y_consulta_a_la_vez_no(self):
         with contextlib.redirect_stderr(io.StringIO()), \

@@ -690,9 +690,16 @@ def ejecutar(lista=None, consulta=None, corpus=CORPUS_POR_OMISION,
         reentrenar.verificar_publicable(texto_json)
     except ValueError as e:
         # Lo único que puede traer algo así es un nombre de consulta o de
-        # corpus: lo demás son conteos y huellas.
-        raise ValueError("La salida no pasó el filtro de publicación (%s): "
-                         "no se escribe nada." % e) from None
+        # corpus: lo demás son conteos y huellas. Se dice, porque quien corre
+        # no ve la línea que falló, y un nombre con la fecha sin guiones
+        # («nuevos_» y ocho cifras) es justo el que se le pone a lo nuevo. El
+        # mensaje no lleva cifras: el filtro del CLI lo dejaría vacío.
+        raise ValueError(
+            "La salida no pasó el filtro de publicación (%s): no se escribe "
+            "nada. Lo único en ella que no es un conteo ni una huella son los "
+            "nombres de la consulta y del corpus: con siete u ocho cifras "
+            "seguidas, como una fecha sin guiones, parecen un PMID." % e) \
+            from None
     if salida_json:
         _escribir_json(_expandir(salida_json), resultado)
     for linea in lineas:
