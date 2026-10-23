@@ -159,9 +159,36 @@ MAX_TRAMOS = 400
 FECHA_MINIMA = datetime.date(1700, 1, 1)
 FECHA_MAXIMA = datetime.date(2999, 12, 31)
 
+# La fecha que acotan mindate y maxdate (el `datetype` de esearch, NBK25499) y
+# por la que se parte una consulta de más de 10 000. pdat es la de
+# publicación; edat, la de alta del registro en PubMed (Entrez date); crdt, la
+# de creación del registro. pdat sigue siendo la de siempre, pero no sirve
+# para pedir lo nuevo desde la última descarga: un artículo dado de alta
+# después de esa descarga con una fecha de publicación anterior a ella (un
+# número impreso hace meses e indexado hoy) queda fuera del rango y nunca
+# llega. Para eso, edat o crdt.
+TIPOS_FECHA = ("pdat", "edat", "crdt")
+NOMBRE_FECHA = {"pdat": "fecha de publicación",
+                "edat": "fecha de alta en PubMed",
+                "crdt": "fecha de creación del registro"}
+
 
 def _nada(*_a, **_k):
     pass
+
+
+def validar_tipo_fecha(tipo_fecha):
+    """Devuelve `tipo_fecha` si es uno de TIPOS_FECHA; si no, ErrorPubMed.
+
+    Se valida antes de la primera petición, como las fechas: un valor mal
+    escrito no tiene por qué llegar a NCBI, y una búsqueda acotada por otra
+    fecha trae otro conjunto con la misma pinta de correcto.
+    """
+    if tipo_fecha not in TIPOS_FECHA:
+        raise ErrorPubMed(
+            f"Tipo de fecha no válido: '{tipo_fecha}'. Usa "
+            f"{', '.join(TIPOS_FECHA[:-1])} o {TIPOS_FECHA[-1]}.")
+    return tipo_fecha
 
 
 def _fecha(texto, fin=False):
@@ -205,12 +232,13 @@ def _punto_medio(ini, fin):
     return ini + (fin - ini) // 2
 
 
-def _esearch(cliente, query, orden, tope, ini=None, fin=None, avisos=None):
+def _esearch(cliente, query, orden, tope, ini=None, fin=None, avisos=None,
+             tipo_fecha="pdat"):
     """Una peticion a esearch. Devuelve (total_reportado, pmids)."""
     params = {"db": "pubmed", "term": query, "sort": orden, "retmode": "xml",
               "retstart": "0", "retmax": str(tope)}
     if ini is not None or fin is not None:
-        params["datetype"] = "pdat"
+        params["datetype"] = tipo_fecha
         params["mindate"] = _texto_fecha(ini or FECHA_MINIMA)
         params["maxdate"] = _texto_fecha(fin or FECHA_MAXIMA)
 
@@ -231,8 +259,13 @@ def _esearch(cliente, query, orden, tope, ini=None, fin=None, avisos=None):
 
 
 def tramos_por_fecha(cliente, query, ini, fin, orden="relevance", tope=None,
-                     max_tramos=MAX_TRAMOS, avisos=None, log=_nada):
-    """Parte [ini, fin] en tramos de fecha de publicacion que quepan en el tope.
+                     max_tramos=MAX_TRAMOS, avisos=None, log=_nada,
+                     tipo_fecha="pdat"):
+    """Parte [ini, fin] en tramos de fecha que quepan en el tope.
+
+    La fecha es la de `tipo_fecha` (TIPOS_FECHA; por omisión, la de
+    publicación), y tiene que ser la misma con que se acotó la consulta
+    entera: partir por otra daría tramos que no suman el conjunto pedido.
 
     Cada tramo hace la misma peticion de esearch que haria la consulta
     entera. Si el conteo cabe, el tramo es hoja y ya trae sus PMIDs; si no,
@@ -246,13 +279,15 @@ def tramos_por_fecha(cliente, query, ini, fin, orden="relevance", tope=None,
     mitades vacias se descartan. Un solo dia que rebase el tope no se puede
     partir mas y es error: devolver una parte seria truncar en silencio.
     """
+    validar_tipo_fecha(tipo_fecha)
     tope = TOPE_ESEARCH if tope is None else tope
     tramos = []
     # Pila: se apila primero la mitad derecha para sacar la izquierda antes.
     pendientes = [(ini, fin)]
     while pendientes:
         a, b = pendientes.pop()
-        total, pmids = _esearch(cliente, query, orden, tope, a, b, avisos)
+        total, pmids = _esearch(cliente, query, orden, tope, a, b, avisos,
+                                tipo_fecha)
         if total == 0:
             continue
         if total <= tope:
@@ -277,15 +312,20 @@ def tramos_por_fecha(cliente, query, ini, fin, orden="relevance", tope=None,
 
 
 def buscar_pmids(cliente, query, mindate=None, maxdate=None, orden="relevance",
-                 limite=None, avisos=None, tramos=None, log=_nada, tope=None):
+                 limite=None, avisos=None, tramos=None, log=_nada, tope=None,
+                 tipo_fecha="pdat"):
     """esearch de una consulta. Devuelve (total_reportado, lista_de_pmids).
 
     Se traen los PMIDs completos ANTES de descargar nada. Asi se puede
     comparar contra la base y bajar solo lo que falta.
 
+    `tipo_fecha` dice qué fecha acotan `mindate` y `maxdate` y por cuál se
+    parte (TIPOS_FECHA): la de publicación por omisión, que es la de
+    siempre; edat o crdt para pedir lo dado de alta desde una fecha.
+
     Hasta el tope, una sola peticion con retmax al maximo: para PubMed no
     hay segunda pagina que valga. Por encima del tope, y sin `limite`, la
-    consulta se parte por fecha de publicacion con tramos_por_fecha() y se
+    consulta se parte por esa misma fecha con tramos_por_fecha() y se
     une sin duplicar; `tramos`, si se pasa una lista, recibe la descripcion
     de cada tramo sin sus PMIDs, para que quepa en la bitacora. Devolver
     solo lo que cupiera seria lo peor posible: el llamador no distingue una
@@ -296,6 +336,7 @@ def buscar_pmids(cliente, query, mindate=None, maxdate=None, orden="relevance",
     sin partir. Las fechas aceptan YYYY, YYYY/MM o YYYY/MM/DD y viajan
     siempre como dia completo, con la misma semantica que les da NCBI.
     """
+    validar_tipo_fecha(tipo_fecha)
     tope = TOPE_ESEARCH if tope is None else tope
     ini = fin = None
     if mindate or maxdate:
@@ -306,16 +347,20 @@ def buscar_pmids(cliente, query, mindate=None, maxdate=None, orden="relevance",
                 f"El rango de fechas esta al reves: {_texto_fecha(ini)} es "
                 f"posterior a {_texto_fecha(fin)}.")
 
-    total, pmids = _esearch(cliente, query, orden, tope, ini, fin, avisos)
+    total, pmids = _esearch(cliente, query, orden, tope, ini, fin, avisos,
+                            tipo_fecha)
+    nombre_fecha = NOMBRE_FECHA[tipo_fecha]
 
     if total > tope and not limite:
         log(f"PubMed reporta {total} articulos y solo entrega {tope} de un "
-            f"mismo conjunto: se parte por fecha de publicacion.")
+            f"mismo conjunto: se parte por {nombre_fecha} ({tipo_fecha}).")
         partes = tramos_por_fecha(cliente, query, ini or FECHA_MINIMA,
                                   fin or FECHA_MAXIMA, orden, tope,
-                                  avisos=avisos, log=log)
-        # Desde 2014 [dp] empata la fecha impresa y la electronica, asi que
-        # un articulo puede caer en dos tramos: la union lo cuenta una vez.
+                                  avisos=avisos, log=log,
+                                  tipo_fecha=tipo_fecha)
+        # Desde 2014 [dp] empata la fecha impresa y la electrónica, así que
+        # con pdat un artículo puede caer en dos tramos: la unión lo cuenta
+        # una vez.
         pmids = list(dict.fromkeys(p for t in partes for p in t["pmids"]))
         suma = sum(t["n"] for t in partes)
         if tramos is not None:
@@ -326,11 +371,13 @@ def buscar_pmids(cliente, query, mindate=None, maxdate=None, orden="relevance",
         if len(pmids) < total:
             log(f"  AVISO: la union de los tramos trae {len(pmids)} PMIDs y "
                 f"PubMed reporta {total}; faltan {total - len(pmids)}. Un "
-                f"articulo sin fecha de publicacion indexada no cae en "
-                f"ningun tramo.")
+                f"artículo sin {nombre_fecha} indexada no cae en "
+                f"ningún tramo.")
         elif suma > total:
-            log(f"  {suma - total} articulos aparecen en dos tramos (fecha "
-                f"impresa y electronica); la union los cuenta una vez.")
+            motivo = (" (fecha impresa y electrónica)" if tipo_fecha == "pdat"
+                      else "")
+            log(f"  {suma - total} artículos aparecen en dos tramos{motivo}; "
+                f"la unión los cuenta una vez.")
 
     if limite:
         pmids = pmids[:limite]

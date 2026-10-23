@@ -504,8 +504,28 @@ class PruebasParametros(BasePruebaIngesta):
                      maxdate="2024", log=self.log)
 
         self.assertEqual(self.parametros(), {
-            "orden": "relevance", "limite": 4, "desde": "2000", "hasta": "2024",
-            "lote": 200, "pausa": 0})
+            "orden": "relevance", "limite": 4, "tipo_fecha": "pdat",
+            "desde": "2000", "hasta": "2024", "lote": 200, "pausa": 0})
+
+    def test_el_tipo_de_fecha_queda_en_parametros_y_llega_a_esearch(self):
+        cliente = ClienteFalso(universo=["1", "2"])
+
+        etl.ingestar(self.con, cliente, "pa", mindate="2026/08/20",
+                     tipo_fecha="edat", log=self.log)
+
+        self.assertEqual(self.parametros()["tipo_fecha"], "edat")
+        self.assertEqual(cliente.llamadas[0][2]["datetype"], "edat")
+        self.assertTrue(any("(edat)" in m for m in self.mensajes))
+
+    def test_un_tipo_de_fecha_invalido_no_abre_ejecucion_ni_sale_a_la_red(self):
+        cliente = ClienteFalso(universo=["1"])
+
+        with self.assertRaises(pubmed.ErrorPubMed):
+            etl.ingestar(self.con, cliente, "pa", mindate="2026",
+                         tipo_fecha="pubdate", log=self.log)
+
+        self.assertEqual(self.cuenta("ejecuciones"), 0)
+        self.assertEqual(cliente.llamadas, [])
 
     def test_los_parametros_se_escriben_al_abrir_y_sobreviven_a_un_error(self):
         cliente = ClienteFalso(universo=["1"],

@@ -250,6 +250,103 @@ class PruebasTramos(PruebaSinRed):
         self.assertIn("quorum sensin", avisos[0])
 
 
+class PruebasTipoFecha(PruebaSinRed):
+    """El tipo de fecha (datetype). Para pedir lo nuevo desde la última
+    descarga hace falta la fecha de alta (edat) o la de creación (crdt): con
+    la de publicación se pierde lo que se dio de alta después con una fecha
+    de publicación anterior. Por omisión, nada cambia."""
+
+    def setUp(self):
+        super().setUp()
+        parchar_tope(self)
+        self.fechas = universo_fechado()
+        self.universo = sorted(self.fechas)
+        self.mensajes = []
+
+    def test_por_omision_la_peticion_es_la_de_siempre(self):
+        """La petición entera, campo por campo, y la misma con pdat
+        explícito: quien no pide otra fecha manda exactamente lo de antes."""
+        omision = ClienteFalso(universo=self.universo[:10], fechas=self.fechas)
+        explicito = ClienteFalso(universo=self.universo[:10],
+                                 fechas=self.fechas)
+
+        pubmed.buscar_pmids(omision, "q", mindate="1998", maxdate="2001")
+        pubmed.buscar_pmids(explicito, "q", mindate="1998", maxdate="2001",
+                            tipo_fecha="pdat")
+
+        self.assertEqual(omision.llamadas, [("eutils", "esearch.fcgi", {
+            "db": "pubmed", "term": "q", "sort": "relevance",
+            "retmode": "xml", "retstart": "0", "retmax": str(TOPE),
+            "datetype": "pdat", "mindate": "1998/01/01",
+            "maxdate": "2001/12/31"})])
+        self.assertEqual(explicito.llamadas, omision.llamadas)
+
+    def test_por_omision_la_particion_sigue_siendo_por_pdat(self):
+        cliente = ClienteFalso(universo=self.universo, fechas=self.fechas)
+
+        pubmed.buscar_pmids(cliente, "q", log=self.mensajes.append)
+
+        tipos = {p["datetype"] for p in esearch_con_fechas(cliente)}
+        self.assertEqual(tipos, {"pdat"})
+        self.assertTrue(any("(pdat)" in m for m in self.mensajes))
+
+    def test_con_edat_el_tipo_llega_a_esearch_y_a_la_particion(self):
+        """El rango del usuario y cada tramo de la partición van con la
+        misma fecha: partir por otra daría tramos que no suman lo pedido."""
+        cliente = ClienteFalso(universo=self.universo, fechas=self.fechas)
+        tramos = []
+
+        total, pmids = pubmed.buscar_pmids(
+            cliente, "q", mindate="1990", tramos=tramos,
+            log=self.mensajes.append, tipo_fecha="edat")
+
+        self.assertEqual(sorted(pmids), self.universo)
+        self.assertGreater(len(tramos), 1, "la consulta no se partio")
+        peticiones = esearch_con_fechas(cliente)
+        self.assertEqual(len(peticiones), cliente.n_eutils("esearch.fcgi"))
+        self.assertEqual({p["datetype"] for p in peticiones}, {"edat"})
+        self.assertTrue(any("se parte por fecha de alta en PubMed (edat)" in m
+                            for m in self.mensajes))
+
+    def test_con_crdt_y_sin_fechas_solo_la_particion_lleva_el_tipo(self):
+        """Sin --desde ni --hasta la primera petición no acota nada y no
+        lleva datetype; si rebasa el tope, los tramos sí, y con crdt."""
+        cliente = ClienteFalso(universo=self.universo, fechas=self.fechas)
+
+        pubmed.buscar_pmids(cliente, "q", tipo_fecha="crdt")
+
+        self.assertNotIn("datetype", cliente.llamadas[0][2])
+        tramos = esearch_con_fechas(cliente)
+        self.assertTrue(tramos)
+        self.assertEqual({p["datetype"] for p in tramos}, {"crdt"})
+
+    def test_tramos_por_fecha_pasa_el_tipo_a_cada_tramo(self):
+        cliente = ClienteFalso(universo=self.universo, fechas=self.fechas)
+
+        partes = pubmed.tramos_por_fecha(
+            cliente, "q", pubmed.FECHA_MINIMA, pubmed.FECHA_MAXIMA,
+            tipo_fecha="edat")
+
+        self.assertGreater(len(partes), 1)
+        self.assertEqual({c[2]["datetype"] for c in cliente.llamadas},
+                         {"edat"})
+
+    def test_un_tipo_invalido_es_error_y_no_llega_a_ncbi(self):
+        cliente = ClienteFalso(universo=self.universo, fechas=self.fechas)
+
+        for malo in ("pubdate", "PDAT", "", None):
+            with self.subTest(malo=malo):
+                with self.assertRaises(pubmed.ErrorPubMed) as ctx:
+                    pubmed.buscar_pmids(cliente, "q", mindate="2020",
+                                        tipo_fecha=malo)
+                self.assertIn("Tipo de fecha no válido", str(ctx.exception))
+                with self.assertRaises(pubmed.ErrorPubMed):
+                    pubmed.tramos_por_fecha(
+                        cliente, "q", pubmed.FECHA_MINIMA,
+                        pubmed.FECHA_MAXIMA, tipo_fecha=malo)
+        self.assertEqual(cliente.llamadas, [])
+
+
 class PruebasIterarArticulos(PruebaSinRed):
 
     def test_rinde_por_lote_con_el_avance_y_cubre_todo_sin_repetir(self):
