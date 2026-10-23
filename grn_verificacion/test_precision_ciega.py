@@ -516,15 +516,20 @@ class PruebasEntrada(Base):
         self.assertIsNone(self.calcular()["tiempo"])
 
     def test_un_valor_fuera_de_la_rubrica_detiene(self):
-        with self.assertRaises(ValueError):
+        """El error dice la línea y la columna, no el valor: el valor es un
+        juicio de una hoja ciega."""
+        with self.assertRaises(ValueError) as ctx:
             self.calcular(cambios={"m-1001": ("sí", "1>2", "+")})
+        self.assertIn("línea 2: relacion", str(ctx.exception))
+        self.assertNotIn("sí", str(ctx.exception))
 
     def test_un_signo_0_detiene(self):
         """La tanda 1 traía 43 signos `0`; se normalizaron a `?` a mano. Un
         `0` que llegue ahora es un error y no un signo."""
         with self.assertRaises(ValueError) as ctx:
             self.calcular(cambios={"m-1001": ("si", "1>2", "0")})
-        self.assertIn("signo", str(ctx.exception))
+        self.assertIn("línea 2: signo", str(ctx.exception))
+        self.assertNotIn("'0'", str(ctx.exception))
 
     def test_tipo_negada_y_especulativa_fuera_de_la_rubrica_detienen(self):
         for columna, valor in (("tipo", "directo"), ("negada", "sí"),
@@ -532,6 +537,7 @@ class PruebasEntrada(Base):
             with self.assertRaises(ValueError, msg=columna) as ctx:
                 self.calcular(extra={"m-1001": {columna: valor}})
             self.assertIn(columna, str(ctx.exception))
+            self.assertNotIn(valor, str(ctx.exception))
 
     def test_negada_y_especulativa_vacias_son_aviso_y_no_error(self):
         # La hoja de las pruebas las deja vacías en los cuatro anotados.

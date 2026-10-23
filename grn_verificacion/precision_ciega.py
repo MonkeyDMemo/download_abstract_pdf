@@ -158,6 +158,11 @@ def leer_anotacion(ruta):
     `negada` y `especulativa` vacías no detienen, aunque la rúbrica pide
     siempre `si` o `no`: la tanda 1 las dejó vacías en ítems ya contados. Las
     cuenta `avisos_de_rubrica`, con las demás combinaciones de §4.
+
+    El error dice la línea y la columna, nunca el valor: el valor es un
+    juicio, y la hoja es ciega para quien corre esto, también para una
+    sesión (la tanda 2 es la de prueba). Con la línea, quien anotó lo
+    encuentra en la hoja.
     """
     filas = _leer_csv(ruta)
     errores, salida = [], {}
@@ -165,20 +170,21 @@ def leer_anotacion(ruta):
         rel = _valor(f, "relacion")
         dire = _valor(f, "direccion")
         if rel and rel not in RELACIONES:
-            errores.append("línea %d: relacion %r" % (i, rel))
+            errores.append("línea %d: relacion" % i)
         if rel and dire not in DIRECCIONES:
-            errores.append("línea %d: direccion %r" % (i, dire))
+            errores.append("línea %d: direccion" % i)
         for columna, validos in (("signo", SIGNOS), ("tipo", TIPOS),
                                  ("negada", SI_NO), ("especulativa", SI_NO)):
-            valor = _valor(f, columna)
-            if valor not in validos:
-                errores.append("línea %d: %s %r" % (i, columna, valor))
+            if _valor(f, columna) not in validos:
+                errores.append("línea %d: %s" % (i, columna))
         if f.get("id_item") in salida:
             errores.append("línea %d: %s repetido" % (i, f.get("id_item")))
         salida[f.get("id_item")] = f
     if errores:
-        raise ValueError("La anotación no sigue la rúbrica: "
-                         + "; ".join(errores[:10]))
+        raise ValueError("La anotación no sigue la rúbrica (§6); va dónde y "
+                         "no el valor, que es un juicio de la hoja (%d en "
+                         "total): %s" % (len(errores),
+                                         "; ".join(errores[:10])))
     return salida
 
 
