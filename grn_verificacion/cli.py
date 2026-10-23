@@ -9,6 +9,7 @@
     python -m grn_verificacion.cli reentrenar correr|estado|detener --raiz DIR ...
     python -m grn_verificacion.cli contraste --base XLSX --carpeta DIR --informe MD --confidencial DIR ...
     python -m grn_verificacion.cli muestra --carpeta DIR --reservas TSV --n N --salida DIR [--semilla S] [--fraccion-doble F] [--tandas 1|2]
+    python -m grn_verificacion.cli precision-ciega --anotacion CSV --llave CSV --carpeta DIR [--json J]
 
 Lo normal es no llamarlo a mano: `python flujo.py` corre los pasos en orden y
 se salta lo que ya está hecho.
@@ -606,6 +607,35 @@ def _sub_muestra(sub):
     mu.set_defaults(func=cmd_muestra)
 
 
+def cmd_precision_ciega(args):
+    """Solo cifras: ni oraciones ni PMIDs pasan por `log`."""
+    from grn_verificacion import precision_ciega
+    try:
+        precision_ciega.ejecutar(args.anotacion, args.llave, args.carpeta,
+                                 args.json, log=log)
+    except (ValueError, OSError, KeyError) as e:
+        log("ERROR: %s" % e)
+        return 1
+    return 0
+
+
+def _sub_precision_ciega(sub):
+    pc = sub.add_parser(
+        "precision-ciega",
+        help="Precisión pareada del bronce y de la red final sobre la "
+             "muestra ciega anotada, con la retención de la red.")
+    pc.add_argument("--anotacion", required=True,
+                    help="La hoja anotada, o el CSV que exporta la página de "
+                         "revisión.")
+    pc.add_argument("--llave", required=True,
+                    help="llave.csv del sorteo: une cada id_item con su par.")
+    pc.add_argument("--carpeta", required=True,
+                    help="Carpeta del flujo: capa_pares.csv, red.tsv y "
+                         "red_evidencias.tsv.")
+    pc.add_argument("--json", help="Escribe ahí el resultado completo.")
+    pc.set_defaults(func=cmd_precision_ciega)
+
+
 def consola_tolerante():
     """La consola de Windows imprime cp1252: los acentos caben, pero la barra
     de progreso de transformers («█») o una sigma no, y un `print` con ellos
@@ -700,6 +730,7 @@ def main(argv=None):
     _sub_reentrenar(sub)
     _sub_contraste(sub)
     _sub_muestra(sub)
+    _sub_precision_ciega(sub)
 
     args = ap.parse_args(argv)
     return args.func(args)
