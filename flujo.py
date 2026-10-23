@@ -355,6 +355,9 @@ def _plan(ctx, paso):
     if paso == "red":
         # La configuración por omisión de `consolidar` es `etapa2/red.py` con
         # los argumentos que este paso le pasaba antes, y escribe lo mismo.
+        # Las reglas del signo (`grn_red/signo.py` y el algoritmo léxico de
+        # `grn_comun`) no corren por omisión, pero son parte del comando: un
+        # cambio en ellas rehace el paso en vez de suponer que no lo alcanza.
         argv = [py, "-m", "grn_red.cli", "consolidar",
                 "--carpeta", ctx.carpeta]
         return {"comandos": [(argv, (0,), False)],
@@ -362,8 +365,9 @@ def _plan(ctx, paso):
                              ctx.ruta("predicciones_meta.json"),
                              ctx.ruta("pares.jsonl")]
                 + _codigo("grn_red/consolidar.py", "grn_red/cli.py",
-                          "etapa2/red.py", "grn_bronce/texto.py",
-                          "grn_comun/procedencia.py"),
+                          "grn_red/signo.py", "etapa2/red.py",
+                          "grn_bronce/texto.py", "grn_comun/procedencia.py",
+                          "grn_comun/signo_lexico.py"),
                 "parametros": {},
                 "salidas": [ctx.ruta("red.tsv"), ctx.ruta("red_evidencias.tsv"),
                             ctx.ruta("red_informe.json")]}
@@ -375,15 +379,19 @@ def _plan(ctx, paso):
                    ctx.ruta("red_recomendada_evidencias.tsv"),
                    ctx.ruta("red_recomendada_informe.json")]
         # Lo de «red» más lo que expande los operones: el catálogo versionado
-        # del paso 1 y su lector, y el lector de TSV del paquete.
+        # del paso 1 y su lector, y el lector de TSV del paquete. El perfil
+        # recomendado no prende las reglas del signo; van por la misma razón
+        # que en «red».
         return {"comandos": [(argv, (0,), False)],
                 "entradas": [ctx.ruta("predicciones.jsonl"),
                              ctx.ruta("predicciones_meta.json"),
                              ctx.ruta("pares.jsonl"), OPERONES_CATALOGO]
                 + _codigo("grn_red/consolidar.py", "grn_red/cli.py",
-                          "grn_red/paquete.py", "etapa2/red.py",
-                          "grn_bronce/texto.py", "grn_bronce/operones.py",
-                          "grn_comun/procedencia.py", "grn_comun/archivos.py"),
+                          "grn_red/paquete.py", "grn_red/signo.py",
+                          "etapa2/red.py", "grn_bronce/texto.py",
+                          "grn_bronce/operones.py", "grn_comun/procedencia.py",
+                          "grn_comun/archivos.py",
+                          "grn_comun/signo_lexico.py"),
                 "parametros": {"perfil": "recomendado"},
                 # Si falla, que no quede a la vista la red de antes junto a
                 # una red.tsv nueva.

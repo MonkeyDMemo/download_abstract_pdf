@@ -477,7 +477,9 @@ class PruebasPlanReal(unittest.TestCase):
                        "pares.jsonl"):
             self.assertIn(os.path.join(self.tmp.name, nombre), entradas)
         for partes in (("grn_red", "consolidar.py"), ("grn_red", "cli.py"),
-                       ("etapa2", "red.py"), ("grn_bronce", "texto.py")):
+                       ("etapa2", "red.py"), ("grn_bronce", "texto.py"),
+                       ("grn_red", "signo.py"),
+                       ("grn_comun", "signo_lexico.py")):
             self.assertIn(self.rel(*partes), entradas)
         self.assertEqual(plan["parametros"], {})
         self.assertEqual([os.path.basename(s) for s in plan["salidas"]],
@@ -504,7 +506,9 @@ class PruebasPlanReal(unittest.TestCase):
         entradas = [os.path.normpath(e) for e in plan["entradas"]]
         for partes in (("grn_bronce", "recursos", "operones_pao1.tsv"),
                        ("grn_red", "consolidar.py"), ("grn_red", "paquete.py"),
-                       ("etapa2", "red.py"), ("grn_bronce", "operones.py")):
+                       ("etapa2", "red.py"), ("grn_bronce", "operones.py"),
+                       ("grn_red", "signo.py"),
+                       ("grn_comun", "signo_lexico.py")):
             self.assertIn(self.rel(*partes), entradas)
         self.assertNotIn(os.path.normpath(flujo.OPERONES_BASE), entradas)
         self.assertEqual(plan["parametros"], {"perfil": "recomendado"})
