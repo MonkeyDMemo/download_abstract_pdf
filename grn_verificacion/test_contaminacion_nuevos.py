@@ -17,6 +17,7 @@ import io
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -342,10 +343,20 @@ class PruebasCruces(Base):
             "Con cruces en 1 de 1 fuente revisada (juzgadas):"), lineas[-1])
 
     def test_la_base_del_paso_0_se_abre_en_solo_lectura(self):
+        # Con el diario clásico: `grn_etl.db.conectar` la pasaría a WAL al
+        # abrirla, y eso reescribe la cabecera del archivo. Sobre la base en
+        # WAL que deja setUp, la huella no cambiaba aunque se abriera con
+        # `conectar`, y la prueba pasaba sin probar la solo lectura.
+        con = sqlite3.connect(self.db)
+        try:
+            con.execute("PRAGMA journal_mode = DELETE").fetchone()
+        finally:
+            con.close()
         antes = procedencia.huella(self.db)
         codigo, _ = self.correr(self.todas(self.lista(NUEVOS)))
         self.assertEqual(codigo, 0)
         self.assertEqual(procedencia.huella(self.db), antes)
+        self.assertFalse(os.path.exists(self.db + "-wal"))
 
         falta = os.path.join(self.tmp, "otra", "grn.db")
         codigo, lineas = self.correr([
