@@ -749,6 +749,24 @@ class PruebasRed(_ConEscenario):
         self.assertEqual((13, 2, 0), (c["aristas"], c["sin_locus"],
                                       c["solo_autorregulacion"]))
 
+    def test_una_expandida_que_se_llama_como_una_observada_tambien_se_omite(
+            self):
+        """En red_recomendada.tsv de la corrida 4, 695 de las 1 533 expandidas
+        se llaman como una arista observada y tienen evidencias bajo ese
+        nombre. Se omiten igual: leída con las evidencias de la observada, la
+        expandida, que copia el signo de su operón, le pondría al par un signo
+        que no es el suyo. Aquí la observada es la de la fila 2 (activates) y
+        la expandida, de un operón inventado, dice represses."""
+        operon = ("QzaR", "wvaXYZ", "represses", [P_XML], [])
+        escribir_red_con_reglas(self.carpeta, "prueba", ARISTAS,
+                                expandidas=[(operon, "wvaA")])
+        normal, _ = self.aristas()
+        otra, c = self.aristas("prueba")
+        self.assertEqual((13, 1, 11), (c["aristas"], c["expandidas_omitidas"],
+                                       c["con_locus"]))
+        self.assertEqual(normal, otra)
+        self.assertEqual("activates", C.signo_par(otra[("PA9001", "PA9002")]))
+
     def test_sin_expandida_de_una_arista_sin_evidencias_detiene(self):
         """La expandida se omite por su columna, no por faltarle evidencia:
         vacía la marca y la misma fila detiene el contraste, con el mensaje
@@ -1076,6 +1094,7 @@ class PruebasEjecutar(_ConEscenario):
         mensaje = str(ctx.exception)
         self.assertIn("--red", mensaje)
         self.assertIn("--sin-red", mensaje)
+        self.assertSinContenido(mensaje)
         self.assertFalse(os.path.exists(self.confidencial))
         self.assertFalse(os.path.exists(self.informe))
 
@@ -1089,9 +1108,9 @@ class PruebasEjecutar(_ConEscenario):
                     self.correr(red=nombre)
             mensaje = str(ctx.exception)
             self.assertTrue(mensaje.startswith("--red: "), mensaje)
-            self.assertNotIn(self.tmp, mensaje)
             self.assertNotIn("secreta", mensaje)
             self.assertNotIn("Prueba", mensaje)
+            self.assertSinContenido(mensaje)
             self.assertFalse(os.path.exists(self.confidencial))
 
     def test_una_red_que_no_esta_dice_como_armarla(self):
@@ -1100,7 +1119,7 @@ class PruebasEjecutar(_ConEscenario):
         mensaje = str(ctx.exception)
         self.assertIn("Falta red_otra.tsv", mensaje)
         self.assertIn("grn_red.cli consolidar", mensaje)
-        self.assertNotIn(self.tmp, mensaje)
+        self.assertSinContenido(mensaje)
 
     def test_el_informe_pasa_con_entradas_de_forma_real(self):
         """Los CSV llevan fecha en el nombre (el prefijo de `setUp`) y un
