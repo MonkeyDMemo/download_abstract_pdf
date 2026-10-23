@@ -1007,8 +1007,11 @@ td.nota details pre {
       <h2>Flujo</h2>
       <button class="boton suave mini" id="b-refrescar-flujo">Actualizar</button>
     </div>
-    <p class="sub">Operones, bronce, pares, BioBERT, red, sintaxis, capa, evaluación y
-      paquete de la red, uno tras otro, sobre una corrida del bronce. Cada paso se salta
+    <p class="sub">Operones, bronce, pares, BioBERT, red, red recomendada, sintaxis, capa,
+      evaluación y paquete de la red, uno tras otro, sobre una corrida del bronce. La red
+      recomendada (<span class="mono">red_recomendada.tsv</span>) es la misma red con la
+      autorregulación marcada, el nivel de soporte y los operones expandidos; no cambia
+      <span class="mono">red.tsv</span>, que es la que se evalúa. Cada paso se salta
       si sus entradas no cambiaron, así que correrlo dos veces seguidas no repite nada.
       Las salidas quedan en una carpeta por corrida y modelo; el paquete de la red deja
       ahí los nodos unificados (<span class="mono">nodos.tsv</span>), la red para abrir
