@@ -1564,9 +1564,12 @@ def comprobar_procedencia_red(rutas):
     sello = procedencia.leer_sello(rutas["red_informe"])
     anotada = (sello.get("pares") or {}).get("huella")
     if not anotada:
-        return ["la carpeta no trae red_informe.json con la huella de "
-                "pares.jsonl: no se pudo comprobar que la red salió de estos "
-                "pares."]
+        # El nombre del informe que falta y no `red_informe.json` a secas: con
+        # --red, el aviso va al informe publicado, y `red_informe.json` puede
+        # estar en la carpeta.
+        return ["la carpeta no trae %s con la huella de pares.jsonl: no se "
+                "pudo comprobar que la red salió de estos pares."
+                % os.path.basename(rutas["red_informe"])]
     if anotada != procedencia.huella(rutas["pares"]):
         raise ValueError("La red se armó con otro pares.jsonl (las huellas no "
                          "coinciden): corre antes el paso red del flujo.")

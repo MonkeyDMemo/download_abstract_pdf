@@ -1030,6 +1030,21 @@ class PruebasEjecutar(_ConEscenario):
         # La red por omisión sigue sellada con los pares de la carpeta.
         self.correr()
 
+    def test_otra_red_sin_su_sello_lo_avisa_con_su_nombre(self):
+        """El aviso va al informe publicado: tiene que nombrar el informe que
+        falta, no `red_informe.json`, que sí está en la carpeta."""
+        self.con_reglas()
+        os.remove(os.path.join(self.carpeta, "red_prueba_informe.json"))
+        resultado, _ = self.correr(red="prueba")
+        avisos = [a for a in resultado["avisos"] if "huella" in a]
+        self.assertEqual(1, len(avisos), resultado["avisos"])
+        self.assertIn("red_prueba_informe.json", avisos[0])
+        self.assertNotIn("red_informe.json", avisos[0])
+        with io.open(self.informe, encoding="utf-8") as f:
+            texto = f.read()
+        self.assertIn("red_prueba_informe.json", texto)
+        self.assertSinContenido(texto)
+
     def test_un_nombre_de_red_con_forma_de_pmid_se_rechaza_antes(self):
         """`x_20990101` vale para `grn_red` (`consolidar --nombre`), pero el
         informe y la terminal nombran `red_x_20990101.tsv`, y ocho dígitos
