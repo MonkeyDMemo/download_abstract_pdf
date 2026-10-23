@@ -286,15 +286,19 @@ def guardar(carpeta, id_item, valores, hora=None):
 # -------------------------------------------------------------- validación
 
 def validar(valores):
-    """(limpios, errores, avisos) de lo que mandó la anotadora, contra §4 y
-    §6 de la rúbrica.
+    """(limpios, errores, avisos) de lo que mandó la anotadora, contra §3.6,
+    §4 y §6 de la rúbrica.
 
     Errores son lo que la hoja no admite: un valor fuera de su lista o una
-    combinación que §4 prohíbe («no» con signo, «sí» sin dirección). Avisos
-    son lo que la rúbrica desaconseja sin que el valor sea imposible: el
-    comentario obligatorio de un «dudoso» se avisa y no se exige, porque el
-    caso frontera o la marca que lo vuelven obligatorio no se pueden
-    detectar desde aquí y exigir solo uno de los tres casos sería engañoso.
+    combinación que la rúbrica prohíbe («no» con signo, «sí» sin dirección,
+    «sí» con negada = sí). Con un error el tablero no guarda nada.
+
+    Avisos son lo que se señala sin bloquear el guardado: «sí» con
+    especulativa = sí (abajo, el porqué de la diferencia con la negación) y
+    el comentario obligatorio de un «dudoso», que se avisa y no se exige
+    porque el caso frontera o la marca que lo vuelven obligatorio no se
+    pueden detectar desde aquí y exigir solo uno de los tres casos sería
+    engañoso.
     """
     errores, avisos = [], []
     if not isinstance(valores, dict):
@@ -334,6 +338,28 @@ def validar(valores):
     en("negada", OPCIONES["negada"])
     en("especulativa", OPCIONES["especulativa"])
 
+    # La negación es error y la especulación aviso, aunque el árbol saque a
+    # las dos del «sí». La regla de la negación es explícita y no deja hueco:
+    # §3.6 y §4 (paso 3) la mandan a «no», con F5 como única salida a
+    # «dudoso», y no está entre lo que el asesor tiene que validar (§9). La
+    # frontera de la especulación sigue abierta, si «suggest» en indicativo
+    # especula (§9, punto 5), y un «sí» con especulativa = sí es una forma de
+    # anotar un «suggest» leído como conclusión con reserva: bloquearlo
+    # borraría el dato que hace falta para cerrar ese punto.
+    #
+    # El mensaje da las dos salidas porque desde aquí no se sabe cuál de los
+    # dos campos está mal: puede ser un efecto negado anotado «si» (F6) o una
+    # negación que no niega el efecto, como la de F7 o la del par de X con Y
+    # en «X activates Y but not Z» (§3.6), y ahí lo que se corrige es negada.
+    # Ofrecer solo «no» empujaría a «no» un «si» bien anotado; ese «no» se
+    # guarda sin aviso, y la precisión medida bajaría sin que nada lo dijera.
+    if relacion == "si" and limpios["negada"] == "si":
+        errores.append("Con negada = sí, la relación no va «si». Si la "
+                       "oración niega el efecto, la relación va «no», o "
+                       "«dudoso» si además afirma la unión al promotor (F5); "
+                       "si lo negado es otra cosa (F7) u otro par, negada va "
+                       "«no» (§3.6 y §4, paso 3).")
+
     if len(limpios["comentario"]) > MAX_COMENTARIO:
         errores.append("El comentario pasa de %d caracteres." % MAX_COMENTARIO)
 
@@ -341,10 +367,6 @@ def validar(valores):
         if relacion == "dudoso" and not limpios["comentario"]:
             avisos.append("La rúbrica pide comentario cuando el ítem es "
                           "«dudoso» (§4, paso 9).")
-        if relacion == "si" and limpios["negada"] == "si":
-            avisos.append("Con negada = sí, el árbol (§4, paso 3) lleva a "
-                          "«no», o a «dudoso» si además afirma la unión al "
-                          "promotor.")
         if relacion == "si" and limpios["especulativa"] == "si":
             avisos.append("Una relación planteada como posibilidad va "
                           "«dudoso» (§4, paso 4).")
