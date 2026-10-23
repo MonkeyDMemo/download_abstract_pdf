@@ -606,9 +606,9 @@ a ver alguna cifra de la muestra.
     semilla 20261024) pasa a ser de **desarrollo**. La tanda 2
     (`salidas/revision/muestra200_t2`, semilla 20261023) es de **prueba**:
     - sale de la misma población;
-    - excluye los PMIDs y los códigos de la tanda 1
-      (`cli muestra --excluir-muestra`), para que ningún artículo esté en las
-      dos.
+    - excluye los PMIDs, los códigos y las copias de las oraciones de la
+      tanda 1 (`cli muestra --excluir-muestra`), para que ningún artículo ni
+      oración esté en las dos. La población que queda es de 2 670.
   - **Toda regla nueva se reporta en la tanda 2,** que se pre-registra en
     `docs/protocolo-tanda2.md` antes de evaluar. Nada se ajusta mirándola.
   - **La tanda 2 se anota en la página de revisión** (`servidor.py

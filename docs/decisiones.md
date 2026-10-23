@@ -1631,12 +1631,17 @@ enmienda 2).
   artículo cae en las dos, la tanda 2 deja de ser una prueba independiente:
   su redacción y sus pares ya se vieron. Es la misma regla de partición por
   PMID del entrenamiento con la base curada.
+- **También se excluyen las copias de sus oraciones bajo otro PMID** (un
+  resumen duplicado, una revisión que la cita). Si no, una oración que el
+  experto ya juzgó podía volver: en la capa hay 44 textos que aparecen en dos
+  PMIDs. En la tanda 2 no salió ninguna.
 - **También se excluyen sus códigos de `id_item`.** Con códigos de 4 dígitos,
   dos sorteos de 200 comparten unos 4 en promedio, y la probabilidad de que
   no compartan ninguno es de 1 %. Un mismo código en las dos tandas confunde
   cualquier análisis conjunto.
 - **La semilla de la tanda 2, 20261023, se escribió en la bitácora antes de
-  sortear.**
+  sortear.** Los 152 PMIDs de la tanda 1 se llevan 2 214 oraciones, y la tanda
+  2 sale de 2 670.
 - **Los PMIDs del entrenamiento de las curadas v1 y v2 no se excluyen al
   sortear,** porque esa lista es confidencial y vive en el servidor. Salen en
   el análisis: `precision-ciega --particion`.

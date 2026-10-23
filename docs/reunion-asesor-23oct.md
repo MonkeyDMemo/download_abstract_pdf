@@ -301,8 +301,11 @@ el §5 d y g. Las candidatas nuevas se quedan en la carpeta confidencial.
 **k) La tanda 1 es de desarrollo y la tanda 2 de prueba.**
 - **Decidí eso porque** la tanda 1 ya se vio. Una regla nueva ajustada mirándola
   inflaría su cifra (rúbrica, enmienda 2).
-- **Cómo:** la tanda 2 excluye los PMIDs y los códigos de la tanda 1, y nada se
-  ajusta mirándola. Para el bronce y la red por omisión, que se fijaron antes,
+- **Cómo:** la tanda 2 excluye los PMIDs, los códigos y las copias de las
+  oraciones de la tanda 1, y nada se ajusta mirándola.
+  - Los 152 PMIDs de la tanda 1 se llevan 2 214 oraciones, así que la tanda 2
+    sale de 2 670.
+  - Se comprobó: 0 artículos, 0 códigos y 0 pares compartidos. Para el bronce y la red por omisión, que se fijaron antes,
   la tanda 1 sí es de prueba.
 
 ---

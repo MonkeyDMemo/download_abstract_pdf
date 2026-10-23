@@ -593,7 +593,8 @@ python3 -m grn_red.cli paquete --carpeta salidas/flujo/corrida4_run22   # tambie
 python3 -m grn_verificacion.cli verificar --carpeta salidas/flujo/corrida4_run22 [--contra J] [--html H]
 python3 -m grn_bronce.cli sintaxis --comparar ANTES --salida DESPUES [--json R]   # sin spaCy
 python3 -m grn_verificacion.cli muestra --carpeta salidas/flujo/corrida4_run22 \
-    --reservas salidas/flujo/reservas.tsv --n 200 --tandas 1 --fraccion-doble 0     --salida salidas/revision/muestra200   # la muestra unica, un anotador
+    --reservas salidas/flujo/reservas.tsv --n 200 --tandas 1 --fraccion-doble 0     --salida salidas/revision/muestra200   # la tanda 1 (desarrollo)
+#   la tanda 2 (prueba): lo mismo con --semilla 20261023 #   --excluir-muestra salidas/revision/muestra200 --salida salidas/revision/muestra200_t2
 python3 -m grn_verificacion.cli precision-ciega --anotacion A --llave L --carpeta C [--json J]
 # donde viva la base; ver docs/contraste-curada.md
 python3 -m grn_verificacion.cli contraste --base X --carpeta C --excluir-pmids A \

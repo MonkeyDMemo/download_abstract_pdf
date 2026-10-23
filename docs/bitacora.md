@@ -117,8 +117,32 @@ servidor.
 - **La corrida principal** va sin think, a T = 0. La secundaria va con think,
   a T = 0.6.
 
+**Fase 1, cerrada.** Las dos piezas de código pasaron cada una por un agente
+implementador y un revisor independiente, cada uno en su worktree.
+- **`cli muestra --excluir-muestra DIR`.** Aparta los PMIDs y los códigos de
+  `id_item` de una muestra anterior. El revisor agregó también las copias de
+  sus oraciones bajo otro PMID (el motivo `oracion_de_otra_muestra`): en la
+  capa hay 44 textos que aparecen en dos PMIDs. Sin la opción, las salidas son
+  idénticas byte a byte, y una prueba lo fija con huellas.
+- **La página rechaza `si` con negada = sí.** El mensaje da las dos salidas:
+  `no` (o `dudoso` por F5) si se niega el efecto, o negada `no` si lo negado
+  es otra cosa (F7).
+- **El sorteo de la tanda 2** (semilla 20261023, n = 200, una tanda, sin
+  dobles) quedó en `salidas/revision/muestra200_t2/`.
+  - Población: de 5 833 oraciones con el par del bronce, salen 832 por PMID
+    reservado, 47 por oración reservada, **2 214 por los 152 PMIDs de la
+    tanda 1**, 0 por copias de sus oraciones, 5 sin par y 65 repetidas.
+    Quedan **2 670**.
+  - Se comprobó por conteo: 0 PMIDs, 0 `id_item` y 0 pares compartidos con la
+    tanda 1, con la misma capa y las mismas reservas. Nadie abrió la hoja.
+- **La página por HTTP real,** sobre una copia de la hoja de la tanda 1 (no la
+  2): rechaza `si` con negada (400), acepta `no` con negada (200), retoma
+  después de reiniciar y exporta, y `precision-ciega` lee lo exportado.
+- **Suites:** raíz 1 333 y etapa2 528.
+
 **Abierto:**
-- el sorteo y la sesión de calibración 2;
+- la sesión de calibración 2 con el experto, y luego la tanda 2 en la página:
+  `python servidor.py --revision salidas/revision/muestra200_t2 --abrir`;
 - las fases 2 a 4: mediciones en el servidor, el signo como parámetro y
   Ouroboros.
 
