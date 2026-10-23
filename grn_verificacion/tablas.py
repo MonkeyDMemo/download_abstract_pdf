@@ -17,8 +17,10 @@ Cada fila exigible que cita alguno de los `cuantos` artículos con más filas
 2. `regla_b`: ya la cubre la regla b con expansión (`contraste.cubierta`).
 3. `sin_xml`: ninguno de los artículos mayores que cita tiene su
    `<pmid>_*.xml` legible en la carpeta de `--xml`.
-4. `misma_fila`: sus dos locus en un mismo `tr` de una tabla.
-5. `misma_tabla`: en un mismo `table-wrap`, contando título, celdas y pie.
+4. `misma_fila`: sus dos locus en un mismo `tr` de una tabla; una celda
+   que abarca varias filas (`rowspan`) cuenta en cada una.
+5. `misma_tabla`: en un mismo `table-wrap`, contando título (también el de
+   su `table-wrap-group`), celdas y pie.
 6. `tabla_y_texto`: uno en una tabla y el otro en el texto.
 7. `solo_texto`: los dos en el texto, sin coocurrir en una oración candidata
    (si coocurrieran ahí, la regla b ya la habría cubierto).
@@ -65,6 +67,7 @@ import collections
 import glob
 import json
 import os
+import re
 import xml.etree.ElementTree as ET
 
 from grn_bronce import texto as _texto
@@ -114,6 +117,13 @@ NOMBRE_BRONCE = {"xml": "con XML", "abstract": "solo abstract",
 # propio espacio de nombres; por nombre local se leen igual que `tr` y `td`.
 _FILAS = ("tr", "row")
 _CELDAS = ("th", "td", "entry")
+# Lo que se quita del texto: un `table-wrap-group` lleva su propio título,
+# que dentro de un `<p>` saldría pegado a la prosa como el de una tabla.
+_ENVOLTURAS = ("table-wrap", "table-wrap-group")
+_ENTERO = re.compile(r"^[0-9]+$")
+# `rowspan="0"` es «hasta el final del grupo de filas»; el arrastre se corta
+# ahí de todos modos, así que basta con un número que no se acabe antes.
+_HASTA_EL_FINAL = 10 ** 9
 # Las marcas de formato se pegan a lo que las rodea porque parten nombres de
 # gen: `<italic>mexEF</italic>-<italic>oprN</italic>` es un solo operón. Todo
 # otro elemento separa: con `itertext` a secas, un `<break/>` entre dos genes
@@ -175,23 +185,74 @@ def _texto_de(elemento):
     return " ".join("".join(partes).split())
 
 
-def _tabla(envoltura):
-    titulo = " ".join(_texto_de(h) for h in envoltura
-                      if _nombre(h) in ("label", "caption"))
+def _titulo(envoltura):
+    return " ".join(_texto_de(h) for h in envoltura
+                    if _nombre(h) in ("label", "caption"))
+
+
+def _filas_de_mas(celda):
+    """Cuántas filas debajo de la suya ocupa una celda: `rowspan` menos uno
+    en una tabla XHTML, `morerows` en una OASIS. Lo que no es un entero no
+    abarca nada."""
+    valor = (celda.get("rowspan") or "").strip()
+    if _ENTERO.match(valor):
+        n = int(valor)
+        return _HASTA_EL_FINAL if n == 0 else n - 1
+    valor = (celda.get("morerows") or "").strip()
+    return int(valor) if _ENTERO.match(valor) else 0
+
+
+def _filas(envoltura):
+    """Una lista por `tr` (o `row`), en el orden del documento, con el texto
+    de cada celda.
+
+    Una celda que abarca varias filas cuenta en cada una, al principio de las
+    de abajo. Es la forma de una tabla de regulador y blancos: el regulador en
+    una celda con `rowspan` y un blanco por fila. Leída `tr` por `tr`, solo el
+    primer blanco compartía fila con él y los demás bajaban a «misma tabla».
+    El arrastre es por grupo de filas (el `thead`, el `tbody` o la tabla
+    misma): no pasa del encabezado al cuerpo ni entra a una tabla anidada.
+    """
+    grupo_de = dict((hijo, padre) for padre in envoltura.iter()
+                    for hijo in padre)
+    arrastre = {}
+    filas = []
+    for fila in envoltura.iter():
+        if _nombre(fila) not in _FILAS:
+            continue
+        grupo = grupo_de.get(fila)
+        vienen = arrastre.get(grupo, [])
+        celdas = [texto for texto, _ in vienen]
+        siguen = [(texto, n - 1) for texto, n in vienen if n > 1]
+        for celda in fila:
+            if _nombre(celda) not in _CELDAS:
+                continue
+            texto = _texto_de(celda)
+            celdas.append(texto)
+            de_mas = _filas_de_mas(celda)
+            if de_mas > 0:
+                siguen.append((texto, de_mas))
+        arrastre[grupo] = siguen
+        filas.append(celdas)
+    return filas
+
+
+def _tabla(envoltura, titulo_del_grupo=""):
+    titulo = " ".join(t for t in (titulo_del_grupo, _titulo(envoltura)) if t)
     pie = " ".join(_texto_de(h) for h in envoltura
                    if _nombre(h) == "table-wrap-foot")
-    filas = [[_texto_de(c) for c in fila if _nombre(c) in _CELDAS]
-             for fila in envoltura.iter() if _nombre(fila) in _FILAS]
-    return {"titulo": titulo, "filas": filas, "pie": pie}
+    return {"titulo": titulo, "filas": _filas(envoltura), "pie": pie}
 
 
 def tablas_de_jats(ruta):
     """Las tablas de un XML JATS: [{"titulo", "filas", "pie"}] en el orden
     del documento.
 
-    Una por `table-wrap`. `titulo` es el texto de su `label` y su `caption`;
-    `filas`, una lista por `tr` con el texto de cada `th` o `td`; `pie`, el
-    texto de su `table-wrap-foot`.
+    Una por `table-wrap`. `titulo` es el texto de su `label` y su `caption`,
+    precedido del de su `table-wrap-group` si va en uno: el título del grupo
+    es el de todas sus tablas. `filas`, una lista por `tr` con el texto de
+    cada `th` o `td`, más el de las celdas de arriba que la abarcan
+    (`rowspan`; ver `_filas`); `pie`, el texto de su `table-wrap-foot`.
 
     Una tabla anidada no se pierde: un `<table>` dentro de una celda deja su
     texto en esa celda y sus `tr` como filas de la tabla que lo contiene, y un
@@ -199,12 +260,21 @@ def tablas_de_jats(ruta):
     su pie. Las etiquetas se comparan por nombre local. ValueError si el
     archivo no es XML.
     """
-    return [_tabla(e) for e in _leer_xml(ruta).iter()
+    raiz = _leer_xml(ruta)
+    del_grupo = {}
+    for grupo in raiz.iter():
+        if _nombre(grupo) == "table-wrap-group":
+            titulo = _titulo(grupo)
+            for hija in grupo:
+                if _nombre(hija) == "table-wrap":
+                    del_grupo[hija] = titulo
+    return [_tabla(e, del_grupo.get(e, "")) for e in raiz.iter()
             if _nombre(e) == "table-wrap"]
 
 
 def _quitar_tablas(raiz):
-    """Saca del árbol los `table-wrap`, con el texto que les sigue a salvo.
+    """Saca del árbol los `table-wrap` y los `table-wrap-group`, con el texto
+    que les sigue a salvo.
 
     En ElementTree el texto que va después de un elemento es su `tail`, y se
     iría con él: «As shown in <table-wrap/> the genes vary» perdía «the genes
@@ -213,7 +283,7 @@ def _quitar_tablas(raiz):
     for padre in list(raiz.iter()):
         anterior = None
         for hijo in list(padre):
-            if _nombre(hijo) != "table-wrap":
+            if _nombre(hijo) not in _ENVOLTURAS:
                 anterior = hijo
                 continue
             if hijo.tail:
@@ -540,9 +610,10 @@ def informe_markdown(resultado):
     w("3. **sin XML**: ninguno de estos artículos que cita tiene su XML "
       "legible en `--xml`.")
     w("4. **misma fila**: sus dos locus en una misma fila (`tr`) de una "
-      "tabla.")
+      "tabla; una celda que abarca varias filas (`rowspan`) cuenta en cada "
+      "una.")
     w("5. **misma tabla**: en una misma tabla (`table-wrap`), contando "
-      "título, celdas y pie.")
+      "título (también el de su grupo de tablas), celdas y pie.")
     w("6. **tabla y texto**: uno en una tabla y el otro en el texto.")
     w("7. **solo texto**: los dos en el texto, sin coocurrir en una oración "
       "candidata.")

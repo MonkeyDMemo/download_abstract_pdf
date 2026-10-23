@@ -207,6 +207,35 @@ JATS_CON_ESPACIOS = u"""<?xml version="1.0" encoding="UTF-8"?>
 </article>
 """
 
+# Una tabla de regulador y blancos con el regulador en una celda que abarca
+# tres filas, y un grupo de tablas, metido en un párrafo, cuyo título nombra
+# a otro regulador; su tabla es OASIS y abarca con `morerows`.
+JATS_ABARCA = u"""<?xml version="1.0" encoding="UTF-8"?>
+<article
+  xmlns:oasis="http://www.niso.org/standards/z39-96/ns/oasis-exchange/table">
+<body><sec><title>Results</title>
+<table-wrap><label>Table 1</label><caption><p>Regulators and targets.</p>
+</caption>
+<table><thead><tr><th rowspan="2">Regulator</th><th>Target</th></tr></thead>
+<tbody><tr><td rowspan="3">QzaR</td><td>wvaA</td></tr>
+<tr><td>wvbA</td></tr>
+<tr><td>wvcA</td></tr>
+<tr><td rowspan="x">QzbR</td><td>wvdA</td></tr>
+</tbody></table></table-wrap>
+<p>See Table 2 <table-wrap-group><label>Table 2</label>
+<caption><p>Targets of QzdR.</p></caption>
+<table-wrap><label>Table 2a</label><caption><p>First part.</p></caption>
+<oasis:table><oasis:tgroup cols="2"><oasis:tbody>
+<oasis:row><oasis:entry morerows="1">QzcR</oasis:entry>
+<oasis:entry>wveA</oasis:entry></oasis:row>
+<oasis:row><oasis:entry>wvfA</oasis:entry></oasis:row>
+<oasis:row><oasis:entry>wvgA</oasis:entry></oasis:row>
+</oasis:tbody></oasis:tgroup></oasis:table>
+</table-wrap></table-wrap-group> for the second set.</p>
+</sec></body>
+</article>
+"""
+
 # Lo que no puede salir en nada publicable.
 _LOCUS = re.compile(r"PA[0-9]{4}")
 _SIETE_U_OCHO = re.compile(r"(?<![0-9])[0-9]{7,8}(?![0-9])")
@@ -363,6 +392,28 @@ class PruebasJats(_ConEscenario):
             "Growth of the qzoN mutant.",
         ], oraciones)
 
+    def test_una_celda_que_abarca_varias_filas_cuenta_en_cada_una(self):
+        ruta = escribir(os.path.join(self.tmp, "abarca.xml"), JATS_ABARCA)
+        t1, t2 = T.tablas_de_jats(ruta)
+        # El `rowspan` del encabezado no pasa al cuerpo, y uno que no es
+        # número no abarca nada.
+        self.assertEqual([["Regulator", "Target"], ["QzaR", "wvaA"],
+                          ["QzaR", "wvbA"], ["QzaR", "wvcA"],
+                          ["QzbR", "wvdA"]], t1["filas"])
+        # En OASIS, `morerows` dice cuántas filas más.
+        self.assertEqual([["QzcR", "wveA"], ["QzcR", "wvfA"], ["wvgA"]],
+                         t2["filas"])
+
+    def test_el_titulo_del_grupo_es_el_de_sus_tablas(self):
+        ruta = escribir(os.path.join(self.tmp, "abarca.xml"), JATS_ABARCA)
+        t2 = T.tablas_de_jats(ruta)[1]
+        self.assertEqual("Table 2 Targets of QzdR. Table 2a First part.",
+                         t2["titulo"])
+        # Y el grupo sale del texto con su título: dentro de un párrafo, se
+        # habría pegado a la prosa.
+        self.assertEqual(["See Table 2 for the second set."],
+                         T.oraciones_de_jats(ruta))
+
     def test_un_xml_ilegible_no_dice_cual(self):
         for funcion in (T.tablas_de_jats, T.oraciones_de_jats):
             with self.assertRaises(ValueError) as ctx:
@@ -481,6 +532,23 @@ class PruebasCategorias(_ConEscenario):
         sin_bronce = (set(), {})
         self.assertEqual(("misma_tabla", None),
                          T.categoria(fila, sin_bronce, indices, [P1]))
+
+    def test_la_celda_que_abarca_y_el_grupo_en_las_categorias(self):
+        ruta = escribir(os.path.join(self.tmp, "abarca.xml"), JATS_ABARCA)
+        indices = {P1: T.indice_de_articulo([ruta], *self.recursos)}
+        sin_bronce = (set(), {})
+        for regulador, blanco, esperada in (
+                # El regulador abarca la fila del blanco (XHTML y OASIS).
+                ("PA9001", "PA9004", "misma_fila"),
+                ("PA9018", "PA9007", "misma_fila"),
+                # Su celda acaba antes de la fila de este blanco.
+                ("PA9001", "PA9005", "misma_tabla"),
+                # Solo el título del grupo nombra al regulador.
+                ("PA9011", "PA9008", "misma_tabla")):
+            fila = {"regulador": regulador, "blanco": blanco, "pmids": [P1]}
+            with self.subTest(par=(regulador, blanco)):
+                self.assertEqual(esperada, T.categoria(
+                    fila, sin_bronce, indices, [P1])[0])
 
     def test_la_regla_a_no_cuenta(self):
         """La fila 9 coocurre en una candidata de otro artículo: la regla a
