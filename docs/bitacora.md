@@ -83,6 +83,16 @@ Para el detalle técnico de cada punto está
   - Encontró dos huecos de la rúbrica v1 para el viernes: las fusiones
     reporteras y cuándo es obligatoria la marca «condición».
 
+- **El LLM sobre la oración pasa a la tesis** (`decisiones.md`, entrada nueva;
+  `plan-tesis-plata-llm.md`; decisión j del guion). Una revisión externa
+  señaló que el multiagente de la tesis v1 contradecía «Lo que no vamos a
+  hacer».
+  - El cálculo de potencia confirmó el recorte: de 200 oraciones salen unos
+    35-65 ítems con signo, y contra «siempre activa» la potencia es de 0.24 a
+    0.54. La puerta pediría 150-250 ítems.
+  - El servicio social cierra con la capa determinista y una muestra ciega
+    de 200 con un anotador.
+
 **Abierto:**
 - **`muestra.py` usa funciones privadas** de `entrenamiento.py` (`_reservada` y
   `_pmid_valido`): conviene hacerlas públicas al tocar ese archivo.
@@ -2632,6 +2642,10 @@ determinista a propósito: el mismo corpus tiene que dar los mismos pares
 siempre, o la medición no significa nada. Además `pip install` choca con la
 restricción de biblioteca estándar. Donde los LLM sí valen es como línea base y
 como asistentes de anotación, y así están en el plan.
+
+*Revisado el 22-oct-2026:* sigue valiendo para el servicio social. El LLM
+sobre la oración pasa a la tesis, detrás de una puerta y con veredictos en
+caché; ver `decisiones.md`, «El LLM sobre la oración es trabajo de tesis».
 
 **Ampliar el corpus con los PDFs de PMC, todavía.** Son 607 artículos y la vía
 existe —el servidor procesó 130 con GROBID—, pero no tiene sentido ampliar el
