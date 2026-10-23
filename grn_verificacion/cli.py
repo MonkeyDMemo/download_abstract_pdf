@@ -8,7 +8,7 @@
     python -m grn_verificacion.cli datos-entrenamiento --pares JSONL --base XLSX ...
     python -m grn_verificacion.cli reentrenar correr|estado|detener --raiz DIR ...
     python -m grn_verificacion.cli contraste --base XLSX --carpeta DIR --informe MD --confidencial DIR ...
-    python -m grn_verificacion.cli muestra --carpeta DIR --reservas TSV --n N --salida DIR [--semilla S] [--fraccion-doble F]
+    python -m grn_verificacion.cli muestra --carpeta DIR --reservas TSV --n N --salida DIR [--semilla S] [--fraccion-doble F] [--tandas 1|2]
 
 Lo normal es no llamarlo a mano: `python flujo.py` corre los pasos en orden y
 se salta lo que ya está hecho.
@@ -567,7 +567,8 @@ def cmd_muestra(args):
     try:
         muestra.ejecutar(args.carpeta, args.reservas, args.n, args.salida,
                          semilla=args.semilla,
-                         fraccion_doble=args.fraccion_doble, log=log)
+                         fraccion_doble=args.fraccion_doble,
+                         tandas=args.tandas, log=log)
     except (ValueError, OSError) as e:
         log("ERROR: %s" % e)
         return 1
@@ -597,6 +598,11 @@ def _sub_muestra(sub):
                     default=muestra.FRACCION_DOBLE,
                     help="Fracción de cada tanda que anotan dos personas; "
                          "por omisión, %(default)s.")
+    mu.add_argument("--tandas", type=int, choices=(1, 2),
+                    default=muestra.TANDAS,
+                    help="1: una sola hoja, la muestra única con un "
+                         "anotador; 2: la segunda se baraja con las "
+                         "candidatas nuevas. Por omisión, %(default)s.")
     mu.set_defaults(func=cmd_muestra)
 
 

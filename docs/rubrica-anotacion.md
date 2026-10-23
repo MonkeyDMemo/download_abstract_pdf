@@ -41,6 +41,12 @@ Las citas `archivo:línea` son de `main` en `f05951a`.
   base de datos y no se usa lo que uno sepa de la biología de
   *P. aeruginosa*. Con esa regla se juzgaron las 50: la precisión se lee «solo
   desde su oración» (`bitacora.md:1619-1620`).
+- **El anotador es experto, y por eso esta regla pesa más.** Juzga lo que
+  afirma la oración, no lo que él sabe. Si la relación es conocida pero la
+  oración no la afirma, el ítem es `no`. Mientras anota no consulta bases
+  curadas: ni la del laboratorio, ni RegulonDB, ni PseudoCAP, ni CollecTF.
+  Lo que se mide es si el pipeline encontró una oración que dice la relación,
+  no si la relación existe. La calibración lo prueba con el ítem c21.
 
 ## 3. Definiciones
 
@@ -394,11 +400,18 @@ servidor.
 
 ## 7. El protocolo con ayudantes
 
-1. **Se arranca después del viernes 23, con la rúbrica validada.** Anotar sin
-   rúbrica obliga a repetir (Documento de Tesis v1, p. 2).
-2. **Calibración.** Todos anotan las mismas 20 oraciones y después se discuten
+**En el servicio social (22-oct-2026; enmienda 1) anota una sola persona:** un
+experto del área, pagado por hora. Los puntos 4 y 5 no aplican: sin parte doble
+no hay κ ni adjudicación, y eso se reporta como limitación. Los demás siguen.
+El tiempo se registra por bloque de 25 ítems como mínimo. En la página de
+revisión del tablero se registra por ítem, solo.
+
+1. **Se arranca con la rúbrica v1 y la sesión de calibración.** La calibración
+   la ajusta una sola vez. Anotar sin rúbrica obliga a repetir (Documento de
+   Tesis v1, p. 2).
+2. **Calibración.** Todos anotan las mismas oraciones (21 en la v1.1) y después se discuten
    los desacuerdos. La rúbrica se ajusta una sola vez: sale la v1.1, con fecha y
-   la lista de cambios, y desde ahí queda congelada. **Las 20 oraciones son
+   la lista de cambios, y desde ahí queda congelada. **Las oraciones son
    sintéticas**, escritas para la sesión como los casos del §5: ninguna sale
    del corpus, de `reservas.tsv`, del conjunto ciego ni de las 50 juzgadas.
    Así discutirlas no deja vista ninguna oración que luego se mida, y la
@@ -418,7 +431,8 @@ servidor.
    doble.
 6. **Qué ven los ayudantes.** Solo oraciones del corpus público. Nunca ven la
    base curada, sus etiquetas ni la salida de los modelos, y tampoco la
-   orientación ni el signo que propone el bronce.
+   orientación ni el signo que propone el bronce. Tampoco consultan bases
+   curadas mientras anotan (§2).
 7. **Carga estimada.** Unas 3 horas por cada 100 oraciones por persona
    (Documento de Tesis v1, p. 2). Con ese ritmo, la calibración son unos 36
    minutos de anotación por persona, más la discusión.
@@ -427,6 +441,20 @@ servidor.
    etiquetas.
 
 ## 8. El tamaño de la muestra
+
+**En el servicio social (enmienda 1): una muestra única de 200.** Sale de la
+misma población que el 44 %: las 5 833 oraciones con regulador y blanco, 4 864
+tras las exclusiones.
+- Va en una sola hoja, sin parte doble y sin candidatas nuevas:
+  `cli muestra ... --n 200 --tandas 1 --fraccion-doble 0`.
+- Sobre los mismos 200 ítems se calculan dos precisiones pareadas, la del
+  bronce y la de la red final, más la retención de la red
+  (`cli precision-ciega`).
+- Con 200 el intervalo queda en ± 6.8 puntos.
+- Las candidatas nuevas y la parte doble pasan a la tesis.
+
+Lo que sigue es el diseño original, con tres anotadores posibles, y se conserva
+como referencia.
 
 Los intervalos de Wilson al 95 % para p = 0.44 se calcularon con
 `etapa2/muestrear_precision.wilson` y k = round(0.44 n). La carga sale de 3 h
@@ -487,7 +515,7 @@ de esta población; eso lo cubre la revisión de candidatas nuevas.
   y la que es un pedazo de 40 o más de una reservada
   (`grn_verificacion/entrenamiento.py:439-459`).
 
-Las 20 de la calibración no hace falta apartarlas: son sintéticas (§7, punto
+Las de la calibración no hace falta apartarlas: son sintéticas (§7, punto
 2) y no están en el corpus.
 
 **Cómo se sortea.** La semilla se escribe antes de sortear, y el script que
@@ -547,11 +575,27 @@ en el servidor, quien tiene la base, y nunca llega a la hoja.
 5. **«Suggest» con el verbo en indicativo no es especulación** (§3.7).
 6. **La correlación sola pasa de `dudoso` a `no`** (§3.9). No mueve el 44 %.
 7. **El tamaño: 200 ciegas más 100 candidatas nuevas, con un 25 % de parte
-   doble** (§8).
+   doble** (§8). *En el servicio social: 200 ciegas, un anotador, sin parte
+   doble (enmienda 1).*
 
 ---
 
 ## Enmiendas
 
-Ninguna. Cada enmienda lleva su fecha, qué cambia, por qué y si es anterior o
-posterior a ver alguna cifra de la muestra.
+Cada enmienda lleva su fecha, qué cambia, por qué y si es anterior o posterior
+a ver alguna cifra de la muestra.
+
+**Enmienda 1, 22-oct-2026, anterior al sorteo y a toda anotación.**
+- **Qué cambia:**
+  - anota un solo experto, pagado por hora, así que no hay parte doble, κ ni
+    adjudicación;
+  - la muestra es única, de 200, en una sola hoja;
+  - el tiempo se registra por bloque como mínimo;
+  - la regla de juzgar lo que afirma la oración y no lo que sabe el anotador
+    queda explícita (§2), sin consultar bases curadas;
+  - la calibración suma el ítem c21.
+- **Por qué:** el servicio social cierra con la capa determinista, y el
+  LLM, la parte doble y las candidatas nuevas pasan a la tesis (`decisiones.md`,
+  «El LLM sobre la oración es trabajo de tesis»). La reunión del 23-oct se
+  canceló, así que la rúbrica se entrega con estos valores por omisión
+  (`reunion-asesor-23oct.md`).
