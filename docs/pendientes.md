@@ -36,6 +36,8 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
     GO de UniProt es red;
   - `muestra.py` usa dos funciones privadas de `entrenamiento.py`
     (`_reservada` y `_pmid_valido`): hacerlas públicas al tocar ese archivo.
+- **Cerrado también:** 4.3, la tabla del release 22.1 de PGD, que mandó el
+  curador. No cambia la base del paso 1.
 - **Encontrado y arreglado:** la fila del resumen del bronce decía «con
   regulador y blanco» y contaba solo el regulador: 8 339, cuando con los dos
   son 5 833. La tesis v1 lo citó así; ya está corregida.
@@ -355,8 +357,9 @@ para el asesor, y `guia-operones.md`, para quien los mantenga.
    `catalogo-operones.md` §4.3. *Cerrado el 20-oct-2026: el sufijo cuenta.*
 3. **Pedir a PGD la tabla del release 22.1** (6-oct-2023) con permiso escrito,
    a pseudocap-mail@sfu.ca o gwinsor@sfu.ca. La que entró es del 19-jul-2021.
-   Se carga con `--archivo`, `--url` o `PGD_OPERONES_URL`. *El borrador del
-   correo está listo (20-oct-2026); lo manda el usuario.*
+   Se carga con `--archivo`, `--url` o `PGD_OPERONES_URL`. *Cerrado el
+   22-oct-2026: el curador la mandó el 21-oct y entró como foto vigente
+   (`guia-operones.md` §8, D). No cambia `operones_base.tsv`.*
 4. **Una fuente que parsea cero filas sale del catálogo sin aviso.** Una página
    de desafío guardada y pasada con `--archivo`, un XML de BioCyc sin unidades
    o un `genes.xml` sin `accession-1` cierran la extracción como completa con 0

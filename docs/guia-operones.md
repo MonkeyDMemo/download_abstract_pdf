@@ -240,7 +240,10 @@ laptop pesa 13 MB:
 - `biocyc/2026-09-18/`: `tus.xml` y `genes.xml`;
 - `odb/2026-09-18/`: `known_operon.download.txt`;
 - `cdbprom/2026-09-25/`: el archivo del IIMAS;
-- `pgd/2026-09-27/`: `PAO1-operons-2021-07-19.csv`.
+- `pgd/2026-09-27/`: `PAO1-operons-2021-07-19.csv`;
+- `pgd/2026-10-22/`: `PAO1-operons-v22.1-2026-10-21.csv`, que es la foto
+  vigente. A su lado están el `.xlsx` que mandó el curador y
+  `convertir_xlsx_a_csv.py`, el script que lo pasó a CSV (§8, D).
 
 **Las salidas** van a `salidas/`. Las del 27-sep son
 `operones_20260927_{catalogo.csv, catalogo.xlsx, catalogo_fuentes.csv,
@@ -430,6 +433,42 @@ huella con el mismo comando de la vía A.
 - Si el archivo cambia, el flujo lo nota solo: el bronce guarda su huella en
   el resumen, y el bronce y la capa la declaran como entrada.
 
+### D. Una tabla de PGD que manda el curador
+
+Geoff Winsor (gwinsor@sfu.ca, pseudocap-mail@sfu.ca) mandó el 21-oct-2026 la
+tabla del release 22.1 como `.xlsx`. PGD es acceso abierto, y la cita que
+pide es Winsor et al. 2016 (doi:10.1093/nar/gkv1227). El parser lee el CSV del
+contrato (`fuentes.COLUMNAS_PGD`), así que el `.xlsx` se convierte antes, fuera
+del paquete: `grn_operones` solo usa openpyxl para escribir el catálogo.
+
+La conversión quita la columna `replicon` (todas las filas dicen `chromosome`)
+y una columna final vacía, y hace dos reparaciones:
+- **El nombre «fabAB operon, shorter/long transcript»** se partió en dos
+  celdas por su coma y corrió el resto de sus 4 filas una columna. Se vuelven
+  a unir.
+- **«olsB-olsA»** llegó con «¬†» en vez del espacio duro de la tabla de 2021:
+  es U+00A0 leído como Mac Roman. Se devuelve el U+00A0, como en 2021.
+
+```bash
+python convertir_xlsx_a_csv.py <tabla.xlsx> PAO1-operons-v22.1-2026-10-21.csv   # con openpyxl
+python -m grn_operones.cli extraer --fuente pgd --archivo PAO1-operons-v22.1-2026-10-21.csv
+python -m grn_operones.cli curar
+python -m grn_operones.cli catalogo
+python flujo.py --corrida 4 --rehacer-operones
+```
+
+El script está junto al crudo, en `pgd/2026-10-22/`. Si llega otra tabla,
+se agrega su huella a `exportar.PGD_POR_CORREO`, para que la hoja de fuentes
+diga la fecha de los datos y no solo la de la descarga.
+
+**Qué cambió del 19-jul-2021 al release 22.1**, fila contra fila: los mismos
+1 290 operones con los mismos genes y los mismos PMIDs. Cambian 30 nombres de
+gen, casi todos genes que antes no tenían nombre (osaR, siaC, dsbE, mksF...),
+y el inicio de PA1414. `mutT` y `dksA` se quedan sin nombre, y el de `pilC`
+pasa a ser la descripción de un pseudogén. `operones_base.tsv` sale idéntica
+byte a byte (huella `66b594bba16236d9`), porque los genes salen del
+diccionario y no del nombre de PGD, y ninguna salida de la corrida 4 cambia.
+
 ### Qué cambió → qué rehacer
 
 | cambió | qué rehacer |
@@ -545,10 +584,6 @@ Lo que cambia con cada respuesta:
 ## 12. Huecos conocidos
 
 **Lo que queda, todo lo que no depende del asesor:**
-- **4.3, la tabla del release 22.1 de PGD.** La que entró es de 2021. Se pide
-  por correo al curador (pseudocap-mail@sfu.ca), con permiso escrito, y entra
-  con `extraer --fuente pgd --archivo`. El borrador del correo está listo;
-  lo manda el usuario.
 - **Los importadores de `grn_bronce.rutas`** se mudan a `grn_comun` al tocar
   cada archivo:
   - `cli.py` y `servidor.py`;

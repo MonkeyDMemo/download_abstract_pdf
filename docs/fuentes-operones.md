@@ -266,6 +266,12 @@ el 22.1, del 6 de octubre de 2023. Una versión nueva se pide por correo al
 curador (pseudocap-mail@sfu.ca o gwinsor@sfu.ca), que es como la consiguió el
 laboratorio Greene. Entra como archivo local, sin tocar el código.
 
+**Actualizado el 22-oct-2026.** Geoff Winsor mandó el 21-oct la tabla del
+release 22.1 (`Pseudomonas-aeruginosa-PAO1-operons-v22.1-2026-Oct-21.xlsx`),
+que es la foto vigente. Es acceso abierto, y piden citar Winsor et al. 2016.
+Frente a la de 2021 trae los mismos operones, genes y PMIDs, con 30 nombres de
+gen y una coordenada distintos (`guia-operones.md` §8, D).
+
 ---
 
 ## 4. Fuentes de apoyo: no aportan operones, pero la curación las usa

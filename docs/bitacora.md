@@ -53,6 +53,25 @@ Para el detalle técnico de cada punto está
     su exportación y los pasos que la siguen. BioBERT sale de caché y no se
     mueve ninguna cifra; el resumen ya saldrá con la etiqueta nueva.
 
+- **La tabla del release 22.1 de PGD entró como foto vigente** (pendiente
+  4.3). Geoff Winsor la mandó el 21-oct en `.xlsx`, con permiso de uso y la
+  cita Winsor et al. 2016.
+  - Se pasó a CSV con dos reparaciones del export (el nombre de fabAB partido
+    por su coma y el espacio duro de olsBA mal codificado), y entró con
+    `extraer --fuente pgd --archivo`, `curar`, `catalogo` y
+    `flujo.py --corrida 4 --rehacer-operones` (`guia-operones.md` §8, D).
+  - Fila contra fila, frente a la de 2021: los mismos 1 290 operones, genes y
+    PMIDs. Cambian 30 nombres de gen y el inicio de PA1414.
+  - `operones_base.tsv` sale idéntica byte a byte (`66b594bba16236d9`).
+    `capa_resumen`, `evaluacion` y `red_informe` no cambian, y
+    `evaluacion_oro` solo cambia su hora. La corrida siguiente sale toda
+    «saltado» y `verificar` da 0.
+  - La hoja de fuentes del catálogo dice la fecha de los datos de esta tabla
+    por su huella (`exportar.PGD_POR_CORREO`, con su prueba).
+  - Al compararlas, primero se indexó por (operón, locus) y parecía que
+    cambiaban 8 PMIDs. Era un artefacto: PseudoCAP repite el gen una vez por
+    artículo. La comparación buena es fila completa contra fila completa.
+
 **Abierto:**
 - **`muestra.py` usa funciones privadas** de `entrenamiento.py` (`_reservada` y
   `_pmid_valido`): conviene hacerlas públicas al tocar ese archivo.

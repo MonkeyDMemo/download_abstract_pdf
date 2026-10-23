@@ -138,7 +138,9 @@ publicaron con licencia BSD-3: `greenelab/core-accessory-interactome`, commit
 - Es la fuente `pgd` de `grn_operones` (`fuentes.URL_PGD`).
 - Límite: es una foto del 19 de julio de 2021, y el release vigente (22.1) es
   del 6 de octubre de 2023. Una versión nueva se pide a pseudocap-mail@sfu.ca,
-  que es como la consiguió el laboratorio Greene.
+  que es como la consiguió el laboratorio Greene. *El 21-oct-2026 el curador
+  mandó la del 22.1: mismos 1 290 operones, genes y PMIDs, con 30 nombres de
+  gen y una coordenada distintos; `operones_base.tsv` no cambia.*
 
 **Regla derivada.** Los operones de PGD entran por esa exportación, con
 procedencia y huella. El diccionario sigue sin PGD: su anotación está tras el

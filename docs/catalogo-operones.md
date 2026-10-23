@@ -287,6 +287,10 @@ locus_tag, start, end, strand, gene_name, source_database, pmid`. El parser
 - `exportar` escribe además `operones_<día>_pgd.csv`: la vista de la página
   para los 1 290 operones, en 3 808 filas.
 
+*Desde el 22-oct-2026 la foto vigente es la del release 22.1, que mandó el
+curador; lo que sigue describe cómo entró la de 2021 (`guia-operones.md`
+§8, D).*
+
 **Límite y cómo mejorarlo.** Es una foto del **19 de julio de 2021**; el
 release vigente de PGD (22.1) es de 2023. La versión actual se pide por
 correo a pseudocap-mail@sfu.ca o gwinsor@sfu.ca, que es como la consiguió el
@@ -644,8 +648,8 @@ menos un operón.
   2. La pregunta está en [`operones-asesor.md`](operones-asesor.md) §8.
 - **Contar la literatura por PMID único:** hoy dos fuentes que citan el mismo
   artículo cuentan como dos.
-- **PGD es de 2021:** hay que pedir la tabla del release 22.1. El correo al
-  curador está redactado desde el 20-oct-2026 y falta mandarlo.
+- ~~**PGD es de 2021.**~~ *Cerrado el 22-oct-2026: el curador mandó la tabla
+  del release 22.1 y es la foto vigente (`guia-operones.md` §8, D).*
 - **BioCyc:** falta decidir las 16 TUs `pendiente_revision`. Su lista, con el
   título, el año y la revista de cada PMID, sale con `exportar --pendientes`.
 - **Adyacencia:** con el sufijo `.N` contado, las «no adyacente» bajaron de 55
