@@ -27,6 +27,12 @@ Las del borrador para el asesor (`docs/reunion-asesor-23oct.md`, decisión f, y
   abajo.
 - `mayoria`, `umbrales`, `min_evidencias` y `min_articulos`: los de `red.py`,
   que se le pasan tal cual. Sus valores por omisión son los suyos.
+- `signo_lexico` (`evidencias` o `aristas`) y `voto_articulo` (23-oct-2026):
+  el voto léxico de las evidencias que BioBERT dejó en `regulates` y un voto
+  por artículo en las aristas con votos de los dos signos. Apagados por
+  omisión y fuera de todo perfil, porque se miden en la tanda 2 de la muestra
+  ciega. Ver `signo.py`. Con alguno prendido hay que dar `nombre`: sin él, la
+  red iría a `red_recomendada.tsv` y pisaría la del perfil recomendado.
 
 El perfil `recomendado` es el del borrador: autorregulación marcada, nivel de
 soporte y operones expandidos, con el signo y los umbrales de `red.py`.
@@ -44,6 +50,12 @@ mínimos, autorregulación) en una carpeta temporal; después se le agregan las
 columnas y las aristas expandidas. Así lo que decide el signo sigue teniendo
 una sola implementación, y la red con otras reglas es la de `red.py` más lo
 que dice su informe que se le agregó.
+
+Las reglas del signo van entre una cosa y otra: recalculan el signo de las
+aristas de `red.py` con `red.resolver_signo` (`signo.py`) **antes** de
+expandir, así una arista expandida copia el signo nuevo y sus columnas. El
+orden de las columnas es el de `red.py`, las del signo, `nivel_soporte` y al
+final `expandida_de`.
 
 `red_<nombre>_evidencias.tsv` es el de `red.py` sin cambios: la evidencia es
 de las aristas observadas. Una arista expandida no tiene evidencia propia; la
@@ -124,12 +136,17 @@ NOMBRES_RESERVADOS = ("evidencias", "informe")
 
 AUTORREGULACION = ("excluir", "marcar")
 OPERONES = ("nodo", "expandir")
+# Los alcances del voto léxico; None lo apaga. Ver `signo.py`.
+SIGNO_LEXICO = ("evidencias", "aristas")
 
 CANDIDATA = "candidata"
 SOPORTE_MULTIPLE = "soporte_multiple"
 
 # Las de `red.py`. Copiarlas aquí permitiría que el «por omisión» de las dos
 # se separara y la red por omisión dejara de ser la suya sin que nada avisara.
+#
+# Las dos últimas no son de `red.py`: apagadas, `_argv_red` ni las mira y la
+# red por omisión sigue siendo la suya.
 POR_OMISION = collections.OrderedDict([
     ("autorregulacion", "excluir"),
     ("nivel_soporte", False),
@@ -138,6 +155,8 @@ POR_OMISION = collections.OrderedDict([
     ("umbrales", None),
     ("min_evidencias", 1),
     ("min_articulos", 1),
+    ("signo_lexico", None),
+    ("voto_articulo", False),
 ])
 
 PERFILES = collections.OrderedDict([
@@ -198,7 +217,13 @@ def _validar(cfg):
     if cfg["operones"] not in OPERONES:
         raise ErrorConsolidar("operones es %r y tiene que ser %s."
                               % (cfg["operones"], " o ".join(OPERONES)))
+    if cfg["signo_lexico"] is not None and (
+            cfg["signo_lexico"] not in SIGNO_LEXICO):
+        raise ErrorConsolidar("signo_lexico es %r y tiene que ser %s, o "
+                              "ninguno para apagarlo."
+                              % (cfg["signo_lexico"], " o ".join(SIGNO_LEXICO)))
     cfg["nivel_soporte"] = bool(cfg["nivel_soporte"])
+    cfg["voto_articulo"] = bool(cfg["voto_articulo"])
     try:
         cfg["mayoria"] = float(cfg["mayoria"])
     except (TypeError, ValueError):
@@ -400,7 +425,14 @@ def nombres_de_salida(nombre):
 
 # ------------------------------------------------------------- consolidar
 
+def _con_reglas_de_signo(cfg):
+    return bool(cfg["signo_lexico"] or cfg["voto_articulo"])
+
+
 def _exigir_entradas(carpeta, cfg, catalogo):
+    """ErrorConsolidar si falta algo. Con el voto léxico devuelve sus
+    disparadores, `(vocab, ruta)`, y si no, None: se cargan una sola vez,
+    aquí, para que los que se exigen sean los que votan."""
     for n in (PREDICCIONES, META, PARES):
         if not os.path.isfile(os.path.join(carpeta, n)):
             raise ErrorConsolidar("Falta %s en %s. Lo escribe %s."
@@ -412,6 +444,12 @@ def _exigir_entradas(carpeta, cfg, catalogo):
             cfg["umbrales"]):
         raise ErrorConsolidar("No encuentro el archivo de umbrales %s."
                               % cfg["umbrales"])
+    if cfg["signo_lexico"]:
+        # Tarde, como `paquete` en `_leer_red`: signo.py importa de aquí, y
+        # la red por omisión no tiene por qué cargarlo.
+        from grn_red import signo
+        return signo.cargar_disparadores()
+    return None
 
 
 def consolidar(carpeta, cfg=None, nombre=None, log=_nada, catalogo=None):
@@ -419,16 +457,24 @@ def consolidar(carpeta, cfg=None, nombre=None, log=_nada, catalogo=None):
 
     Sin `cfg` y sin `nombre` es la red de `red.py`, en `red.tsv`. Con otra
     configuración, o con un `nombre`, va a `red_<nombre>*` (ver el docstring
-    del módulo). `catalogo` existe para las pruebas; por omisión es el
-    catálogo versionado del paso 1. Lanza ErrorConsolidar sin haber publicado
-    nada si falta una entrada o `red.py` se niega.
+    del módulo); con las reglas del signo el `nombre` es obligatorio.
+    `catalogo` existe para las pruebas; por omisión es el catálogo versionado
+    del paso 1. Lanza ErrorConsolidar sin haber publicado nada si falta una
+    entrada o `red.py` se niega.
     """
     # Por `configuracion` y no tal cual: un dict con solo lo que cambia
     # también vale, y una clave mal escrita es error y no un parámetro que
     # nadie lee.
     cfg = configuracion(**dict(cfg or {}))
     catalogo = catalogo or _operones.RUTA_POR_OMISION
-    _exigir_entradas(carpeta, cfg, catalogo)
+    if nombre is None and _con_reglas_de_signo(cfg):
+        # Sin nombre, la red iría a red_recomendada.tsv: el flujo la escribe
+        # con el perfil recomendado, y otra regla la pisaría sin decirlo.
+        raise ErrorConsolidar(
+            "El voto léxico y el voto por artículo piden un nombre "
+            "(--nombre): sin él la red iría a %s y pisaría la del perfil "
+            "recomendado." % nombres_de_salida(NOMBRE_POR_OMISION)[0])
+    disparadores = _exigir_entradas(carpeta, cfg, catalogo)
 
     if nombre is None and es_omision(cfg):
         rutas = [os.path.join(carpeta, n) for n in (RED, EVIDENCIAS, INFORME)]
@@ -443,10 +489,12 @@ def consolidar(carpeta, cfg=None, nombre=None, log=_nada, catalogo=None):
             "El nombre %r no sirve: minúsculas, dígitos y «_», hasta 40, y "
             "ni «evidencias» ni «informe», que son de la red por omisión."
             % nombre)
-    return _consolidar_con_reglas(carpeta, cfg, nombre, log, catalogo)
+    return _consolidar_con_reglas(carpeta, cfg, nombre, log, catalogo,
+                                  disparadores)
 
 
-def _consolidar_con_reglas(carpeta, cfg, nombre, log, catalogo):
+def _consolidar_con_reglas(carpeta, cfg, nombre, log, catalogo,
+                           disparadores=None):
     archivos = nombres_de_salida(nombre)
     destinos = [os.path.join(carpeta, n) for n in archivos]
     tmp = [r + ".tmp" for r in destinos]
@@ -472,23 +520,36 @@ def _consolidar_con_reglas(carpeta, cfg, nombre, log, catalogo):
             informe_red = json.load(f, object_pairs_hook=collections.OrderedDict)
 
         columnas = list(_red.COLUMNAS_RED)
+        resumen_signo = None
+        if _con_reglas_de_signo(cfg):
+            from grn_red import signo
+            # Antes de expandir: la arista expandida copia la fila del operón,
+            # y tiene que copiar el signo nuevo. Sin log: el aviso de
+            # unir_con_pares ya salió en la corrida de red.py de arriba.
+            filas, columnas_signo, resumen_signo = signo.votar(
+                carpeta, filas, informe_red, cfg["signo_lexico"],
+                cfg["voto_articulo"],
+                vocab=disparadores[0] if disparadores else None)
+            columnas += columnas_signo
         cuenta = collections.Counter()
         if cfg["operones"] == "expandir":
             filas, cuenta = expandir(filas, genes_de_operones(catalogo),
                                      cfg["autorregulacion"])
-            columnas.append("expandida_de")
         if cfg["nivel_soporte"]:
             for fila in filas:
                 fila["nivel_soporte"] = nivel_de_soporte(fila["n_articulos"])
-            # Antes de `expandida_de`: es una columna de toda fila, y la de
-            # la expansión solo dice algo en las filas expandidas.
-            columnas.insert(len(_red.COLUMNAS_RED), "nivel_soporte")
+            columnas.append("nivel_soporte")
+        if cfg["operones"] == "expandir":
+            # Después de `nivel_soporte`, que es una columna de toda fila: la
+            # de la expansión solo dice algo en las filas expandidas.
+            columnas.append("expandida_de")
 
         try:
             _escribir_red(tmp[0], columnas, filas)
             shutil.copyfile(rutas_base[1], tmp[1])
             informe = _informe(carpeta, cfg, nombre, archivos, columnas, filas,
-                               cuenta, informe_red, catalogo, destinos, tmp)
+                               cuenta, informe_red, catalogo, destinos, tmp,
+                               resumen_signo, disparadores)
             _escribir_json(tmp[2], informe)
         except BaseException:
             for r in tmp:
@@ -515,6 +576,17 @@ def _consolidar_con_reglas(carpeta, cfg, nombre, log, catalogo):
         log("  %s %d, %s %d" % (CANDIDATA, conteos["por_nivel"][CANDIDATA],
                                 SOPORTE_MULTIPLE,
                                 conteos["por_nivel"][SOPORTE_MULTIPLE]))
+    s = conteos["signo"]
+    if s is not None:
+        if s["votos_lexicos"] is not None:
+            v = s["votos_lexicos"]
+            log("  votos léxicos: %d +, %d -, %d sin signo"
+                % (v["activates"], v["represses"], v["sin_signo"]))
+        log("  signo: %d aristas tocadas (%d mixtas), %d con otro signo que "
+            "red.py; %d conflictos creados y %d resueltos; %d sin confianza"
+            % (s["n_aristas_tocadas"], s["n_aristas_mixtas"],
+               s["n_aristas_con_otro_signo"], s["n_conflictos_creados"],
+               s["n_conflictos_resueltos"], s["n_aristas_sin_confianza"]))
     log("%s, %s y %s" % archivos)
     return collections.OrderedDict([
         ("nombre", nombre), ("archivos", list(archivos)), ("parametros", cfg),
@@ -522,10 +594,16 @@ def _consolidar_con_reglas(carpeta, cfg, nombre, log, catalogo):
 
 
 def _informe(carpeta, cfg, nombre, archivos, columnas, filas, cuenta,
-             informe_red, catalogo, destinos, tmp):
+             informe_red, catalogo, destinos, tmp, resumen_signo=None,
+             disparadores=None):
     """El informe de una red con otras reglas: los parámetros, los conteos,
     las huellas de lo que leyó y de lo que escribió, y el informe de `red.py`
-    de la red de la que parte."""
+    de la red de la que parte.
+
+    `resumen_signo` es el de las reglas del signo (`signo.aplicar`), o None
+    si están apagadas; `disparadores`, el `(vocab, ruta)` del voto léxico.
+    `red_py` conserva el reparto de signos de `red.py`; el de `conteos` es el
+    de esta red."""
     observadas = [f for f in filas if not f.get("expandida_de")]
     informe = collections.OrderedDict()
     informe["version"] = VERSION
@@ -556,6 +634,8 @@ def _informe(carpeta, cfg, nombre, archivos, columnas, filas, cuenta,
         ("reparto_signos", collections.OrderedDict(
             (s, signos[s]) for s in _red.SIGNOS)),
         ("n_conflictos", sum(1 for f in filas if f["conflicto"] == "true")),
+        # De las aristas observadas, antes de expandir.
+        ("signo", resumen_signo),
     ])
     recursos = collections.OrderedDict()
     if cfg["operones"] == "expandir":
@@ -564,6 +644,10 @@ def _informe(carpeta, cfg, nombre, archivos, columnas, filas, cuenta,
         recursos["catalogo_operones"] = collections.OrderedDict([
             ("archivo", os.path.basename(catalogo)),
             ("huella", procedencia.huella_texto(catalogo))])
+    if disparadores:
+        recursos["disparadores"] = collections.OrderedDict([
+            ("archivo", os.path.basename(disparadores[1])),
+            ("huella", procedencia.huella_texto(disparadores[1]))])
     informe["recursos"] = recursos
     huellas = procedencia.sellar(collections.OrderedDict([
         ("pares", os.path.join(carpeta, PARES)),

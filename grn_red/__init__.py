@@ -20,6 +20,13 @@ umbrales y mínimos. Por omisión es `etapa2/red.py` byte por byte, y es lo que
 corre el paso «red»; el perfil recomendado va a `red_recomendada*.tsv` en el
 paso «red_recomendada» y nunca toca `red.tsv`.
 
+La tercera, `signo.py` (23-oct-2026), son dos reglas más para el signo de la
+arista, apagadas por omisión y fuera de todo perfil: el voto léxico de las
+evidencias que BioBERT dejó en `regulates` y el voto por artículo en las
+aristas con votos de los dos signos. Se prenden con `consolidar
+--signo-lexico` y `--voto-articulo`, siempre con `--nombre`, y se miden en la
+tanda 2 de la muestra ciega.
+
 Biblioteca estándar y Python 3.8, como `grn_verificacion/` y `flujo.py`: corre
 en las máquinas del laboratorio, sin nada que instalar.
 """
