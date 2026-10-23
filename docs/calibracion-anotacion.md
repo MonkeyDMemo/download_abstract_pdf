@@ -1,10 +1,11 @@
 # Calibración de la anotación: las oraciones sintéticas
 
-Versión 1.1, del 22 de octubre de 2026, para la rúbrica v1 con su enmienda 1
-([`rubrica-anotacion.md`](rubrica-anotacion.md)). Es el material del punto 2
-del §7: quien anota juzga estas oraciones, se discuten con él los desacuerdos
-con la llave y la rúbrica se ajusta una sola vez (v1.1). La v1.1 de este
-documento suma c21, que prueba la regla del experto (§2).
+Versión 1.2, del 23 de octubre de 2026, para la rúbrica v1 con sus enmiendas
+1 y 2 ([`rubrica-anotacion.md`](rubrica-anotacion.md)). Es el material del
+punto 2 del §7: quien anota juzga estas oraciones, se discuten con él los
+desacuerdos con la llave y la rúbrica se ajusta una sola vez (v1.1). La v1.1
+de este documento sumó c21, que prueba la regla del experto (§2). La v1.2 suma
+c22 a c27 y la sesión corta de la «Calibración 2», antes de la tanda 2.
 
 **Este documento es la llave, y es para quien dirige la sesión.** A quien
 anota se le da solo [`calibracion-hoja.csv`](calibracion-hoja.csv), con
@@ -21,9 +22,9 @@ después de que cada quien anotó, para discutir.
 - **Se comprobó que no son del corpus.** Ninguna comparte 40 caracteres o más
   (`entrenamiento.MINIMO_CONTENCION`) con una oración candidata de la corrida 4
   ni con el texto de los XML de PMC descargados.
-- **Hay 21 ítems en 20 oraciones.** Una oración da dos ítems (c04 y c05), para
+- **Hay 27 ítems en 26 oraciones.** Una oración da dos ítems (c04 y c05), para
   practicar que cada par se anota aparte (§2).
-- **El reparto se parece al de una muestra real:** 11 `si`, 4 `dudoso` y 6 `no`.
+- **El reparto se parece al de una muestra real:** 15 `si`, 4 `dudoso` y 8 `no`.
   `dudoso` sale por sus cuatro vías: posibilidad (c12), sin resultado (c14),
   otro organismo (c15) y unión sin efecto (c16).
   Casi todas tocan una regla que, en el juicio de las 50 o en el diseño de la
@@ -60,6 +61,12 @@ El orden de las columnas es el de la hoja: `relacion`, `direccion`, `signo`,
 | c19 | MexT represses mexS in rich medium but activates it under nitrosative stress. | MexT | mexS | si, 1>2, ?, no_se, no, no | §3.5 | Dos signos según la condición, así que va `?`. Comentario: «condición: medio rico −, estrés nitrosativo +». |
 | c20 | The lasB promoter was fused to lacZ to monitor its activity in the different backgrounds. | lasB | lacZ | no, ninguna, —, —, no, no | árbol, paso 2 | Una fusión reportera es una construcción, no una relación entre dos genes. La rúbrica v1 no la trata: ver abajo. Comentario: «fusión reportera». |
 | c21 | Both lasR and lasB transcripts were abundant in the sputum isolates examined here. | lasR | lasB | no, ninguna, —, —, no, no | §2, §3.2 | Cualquier experto sabe que LasR activa lasB, pero la oración solo dice que los dos transcritos abundan: es mención conjunta. Se juzga lo que afirma la oración, no lo que sabe el anotador. Comentario: «lo sabe el experto, no lo dice la oración». |
+| c22 | rhlI transcription is regulated by MvaU in a growth-phase dependent manner. | rhlI | MvaU | si, 2>1, ?, no_se, no, no | §3.5 | «Regulated» afirma la regulación sin el sentido: el signo es `?`. El signo desconocido es `?`, nunca `0`. |
+| c23 | The anr and dnr genes are located in different regions of the PAO1 chromosome. | anr | dnr | no, ninguna, —, —, no, no | §3.2 | Mención conjunta. Con `no`, la dirección es `ninguna`, nunca vacía, y el signo y el tipo van vacíos. |
+| c24 | Contrary to earlier reports, we found no evidence that RsmA controls rhlR expression. | RsmA | rhlR | no, ninguna, —, —, si, no | §3.6, F6 | La oración niega el efecto: la relación negada se anota `no` con `negada = si`, no `si` con `negada = si`. Comentario: F6. |
+| c25 | QscR represses phzA1 transcription during exponential growth. | QscR | phzA1 | si, 1>2, -, no_se, no, no | §3.5, §3.6 | Reprimir es un signo, no una negación: `si` con `-` y `negada = no`. Es el contraste con c24. |
+| c26 | pqsA transcription was undetectable in a pqsR deletion mutant. | pqsA | pqsR | si, 2>1, +, no_se, no, no | §3.8, F1 | «Indetectable en el mutante» no niega la relación: dice que PqsR activa a pqsA. Comentario: F1. |
+| c27 | PhoB activates phoA transcription when phosphate is limiting. | PhoB | phoA | si, 1>2, +, no_se, no, no | §3.3 | «Activates» no dice el mecanismo: el tipo es `no_se`, no `directa`. `directa` pide unión al promotor con su resultado o «directly» (c07). |
 
 ## Lo que se espera discutir
 
@@ -77,6 +84,37 @@ El orden de las columnas es el de la hoja: `relacion`, `direccion`, `signo`,
 - **c17:** la frontera entre actividad y expresión, que es el punto 2 del §9.
 - **c03 y c04:** la regla del mutante, que es la falla medida del modelo
   (§3.8). Si un ayudante la invierte aquí, la invertirá en la muestra.
+
+## Calibración 2: antes de la tanda 2
+
+La tanda 1 se anotó sin calibración previa y en la hoja CSV. Cuatro códigos o
+reglas de la v1 se aplicaron de otra forma. Ninguna regla cambia: la sesión
+las repasa con ítems sintéticos. No se citan los ítems reales de la tanda 1:
+sus juicios no van al repositorio.
+
+1. **El signo desconocido es `?`, nunca `0`.** Pasó en 43 ítems de la tanda 1.
+2. **Con `relacion = no`, la dirección es `ninguna`, nunca vacía.** Pasó en 46.
+3. **Una relación negada se anota `no` con `negada = si` (F6).** Hubo 5
+   anotadas `si` con `negada = si`. La única vía a `negada = si` sin `no` es
+   `dudoso` por la excepción F5. La página de revisión ahora rechaza `si` con
+   `negada = si`.
+4. **«X activates Y» sin mecanismo explícito va `tipo = no_se`** (§3.3). En
+   varios casos de la tanda 1 se marcó `directa`. No cambia la precisión,
+   porque `tipo` no entra en esa cifra, pero sí el acuerdo de Ouroboros en ese
+   campo. Por eso, en la tanda 1 ese acuerdo se reporta con esta salvedad.
+
+**La sesión, de unos 30 minutos:** 12 ítems, en este orden: c07, c22, c10,
+c25, c01, c24, c09, c26, c16, c27, c11 y c23. Son los seis nuevos y seis de
+la v1.1 que tocan las mismas reglas. Unos 22 minutos de anotación, a 3 horas
+por cada 100, más la discusión. Quien anota recibe
+[`calibracion2-hoja.csv`](calibracion2-hoja.csv).
+
+**La tanda 2 se anota en la página de revisión, no en la hoja.** La página
+valida los códigos de la rúbrica y registra el tiempo por ítem:
+
+```
+python servidor.py --revision salidas/revision/muestra200_t2 --abrir
+```
 
 ## Dos huecos de la rúbrica v1, para el viernes
 
