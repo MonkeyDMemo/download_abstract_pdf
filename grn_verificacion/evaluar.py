@@ -29,6 +29,7 @@ if _ETAPA2 not in sys.path:
     sys.path.insert(0, _ETAPA2)
 
 from grn_bronce.texto import normalizar_espacios   # noqa: E402
+from grn_comun import signo_lexico                 # noqa: E402
 from grn_verificacion import capa as _capa, puente  # noqa: E402
 
 RUTA_JUICIOS = os.path.join(_RAIZ, "etapa2", "evaluacion",
@@ -282,31 +283,15 @@ def disparador_dominante(filas_capa, vocab):
 
 def _signo_cercano(fila, vocab):
     """El signo del disparador con signo (+ o -) más cercano al tramo entre
-    las dos menciones, o "" si la oración no tiene ninguno.
+    las dos menciones de una fila de la capa, o "" si no tiene ninguno.
 
-    Los «?» no cuentan: la regla, fijada antes de medir, es «el disparador con
-    signo más cercano». La primera medición del 8-oct también aceptaba «?», y
-    un «regulates» cercano le ganaba a un «represses» lejano: daba 200 pares
-    con signo único en lugar de 537.
+    El algoritmo vive en `grn_comun/signo_lexico.py` desde el 23-oct-2026,
+    sin cambios: la red lo puede usar como voto (`grn_red/signo.py`), y con
+    una copia aquí y otra allá lo que mide el punto 18 y lo que vota en la
+    red podían dejar de ser la misma regla.
     """
-    oracion = fila["oracion"]
-    menciones = [(oracion.find(fila["mencion_tf"]),
-                  oracion.find(fila["mencion_target"]))]
-    a, b = menciones[0]
-    if a < 0 or b < 0:
-        return ""
-    ini, fin = min(a, b), max(a, b)
-    mejor, mejor_d = "", None
-    for d_ini, d_fin, _palabra, signo in vocab.disparadores_en(oracion):
-        if signo not in ("+", "-"):
-            continue
-        if ini <= d_ini and d_fin <= fin:
-            dist = 0
-        else:
-            dist = min(abs(d_ini - fin), abs(ini - d_fin))
-        if mejor_d is None or dist < mejor_d:
-            mejor, mejor_d = signo, dist
-    return mejor
+    return signo_lexico.signo_cercano(fila["oracion"], fila["mencion_tf"],
+                                      fila["mencion_target"], vocab)
 
 
 def evaluar_carpeta(carpeta, ruta_bronce=None, log=_nada):
