@@ -888,6 +888,23 @@ class PruebasFotoVigente(unittest.TestCase):
         self.assertNotIn("se cura", filas[0]["estado"])
         self.assertIn("fuera de la curación", filas[0]["estado"])
 
+    def test_la_tabla_de_pgd_por_correo_dice_su_fecha_por_la_huella(self):
+        """Con `--archivo` el origen es solo un nombre. La fecha de los datos
+        sale de la huella: otra tabla con el mismo nombre no la hereda."""
+        import hashlib
+        con = _con()
+        self.addCleanup(con.close)
+        _bronce(con, [_fila("pgd", "operon-1", "PA0001|PA0002")])
+        eid = D.ultima_extraccion_completa(con)["pgd"]
+        huella = hashlib.sha256(("cuerpo-pgd-%d" % eid).encode()).hexdigest()
+
+        sin = E.filas_fuentes_catalogo(con, D, ["pgd"], F.URL_PGD)
+        with mock.patch.dict(E.PGD_POR_CORREO, {huella: "2026-10-21 (x)"}):
+            con_fecha = E.filas_fuentes_catalogo(con, D, ["pgd"], F.URL_PGD)
+
+        self.assertEqual(sin[0]["fecha_datos"], "")
+        self.assertEqual(con_fecha[0]["fecha_datos"], "2026-10-21 (x)")
+
 
 class PruebasReparsearConUnaVaciaMasNueva(unittest.TestCase):
     """`reparsear` vuelve a leer la foto vigente, la que se cura, y prueba

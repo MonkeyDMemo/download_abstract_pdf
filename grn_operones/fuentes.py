@@ -81,7 +81,8 @@ URL_BIOCYC_QUERY = "https://websvc.biocyc.org/xmlquery"
 # La URL va fijada a un commit, así que sus bytes no pueden cambiar, y por eso
 # `extraer` no la vuelve a pedir si ya la tiene. Una versión más nueva se pide
 # a pseudocap-mail@sfu.ca y entra con `--url`, `PGD_OPERONES_URL` o
-# `--archivo`.
+# `--archivo`. Así entró la del release 22.1, el 22-oct-2026: llegó como
+# .xlsx y se pasó a CSV antes (`docs/guia-operones.md` §8, D).
 URL_PGD = ("https://raw.githubusercontent.com/greenelab/"
            "core-accessory-interactome/"
            "25539b82d51aa088c9e2f241a71ea1cc996fddae/"

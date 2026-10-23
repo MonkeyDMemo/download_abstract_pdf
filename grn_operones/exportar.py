@@ -468,6 +468,16 @@ def filas_catalogo(con, db, anotacion, paso1=None):
     return filas
 
 
+# Las tablas que el curador de PGD manda por correo entran con `--archivo`, y
+# su origen es solo un nombre de archivo. Por la huella, y no por el nombre:
+# un nombre se repite y diría la fecha de otra tabla. La del 21-oct-2026 es el
+# .xlsx del release 22.1 pasado a CSV (`docs/guia-operones.md` §8).
+PGD_POR_CORREO = {
+    "ed7020d783af1515ae1fb9ee608c7fddc8608608ae2508961963270b28129bb3":
+        "2026-10-21 (release 22.1, enviada por el curador de PGD)",
+}
+
+
 def filas_fuentes_catalogo(con, db, fuentes, url_pgd):
     """La hoja de fuentes: de dónde sale cada foto. Una fila por archivo.
 
@@ -477,7 +487,7 @@ def filas_fuentes_catalogo(con, db, fuentes, url_pgd):
 
     La fecha de descarga no es la de los datos. La tabla de PGD se bajó hoy,
     pero es una foto del 19 de julio de 2021, y eso se dice cuando el origen
-    es la tabla fijada (`url_pgd`).
+    es la tabla fijada (`url_pgd`) o una de `PGD_POR_CORREO`.
     """
     silver = db.silver_de(con)
     curado_en = max([s["curado_en"] for s in silver] or [""])
@@ -518,7 +528,8 @@ def filas_fuentes_catalogo(con, db, fuentes, url_pgd):
                            if curado_en and d["descargado_en"] > curado_en
                            else "vigente"),
                 "fecha_datos": ("2021-07-19 (exportación del curador de PGD)"
-                                if d["url"] == url_pgd else ""),
+                                if d["url"] == url_pgd
+                                else PGD_POR_CORREO.get(d["sha256"], "")),
                 "descargado_en": d["descargado_en"],
                 "origen": d["url"],
                 "sha256": d["sha256"],
