@@ -87,8 +87,12 @@ import re
 from grn_bronce import db as bdb
 from grn_comun import archivos, procedencia, rutas
 from grn_etl import db as db0
-from grn_verificacion import (entrenamiento, muestra, reentrenar, validacion,
-                              verificar)
+from grn_verificacion import entrenamiento, muestra, reentrenar, validacion
+
+# `verificar` se importa donde se lee la partición y no aquí: el CLI importa
+# este módulo para armar sus subcomandos en cada llamada, también en
+# `reentrenar` del servidor, y `verificar` arrastra `identificar` y `puente`,
+# que meten etapa2 al sys.path y cargan `clasificar` y `extraer_pares`.
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -295,6 +299,7 @@ def _pmids_de_muestras(carpetas):
 def _pmids_de_particiones(carpetas):
     """train ∪ dev ∪ test de cada carpeta, con el lector de `verificar`. Sin
     una de las tres no se sabe todo lo que vio el modelo, y se detiene."""
+    from grn_verificacion import verificar
     pmids = set()
     for carpeta in carpetas:
         nombre = _nombre_de_carpeta(carpeta)

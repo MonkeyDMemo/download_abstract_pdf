@@ -17,6 +17,8 @@ import io
 import json
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -485,6 +487,30 @@ class PruebasLista(Base):
                          "10.9999/y")
         for malo in ("", None, "PMC12345", "10.99/x", "10.9999"):
             self.assertIsNone(CN.normalizar_doi(malo))
+
+
+class PruebasImportacion(unittest.TestCase):
+
+    def test_importarlo_no_arrastra_verificar_ni_etapa2(self):
+        """El CLI lo importa para armar sus subcomandos en cada llamada, también
+        en `reentrenar` del servidor: si trajera `verificar`, ese proceso
+        cargaría `puente`, `clasificar` y `extraer_pares` y tendría etapa2 en
+        el sys.path. En otro proceso, porque en este ya están cargados."""
+        codigo = (
+            "import sys\n"
+            "import grn_verificacion.contaminacion_nuevos\n"
+            "malos = [m for m in ('grn_verificacion.verificar',\n"
+            "                     'grn_verificacion.puente', 'clasificar',\n"
+            "                     'extraer_pares') if m in sys.modules]\n"
+            "malos += [p for p in sys.path\n"
+            "          if p.rstrip('/\\\\').endswith('etapa2')]\n"
+            "print(repr(malos))\n")
+        salida = subprocess.run(
+            [sys.executable, "-c", codigo], cwd=CN.RAIZ,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True, timeout=120)
+        self.assertEqual(salida.returncode, 0, salida.stderr)
+        self.assertEqual(salida.stdout.strip(), "[]")
 
 
 class PruebasJuzgadasPorOmision(unittest.TestCase):
