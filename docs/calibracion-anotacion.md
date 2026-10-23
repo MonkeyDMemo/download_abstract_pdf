@@ -1,13 +1,13 @@
-# Calibración de la anotación: las 20 oraciones sintéticas
+# Calibración de la anotación: las oraciones sintéticas
 
-Versión 1, del 22 de octubre de 2026, para la rúbrica v1
+Versión 1.1, del 22 de octubre de 2026, para la rúbrica v1 con su enmienda 1
 ([`rubrica-anotacion.md`](rubrica-anotacion.md)). Es el material del punto 2
-del §7: todos anotan las mismas 20 oraciones, se discuten los desacuerdos y la
-rúbrica se ajusta una sola vez (v1.1). Si el viernes 23 la rúbrica cambia, estas
-oraciones se revisan contra la versión validada antes de la sesión.
+del §7: quien anota juzga estas oraciones, se discuten con él los desacuerdos
+con la llave y la rúbrica se ajusta una sola vez (v1.1). La v1.1 de este
+documento suma c21, que prueba la regla del experto (§2).
 
-**Este documento es la llave, y es para quien dirige la sesión.** A los
-ayudantes se les da solo [`calibracion-hoja.csv`](calibracion-hoja.csv), con
+**Este documento es la llave, y es para quien dirige la sesión.** A quien
+anota se le da solo [`calibracion-hoja.csv`](calibracion-hoja.csv), con
 las columnas de la rúbrica (§6) y las de anotación vacías. La llave se enseña
 después de que cada quien anotó, para discutir.
 
@@ -21,9 +21,9 @@ después de que cada quien anotó, para discutir.
 - **Se comprobó que no son del corpus.** Ninguna comparte 40 caracteres o más
   (`entrenamiento.MINIMO_CONTENCION`) con una oración candidata de la corrida 4
   ni con el texto de los XML de PMC descargados.
-- **Hay 20 ítems en 19 oraciones.** Una oración da dos ítems (c04 y c05), para
+- **Hay 21 ítems en 20 oraciones.** Una oración da dos ítems (c04 y c05), para
   practicar que cada par se anota aparte (§2).
-- **El reparto se parece al de una muestra real:** 11 `si`, 4 `dudoso` y 5 `no`.
+- **El reparto se parece al de una muestra real:** 11 `si`, 4 `dudoso` y 6 `no`.
   `dudoso` sale por sus cuatro vías: posibilidad (c12), sin resultado (c14),
   otro organismo (c15) y unión sin efecto (c16).
   Casi todas tocan una regla que, en el juicio de las 50 o en el diseño de la
@@ -59,9 +59,13 @@ El orden de las columnas es el de la hoja: `relacion`, `direccion`, `signo`,
 | c18 | PqsR-dependent transcription of pqsA requires either HHQ or PQS. | PqsR | pqsA | si, 1>2, +, no_se, no, no | §3.4, F2 | «X-dependent expression of Y» es X → Y. Comentario: F2. |
 | c19 | MexT represses mexS in rich medium but activates it under nitrosative stress. | MexT | mexS | si, 1>2, ?, no_se, no, no | §3.5 | Dos signos según la condición, así que va `?`. Comentario: «condición: medio rico −, estrés nitrosativo +». |
 | c20 | The lasB promoter was fused to lacZ to monitor its activity in the different backgrounds. | lasB | lacZ | no, ninguna, —, —, no, no | árbol, paso 2 | Una fusión reportera es una construcción, no una relación entre dos genes. La rúbrica v1 no la trata: ver abajo. Comentario: «fusión reportera». |
+| c21 | Both lasR and lasB transcripts were abundant in the sputum isolates examined here. | lasR | lasB | no, ninguna, —, —, no, no | §2, §3.2 | Cualquier experto sabe que LasR activa lasB, pero la oración solo dice que los dos transcritos abundan: es mención conjunta. Se juzga lo que afirma la oración, no lo que sabe el anotador. Comentario: «lo sabe el experto, no lo dice la oración». |
 
 ## Lo que se espera discutir
 
+- **c21:** la regla del experto (§2). El anotador es experto y la relación es
+  conocida; si la anota `si`, juzgó con lo que sabe y no con la oración. Es el
+  ítem que más importa de la sesión.
 - **c01 y c16:** las dos negaciones difíciles. En c01 no se niega la relación;
   c16 es la única vía a `dudoso` con `negada = si`.
 - **c08:** si «controls» basta para `?` o hay que heredar el signo de la cadena.
