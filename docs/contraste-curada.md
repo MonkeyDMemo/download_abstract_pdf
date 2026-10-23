@@ -206,16 +206,26 @@ misma fuente que usa el paso 3 para escribirlos.
   sella `red_NOMBRE_informe.json`.
 - **El informe nombra el archivo que midió**, y `contraste.json` guarda el
   nombre en `parametros.red`.
-- **Dos errores** que no repiten lo que llegó, porque puede ser una ruta:
-  `--red` con `--sin-red`, y un nombre fuera del patrón de `grn_comun.redes`
-  (de 1 a 40 minúsculas, dígitos o «_», y ni «evidencias» ni «informe»). Una
-  red con nombre válido que no está en la carpeta dice cómo armarla.
+- **Tres errores** que no repiten lo que llegó, porque puede ser una ruta:
+  `--red` con `--sin-red`; un nombre fuera del patrón de `grn_comun.redes`
+  (de 1 a 40 minúsculas, dígitos o «_», y ni «evidencias» ni «informe»); y
+  un nombre que `grn_red` acepta pero lleva siete u ocho dígitos seguidos,
+  como una fecha tras un «_». El informe nombra el archivo de la red, y el
+  filtro de publicación toma esos dígitos por un PMID: se dice antes de
+  abrir la base, y no al final. Una red con nombre válido que no está en la
+  carpeta dice cómo armarla.
 
 Medido sin la base, sobre las redes de la corrida 4: `red_recomendada.tsv`
 tiene 10 592 aristas, de las que 8 747 se llevan a locus, 131 no tienen locus
 de PAO1, 181 son autorregulaciones de un solo locus y 1 533 son expandidas
 omitidas. Dan 9 012 pares de locus dirigidos: los 9 011 de `red.tsv` y uno
 más.
+
+Los pares son casi los mismos, sus aristas no. Las 47 autorregulaciones
+marcadas que sí dan par, como «PhoB → phoBR», dan el par de más y caen en 56
+pares que `red.tsv` ya tenía, y a 28 de esos les cambian el signo. Por eso,
+contra la base, las dos redes dan el mismo dirigido (642/1 560) y no el
+mismo acuerdo de signo (319 de 605 con `red.tsv`, 313 con la recomendada).
 
 ### Las candidatas nuevas
 
@@ -280,7 +290,8 @@ homología en las 2 850. Son dos reglas que PLAN.md 2.4 contó de otra forma:
   valores. El lector descarta las que no tienen sus dos locus con forma de
   locus de PAO1 (`locus_invalido` de `validacion.normalizar`): son 6, y sin
   locus no se comparan con nada. Ninguna es de homología (las 2 850 salen
-  igual de las 5 578), así que no llegan a las exigibles.
+  igual de las 5 578) ni cita el PMID B (abajo): en PLAN.md 2.4 estaban
+  entre las 2 003 exigibles, y aquí no llegan.
 - **651 contra 731 (+80).** PLAN.md 2.4 restó 731 filas por el PMID B. El
   contraste (`motivo_de`) quita solo las que tienen **todos** sus PMIDs en
   el archivo de exclusiones, y después de descontar la homología: una fila
@@ -289,18 +300,20 @@ homología en las 2 850. Son dos reglas que PLAN.md 2.4 contó de otra forma:
 
 5 578 − 2 850 − 651 = 2 077, y 5 584 − 2 850 − 731 = 2 003.
 
-El reparto exacto de las 80 se cuenta en el servidor. Desde el 23-oct la
-sección 2 del informe lo dice con dos líneas, para que la conciliación se
-mida en cada corrida y no se deduzca: «N filas con valores, M con los dos
-locus: K con un locus inválido» y «X citan el artículo excluido junto con
-otro y se quedan, porque la regla es “todos sus PMIDs”», seguida de cuántas
-filas de homología lo citan, que salen antes por homología. En
-`contraste.json` son `base.locus_invalido`,
+Desde el 23-oct la sección 2 del informe lo cuenta con dos líneas, para que
+la conciliación se mida en cada corrida y no se deduzca: «N filas con
+valores, M con los dos locus: K con un locus inválido» y «X citan el
+artículo excluido junto con otro y se quedan, porque la regla es “todos sus
+PMIDs”», seguida de cuántas filas de homología lo citan, que salen antes por
+homología. En `contraste.json` son `base.locus_invalido`,
 `denominador.citan_excluido_y_otro` y
-`denominador.homologia_que_cita_excluido`. Si las que citan el PMID B y se
-quedan no explican las 80, el resto está en las de homología que lo citan o
-en alguna de las 6 de locus inválido, y hay que verlo antes de citar el
-2 077 como conciliado.
+`denominador.homologia_que_cita_excluido`.
+
+El 23-oct, en el servidor (`salidas/contraste/CONTRASTE.md`), dieron 6, 80 y
+0: las 80 son justo las filas que citan el PMID B junto con otro artículo, y
+ninguna de homología lo cita. Tampoco lo cita ninguna de las 6 de locus
+inválido: si una lo citara, 731 − 651 pasaría de 80. La cuenta cierra, y el
+2 077 se puede citar como conciliado.
 
 ## Lo que sí detiene: el cotejo de la base
 
@@ -326,8 +339,9 @@ Otras guardas detienen el contraste:
 - **Una arista sin evidencias.** Si una arista de la red no tiene ninguna en
   sus evidencias, la red y las evidencias no son de la misma corrida. Las
   expandidas de una red con otras reglas no cuentan: se omiten antes.
-- **`--red` mal dado.** Con `--sin-red`, o con un nombre fuera del patrón,
-  se detiene antes de abrir nada.
+- **`--red` mal dado.** Con `--sin-red`, con un nombre fuera del patrón o
+  con uno que lleva siete u ocho dígitos seguidos, se detiene antes de abrir
+  nada.
 
 ## Qué se publica y qué no
 
@@ -443,7 +457,7 @@ Informe y carpeta confidencial aparte: el `contraste.json` y las
 laptop, otra vez solo el informe:
 
 ```powershell
-scp asesor:grn-guillermo/resultados/contraste-corrida4-recomendada/CONTRASTE.md salidas\contraste\CONTRASTE-recomendada.md
+scp asesor:grn-guillermo/resultados/contraste-corrida4-recomendada/CONTRASTE.md salidas\contraste\CONTRASTE_recomendada.md
 ```
 
 ### En la laptop
