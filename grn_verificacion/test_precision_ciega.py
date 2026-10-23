@@ -128,6 +128,30 @@ class Base(unittest.TestCase):
         return pc.calcular(self.anotacion(extra, cambios, columnas, items),
                            self.llave, self.carpeta, **kw)
 
+    def excluir(self, *pmids):
+        """Un archivo de PMIDs con el formato de reservas.tsv."""
+        self.archivos_excluir = getattr(self, "archivos_excluir", 0) + 1
+        ruta = os.path.join(self.tmp, "excluir_%d.tsv" % self.archivos_excluir)
+        with io.open(ruta, "w", encoding="utf-8", newline="\n") as f:
+            f.write("# fuera del denominador\n")
+            for p in pmids:
+                f.write("pmid\t%s\n" % p)
+        return ruta
+
+    def particion(self, train, dev, test=()):
+        """Una carpeta de partición: [(pmid, texto marcado)] por parte."""
+        carpeta = tempfile.mkdtemp(dir=self.tmp)
+        for nombre, filas in (("train", train), ("dev", dev), ("test", test)):
+            with io.open(os.path.join(carpeta, "entity_marked_%s.jsonl"
+                                      % nombre), "w", encoding="utf-8",
+                         newline="\n") as f:
+                for pmid, texto in filas:
+                    f.write(json.dumps({"text": texto, "label": "activates",
+                                        "pmid": int(pmid), "tf": "X",
+                                        "target": "Y"},
+                                       ensure_ascii=False) + "\n")
+        return carpeta
+
 
 class PruebasCifras(Base):
 
@@ -318,6 +342,134 @@ class PruebasRed(Base):
         self.assertEqual(r["n_anotados"], 4)
 
 
+class PruebasCapa(Base):
+
+    def test_la_capa_de_otra_carpeta(self):
+        """La red es de la carpeta (la de otro modelo) y la capa, la del
+        sorteo: la que tiene los id_par de la llave."""
+        antes = self.calcular()
+        sorteo = os.path.join(self.tmp, "sorteo")
+        os.makedirs(sorteo)
+        capa = os.path.join(sorteo, "capa_pares.csv")
+        shutil.move(os.path.join(self.carpeta, "capa_pares.csv"), capa)
+
+        with self.assertRaises(OSError):
+            self.calcular()
+        r = self.calcular(capa=capa)
+
+        self.assertTrue(antes["entradas"]["capa_de_la_carpeta"])
+        self.assertFalse(r["entradas"]["capa_de_la_carpeta"])
+        for clave in ("bronce", "red", "retencion_de_la_red", "pareado"):
+            self.assertEqual(r[clave], antes[clave], clave)
+
+
+class PruebasExclusion(Base):
+
+    def test_por_archivo_saca_el_item_del_bronce_y_de_la_red(self):
+        r = self.calcular(excluir=[self.excluir(PMID["m-1001"])])
+
+        self.assertEqual(r["n_anotados"], 3)
+        self.assertEqual(_kn(r["bronce"]["con_direccion"]), (0, 3))
+        self.assertEqual(_kn(r["red"]["con_direccion"]), (0, 1))
+        self.assertEqual(r["exclusion"],
+                         {"archivos": 1, "pmids": 1, "items_excluidos": 1,
+                          "items_con_texto_en_train": None})
+        # Una ruta suelta, sin lista, no se recorre letra por letra.
+        suelta = self.calcular(excluir=self.excluir(PMID["m-1001"]))
+        self.assertEqual(suelta["exclusion"], r["exclusion"])
+
+    def test_por_particion_saca_train_y_dev_pero_no_test(self):
+        """m-1002 está en train y m-1005 en dev; m-1003 en test, que el
+        modelo no vio. La oración de m-1004 está en train bajo otro PMID: no
+        sale, pero se cuenta."""
+        p = self.particion(
+            train=[(PMID["m-1002"], "<e1>A</e1> y <e2>B</e2>."),
+                   ("29999999", "<e1>Oración</e1> <e2>p4</e2>.")],
+            dev=[(PMID["m-1005"], "<e1>C</e1> y <e2>D</e2>.")],
+            test=[(PMID["m-1003"], "<e1>E</e1> y <e2>F</e2>.")])
+
+        r = self.calcular(particion=p)
+
+        self.assertEqual(r["exclusion"],
+                         {"archivos": 0, "pmids": 3, "items_excluidos": 2,
+                          "items_con_texto_en_train": 1})
+        self.assertEqual((r["n_anotados"], r["n_sin_anotar"]), (3, 0))
+        self.assertEqual(_kn(r["bronce"]["con_direccion"]), (1, 3))
+        # m-1002 era el otro ítem que la red retenía.
+        self.assertEqual(_kn(r["red"]["con_direccion"]), (1, 1))
+
+    def test_archivos_y_particion_se_suman(self):
+        p = self.particion(train=[(PMID["m-1002"], "<e1>A</e1> <e2>B</e2>")],
+                           dev=[])
+        r = self.calcular(excluir=[self.excluir(PMID["m-1001"]),
+                                   self.excluir(PMID["m-1001"],
+                                                PMID["m-1003"])],
+                          particion=p)
+
+        self.assertEqual(r["exclusion"],
+                         {"archivos": 2, "pmids": 3, "items_excluidos": 3,
+                          "items_con_texto_en_train": 0})
+        self.assertEqual(r["n_anotados"], 1)
+
+    def test_sin_columna_pmid_en_la_llave_no_se_puede_excluir(self):
+        self.escribir_llave(ITEMS, columnas=[c for c in LLAVE if c != "pmid"])
+        # Sin exclusión la llave no necesita el PMID.
+        self.assertEqual(self.calcular()["n_anotados"], 4)
+
+        with self.assertRaises(ValueError) as ctx:
+            self.calcular(excluir=[self.excluir(PMID["m-1001"])])
+        self.assertIn("pmid", str(ctx.exception))
+
+    def test_un_pmid_que_no_es_numero_detiene_sin_decir_cual(self):
+        with io.open(self.llave, encoding="utf-8-sig") as f:
+            texto = f.read().replace(PMID["m-1003"], "")
+        with io.open(self.llave, "w", encoding="utf-8-sig") as f:
+            f.write(texto)
+
+        with self.assertRaises(ValueError) as ctx:
+            self.calcular(excluir=[self.excluir(PMID["m-1001"])])
+        self.assertIn("1 ítems", str(ctx.exception))
+        self.assertNotIn("m-1003", str(ctx.exception))
+
+    def test_sin_dev_en_la_particion_detiene_sin_la_ruta(self):
+        p = self.particion(train=[], dev=[])
+        os.remove(os.path.join(p, "entity_marked_dev.jsonl"))
+
+        with self.assertRaises(ValueError) as ctx:
+            self.calcular(particion=p)
+        self.assertIn("entity_marked_dev.jsonl", str(ctx.exception))
+        self.assertNotIn(p, str(ctx.exception))
+
+    def test_ni_pmids_ni_ids_salen_por_el_log_ni_al_json(self):
+        p = self.particion(train=[(PMID["m-1002"], "<e1>A</e1> <e2>B</e2>")],
+                           dev=[(PMID["m-1003"], "<e1>C</e1> <e2>D</e2>")])
+        destino = os.path.join(self.tmp, "r.json")
+        lineas = []
+
+        pc.ejecutar(self.anotacion(), self.llave, self.carpeta, destino,
+                    log=lineas.append,
+                    excluir=[self.excluir(PMID["m-1001"])], particion=p)
+
+        with io.open(destino, encoding="utf-8") as f:
+            texto = f.read()
+        todo = texto + "\n" + "\n".join(lineas)
+        for i, *_ in ITEMS:
+            self.assertNotIn(i, todo)
+            self.assertNotIn(PMID[i], todo)
+        self.assertEqual(json.loads(texto)["exclusion"]["items_excluidos"], 3)
+        self.assertTrue(any("exclusión" in l for l in lineas))
+
+    def test_lo_que_no_se_puede_publicar_no_sale(self):
+        """Una etiqueta con forma de PMID: ni una línea ni el JSON."""
+        destino = os.path.join(self.tmp, "r.json")
+        lineas = []
+        with self.assertRaises(ValueError):
+            pc.ejecutar(self.anotacion(), self.llave, self.carpeta, destino,
+                        log=lineas.append, etiqueta="PMID 31415926")
+        self.assertEqual(lineas, [])
+        self.assertFalse(os.path.exists(destino))
+
+
 class PruebasEntrada(Base):
 
     def test_las_columnas_de_tiempo_se_leen_y_las_demas_se_ignoran(self):
@@ -422,6 +574,49 @@ class PruebasCli(Base):
                                "--llave", self.llave,
                                "--carpeta", self.carpeta])
         self.assertEqual(codigo, 1)
+
+    def test_con_todas_las_banderas(self):
+        for sufijo in ("", "_evidencias"):
+            shutil.copy(os.path.join(self.carpeta, "red%s.tsv" % sufijo),
+                        os.path.join(self.carpeta,
+                                     "red_recomendada%s.tsv" % sufijo))
+        sorteo = os.path.join(self.tmp, "sorteo")
+        os.makedirs(sorteo)
+        capa = os.path.join(sorteo, "capa_pares.csv")
+        shutil.move(os.path.join(self.carpeta, "capa_pares.csv"), capa)
+        p = self.particion(train=[(PMID["m-1002"], "<e1>A</e1> <e2>B</e2>")],
+                           dev=[(PMID["m-1005"], "<e1>C</e1> <e2>D</e2>")])
+        destino = os.path.join(self.tmp, "r.json")
+        lineas = []
+
+        with mock.patch.object(cli, "log", lineas.append):
+            codigo = cli.main([
+                "precision-ciega", "--anotacion", self.anotacion(),
+                "--llave", self.llave, "--carpeta", self.carpeta,
+                "--json", destino, "--red", "recomendada", "--capa", capa,
+                "--excluir-pmids", self.excluir(PMID["m-1001"]),
+                "--excluir-pmids", self.excluir(PMID["m-1004"]),
+                "--particion", p, "--etiqueta", "tanda2"])
+
+        self.assertEqual(codigo, 0, lineas)
+        with io.open(destino, encoding="utf-8") as f:
+            r = json.load(f)
+        self.assertEqual(r["etiqueta"], "tanda2")
+        self.assertEqual(r["entradas"],
+                         {"red": "red_recomendada.tsv",
+                          "evidencias": "red_recomendada_evidencias.tsv",
+                          "capa_de_la_carpeta": False})
+        self.assertEqual(r["exclusion"],
+                         {"archivos": 2, "pmids": 4, "items_excluidos": 4,
+                          "items_con_texto_en_train": 0})
+        # Queda m-1003 sola: un `si` invertido.
+        self.assertEqual((r["n_anotados"], r["n_sin_anotar"]), (1, 0))
+        self.assertEqual(_kn(r["bronce"]["inversiones"]), (1, 1))
+        texto = "\n".join(lineas)
+        self.assertNotIn("tanda2", texto)
+        for i, *_ in ITEMS:
+            self.assertNotIn(i, texto)
+            self.assertNotIn(PMID[i], texto)
 
 
 if __name__ == "__main__":

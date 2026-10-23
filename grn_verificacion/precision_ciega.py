@@ -2,7 +2,8 @@
 
     python -m grn_verificacion.cli precision-ciega --anotacion A.csv \
         --llave llave.csv --carpeta salidas/flujo/corrida4_run22 [--json J] \
-        [--red NOMBRE]
+        [--red NOMBRE] [--capa CSV] [--excluir-pmids ARCHIVO ...] \
+        [--particion DIR] [--etiqueta TEXTO]
 
 La muestra sale de la misma población que el 44 %: las oraciones del bronce
 con regulador y blanco (`docs/rubrica-anotacion.md` §8, enmienda 1). Cada ítem
@@ -56,6 +57,21 @@ pares canónicos cuyas aristas no dicen lo mismo se cuentan
 capa no tiene (`evidencias_sin_par_en_capa`), que dicen que la capa y la red
 no son de la misma corrida.
 
+**La capa** (`capa`, por omisión `<carpeta>/capa_pares.csv`) es la que tiene
+los `id_par` de la llave, los ids canónicos y el signo léxico del bronce. Con
+ella se mide la carpeta de otro modelo: la red es de esa carpeta y la capa, la
+del sorteo (la de *E. coli*).
+
+**Exclusión** (`excluir`, `particion`). Para un modelo entrenado con la base,
+los ítems de un artículo que el modelo vio al entrenar miden memoria y no
+precisión. Salen de todo, bronce y red, los ítems cuyo PMID (columna `pmid`
+de la llave) está en los archivos de `excluir` (formato de `reservas.tsv`) o
+en train o dev de la partición del modelo, leída con el lector de
+`verificar` (I3). Además se cuenta, de los anotados que quedan, cuántos
+tienen su oración en train con el texto canónico de `entrenamiento.canonico`:
+la fuga por texto que el PMID no ve. Esos se cuentan y no se excluyen. Solo
+conteos: ni un PMID ni un `id_item` sale por `log` ni al JSON.
+
 **Validación.** Un valor fuera de la rúbrica (§6) detiene todo. Las
 combinaciones que §4 no admite (un `no` con signo, un `si` con negada, una
 `negada` vacía...) no detienen: las cuenta `avisos_de_rubrica`, porque la
@@ -67,7 +83,11 @@ La entrada es la hoja anotada (`hoja_tanda1.csv`) o el CSV que exporta la
 página de revisión del tablero. Tienen las mismas columnas, y las de más
 (`inicio`, `fin`, `segundos`) solo dan el tiempo.
 
-Solo biblioteca estándar. No lee la base curada ni nada del laboratorio.
+Todo lo que sale (cada línea de `log` y el JSON) pasa antes por
+`reentrenar.verificar_publicable`; si algo no pasa, no sale nada.
+
+Solo biblioteca estándar. No lee la base curada. Con `particion` lee los
+ejemplos del modelo, que derivan de ella, y solo los cuenta.
 """
 
 import collections
@@ -80,7 +100,7 @@ import statistics
 
 from grn_bronce.texto import normalizar_espacios
 from grn_comun import redes
-from grn_verificacion import evaluar
+from grn_verificacion import entrenamiento, evaluar, reentrenar
 
 RELACIONES = ("si", "no", "dudoso")
 DIRECCIONES = ("1>2", "2>1", "ninguna")
@@ -252,6 +272,73 @@ def aristas_de_la_red(carpeta, pares, red=None):
     }
 
 
+def _leer_particion(particion):
+    """(PMIDs de train ∪ dev, textos canónicos de train) de la partición.
+
+    Con el lector de `verificar` (I3), que da el texto canónico con que
+    `particionar.py` verifica la fuga. Los errores dicen el archivo y la
+    línea, nunca la ruta ni el contenido: la partición deriva de la base.
+    """
+    from grn_verificacion import verificar
+    rutas = []
+    for nombre in entrenamiento.ARCHIVOS[:2]:
+        ruta = os.path.join(particion, nombre)
+        if not os.path.isfile(ruta):
+            raise ValueError("Falta %s en la carpeta de --particion." % nombre)
+        rutas.append(ruta)
+    _, pmids_train, textos_train = verificar._leer_parte(rutas[0])
+    _, pmids_dev, _ = verificar._leer_parte(rutas[1])
+    pmids = set(entrenamiento.pmid_valido(p) for p in pmids_train | pmids_dev)
+    pmids.discard(None)
+    return pmids, textos_train
+
+
+def _excluidos(anotacion, llave, columnas_llave, excluir, particion):
+    """(id_item que salen, textos canónicos de train o None, conteos).
+
+    Los conteos son lo único que se reporta: archivos, PMIDs, ítems
+    excluidos y, con partición, `items_con_texto_en_train`, que lo llena
+    `calcular` porque es quien tiene la oración de cada ítem: cuenta los
+    anotados que quedan, que son los que entran a las cifras.
+    """
+    conteos = collections.OrderedDict([
+        ("archivos", 0), ("pmids", 0), ("items_excluidos", 0),
+        ("items_con_texto_en_train", None)])
+    if not excluir and not particion:
+        return set(), None, conteos
+    if "pmid" not in columnas_llave:
+        raise ValueError("La llave no trae la columna pmid: sin ella no se "
+                         "puede excluir por artículo.")
+    if isinstance(excluir, str):
+        # Una sola ruta suelta se recorrería letra por letra.
+        excluir = [excluir]
+    pmids, textos = set(), None
+    if excluir:
+        # `~` llega sin expandir desde una variable entre comillas simples.
+        de_archivos, c = entrenamiento.leer_pmids(
+            [os.path.expanduser(r) for r in excluir], "--excluir-pmids")
+        pmids |= de_archivos
+        conteos["archivos"] = c["archivos"]
+    if particion:
+        de_particion, textos = _leer_particion(os.path.expanduser(particion))
+        pmids |= de_particion
+    conteos["pmids"] = len(pmids)
+    excluidos, sin_pmid = set(), 0
+    for id_item in anotacion:
+        pmid = entrenamiento.pmid_valido(llave[id_item].get("pmid") or "")
+        if pmid is None:
+            sin_pmid += 1
+        elif pmid in pmids:
+            excluidos.add(id_item)
+    if sin_pmid:
+        # Sin el PMID no se sabe si el ítem es de un artículo que el modelo
+        # vio; contarlo como si no lo fuera sería suponerlo.
+        raise ValueError("%d ítems con un pmid que no es número en la llave: "
+                         "no se puede decir si se excluyen." % sin_pmid)
+    conteos["items_excluidos"] = len(excluidos)
+    return excluidos, textos, conteos
+
+
 def _signo_bronce(sugerido):
     return sugerido if sugerido in ("+", "-") else ""
 
@@ -352,10 +439,21 @@ def _tiempos(anotados):
             "minutos_por_bloque_de_%d" % BLOQUE: bloques}
 
 
-def calcular(ruta_anotacion, ruta_llave, carpeta, red=None):
+def _misma_carpeta(ruta_capa, carpeta):
+    return (os.path.normcase(os.path.dirname(os.path.abspath(ruta_capa)))
+            == os.path.normcase(os.path.abspath(carpeta)))
+
+
+def calcular(ruta_anotacion, ruta_llave, carpeta, red=None, excluir=(),
+             particion=None, capa=None, etiqueta=None):
     """El resultado completo, solo con cifras (ver el docstring del módulo).
 
     `red`: nombre de una red con otras reglas, o None para `red.tsv`.
+    `excluir`: archivos de PMIDs; `particion`: carpeta con los
+    `entity_marked_*.jsonl` del modelo. `capa`: el `capa_pares.csv` de la
+    llave, por omisión el de `carpeta`. `etiqueta`: texto libre que solo se
+    guarda en el resultado; no se compara con nada (con `--tandas 1` todas las
+    llaves dicen tanda 1).
     """
     anotacion = leer_anotacion(ruta_anotacion)
     filas_llave = _leer_csv(ruta_llave)
@@ -364,14 +462,20 @@ def calcular(ruta_anotacion, ruta_llave, carpeta, red=None):
     if sin_llave:
         raise ValueError("%d ítems de la anotación no están en la llave (%s)"
                          % (len(sin_llave), ", ".join(sin_llave[:5])))
-    ruta_capa = os.path.join(carpeta, CAPA)
+    excluidos, textos_train, exclusion = _excluidos(
+        anotacion, llave, set(filas_llave[0]) if filas_llave else set(),
+        excluir, particion)
+    ruta_capa = os.path.expanduser(capa) if capa else os.path.join(carpeta,
+                                                                   CAPA)
     nombre_red, nombre_evidencias, _ = redes.archivos_de_red(red)
     pares = _pares_canonicos(ruta_capa)
     leida = aristas_de_la_red(carpeta, pares, red)
     evidencias = leida["signo_de_evidencia"]
 
-    anotados, sin_anotar, sin_par = [], 0, []
+    anotados, sin_anotar, sin_par, con_texto = [], 0, [], 0
     for id_item, fila in anotacion.items():
+        if id_item in excluidos:
+            continue
         if not _valor(fila, "relacion"):
             sin_anotar += 1
             continue
@@ -381,6 +485,9 @@ def calcular(ruta_anotacion, ruta_llave, carpeta, red=None):
             sin_par.append(id_item)
             continue
         canon = (par[0], par[1])
+        if textos_train is not None and \
+                entrenamiento.canonico(par[3]) in textos_train:
+            con_texto += 1
         signo_red = evidencias.get((canon, par[3]))
         anotados.append({
             "fila": fila,
@@ -395,8 +502,10 @@ def calcular(ruta_anotacion, ruta_llave, carpeta, red=None):
         })
     if sin_par:
         raise ValueError("%d ítems con un id_par que la capa no tiene (%s): "
-                         "la llave no es de esta carpeta"
+                         "la llave no es de esta capa (¿falta --capa?)"
                          % (len(sin_par), ", ".join(sin_par[:5])))
+    if textos_train is not None:
+        exclusion["items_con_texto_en_train"] = con_texto
     anotados.sort(key=lambda it: it["fila"].get("inicio") or "")
 
     retenidos = [it for it in anotados if it["retenido"]]
@@ -406,12 +515,17 @@ def calcular(ruta_anotacion, ruta_llave, carpeta, red=None):
         ("bien" if it["relacion"] == "si" and it["dir_ok"] else "mal",
          "en_la_red" if it["retenido"] else "fuera")
         for it in anotados)
-    avisos = avisos_de_rubrica(anotacion)
+    avisos = avisos_de_rubrica(dict((i, f) for i, f in anotacion.items()
+                                    if i not in excluidos))
     return {
         "metodo": "precision-ciega",
-        "entradas": {"red": nombre_red, "evidencias": nombre_evidencias},
+        "etiqueta": etiqueta,
+        "entradas": {"red": nombre_red, "evidencias": nombre_evidencias,
+                     "capa_de_la_carpeta": _misma_carpeta(ruta_capa,
+                                                          carpeta)},
         "n_anotados": len(anotados),
         "n_sin_anotar": sin_anotar,
+        "exclusion": exclusion,
         "reparto_relacion": dict(collections.Counter(
             it["relacion"] for it in anotados)),
         "bronce": dict(_precisiones(anotados),
@@ -454,10 +568,24 @@ def lineas(r):
     """Lo que ve quien corre esto: solo cifras y nombres de archivo."""
     e = r["entradas"]
     salida = [
-        "red: %s y %s" % (e["red"], e["evidencias"]),
+        "red: %s y %s; capa: %s" % (
+            e["red"], e["evidencias"], "la de la carpeta"
+            if e["capa_de_la_carpeta"] else "de otra carpeta (--capa)"),
         "ítems anotados: %d (sin anotar: %d)" % (r["n_anotados"],
                                                 r["n_sin_anotar"]),
     ]
+    x = r["exclusion"]
+    con_particion = x["items_con_texto_en_train"] is not None
+    if x["archivos"] or con_particion:
+        salida.append("exclusión: %d PMIDs (archivos de --excluir-pmids: %d; "
+                      "partición, train y dev: %s); %d ítems fuera de todo, "
+                      "bronce y red" % (x["pmids"], x["archivos"],
+                                        "sí" if con_particion else "no",
+                                        x["items_excluidos"]))
+        if con_particion:
+            salida.append("  de los anotados que quedan, %d con su oración "
+                          "en train (texto canónico): la fuga que el PMID no "
+                          "ve" % x["items_con_texto_en_train"])
     b, red = r["bronce"], r["red"]
     salida += [
         "bronce, precisión con dirección: %s" % _fmt(b["con_direccion"]),
@@ -518,16 +646,42 @@ def lineas(r):
     return salida
 
 
+def _exigir_publicable(texto, que):
+    try:
+        reentrenar.verificar_publicable(texto)
+    except ValueError as e:
+        # El motivo dice el patrón y la línea, nunca el texto.
+        raise ValueError("%s no se puede publicar (%s); no sale nada."
+                         % (que, e))
+
+
 def ejecutar(ruta_anotacion, ruta_llave, carpeta, ruta_json=None,
-             log=lambda m: None, red=None):
-    r = calcular(ruta_anotacion, ruta_llave, carpeta, red=red)
-    for linea in lineas(r):
-        log(linea)
+             log=lambda m: None, red=None, excluir=(), particion=None,
+             capa=None, etiqueta=None):
+    """Calcula, dice las cifras por `log` y escribe el JSON.
+
+    Cada línea y el JSON entero pasan antes por
+    `reentrenar.verificar_publicable`: con `excluir` o `particion` hay
+    entradas confidenciales a la mano, y un PMID o un locus no puede salir ni
+    por descuido. Si algo no pasa, no sale ni una línea.
+    """
+    r = calcular(ruta_anotacion, ruta_llave, carpeta, red=red,
+                 excluir=excluir, particion=particion, capa=capa,
+                 etiqueta=etiqueta)
+    texto = lineas(r)
+    for linea in texto:
+        _exigir_publicable(linea, "Una línea del resultado")
+    contenido = None
     if ruta_json:
+        contenido = json.dumps(r, ensure_ascii=False, indent=2,
+                               sort_keys=True) + "\n"
+        _exigir_publicable(contenido, "El JSON")
+    for linea in texto:
+        log(linea)
+    if contenido is not None:
         tmp = ruta_json + ".tmp"
         with io.open(tmp, "w", encoding="utf-8", newline="\n") as f:
-            json.dump(r, f, ensure_ascii=False, indent=2, sort_keys=True)
-            f.write("\n")
+            f.write(contenido)
         from grn_comun import archivos
         archivos.reemplazar(tmp, ruta_json)
     return r

@@ -623,7 +623,10 @@ def cmd_precision_ciega(args):
     from grn_verificacion import precision_ciega
     try:
         precision_ciega.ejecutar(args.anotacion, args.llave, args.carpeta,
-                                 args.json, log=log, red=args.red)
+                                 args.json, log=log, red=args.red,
+                                 excluir=args.excluir_pmids,
+                                 particion=args.particion, capa=args.capa,
+                                 etiqueta=args.etiqueta)
     except (ValueError, OSError, KeyError) as e:
         log("ERROR: %s" % e)
         return 1
@@ -648,6 +651,23 @@ def _sub_precision_ciega(sub):
                     help="Mide la red con otras reglas red_NOMBRE.tsv "
                          "(grn_red consolidar) en vez de red.tsv; sus "
                          "aristas expandidas no se leen.")
+    pc.add_argument("--capa", default=None, metavar="RUTA",
+                    help="El capa_pares.csv de la llave; por omisión, el de "
+                         "--carpeta. Para medir la carpeta de otro modelo con "
+                         "la capa del sorteo.")
+    pc.add_argument("--excluir-pmids", dest="excluir_pmids", action="append",
+                    default=[], metavar="ARCHIVO",
+                    help="PMIDs con el formato de reservas.tsv "
+                         "(pmid<TAB>número): sus ítems salen de todo, bronce "
+                         "y red. Se puede repetir.")
+    pc.add_argument("--particion", default=None, metavar="DIR",
+                    help="Carpeta con los entity_marked_*.jsonl del modelo: "
+                         "los ítems de artículos de train o dev salen de "
+                         "todo, y se cuenta cuántos de los demás tienen su "
+                         "oración en train. Solo conteos.")
+    pc.add_argument("--etiqueta", default=None, metavar="TEXTO",
+                    help="Texto libre que solo se guarda en el JSON (por "
+                         "ejemplo, tanda2).")
     pc.set_defaults(func=cmd_precision_ciega)
 
 
