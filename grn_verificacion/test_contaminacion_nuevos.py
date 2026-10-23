@@ -409,6 +409,57 @@ class PruebasErrores(Base):
         self.assertNoVerificable(self.todas(self.lista(NUEVOS)),
                                  "--reservas", "línea 1")
 
+    def test_una_fuente_pedida_sin_pmids_no_se_da_por_limpia(self):
+        """Contra un conjunto vacío todo cruce da 0: una partición vacía o una
+        llave sin filas se leerían como «no cruza»."""
+        con = db0.conectar(self.db)
+        try:
+            db0.crear_corpus(con, "corpus-vacio", pmids=[])
+        finally:
+            con.close()
+        solo_oraciones = escribir(os.path.join(self.tmp, "solo_oraciones.tsv"),
+                                  "oracion\tUna oración inventada.\n")
+        juzgadas_vacias = escribir(os.path.join(self.tmp, "jv.csv"),
+                                   "pmid,juicio\n")
+        llave_vacia = os.path.join(self.tmp, "sorteo_vacio")
+        escribir(os.path.join(llave_vacia, muestra.LLAVE),
+                 ",".join(muestra.COLUMNAS_LLAVE) + "\n")
+        particion_vacia = os.path.join(self.tmp, "particion_vacia")
+        for parte in CN.PARTES:
+            escribir(os.path.join(particion_vacia, CN.ARCHIVO_PARTE % parte),
+                     "")
+        base_vacia = os.path.join(self.tmp, "base_vacia.xlsx")
+        construir_xlsx(base_vacia, [("Hoja1", [ENCABEZADOS])])
+
+        def con_otro(flag, valor):
+            argv = self.todas(self.lista(NUEVOS))
+            argv[argv.index(flag) + 1] = valor
+            return argv
+
+        casos = [
+            ("corpus", self.todas(self.lista(NUEVOS))
+             + ["--corpus", "corpus-vacio"], "corpus «corpus-vacio»"),
+            ("reservas", con_otro("--reservas", solo_oraciones), "--reservas"),
+            ("juzgadas", con_otro("--juzgadas", juzgadas_vacias), "--juzgadas"),
+            ("muestra", con_otro("--muestra", llave_vacia), "«sorteo_vacio»"),
+            # Junto a una llena: la vacía sigue siendo un cruce que no se hizo.
+            ("particion", self.todas(self.lista(NUEVOS))
+             + ["--particion", particion_vacia], "«particion_vacia»"),
+            ("base", con_otro("--base", base_vacia), "--base"),
+        ]
+        for fuente, argv, fragmento in casos:
+            with self.subTest(fuente=fuente):
+                self.assertNoVerificable(argv, fragmento, "ningún PMID")
+
+    def test_unas_reservas_con_un_archivo_de_solo_oraciones_sirven(self):
+        """Lo que se exige es el total: un archivo de solo oraciones junto a
+        uno con PMIDs no detiene nada."""
+        solo_oraciones = escribir(os.path.join(self.tmp, "solo_oraciones.tsv"),
+                                  "oracion\tUna oración inventada.\n")
+        codigo, _ = self.correr(self.todas(self.lista(NUEVOS))
+                                + ["--reservas", solo_oraciones])
+        self.assertEqual(codigo, 0)
+
     def test_una_base_curada_que_no_esta(self):
         argv = self.todas(self.lista(NUEVOS))
         argv[argv.index("--base") + 1] = os.path.join(self.tmp, "no.xlsx")

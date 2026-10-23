@@ -71,7 +71,9 @@ de salir, y si no pasa no sale nada. Con `salida_json`, lo mismo en JSON.
 El resultado lleva `codigo`: 0 si todos los cruces de las fuentes revisadas son
 0; 1 si alguno no lo es, el de la base incluido. Lo que impide verificar (un
 archivo que no está, un PMID mal escrito, una consulta o un corpus que no
-existen) es ValueError, y el CLI sale con 2, como `verificar`.
+existen, una fuente pedida que no trae ningún PMID) es ValueError, y el CLI
+sale con 2, como `verificar`. Una fuente vacía no se da por limpia: contra
+nada, todo cruce da 0.
 
 Biblioteca estándar y Python 3.8.
 """
@@ -260,6 +262,21 @@ def _de_identificadores(pares):
 
 # --------------------------------------------------------------- las fuentes
 
+def _exigir_pmids(pmids, donde):
+    """`pmids`, o ValueError si una fuente pedida no trae ninguno.
+
+    Contra un conjunto vacío todo cruce da 0, y una partición con sus partes
+    vacías o una llave sin filas se leería como «la lista no cruza», con la
+    misma pinta que el resultado de verdad. Es el defecto que `verificar` ya
+    marca en una parte vacía y por el que `muestra` no acepta una llave sin
+    filas.
+    """
+    if not pmids:
+        raise ValueError("%s no trae ningún PMID: el cruce daría 0 sin haber "
+                         "con qué cruzar." % donde)
+    return pmids
+
+
 def _pmids_de_reservas(rutas_reservas):
     """Los PMIDs de los archivos de reservas, con el lector del entrenamiento.
     Su error nombra la ruta; aquí sale sin ella."""
@@ -270,7 +287,9 @@ def _pmids_de_reservas(rutas_reservas):
                          % _sin_rutas(str(e), rutas_reservas)) from None
     except OSError:
         raise ValueError("No pude leer un archivo de --reservas.") from None
-    return set(reservas["pmids"])
+    # Un archivo de solo oraciones es una reserva válida para el
+    # entrenamiento, pero aquí no aporta nada: lo que se exige es el total.
+    return _exigir_pmids(set(reservas["pmids"]), "--reservas")
 
 
 def _columna_pmid(ruta, donde):
@@ -292,7 +311,8 @@ def _pmids_de_muestras(carpetas):
         if not os.path.isfile(ruta):
             raise ValueError("No está %s en la carpeta «%s» de --muestra."
                              % (muestra.LLAVE, nombre))
-        pmids |= _columna_pmid(ruta, "--muestra «%s»" % nombre)
+        donde = "--muestra «%s»" % nombre
+        pmids |= _exigir_pmids(_columna_pmid(ruta, donde), donde)
     return pmids
 
 
@@ -303,6 +323,7 @@ def _pmids_de_particiones(carpetas):
     pmids = set()
     for carpeta in carpetas:
         nombre = _nombre_de_carpeta(carpeta)
+        de_la_carpeta = set()
         for parte in PARTES:
             archivo = ARCHIVO_PARTE % parte
             ruta = os.path.join(carpeta, archivo)
@@ -318,8 +339,11 @@ def _pmids_de_particiones(carpetas):
                 raise ValueError("No pude leer %s de la carpeta «%s» de "
                                  "--particion." % (archivo, nombre)) from None
             for valor in de_la_parte:
-                pmids.add(_pmid(valor, "--particion «%s», %s"
-                                % (nombre, archivo)))
+                de_la_carpeta.add(_pmid(valor, "--particion «%s», %s"
+                                        % (nombre, archivo)))
+        # Por carpeta: una vacía junto a otra llena también es un cruce que
+        # no se hizo.
+        pmids |= _exigir_pmids(de_la_carpeta, "--particion «%s»" % nombre)
     return pmids
 
 
@@ -533,6 +557,7 @@ def ejecutar(lista=None, consulta=None, corpus=CORPUS_POR_OMISION,
                                  "paso 0." % corpus)
             pmids, dois = _de_identificadores(
                 db0.pmids_y_dois_del_corpus(con, fila["id"]))
+            _exigir_pmids(pmids, "El corpus «%s»" % corpus)
             leidas["corpus"] = ("corpus %s" % corpus, pmids, dois, set())
         if reservas:
             leidas["reservas"] = (
@@ -545,7 +570,8 @@ def ejecutar(lista=None, consulta=None, corpus=CORPUS_POR_OMISION,
                                           "carpetas"),
                 _pmids_de_muestras(muestras), {}, set())
         leidas["juzgadas"] = (
-            "juzgadas", _columna_pmid(juzgadas, "--juzgadas"), {}, set())
+            "juzgadas", _exigir_pmids(_columna_pmid(juzgadas, "--juzgadas"),
+                                      "--juzgadas"), {}, set())
         if particiones:
             leidas["particion"] = (
                 "partición (%s)" % _cuantos(len(particiones), "carpeta",
@@ -553,6 +579,9 @@ def ejecutar(lista=None, consulta=None, corpus=CORPUS_POR_OMISION,
                 _pmids_de_particiones(particiones), {}, set())
         if base:
             pmids, sueltos = _pmids_y_dois_de_la_base(base, hoja)
+            if not sueltos:
+                # Un DOI escrito en la base también es con qué cruzar.
+                _exigir_pmids(pmids, "La columna Reference de --base")
             leidas["base"] = ("base curada", pmids, {}, sueltos)
 
         if con is not None:
