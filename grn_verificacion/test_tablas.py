@@ -570,6 +570,9 @@ class PruebasCategorias(_ConEscenario):
         def fila(*pmids):
             return {"pmids": list(pmids)}
         a, b, c = "91000011", "91000012", "91000013"
+        # Un PMID de 7 cifras (anterior a 1990) va antes que uno de 8 en el
+        # desempate por número; como texto iría después.
+        corto = "9999999"
         casos = [
             # `a` con 3; `b` y `c` empatan con 2, y una fila de `b` cita
             # también a `a`: el desempate decide cuántas filas se reúnen.
@@ -577,6 +580,8 @@ class PruebasCategorias(_ConEscenario):
             # Lo mismo, con el PMID menor del otro lado del empate.
             [fila(a), fila(a, c), fila(a), fila(c), fila(b), fila(b)],
             [fila(c, c, a), fila(b), fila()],
+            [fila(a), fila(a, b), fila(a), fila(b), fila(corto),
+             fila(corto)],
             [],
         ]
         for filas in casos:
@@ -588,6 +593,7 @@ class PruebasCategorias(_ConEscenario):
                     (filas, cuantos))
         self.assertEqual([a, b, c], T.articulos_mayores(casos[0], 3))
         self.assertEqual([a, b], T.articulos_mayores(casos[1], 2))
+        self.assertEqual([a, corto], T.articulos_mayores(casos[3], 2))
         exigibles = self.exigibles()
         self.assertEqual(C._concentracion(exigibles), sum(
             1 for f in exigibles
@@ -699,6 +705,27 @@ class PruebasEjecutar(_ConEscenario):
         _, lineas = self.correr()
         self.assertIn("AVISO: 2 de los artículos tienen un XML que no se "
                       "pudo leer: cuenta como sin XML.", lineas)
+
+    def test_el_informe_con_contenido_no_se_publica(self):
+        resultado, _ = self.correr()
+        for fuga in ("PA9001 regula a PA9002", "el artículo 91000001",
+                     "en %s" % self.tmp.replace("\\", "/")):
+            con_fuga = dict(resultado, avisos=[fuga])
+            with self.subTest(fuga=fuga[:20]):
+                with self.assertRaises(ValueError) as ctx:
+                    T.informe_markdown(con_fuga)
+                # El mensaje dice qué patrón y en qué línea, no el texto.
+                self.assertSinContenido(str(ctx.exception))
+
+    def test_la_terminal_con_contenido_no_escribe_nada(self):
+        with mock.patch.object(T, "resumen",
+                               return_value=["el artículo 91000001"]):
+            with self.assertRaises(ValueError) as ctx:
+                self.correr()
+        self.assertIn("terminal", str(ctx.exception))
+        self.assertSinContenido(str(ctx.exception))
+        self.assertFalse(os.path.exists(self.confidencial))
+        self.assertFalse(os.path.exists(self.informe))
 
     def test_cuantos(self):
         resultado, _ = self.correr(cuantos=1)
