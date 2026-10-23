@@ -85,7 +85,7 @@ def cmd_run(con, args):
         r = etl.ingestar(
             con, cliente, args.nombre, orden=args.orden, limite=args.limite,
             mindate=args.desde, maxdate=args.hasta, tam_lote=args.lote,
-            pausa=args.pausa, log=log,
+            pausa=args.pausa, log=log, tipo_fecha=args.tipo_fecha,
         )
     except (pubmed.ErrorPubMed, ValueError) as e:
         # El mensaje ya dice que paso y la ejecucion quedo marcada 'error'
@@ -316,10 +316,18 @@ def main():
     r.add_argument("--email")
     r.add_argument("--orden", default="relevance", choices=["relevance", "pub_date"])
     r.add_argument("--limite", type=int, help="Tope de artículos a considerar.")
-    r.add_argument("--desde", help="Fecha de publicación mínima: YYYY, YYYY/MM "
-                                   "o YYYY/MM/DD. Más de 10 000 resultados se "
-                                   "parten solos por fecha.")
-    r.add_argument("--hasta", help="Fecha de publicación máxima, mismo formato.")
+    r.add_argument("--desde", help="Fecha mínima: YYYY, YYYY/MM o YYYY/MM/DD, "
+                                   "del tipo de --tipo-fecha. Más de 10 000 "
+                                   "resultados se parten solos por esa fecha.")
+    r.add_argument("--hasta", help="Fecha máxima, mismo formato y tipo.")
+    r.add_argument("--tipo-fecha", dest="tipo_fecha", default="pdat",
+                   choices=list(pubmed.TIPOS_FECHA),
+                   help="Qué fecha acotan --desde y --hasta: pdat, la de "
+                        "publicación (por omisión); edat, la de alta en "
+                        "PubMed; crdt, la de creación del registro. Para "
+                        "pedir lo nuevo desde la última descarga, edat o "
+                        "crdt: con pdat se pierde lo que se dio de alta "
+                        "después con una fecha de publicación anterior.")
     r.add_argument("--lote", type=int, default=200)
     r.add_argument("--pausa", type=int, default=0,
                    help="Segundos de espera entre lotes de efetch, además del "
