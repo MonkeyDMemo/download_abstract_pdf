@@ -104,6 +104,63 @@ CASOS = [
      "QzzR silences wvzA, synthetic sentence."),
 ]
 
+# El voto por artículo en el borde, en su propia carpeta para no mover los
+# conteos que las pruebas de arriba toman de CASOS. En CASOS ningún artículo
+# queda en conflicto sin empate, ninguna arista se decide por artículo con una
+# razón entre 0.5 y la mayoría, y con los umbrales de red.py un votante tiene
+# siempre más p[signo] que cualquier otra evidencia: un artículo en conflicto
+# que votara por mayoría simple, un voto por artículo con otra mayoría que la
+# de red.py o una representativa elegida entre toda la evidencia pasaban
+# todas las pruebas.
+BORDE = [
+    # j) A dice 3 «+» y 2 «-», 0.6, y se abstiene aunque por mayoría simple
+    #    diría «+»; B dice «-». Por oración, 3 contra 3: conflicto.
+    ("j1", "QzjR", "wvjA", "activates", 91000100,
+     "QzjR activates wvjA, synthetic sentence one."),
+    ("j2", "QzjR", "wvjA", "activates", 91000100,
+     "QzjR activates wvjA, synthetic sentence two."),
+    ("j3", "QzjR", "wvjA", "activates", 91000100,
+     "QzjR activates wvjA, synthetic sentence three."),
+    ("j4", "QzjR", "wvjA", "represses", 91000100,
+     "QzjR represses wvjA, synthetic sentence four."),
+    ("j5", "QzjR", "wvjA", "represses", 91000100,
+     "QzjR represses wvjA, synthetic sentence five."),
+    ("j6", "QzjR", "wvjA", "represses", 91000101,
+     "QzjR represses wvjA, synthetic sentence six."),
+    # k) Tres artículos «+» contra dos «-»: 0.6 tampoco alcanza por artículo.
+    ("k1", "QzkR", "wvkA", "activates", 91000110,
+     "QzkR activates wvkA, synthetic sentence one."),
+    ("k2", "QzkR", "wvkA", "activates", 91000111,
+     "QzkR activates wvkA, synthetic sentence two."),
+    ("k3", "QzkR", "wvkA", "activates", 91000112,
+     "QzkR activates wvkA, synthetic sentence three."),
+    ("k4", "QzkR", "wvkA", "represses", 91000113,
+     "QzkR represses wvkA, synthetic sentence four."),
+    ("k5", "QzkR", "wvkA", "represses", 91000114,
+     "QzkR represses wvkA, synthetic sentence five."),
+    # l) A dice 2 «+» y 1 «-», justo 2/3; B dice «+» y C «-».
+    ("l1", "QzlR", "wvlA", "activates", 91000120,
+     "QzlR activates wvlA, synthetic sentence one."),
+    ("l2", "QzlR", "wvlA", "activates", 91000120,
+     "QzlR activates wvlA, synthetic sentence two."),
+    ("l3", "QzlR", "wvlA", "represses", 91000120,
+     "QzlR represses wvlA, synthetic sentence three."),
+    ("l4", "QzlR", "wvlA", "activates", 91000121,
+     "QzlR activates wvlA, synthetic sentence four."),
+    ("l5", "QzlR", "wvlA", "represses", 91000122,
+     "QzlR represses wvlA, synthetic sentence five."),
+    # m) Solo pasa con umbrales de 0.3: dos «+» de 0.40 y un «-» cuya
+    #    p[activates] (0.45) es mayor que la de los dos votantes.
+    ("m1", "QzmR", "wvmA", "activates", 91000130,
+     "QzmR activates wvmA, synthetic sentence one.", 0.40),
+    ("m2", "QzmR", "wvmA", "activates", 91000131,
+     "QzmR activates wvmA, synthetic sentence two.", 0.40),
+    ("m3", "QzmR", "wvmA", "represses", 91000132,
+     "QzmR represses wvmA, synthetic sentence three.",
+     {"activates": 0.45, "no_relation": 0.025, "regulates": 0.025,
+      "represses": 0.50}),
+]
+
 PROBABILIDAD = {"activates": 0.90, "represses": 0.90, "regulates": 0.80,
                 "no_relation": 0.99}
 
@@ -127,12 +184,17 @@ COLUMNAS_SIGNO = ["signo_red_py", "n_lexico_activates", "n_lexico_represses",
 
 def _prediccion(id_par, tf, target, prediccion, pmid, _oracion=None,
                 prob=None):
-    prob = prob or PROBABILIDAD[prediccion]
-    resto = (1.0 - prob) / 3.0
+    """`prob` es la probabilidad de la clase predicha, con el resto repartido
+    por igual, o un dict con las cuatro."""
+    if not isinstance(prob, dict):
+        prob = prob or PROBABILIDAD[prediccion]
+        resto = (1.0 - prob) / 3.0
+        prob = dict((e, prob if e == prediccion else resto)
+                    for e in ETIQUETAS)
     d = {"id_par": id_par, "pmid": pmid, "tf": tf, "target": target,
          "prediccion": prediccion}
     for e in ETIQUETAS:
-        d["p_" + e] = round(prob if e == prediccion else resto, 6)
+        d["p_" + e] = round(prob[e], 6)
     d.update({"seccion": "results", "fuente": "fulltext",
               "autorregulacion": False, "redaccion": "directa"})
     return d
@@ -432,6 +494,72 @@ class PruebasVotoPorArticulo(BaseSigno):
                           c["n_articulos_represses"],
                           c["n_articulos_sin_signo"]),
                          ("activates", "2", "1", "0"))
+
+
+class PruebasVotoPorArticuloEnElBorde(BaseSigno):
+    """Un artículo en conflicto se abstiene aunque no haya empate, y la
+    mayoría del voto por artículo es la de red.py en los dos niveles: en
+    cada artículo y en la arista."""
+
+    def setUp(self):
+        super(PruebasVotoPorArticuloEnElBorde, self).setUp()
+        self.carpeta = _carpeta(self.raiz, "corrida4_borde", BORDE)
+        self.consolidar(nombre=None)
+
+    def articulos(self, fila):
+        return (fila["n_articulos_activates"], fila["n_articulos_represses"],
+                fila["n_articulos_sin_signo"])
+
+    def test_un_articulo_en_conflicto_se_abstiene_aunque_no_empate(self):
+        self.consolidar({"voto_articulo": True})
+        self.assertEqual(self.arista("QzjR", "wvjA", None)["conflicto"],
+                         "true")
+        j = self.arista("QzjR", "wvjA")
+        self.assertEqual((j["signo"], j["conflicto"], j["signo_red_py"]),
+                         ("represses", "false", "regulates"))
+        self.assertEqual(self.articulos(j), ("0", "1", "1"))
+        self.assertEqual(j["confianza"], "0.9000")
+        self.assertEqual(j["oracion_representativa"],
+                         "QzjR represses wvjA, synthetic sentence four.")
+
+    def test_tres_articulos_contra_dos_no_alcanzan_la_mayoria(self):
+        self.consolidar({"voto_articulo": True})
+        k = self.arista("QzkR", "wvkA")
+        self.assertEqual((k["signo"], k["conflicto"], k["confianza"]),
+                         ("regulates", "true", ""))
+        self.assertEqual(self.articulos(k), ("3", "2", "0"))
+
+    def test_dos_tercios_alcanzan_en_el_articulo_y_en_la_arista(self):
+        """Con 0.66, A (2 contra 1) vota «+» y dos artículos contra uno
+        deciden la arista; con 0.7 ni A ni la arista llegan."""
+        self.consolidar({"voto_articulo": True})
+        self.consolidar({"voto_articulo": True, "mayoria": 0.7}, "estricta")
+        l = self.arista("QzlR", "wvlA")
+        self.assertEqual((l["signo"], l["conflicto"], l["signo_red_py"],
+                          l["confianza"]),
+                         ("activates", "false", "regulates", "0.9000"))
+        self.assertEqual(self.articulos(l), ("2", "1", "0"))
+        l = self.arista("QzlR", "wvlA", "estricta")
+        self.assertEqual((l["signo"], l["conflicto"], l["signo_red_py"]),
+                         ("regulates", "true", "regulates"))
+        self.assertEqual(self.articulos(l), ("1", "1", "1"))
+
+    def test_la_representativa_es_de_un_votante_final(self):
+        """Con los umbrales de red.py un votante le gana siempre en p[signo]
+        a una evidencia de otra clase; con 0.3 ya no, y la del «-» (0.45)
+        no puede representar a una arista «+»."""
+        umbrales = dict((c, 0.3) for c in _red.SIGNOS)
+        self.consolidar({"umbrales": umbrales}, "umbral_bajo_sin_reglas")
+        self.consolidar({"umbrales": umbrales, "voto_articulo": True},
+                        "umbral_bajo")
+        base = self.arista("QzmR", "wvmA", "umbral_bajo_sin_reglas")
+        m = self.arista("QzmR", "wvmA", "umbral_bajo")
+        self.assertEqual((m["signo"], m["confianza"], self.articulos(m)),
+                         ("activates", "0.4000", ("2", "1", "0")))
+        self.assertEqual(m["oracion_representativa"],
+                         "QzmR activates wvmA, synthetic sentence one.")
+        self.assertEqual(m["oracion_representativa"],
+                         base["oracion_representativa"])
 
 
 class PruebasLoQueNoSeToca(BaseSigno):
