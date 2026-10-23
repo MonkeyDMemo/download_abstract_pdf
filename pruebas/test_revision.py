@@ -187,6 +187,8 @@ class PruebasCola(BasePruebaRevision):
                  ("GET", "/api/revision/item/m-9999", None),
                  ("POST", "/api/revision/item/m-1234",
                   dict(VALIDOS, relacion="no")),
+                 ("POST", "/api/revision/item/m-1234",
+                  dict(VALIDOS, negada="si")),
                  ("POST", "/api/revision/item/m-1234/inicio", None)]
         for metodo, ruta, cuerpo in casos:
             _, objeto = self.pedir(metodo, ruta, cuerpo=cuerpo)
@@ -275,6 +277,60 @@ class PruebasAnotar(BasePruebaRevision):
             f.write(b'{"evento": "guardado", "id_item": "m-12')
         self.guardar("m-3456")
         self.assertIn("m-3456", revision.anotaciones(self.carpeta))
+
+
+class PruebasNegacion(BasePruebaRevision):
+    """Una relación negada va «no», y solo la unión al promotor sin efecto
+    (F5) va «dudoso» (rúbrica §3.6 y §4, paso 3). La página no deja guardar
+    un «si» negado; un «si» especulativo, en cambio, solo se avisa."""
+
+    def test_si_con_negada_es_error_y_no_anexa_nada(self):
+        codigo, r = self.guardar("m-1234", negada="si")
+        self.assertEqual(codigo, 400, r)
+        self.assertEqual(len(r["errores"]), 1, r)
+        error = r["errores"][0]
+        for pieza in ("negada = sí", "«si»", "«no»", "«dudoso»",
+                      "unión al promotor", "F5"):
+            self.assertIn(pieza, error)
+        self.assertIn(error, r["error"])
+        r["error"].encode("cp1252")
+        self.assertEqual(self.eventos(), [])
+
+        # Tampoco pisa lo ya guardado: la corrección rechazada no suma
+        # línea y el ítem conserva sus valores.
+        self.guardar("m-1234")
+        antes = self.eventos()
+        codigo, _ = self.guardar("m-1234", negada="si", comentario="F6")
+        self.assertEqual(codigo, 400)
+        self.assertEqual(self.eventos(), antes)
+        vigente = revision.anotaciones(self.carpeta)["m-1234"]["valores"]
+        self.assertEqual((vigente["negada"], vigente["comentario"]),
+                         ("no", ""))
+
+    def test_dudoso_con_negada_y_comentario_es_valido_sin_avisos(self):
+        """F5: la oración afirma la unión y niega el efecto."""
+        codigo, r = self.guardar("m-1234", relacion="dudoso", signo="?",
+                                 negada="si", comentario="F5")
+        self.assertEqual(codigo, 200, r)
+        self.assertEqual(r["avisos"], [])
+        vigente = revision.anotaciones(self.carpeta)["m-1234"]["valores"]
+        self.assertEqual((vigente["relacion"], vigente["negada"]),
+                         ("dudoso", "si"))
+
+    def test_no_con_negada_es_valido(self):
+        codigo, r = self.guardar("m-1234", relacion="no", direccion="ninguna",
+                                 signo="", tipo="", negada="si")
+        self.assertEqual(codigo, 200, r)
+        self.assertEqual(r["avisos"], [])
+
+    def test_si_con_especulativa_sigue_siendo_aviso(self):
+        codigo, r = self.guardar("m-1234", especulativa="si")
+        self.assertEqual(codigo, 200, r)
+        self.assertEqual(len(r["avisos"]), 1, r)
+        self.assertIn("«dudoso»", r["avisos"][0])
+        self.assertIn("§4, paso 4", r["avisos"][0])
+        self.assertEqual([e["evento"] for e in self.eventos()],
+                         ["guardado"])
 
 
 class PruebasTiempos(BasePruebaRevision):
