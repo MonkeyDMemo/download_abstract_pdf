@@ -323,6 +323,24 @@ class PruebasCruces(Base):
         revisadas = [f["fuente"] for f in r["fuentes"] if f["revisada"]]
         self.assertEqual(revisadas, ["corpus", "juzgadas"])
 
+    def test_con_una_sola_fuente_revisada_el_resumen_concuerda(self):
+        """Con --sin-corpus y sin más fuentes solo se revisan las juzgadas:
+        «1 fuente revisadas» era el plural pegado al conteo."""
+        vacia = os.path.join(self.tmp, "sin_datos")
+        os.makedirs(vacia)
+        base = ["verificar-contaminacion", "--sin-corpus", "--datos", vacia,
+                "--juzgadas", self.juzgadas, "--lista"]
+
+        codigo, lineas = self.correr(base + [self.lista(NUEVOS)])
+        self.assertEqual(codigo, 0)
+        self.assertEqual(lineas[-1], "Ningún cruce en 1 fuente revisada.")
+
+        codigo, lineas = self.correr(
+            base + [self.lista(NUEVOS + [JUZGADO], "con_juzgado.txt")])
+        self.assertEqual(codigo, 1)
+        self.assertTrue(lineas[-1].startswith(
+            "Con cruces en 1 de 1 fuente revisada (juzgadas):"), lineas[-1])
+
     def test_la_base_del_paso_0_se_abre_en_solo_lectura(self):
         antes = procedencia.huella(self.db)
         codigo, _ = self.correr(self.todas(self.lista(NUEVOS)))

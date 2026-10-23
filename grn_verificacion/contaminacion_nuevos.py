@@ -475,15 +475,17 @@ def resumen(resultado):
     revisadas = [f for f in resultado["fuentes"] if f["revisada"]]
     con_cruces = [f for f in revisadas
                   if f["cruces_pmid"] or f["cruces_doi"]]
+    # El participio concuerda con el conteo: con --sin-corpus y solo las
+    # juzgadas, que siempre se revisan, la fuente revisada es una.
+    de_revisadas = _cuantos(len(revisadas), "fuente revisada",
+                            "fuentes revisadas")
     if con_cruces:
         lineas.append(
-            "Con cruces en %s de %s revisadas (%s): la lista no es del todo "
-            "nueva." % (_n(len(con_cruces)),
-                        _cuantos(len(revisadas), "fuente", "fuentes"),
-                        ", ".join(NOMBRES[f["fuente"]] for f in con_cruces)))
+            "Con cruces en %s de %s (%s): la lista no es del todo nueva."
+            % (_n(len(con_cruces)), de_revisadas,
+               ", ".join(NOMBRES[f["fuente"]] for f in con_cruces)))
     else:
-        lineas.append("Ningún cruce en %s revisadas."
-                      % _cuantos(len(revisadas), "fuente", "fuentes"))
+        lineas.append("Ningún cruce en %s." % de_revisadas)
     return lineas
 
 
