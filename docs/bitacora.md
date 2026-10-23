@@ -93,6 +93,35 @@ Para el detalle técnico de cada punto está
   - El servicio social cierra con la capa determinista y una muestra ciega
     de 200 con un anotador.
 
+- **La reunión del 23 se canceló, y el servicio social se entrega terminado.**
+  `reunion-asesor-23oct.md` pasa a ser la hoja de entrega: cada decisión
+  abierta va decidida por omisión, con su parámetro y su cifra alternativa.
+  Al asesor solo se le pregunta el permiso para correr el contraste y el 44 %
+  con los tres modelos en su servidor.
+  - **Las reglas de consolidación son parámetros** (`grn_red/consolidar.py`;
+    el usuario autorizó cambiar `CLAUDE.md`).
+    - Por omisión es `red.py` byte a byte: `red.tsv` y `red_evidencias.tsv`
+      tienen el mismo sha256 antes y después del cambio del paso `red`.
+    - El paso nuevo `red_recomendada` da 10 592 aristas contra 8 827, con la
+      autorregulación marcada, el nivel de soporte y 146 operones expandidos.
+    - La segunda corrida sale toda «saltado», y `verificar` da 0.
+  - **La muestra de 200** se sorteó con `--tandas 1 --fraccion-doble 0` en
+    `salidas/revision/muestra200` (población 4 864, semilla 20261024). La
+    rúbrica tiene su enmienda 1: un anotador experto que juzga lo que afirma
+    la oración y no lo que sabe. La calibración suma c21 para probarlo.
+  - **`cli precision-ciega`** da la precisión pareada del bronce y de la red,
+    con la retención por oración.
+    - Con la red de hoy, 144 de los 200 ítems sostienen una arista (72 %).
+    - Por par, en cambio, 194 de 200 están en la red. Por eso la retención
+      se mide por oración: un par puede entrar por otra oración del corpus.
+  - **La pestaña «Revisión» del tablero** (`revision.py`, `servidor.py
+    --revision`): cola, resaltado, campos de la rúbrica, tiempo por ítem,
+    anotaciones de solo anexar y exportación al CSV que lee `precision-ciega`.
+    - Probada por HTTP real sobre una copia: guarda, retoma tras reiniciar y
+      exporta.
+    - Las 200 oraciones resaltan sus dos entidades.
+  - Suites: raíz 1 306 y etapa2 528.
+
 **Abierto:**
 - **`muestra.py` usa funciones privadas** de `entrenamiento.py` (`_reservada` y
   `_pmid_valido`): conviene hacerlas públicas al tocar ese archivo.

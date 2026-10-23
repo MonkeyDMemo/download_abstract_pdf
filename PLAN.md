@@ -136,6 +136,11 @@ con sus fuentes en [`docs/pendientes.md`](docs/pendientes.md), al 28-sep-2026.
 
 ### 3.0 Calendario del cierre técnico — propuesto, por validar el 23-oct-2026
 
+*Actualizado el 22-oct-2026: la reunión del 23 se canceló. El servicio social
+se entrega con decisiones por omisión (`docs/reunion-asesor-23oct.md`, ahora
+hoja de entrega), un anotador experto sobre 200 ítems y el LLM pasado a la
+tesis. La tabla queda como el plan original.*
+
 Del Documento de Tesis v1 (20-oct-2026), marcado **[Nuestro]**: es propuesta
 del autor y no acuerdo con el asesor hasta el viernes 23. La parte técnica del
 servicio social cierra en 15 días, en cuatro carriles paralelos; noviembre

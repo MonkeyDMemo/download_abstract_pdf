@@ -253,6 +253,8 @@ grn_verificacion/      paso 2, en construccion
                          curada (ruta por argumento, informe filtrado)
   muestra.py             el sorteo de la muestra ciega para anotar con
                          ayudantes (docs/rubrica-anotacion.md §6 a §8)
+  precision_ciega.py     la precision pareada del bronce y de la red final
+                         sobre la muestra anotada, con la retencion de la red
 grn_red/               paso 3; solo estandar y compatible con 3.8
   consolidar.py          las reglas de consolidacion como parametros
                          (autorregulacion, nivel de soporte, operones, mayoria,
@@ -553,7 +555,8 @@ python3 -m grn_red.cli paquete --carpeta salidas/flujo/corrida4_run22   # tambie
 python3 -m grn_verificacion.cli verificar --carpeta salidas/flujo/corrida4_run22 [--contra J] [--html H]
 python3 -m grn_bronce.cli sintaxis --comparar ANTES --salida DESPUES [--json R]   # sin spaCy
 python3 -m grn_verificacion.cli muestra --carpeta salidas/flujo/corrida4_run22 \
-    --reservas salidas/flujo/reservas.tsv --n 200 --salida D   # la hoja para los ayudantes
+    --reservas salidas/flujo/reservas.tsv --n 200 --tandas 1 --fraccion-doble 0     --salida salidas/revision/muestra200   # la muestra unica, un anotador
+python3 -m grn_verificacion.cli precision-ciega --anotacion A --llave L --carpeta C [--json J]
 # donde viva la base; ver docs/contraste-curada.md
 python3 -m grn_verificacion.cli contraste --base X --carpeta C --excluir-pmids A \
     --informe M --confidencial D
@@ -785,9 +788,11 @@ Las pruebas que no pueden faltar:
 - **Las reglas de consolidacion como decision.** Desde el 22-oct-2026 entran
   como parametros en `grn_red/consolidar.py`; por omision la red es la de
   `etapa2/red.py`, byte por byte, y toda otra configuracion escribe
-  `red_<nombre>*` sin tocar `red.tsv`. Cual queda como la red del proyecto
-  espera a que el asesor revise el borrador (`docs/reunion-asesor-23oct.md`,
-  decision f).
+  `red_<nombre>*` sin tocar `red.tsv`. La red oficial es la de omision, y la
+  recomendada va al lado (`docs/reunion-asesor-23oct.md`, la hoja de entrega,
+  §5 f).
+- **El LLM sobre la oracion, EC2 y AgentCore**: son de la tesis, no del
+  servicio social (`docs/decisiones.md`, 22-oct-2026).
 - **`etapa2/` se conserva congelada**: sin cambios funcionales, solo lo que
   exija una mudanza de modulos, una correccion de error o una prueba. El paso 2
   la usa sin modificarla: `grn_verificacion` importa sus funciones y corre sus

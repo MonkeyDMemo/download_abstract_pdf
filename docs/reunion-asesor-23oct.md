@@ -1,13 +1,14 @@
-# Reunión con el asesor — 23 de octubre de 2026
+# Entrega del servicio social — red de regulación de *P. aeruginosa*
 
-Guion de estado y de decisiones. Cada cifra dice de dónde sale: un archivo
-versionado con su línea, un commit o una salida del flujo. Ninguna es de
-memoria. Las citas `archivo:línea` son de `main` en `f05951a`, que ya trae el
-segundo informe del servidor (curada-v2).
+Del 22 de octubre de 2026. La reunión del 23 se canceló, y esta hoja reemplaza
+el guion. **Cada decisión que estaba abierta va decidida por omisión**, con la
+forma: «decidí X porque…; si prefiere Y, cambie el parámetro Z, y la cifra
+pasa a W». Solo se pregunta antes lo que es permiso (§4).
 
-De la base curada aquí van solo conteos ya publicados en `PLAN.md` §2.4 y en
-los informes filtrados del servidor. Ninguna fila, ninguna oración del
-laboratorio.
+Cada cifra dice de dónde sale: un archivo versionado, un commit o una salida
+del flujo. Ninguna es de memoria. De la base curada aquí van solo conteos ya
+publicados en `PLAN.md` §2.4 y en los informes filtrados del servidor: ninguna
+fila, ninguna oración del laboratorio.
 
 ---
 
@@ -32,35 +33,47 @@ no son las medidas. Lo que dice, y lo que vale:
 
 ---
 
+---
+
 ## 2. El estado en una frase
 
-El BioBERT reentrenado con la base curada existe en dos versiones que le ganan
-a memorizar el par pero no leen el signo, así que el modelo de *E. coli* sigue
-en el flujo; el cierre técnico del 4 de noviembre depende de que hoy se validen
-la rúbrica, el calendario y el contraste, y de que usted autorice la
-evaluación externa en el servidor.
+El servicio social cierra con la capa determinista:
+- el pipeline corre de punta a punta;
+- la red sale versionada, y sus reglas de consolidación son parámetros;
+- el recall contra la base curada está listo para correr;
+- la muestra ciega de 200 está sorteada, con su rúbrica, su calibración, su
+  página de revisión y su cálculo de precisión.
+
+El LLM sobre la oración pasa a la tesis (`decisiones.md`, «El LLM sobre la
+oración es trabajo de tesis»).
 
 ---
 
 ## 3. Lo que se entrega
 
-### A. La pista D: `reentrenar`, de punta a punta en el servidor
+| entregable | estado | cómo se reproduce |
+|---|---|---|
+| Pipeline: ETL, bronce y flujo | hecho; la segunda corrida sale toda «saltado» | `python flujo.py --corrida 4` |
+| Red versionada | 8 827 aristas, y el paquete con 1 809 nodos (`nodos.tsv`, `red.graphml`, `manifiesto.json`) | el paso `paquete` del flujo |
+| Reglas de consolidación como parámetros | por omisión, la red de `etapa2/red.py` byte a byte; la configuración recomendada en `red_recomendada.tsv` (§5, f) | `python -m grn_red.cli consolidar --carpeta C [--perfil recomendado]` |
+| Invariantes de la corrida | `verificar` sale con 0 | `python -m grn_verificacion.cli verificar --carpeta C` |
+| Recall contra la base curada | script probado con bases sintéticas; falta correrlo (§4) | `docs/contraste-curada.md` |
+| Precisión en una muestra ciega | 200 sorteadas de 4 864 (semilla 20261024); rúbrica con enmienda 1, calibración de 21 ítems; falta anotar | `cli muestra --tandas 1 --fraccion-doble 0`; la pestaña «Revisión» (`servidor.py --revision`); `cli precision-ciega` |
+| Informe (formato FES Zaragoza) | se redacta en noviembre | — |
 
-- Un orquestador desprendible (`grn_verificacion/reentrenar.py`) que arma los
-  datos por supervisión distante, parte por PMID, entrena el run 22 en 5
-  pliegues × 3 semillas y publica solo un informe filtrado, sin rutas, locus,
-  marcadores ni PMIDs (`bitacora.md:369-372`).
-- **La conciliación con `PLAN.md` §2.4 coincide en los 14 conteos** después
-  de dos correcciones: el `Origen` se reconoce por palabra clave y los «310
-  PMIDs» son 309 y un DOI (`bitacora.md:376-383`;
-  `resultados-curada-v1.md:25-42`).
-- **`regulates` queda fuera de esta versión**: 6 ejemplos de 2 artículos,
-  ninguno en dev ni en test (`bitacora.md:387-389`;
-  `resultados-curada-v1.md:98`).
-- El protocolo se commiteó antes del primer entrenamiento: las cifras de la
-  v1 son pre-registradas (`resultados-curada-v1.md:16`).
+**La precisión es pareada.** Sobre los mismos 200 ítems salen dos cifras:
+- **la del bronce**, que se compara con el 44 %;
+- **la de la red final**, sobre los ítems cuya oración sostiene una arista.
 
-### B. curada-v1 (16-oct, con pesos de clase) y curada-v2 (21-oct, sin pesos)
+Junto a la de la red va su retención. Con la red de hoy, 144 de las 200
+oraciones sorteadas sostienen una arista (72 %, IC95 [65.4, 77.8]). Sus pares
+están en la red por cualquier oración en 194 de 200 casos. El anotador no ve
+ninguna salida de modelo.
+
+**El tiempo del anotador** se registra por ítem en la página y por bloque de 25
+en la hoja. Es el primer dato de esfuerzo.
+
+### El BioBERT reentrenado con la base curada: v1 (16-oct) y v2 (21-oct)
 
 | | v1 | v2 | *E. coli* (8-oct) |
 |---|---:|---:|---:|
@@ -88,260 +101,120 @@ antes de entrenar la v2, **ninguna reemplaza al modelo de *E. coli***
 La enmienda 1 es **posterior a ver las cifras de la v1**: la comparación v1
 contra v2 es exploratoria (`protocolo-curada-v1.md:245-248`).
 
-### C. La rúbrica de anotación
+---
 
-`docs/rubrica-anotacion.md`: definiciones, árbol de decisión, 15 casos
-frontera sintéticos, la hoja, el protocolo con ayudantes y el tamaño de la
-muestra. Es la decisión a.
+## 4. Lo único que se pregunta: permiso para correr en su servidor con la base curada
 
-### D. Lo de esta noche
+1. **El contraste** (`docs/contraste-curada.md`): el recall del bronce y de la
+   red contra la base curada.
+   - Lo que mide: exigibles sin homología, con el estrato `Origen` BioBERT
+     aparte y el PMID B excluido por archivo.
+   - Lo que vuelve: solo el informe filtrado (`CONTRASTE.md`), sin filas,
+     locus ni PMIDs. Las candidatas nuevas se quedan en la carpeta
+     confidencial.
+2. **La evaluación externa:** el 44 % con los tres modelos (*E. coli*, curada
+   v1 y v2), con `flujo.py --modelo` en el servidor.
+   - Hace falta subir la carpeta del flujo de la corrida 4.
+   - Las salidas se quedan en el servidor; vuelven solo conteos.
 
-- **Alineación v2 de la sintaxis.** Hoy la alineación de menciones de la
-  sintaxis alcanza al 11 % de los pares (`pendientes.md`, nuevos).
-- **El paquete de la red (`grn_red`).** Ojo: `CLAUDE.md` todavía pone «crear
-  `grn_red/`» en «Fuera de alcance»; si se fusiona, ese renglón cambia en el
-  mismo commit.
-- **`verificar-corrida`**: el comando que falla si una corrida no cumple sus
-  invariantes (tesis v1, p. 14).
-- **El contraste con la base curada, listo para correr** (`docs/contraste-curada.md`),
-  sin correrlo: dónde y quién lo corre es la decisión d.
-
-**Cifras de la noche del 20 al 21-oct**
-
-| renglón | cifra | fuente |
-|---|---|---|
-| alineación v2 (C1-C4) | Cumple los cuatro: pares sin alinear de 8 485 a 0; menciones sin alinear de 4 874 a 0; 0 relaciones correctas rotas de 22; 0 líneas cambiadas fuera de las que estaban sin alinear; las mismas 76 453 claves. Ahora 600 pares se orientan. D1 sigue en 1 de 4, y el 44 % no cambia. | `plan-sintaxis-bronce.md` §7, «Resultado» |
-| paquete de la red | Sobre la corrida 4: 1 809 nodos (1 640 genes, 139 operones, 30 sin locus) y 8 827 aristas, las mismas que `red.tsv`; 0 colisiones; 377 reguladores y 1 775 blancos. GraphML válido, ids únicos y ningún extremo sin nodo. La segunda corrida sale «saltado». | `salidas/flujo/corrida4_run22/manifiesto.json`; bitácora del 21-oct |
-| verificar-corrida | Código 0 sobre la corrida 4, antes y después de la v2: normalización 95.07 % (umbral 95 %), 14 de 14 comprobaciones de la cadena, partición sin fuga y corpus v0-agosto verificado | bitácora del 21-oct |
-| suites | Raíz 1 110, etapa2 528 y sintaxis 59 en `.venv-nlp`, todas en verde | bitácora del 21-oct |
+| respuesta | qué hacemos |
+|---|---|
+| sí, a las dos | Se corren y la hoja se completa con el recall y el 44 % por modelo |
+| solo el contraste | La ficha de la curada queda con la validación cruzada como única cifra |
+| no | El recall queda con el cruce del 10-sep (`PLAN.md` §2.4) |
 
 ---
 
-## 4. Las decisiones que se piden
+## 5. Decisiones tomadas por omisión
 
-Cada una es una pregunta cerrada con nuestra recomendación. La decisión es
-suya.
+**a) La rúbrica, con los siete puntos de su §9 tal como están.**
+- **Decidí eso porque** formalizan el juicio de las 50 y dejan comparable el
+  44 %.
+- **Si prefiere** que «X activates Y» sea `directa` (el eje del 4-sep): cambie
+  la regla del §3.3. Cambia solo la columna `tipo`, y ninguna cifra de
+  precisión.
+- **Si prefiere** que otro organismo sea `si` y no `dudoso` (§9, punto 3): esos
+  ítems pasan al numerador. La cifra se recalcula con `precision-ciega`
+  cambiando esa celda de la hoja.
 
-### a) ¿Se valida la rúbrica?
+**b) Un anotador experto, sin parte doble.**
+- **Decidí eso porque** es un servicio social, con un anotador pagado por
+  hora. Sin parte doble no hay κ, y eso se reporta como limitación (rúbrica,
+  enmienda 1).
+- **Si prefiere** medir la concordancia: se sortea en otra carpeta con
+  `--fraccion-doble 0.25`. Salen las mismas oraciones (hay una prueba que lo
+  exige) y 50 ítems para una segunda persona, unas 1.5 horas más.
 
-`docs/rubrica-anotacion.md`, con los siete puntos de su §9.
+**c) CollecTF como segunda referencia, fuera de la base de conocimiento y de `es_tf`.**
+- **Decidí eso porque** es una red curada: consultarla desde la plata sería
+  confirmar contra la respuesta.
+- **Lo medido:** de las 572 marcas `es_tf`, 29 traen `collectf` y ninguna
+  depende solo de esa fuente, así que excluirla cambia 0 marcas.
 
-- **Recomendación:** validarla con los siete puntos tal como están. El que
-  más pesa es el 1: «X activates Y» se anota `no_se` y no `directa`, que se
-  aparta del eje léxico del 4-sep (`PLAN.md:29`).
-- **Costo:** la sesión de calibración (20 oraciones sintéticas, unos 36
-  minutos por persona más la discusión) y un solo ajuste, la v1.1.
+**d) El contraste**, con el método de `docs/contraste-curada.md`. Las cifras
+llegan con el permiso del §4.
 
-| respuesta | qué hacemos |
-|---|---|
-| sí, tal cual | Se escriben las 20 de calibración y arranca la anotación el 24-oct |
-| sí, con cambios en §9 | Se aplican antes de la calibración, en la v1 |
-| no | La anotación no arranca; se recorta el carril y se reporta como limitación |
+**e) La evidencia de PA14 se anota como cualquier otra, con su cepa en el comentario.**
+- **Decidí eso porque** es *P. aeruginosa* (rúbrica, paso 5 del árbol), y la
+  marca permite apartarla después.
+- **Hoy no hay mapeo PA14 → PAO1:** los 377 locus `PA14_#####` (837
+  menciones) siguen fuera del diccionario.
+- **Si prefiere** excluirla: en el paso 5 pase la cepa a `dudoso`. La cifra
+  se recalcula con los ítems que lleven «cepa PA14».
 
-### b) ¿Se valida el calendario de 15 días y el protocolo con ayudantes?
+**f) La red oficial es la de `etapa2/red.py`, y la recomendada va al lado.**
+- **Decidí eso porque** es la que ya se evaluó (oro, signo, contraste), y
+  cambiarla mueve todas esas cifras.
 
-`PLAN.md:137-156` y la rúbrica §7. Cinco carriles del 21-oct al 4-nov; el del
-servidor ya se cumplió el 16-oct.
+| | por omisión (`red.tsv`) | recomendada (`red_recomendada.tsv`) |
+|---|---:|---:|
+| aristas | 8 827 | 10 592 |
+| observadas / expandidas de operones | 8 827 / 0 | 9 059 / 1 533 (de 541 aristas a 146 operones) |
+| autorregulaciones | 0 (se excluyen) | 341, marcadas |
+| con 1 artículo / con 2 o más | 6 252 / 2 575 | 7 393 candidatas / 3 199 de soporte múltiple |
+| activa / reprime / regula | 2 594 / 1 591 / 4 642 | 3 302 / 1 976 / 5 314 |
+| conflictos de signo | 537 | 666 |
 
-- **Recomendación:** validarlo, con el orden de recorte que trae: primero el
-  agente revisor con Strands, luego Playwright, luego el NER complementario.
-  El contraste y la red no se recortan (`PLAN.md:154-156`).
-- **Costo:** la anotación pide unas 11.3 horas-persona para 300 ítems con 25 %
-  doble (rúbrica §8), más calibración y adjudicación. Hacen falta al menos dos
-  ayudantes y un adjudicador.
+- **Diferencias entre las dos:**
+  - la recomendada conserva la autorregulación marcada (`--autorregulacion
+    marcar`);
+  - etiqueta el nivel de soporte (`--nivel-soporte`);
+  - expande cada arista a un operón en una por gen, con el catálogo del paso 1
+    y la arista original como procedencia (`--operones expandir`, la D9 de
+    `operones-asesor.md`).
+- **El signo y los umbrales son los de `red.py` en las dos:** mayoría de 0.66
+  y conflicto marcado; umbrales 0.65 / 0.70 / 0.60, sin calibrar.
+- **Si prefiere la recomendada como red oficial,** las reglas ya son
+  parámetros (`grn_red.cli consolidar`). Falta que el paquete y la evaluación
+  lean `red_recomendada.tsv`, que es un cambio pequeño en `flujo.py`.
 
-| respuesta | qué hacemos |
-|---|---|
-| sí | Cierre técnico el 4-nov, informe en noviembre |
-| sí, con menos ayudantes | Se baja la muestra ciega a 100 (IC95 de ± 9.5 puntos en vez de ± 6.8) |
-| no | Se rehace el calendario contra la fecha de cierre del 29-dic |
+**g) El modelo del flujo sigue siendo el de *E. coli*.**
+- **Decidí eso porque** ninguna versión curada cumple el criterio 2 de la
+  enmienda 1 (tabla del §3).
+- **El signo se decide con la muestra ciega:** `precision-ciega` mide el del
+  bronce y el de la red contra el anotador.
+- **Si prefiere** otro modelo: `flujo.py --modelo <checkpoint>`. Toda la
+  cadena se rehace por huella.
 
-### c) ¿CollecTF queda como segunda referencia, fuera de la base de conocimiento y de `es_tf`?
+**h) Decisión 3 de operones: la pertenencia solo anota.**
+- **Decidí eso porque** sigue sin respuesta escrita, y usarla como rasgo
+  arriesgaría evaluar con la fuente que pudo construir la referencia.
+- **La pregunta, si quiere contestarla:**
 
-Decidido por el autor el 20-oct (`decisiones.md`, entrada de CollecTF;
-commit `26efa52`).
+> ¿Hubo filas de la base curada inferidas por pertenencia a operón? Es decir,
+> si un artículo dice «LasR activa el operón rhlAB», ¿se registró solo lo que
+> dice el artículo, o también una fila por cada gen del operón? Basta con sí,
+> no o no lo sé.
 
-- **Lo medido:** de las 572 marcas `es_tf`, **29 traen `collectf` en
-  `fuente_tf` y ninguna depende solo de esa fuente**. Sacarla no cambia
-  ninguna marca.
-- **Recomendación:** confirmarlo. Es una red curada: consultarla desde el
-  agente confirmaría contra la respuesta.
-- **Costo:** ninguno en la red. Una prueba del bronce que falle si una marca
-  llega a depender solo de CollecTF.
+- Las demás decisiones de operones (D1 a D9) siguen en `operones-asesor.md`
+  §7. La D9 es la expansión de la red recomendada.
 
-| respuesta | qué hacemos |
-|---|---|
-| sí | El recall se reporta contra la base curada y contra CollecTF, por separado |
-| no, puede entrar a la KB | Deja de servir como referencia: se evaluaría contra lo que el agente consultó |
-
-### d) ¿Se formaliza el contraste con la base curada así?
-
-- **Dos grupos.** Las exigibles (sin homología, con su artículo en el
-  corpus: 2 003 y 1 488 de ellas en el corpus, `PLAN.md:104-113`) miden
-  **recall**. Lo que el pipeline propone fuera de la base mide **precisión,
-  por revisión de una muestra** (las 100 candidatas nuevas de la rúbrica §8).
-  Una relación ausente de la base no es falsa.
-- **El estrato `Origen` BioBERT va aparte.** Son 544 filas BioBERT y 216
-  Ambos (`PLAN.md:97`): medir un BioBERT contra filas que puso otro BioBERT
-  es medir acuerdo entre modelos.
-- **Para un modelo entrenado con la base, el recall se mide solo en PMIDs de
-  test.** Con el modelo desplegable de la curada eso son 4 artículos
-  (`resultados-curada-v1.md:169`): no da una cifra. Hoy el del flujo es el de
-  *E. coli*, que no vio la base.
-- **El script está listo** (`docs/contraste-curada.md`); falta decidir dónde y
-  quién lo corre. Lee la base, así que corre en el servidor y publica solo
-  conteos.
-- **Recomendación:** formalizarlo así y que lo corra el usuario en el
-  servidor, con el mismo filtro de `RESULTADOS.md`.
-
-| respuesta | qué hacemos |
-|---|---|
-| sí, en el servidor | Se corre esta semana; al repositorio llegan solo conteos y recall con IC |
-| sí, pero lo corre usted | Se le entrega el comando y la guía; nosotros recibimos el informe filtrado |
-| no | Queda el cruce del 10-sep (`PLAN.md` §2.4) como única cifra contra la base |
-
-### e) ¿Se acepta evidencia obtenida en PA14 para la red de PAO1?
-
-- **Lo medido:** 377 locus `PA14_#####` distintos, 837 menciones en 83
-  documentos, ninguno reconocido por `genes_pao1.tsv` (`PLAN.md:208`).
-- **La homología de la base, 2 850 filas, viene de PA14.** Aquí el PLAN se
-  contradice: `PLAN.md:99` dice que solo «una variante» de la etiqueta indica
-  inferencia desde PA14, y `PLAN.md:208` dice que de PA14 «provienen las 2 850
-  interacciones por homología». Hay que saber cuál es antes de usarlo.
-- **Recomendación:** sí, marcada como `cepa = PA14` y nunca mezclada con la
-  de PAO1 sin la marca. El mapeo PA14 → PAO1 por ortología va antes que
-  arreglar el tokenizador (`PLAN.md:208`).
-- **Costo:** el mapeo por ortología, que hoy no existe.
-
-| respuesta | qué hacemos |
-|---|---|
-| sí, marcada | Se construye el mapeo; la arista lleva la cepa |
-| no | Las 837 menciones quedan fuera, documentadas como hueco del diccionario |
-| solo como anotación | Se mapean, pero no promueven aristas |
-
-### f) ¿Qué reglas de consolidación valen: las del borrador o las de `etapa2/red.py`?
-
-El borrador de la tesis (p. 22) y `red.py`, que es lo que corre hoy, difieren
-en cuatro de cinco reglas:
-
-| regla | borrador (tesis, p. 22) | `etapa2/red.py` hoy | diferencia |
-|---|---|---|---|
-| promoción | una oración aceptada con confianza ≥ umbral | umbral por clase 0.65 / 0.70 / 0.60, sin calibrar (`red.py:60-66`, `:93`) | igual en forma; los umbrales no tienen conjunto de calibración |
-| soporte | 1 documento = candidata; ≥ 2 = soporte múltiple | cuenta `n_articulos` y la lista de PMIDs; `--min-articulos` vale 1 (`red.py:548-555`) | la etiqueta de nivel no existe |
-| signo | el mayoritario; empate o signos opuestos entre artículos → `?` y marca contradictoria | mayoría ≥ 0.66 de las predicciones con signo; si no, o en empate, `regulates` con `conflicto` (`red.py:489-503`, `:693`) | el borrador es ambiguo («mayoritario» y a la vez «opuestos → ?»); `red.py` tolera hasta 34 % en contra y cuenta oraciones, no artículos |
-| operones | se expanden a sus genes antes de comparar | no expande nada | la expansión vive en la evaluación (`grn_bronce/operones.py`); en la red es la D9 de operones |
-| autorregulación | se conserva con su marca | se excluye salvo `--incluir-autorregulacion` (`red.py:34-37`) | opuesta |
-
-- **Recomendación:** adoptar las de `red.py` para signo (mayoría de 0.66 y
-  conflicto marcado) y las del borrador para soporte (la etiqueta de nivel) y
-  autorregulación (conservarla marcada); operones según la D9.
-- **Costo:** `etapa2` está congelada: los cambios van en el paquete de la red,
-  no en `red.py`.
-
-| respuesta | qué hacemos |
-|---|---|
-| la recomendación | El paquete de la red las implementa con prueba por regla |
-| todas las del borrador | Hay que precisar la regla de signo antes de implementarla |
-| todas las de `red.py` | La red sigue como hoy, sin autorregulación ni nivel de soporte |
-
-### g) La base curada: aviso, reemplazo, evaluación externa y signo
-
-Cuatro preguntas que vienen del servidor (`bitacora.md:54-58`, `:458-462`):
-
-1. **Aviso por escrito** de que `regulates` quedó fuera y de la conciliación
-   (309 PMIDs y 1 DOI). Solo hay que acusarlo de recibido.
-2. **¿Reemplaza alguna versión al modelo de *E. coli* en el flujo?**
-   **Recomendación: no; quedarse con el de *E. coli*.** Es lo que dice la
-   regla escrita antes de entrenar la v2.
-3. **¿Autoriza la evaluación externa?** El 44 % recalculado con los tres
-   modelos (`flujo.py --modelo` en el servidor; `protocolo-curada-v1.md:208-217`).
-   Hace falta subir la carpeta del flujo de la laptop (el bronce de la corrida
-   4). Las salidas se quedan en el servidor; llegan solo conteos.
-   **Recomendación: sí.** Antes hay que resolver que `flujo.py --modelo` da la
-   misma carpeta a todos los checkpoints `run_22_…`: hoy se prueban a mano en
-   carpetas propias (`pendientes.md`, nuevos).
-4. **¿Qué hacemos con el signo?**
-
-| opción | qué es | costo | riesgo |
-|---|---|---|---|
-| A. corrección de la prior | ajustar a posteriori las probabilidades de las predicciones fuera de pliegue a la proporción de clases del flujo | una enmienda declarada posterior a ver las cifras; horas de código | exploratoria por construcción; no rescata un modelo que no lee el signo |
-| B. sintaxis o control léxico | el signo sale del disparador o del árbol, no del BioBERT | ya medido: control léxico 537 de 674 pares consistentes, sintaxis 166 (`PLAN.md:201`) | es consistencia, no acierto: falta medirlo contra signos juzgados |
-| C. esperar la muestra ciega | la rúbrica anota el signo; con ella se mide cada opción | ninguno extra: va en la anotación | el signo queda abierto hasta el 2-nov |
-
-**Recomendación:** C, y medir B contra ella; A solo como enmienda declarada y
-exploratoria.
-
-| respuesta | qué hacemos |
-|---|---|
-| todo según la recomendación | *E. coli* sigue; se sube la carpeta y se corre el 44 % con los tres; el signo se decide con la muestra ciega |
-| no autoriza la evaluación externa | La ficha de la curada queda con la validación cruzada como única cifra |
-| prefiere A | Se escribe la enmienda 2 antes de mirar ninguna cifra nueva |
-
-### h) Decisión 3 de operones
-
-Sigue abierta: respuesta verbal, probable (semana del 5 al 9 de octubre), sin
-confirmar por escrito (`operones-asesor.md:229-232`). Se pregunta en persona en
-esta reunión, con la redacción del 21-oct de `operones-asesor.md` §8. La
-anterior empezaba por «la base de operones es una cosa y la base curada otra»,
-y eso invitaba a repetir la respuesta verbal, que dice qué es cada base pero no
-cómo se construyó la curada. La nueva parte del precedente de la homología:
-
-> Dr. Galán, sobre cómo se construyó la base curada: sabemos que 2 850 de sus
-> filas se infirieron por homología desde PA14. ¿Hubo también filas inferidas
-> por pertenencia a operón? Es decir, si un artículo dice «LasR activa el
-> operón rhlAB», ¿se registró solo lo que dice el artículo, o también una fila
-> por cada gen del operón (LasR → rhlA y LasR → rhlB), sacando los genes de
-> ODB, BioCyc o Pseudomonas Genome DB? Basta con sí, no o no lo sé.
-
-| respuesta | qué hacemos |
-|---|---|
-| no | Se cierra. La pertenencia puede entrar como rasgo del paso 2 |
-| sí | La pertenencia sigue solo como anotación; las filas ampliadas se apartan al evaluar y al entrenar |
-| no lo sé | Todo sigue como hoy: la pertenencia anota y no decide |
-
-Las otras decisiones de operones, D1 a D9, siguen en `operones-asesor.md` §7.
-
-### i) Permiso para enviar oraciones del corpus público a EC2
-
-Solo se lista: no se prepara nada de AWS para esta reunión (tesis, p. 15-17).
-Si se aprueba la j, el permiso es para la tesis y no hace falta antes del
-4-nov.
-
-### j) ¿El servicio social cierra con la capa determinista y el LLM pasa a la tesis?
-
-Una revisión externa del multiagente de la tesis v1 encontró que contradice la
-regla de la bitácora («el pipeline es determinista a propósito»). Además, el
-cálculo de potencia del 22-oct muestra que la puerta para decidir si el LLM
-entra no cabe en una muestra de 200: salen unos 35-65 ítems con signo, y hacen
-falta 150-250. El detalle está en `decisiones.md` («El LLM sobre la oración es
-trabajo de tesis») y en `plan-tesis-plata-llm.md`.
-
-- **Recomendación:** sí. El servicio social entrega:
-  - el pipeline funcionando, con su documentación de uso;
-  - la red versionada;
-  - el recall contra la base curada;
-  - la precisión en una muestra ciega de 200 con un anotador, con su IC
-    (± 6.8 puntos) y el tiempo por bloque, que es el primer dato de esfuerzo;
-  - el informe.
-
-  Pasan a la tesis el LLM sobre el residuo y su puerta, el juez y el κ, el
-  estrato sobremuestreado, el multiagente, AgentCore y EC2, y el experimento
-  de esfuerzo y confianza.
-- **Costo:** ninguno nuevo. Se recorta trabajo, no se agrega.
-- **Lo que cambia en la rúbrica:** con un anotador no hay parte doble ni κ (§7,
-  puntos 4 y 5). Se reporta como limitación, y `cli muestra` corre con
-  `--fraccion-doble 0`. La calibración (24-oct) sigue: es la que fija las
-  reglas.
-
-| respuesta | qué hacemos |
-|---|---|
-| sí | Lo de arriba; el LLM opcional sobre las mismas 200, como exploración y declarado así |
-| sí, pero con el LLM en el servicio social | La puerta necesita el estrato de unas 300 oraciones más (≈ 9 horas-persona) y EC2 o el modelo local de 8 GB; el calendario no alcanza para el 4-nov |
-| no | Se queda el plan de la tesis v1, con la contradicción declarada en `decisiones.md` |
+**i) El LLM sobre la oración pasa a la tesis**, con su puerta de decisión
+(`plan-tesis-plata-llm.md`). En el servicio social no se usa EC2.
 
 ---
 
-## 5. Qué decir y qué no
+## 6. Qué decir y qué no
 
 - No «el BioBERT reentrenado da 0.49 de F1». Sí: «0.49 de macro-F1 en
   validación cruzada contra 0.38 de memorizar el par, +0.110 [0.022, 0.193];
@@ -369,21 +242,18 @@ trabajo de tesis») y en `plan-tesis-plata-llm.md`.
   que 2 003 son exigibles al pipeline».
 - No «el LLM saca 91.4 % y por eso va el multiagente». Sí: «91.4 % en 93
   oraciones difíciles de un solo subsistema; para decidir si entra hace falta
-  una puerta que no cabe antes del 4-nov» (decisión j).
+  una puerta que no cabe en el servicio social» (decisión i).
 
 ---
 
-## 6. Siguientes pasos contra el calendario
+---
 
-| fecha (`PLAN.md:145-152`) | qué | depende de |
+## 7. Lo que sigue
+
+| cuándo | qué | depende de |
 |---|---|---|
-| 23-oct | esta reunión | — |
-| 24-oct | 20 oraciones sintéticas de calibración y la sesión | a |
-| 24-oct al 2-nov | anotación: 200 ciegas, un anotador, con tiempo por bloque; las 100 candidatas nuevas si alcanza | a, b, d, j |
-| 21 al 27-oct | fusionar alineación v2, paquete de la red y `verificar-corrida`; correr el contraste en el servidor | d, f |
-| esta semana | subir la carpeta del flujo al servidor; el 44 % con los tres modelos | g |
-| 28-oct al 3-nov | consolidación con las reglas de f; el LLM sobre las 200 solo como exploración opcional | f, j |
-| 2 al 3-nov | el signo con la muestra ciega: *E. coli*, control léxico y sintaxis | g, anotación |
-| 4-nov | cierre técnico | — |
-
-Si algo se atrasa, se recorta en el orden de `PLAN.md:154-156`.
+| al arrancar la anotación | sesión de calibración con las 21 sintéticas y la rúbrica v1.1 congelada | — |
+| unas 6 horas de anotación | los 200 ítems, por la pestaña «Revisión» o por la hoja CSV | la calibración |
+| al terminar | `precision-ciega` sobre lo anotado: bronce, red y retención | la anotación |
+| con su permiso | el contraste y el 44 % con los tres modelos, en el servidor | §4 |
+| noviembre | el informe del servicio social | todo lo anterior |
