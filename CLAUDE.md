@@ -305,6 +305,9 @@ grn_red/               paso 3; solo estandar y compatible con 3.8
                          umbrales, minimos); por omision es etapa2/red.py byte
                          por byte (paso `red`), y el perfil recomendado va a
                          red_recomendada*.tsv (paso `red_recomendada`)
+  signo.py               el voto lexico y el voto por articulo sobre la red de
+                         red.py, apagados por omision; prendidos, piden
+                         --nombre y van a red_<nombre>*.tsv
   paquete.py             nodos.tsv, red.graphml y manifiesto.json desde la red
                          de etapa2/red.py, con los nodos unificados por id
                          canonico; es el ultimo paso del flujo (`paquete`)
@@ -319,6 +322,10 @@ grn_comun/             lo que usan los tres pasos
   proceso.py             correr un CLI hijo, con su salida al log y cancelable
   archivos.py            el os.replace de la escritura atomica, que en Windows
                          aguanta a un lector (el tablero) unos segundos
+  redes.py               los nombres de archivo de una red (red.tsv o
+                         red_<nombre>*.tsv), una sola fuente para el paso 2 y 3
+  signo_lexico.py        el control lexico del punto 18: el disparador con
+                         signo mas cercano; lo usan evaluar y grn_red/signo
 pruebas/               las del paso 0, del tablero y del flujo; falsos.py deja
                        urlopen inutilizable
 etapa2/                congelada; la usa grn_verificacion/ y su mudanza sigue
@@ -595,6 +602,7 @@ python3 flujo.py --corrida 4 --limite 200   # prueba rapida en su propia carpeta
 python3 flujo.py --pasos capa,evaluar --forzar capa
 python3 flujo.py --pasos operones --rehacer-operones   # operones_base.tsv, sin red; corre siempre
 python3 -m grn_red.cli consolidar --carpeta C [--perfil recomendado]   # pasos red y red_recomendada del flujo
+python3 -m grn_red.cli consolidar --carpeta C --signo-lexico evidencias --voto-articulo --nombre signo   # apagado por omision
 python3 -m grn_red.cli paquete --carpeta salidas/flujo/corrida4_run22   # tambien es el ultimo paso del flujo
 python3 -m grn_verificacion.cli verificar --carpeta salidas/flujo/corrida4_run22 [--contra J] [--html H]
 python3 -m grn_bronce.cli sintaxis --comparar ANTES --salida DESPUES [--json R]   # sin spaCy

@@ -242,11 +242,50 @@ ramas antes de su revisión. Los informes filtrados están en
 - **`verificar-contaminacion`** lee la base curada solo con `--base` explícito,
   nunca de `BASE_CURADA`.
 
+**Fase 3, cerrada: el signo de la red como parámetro.** Una pieza, con su
+implementador y un revisor, fusionada sobre la fase 2 sin conflictos.
+- **Lo que se hizo:**
+  - **`grn_comun/signo_lexico.py`** tiene el control léxico del punto 18, sin
+    cambios: `evaluar` delega en él, y en 200 000 casos al azar da lo mismo que
+    antes.
+  - **`grn_red/signo.py`** rehace la cadena de `red.py` y comprueba que da las
+    mismas aristas antes de votar. Después aplica el voto léxico, por
+    evidencia o por arista, y el voto por artículo.
+  - **`consolidar`** gana `--signo-lexico {evidencias,aristas}` y
+    `--voto-articulo`, apagados y con `--nombre` obligatorio.
+- **El revisor** encontró cuatro reglas del voto por artículo que se podían
+  romper sin que fallara ninguna prueba. Agregó una fixture de borde: de 28
+  mutaciones sobrevive una, y esa no cambia el resultado.
+- **La red por omisión sigue byte a byte.** El flujo dio otra vez 41 de 47
+  salidas idénticas, la segunda corrida salió toda «saltado» y `verificar` da
+  0. El informe de la recomendada gana las claves del signo, pero su TSV no
+  cambia.
+- **Las cuatro redes de signo** se armaron en la laptop. Sus huellas quedan en
+  la enmienda 1 de `protocolo-tanda2.md`, antes de medir. Aristas con otro
+  signo que `red.py`:
+  - `signo` (evidencias y voto por artículo): 571;
+  - `signo_conservador` (por arista y voto por artículo): 464;
+  - `signo_lexico`: 375;
+  - `signo_articulo`: 202.
+
+  Las evidencias son las de `red.tsv`, byte a byte: solo cambia el signo.
+- **Decisiones por omisión** (`decisiones.md` y la hoja, §5 j):
+  - **La variante por arista** vota solo en las aristas sin ningún voto con
+    signo de BioBERT: 4 105 de las 4 642 `regulates`. Las otras 537 son
+    conflictos de BioBERT y no se tocan.
+  - **Si todos los artículos de una arista mixta se abstienen,** sigue con
+    `conflicto` = sí (170 aristas).
+  - **La confianza** sigue la definición de `red.py`. Una arista que firmó solo
+    el léxico queda sin confianza.
+- **Suites:** raíz 1 543 y etapa2 528.
+
 **Abierto:**
 - la sesión de calibración 2 con el experto, y luego la tanda 2 en la página:
   `python servidor.py --revision salidas/revision/muestra200_t2 --abrir`;
 - lo que corre Hermes en el servidor (`servidor-cierre.md` §2 a §6);
-- las fases 3 y 4: el signo como parámetro y Ouroboros.
+- la fase 4, Ouroboros;
+- las reglas de dirección con las 39 inversiones de la tanda 1 (3.2, si
+  alcanza).
 
 ## 22 de octubre de 2026 — el sorteo de la muestra ciega, la tesis al día y la pregunta de operones reescrita
 

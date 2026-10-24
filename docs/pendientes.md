@@ -23,7 +23,8 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
   - 2.3 [30]: 39 de 144 inversiones en la tanda 1 (27.1 %). Es la pérdida
     más grande; las reglas se proponen con la tanda 1 y se miden en la 2.
   - 2.1 [18]: el voto léxico y el voto por artículo entran como parámetros
-    apagados de `consolidar`.
+    apagados de `consolidar` (fase 3). Las cuatro redes ya están armadas, con
+    sus huellas en `protocolo-tanda2.md`, y se miden en la tanda 2.
 - **Nuevos:**
   - sortear y anotar la tanda 2 (de prueba), en la página, con la calibración 2
     antes;

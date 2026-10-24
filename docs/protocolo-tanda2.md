@@ -101,3 +101,38 @@ commit y su huella antes de correr sobre la tanda 2.
   repite artículos de la tanda 1, pero varias oraciones de un mismo artículo
   sí pueden caer juntas.
 - Ouroboros es exploratorio: su cifra no entra a la red ni a la entrega.
+
+## Enmienda 1 (23-oct-2026): las huellas de las redes, antes de medir
+
+Es anterior a ver cualquier cifra de la tanda 2. De las redes de signo solo se
+conocen los conteos de cuántas aristas cambian, y ninguno dice si aciertan.
+
+Las cuatro redes de signo se armaron en la laptop, sobre
+`salidas/flujo/corrida4_run22`, con `main` en `456f1be`:
+
+```bash
+python -m grn_red.cli consolidar --carpeta salidas/flujo/corrida4_run22 \
+    --signo-lexico evidencias --voto-articulo --nombre signo
+#   lo mismo con --signo-lexico aristas --voto-articulo --nombre signo_conservador,
+#   --signo-lexico evidencias --nombre signo_lexico
+#   y --voto-articulo --nombre signo_articulo
+```
+
+| red | sha256 del `.tsv` | aristas con otro signo que `red.py` |
+|---|---|---:|
+| oficial (`red.tsv`) | `5f9dc6d4664548ee8cd56e7a3708b303ad850cf996c0b7c9755c13b55ed14946` | — |
+| recomendada | `ab23197989729995774092aa0dde2879e079d9373150da863ddcb44226845731` | — |
+| `signo` | `ff979bc97daba33cf28f0a13cd97fb7c80b685482965b02da8a1c8b98e349745` | 571 |
+| `signo_conservador` | `888734efc38d3e31cf3fd847120ee33ec10c06004ef673dda7c08a2bf5049bb8` | 464 |
+| `signo_lexico` | `76d94830a0428a6a318eff5ea318e54d01ba00ff8c0810ada625bbaaafd083b8` | 375 |
+| `signo_articulo` | `62c802148f3fc81109d7f4a28007e15be93bee2429ffcb67da87c5410c8a3817` | 202 |
+
+- **Las evidencias** de las cuatro redes de signo son las de `red.tsv`: el
+  mismo `red_evidencias.tsv` byte a byte
+  (`e6c54e56ea67a279f7f3f58e26e5de524d75bc7f2fde06ca06037b6ffbfeb4aa`). Solo
+  cambia el signo de las aristas, así que los ítems que sostienen una arista
+  son los mismos en las cinco y el signo se compara sobre la misma base.
+- **La recomendada** tiene sus propias evidencias
+  (`65f94c5fa0251c746a12477910a6543f7643f8c33ca01df4895d052eee659dec`).
+- **Antes de medir** se comprueban estas huellas. Si una no coincide, la red se
+  vuelve a armar con el mismo commit, o la diferencia se declara aquí.

@@ -1708,9 +1708,27 @@ Decidido por omisión el 23-oct-2026; se mide solo en la tanda 2.
   - **Por arista, el secundario.** Solo vota en las aristas que `red.py` dejó
     `regulates`, para no tocar las que ya tienen signo de BioBERT, que
     aciertan 42/48 en la tanda 1.
+    - **Precisado al implementarla** (23-oct, antes de ver la tanda 2): son
+      las aristas sin ningún voto con signo de BioBERT
+      (`n_activates + n_represses == 0`), 4 105 de las 4 642 `regulates` de la
+      corrida 4.
+    - Las otras 537 son conflictos de BioBERT, que ya tienen signo de los dos
+      lados. Tocarlas sería que el léxico desempate a BioBERT, y eso ya no es
+      la lectura conservadora.
+    - Con la lectura amplia, 36 de ellas cambiarían de signo.
 - **«Mixta» es una arista con votos + y −.** Es la que el voto por artículo
   decide: cada artículo vota con la mayoría de sus oraciones. El «mixto» del
   contraste es otra cosa: un par cuyas aristas, con distintas formas de
   nombre, no dicen lo mismo.
+  - Un artículo en conflicto, o sin votos con signo, se abstiene.
+  - **Si todos se abstienen,** la arista sigue `regulates` y con `conflicto` =
+    sí, aunque `red.resolver_signo(0, 0)` diga que no hay conflicto. Una arista
+    que se contradice y que ningún artículo resuelve no dejó de contradecirse;
+    contarla como resuelta inflaría lo que logra la regla. En la corrida 4
+    son 170.
+- **La confianza** sigue la definición de `red.py`: la media de p[signo] de
+  las evidencias que BioBERT predijo con ese signo. Una arista que firmó solo
+  el léxico queda sin confianza, porque la p de una evidencia `regulates` no
+  es la de su voto.
 - **Cómo se reporta:** con abstención como error y frente a «siempre +» sobre
   la misma base. Cada regla también sola.
