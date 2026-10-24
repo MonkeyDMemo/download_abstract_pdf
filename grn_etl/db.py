@@ -1073,6 +1073,61 @@ def documentos_del_corpus(con, corpus_id, solo_con_abstract=False):
     return con.execute(sql + " ORDER BY d.pmid", (corpus_id,)).fetchall()
 
 
+def pmids_y_dois_del_corpus(con, corpus_id):
+    """[(pmid, doi)] del corpus, por PMID; doi es '' si el documento no trae.
+
+    Para cruzar una lista nueva con el corpus por los dos identificadores: el
+    mismo artículo puede llegar con otro PMID y el mismo DOI. LEFT JOIN y no
+    JOIN: un PMID del corpus sin fila en `documentos` sigue siendo del corpus
+    y se cruza por PMID aunque no tenga DOI.
+    """
+    return [(f["pmid"], f["doi"] or "") for f in con.execute(
+        """SELECT cd.pmid, d.doi FROM corpus_documento cd
+             LEFT JOIN documentos d ON d.pmid = cd.pmid
+            WHERE cd.corpus_id = ? ORDER BY cd.pmid""", (corpus_id,))]
+
+
+def pmids_y_dois_de_consulta(con, nombre):
+    """[(pmid, doi)] de los documentos ligados a la consulta, por PMID.
+
+    Como documentos_de_consulta() pero sin el resto de las columnas: quien
+    cruza identificadores no tiene por qué subir los abstracts a memoria.
+    """
+    return [(f["pmid"], f["doi"] or "") for f in con.execute(
+        """SELECT d.pmid, d.doi FROM documentos d
+             JOIN consulta_documento cd ON cd.pmid = d.pmid
+             JOIN consultas c ON c.id = cd.consulta_id
+            WHERE c.nombre = ? ORDER BY d.pmid""", (nombre,))]
+
+
+def dois_de_pmids(con, pmids):
+    """{pmid: doi} de los PMIDs que están en `documentos` con DOI.
+
+    Por lotes de 800, como pmids_conocidos(), por el límite de parámetros
+    de SQLite. Un PMID que no está, o que está sin DOI, no aparece.
+    """
+    dois = {}
+    lista = list(pmids)
+    for i in range(0, len(lista), 800):
+        lote = lista[i:i + 800]
+        marcas = ",".join("?" * len(lote))
+        for f in con.execute(
+                f"SELECT pmid, doi FROM documentos WHERE pmid IN ({marcas}) "
+                f"AND doi IS NOT NULL AND doi <> ''", lote):
+            dois[f["pmid"]] = f["doi"]
+    return dois
+
+
+def huella_pmids(pmids):
+    """La huella de un conjunto de PMIDs con la regla del corpus.
+
+    Es la misma que corpus.hash_pmids: una lista con exactamente los PMIDs
+    de un corpus da su huella, sin importar el orden ni las repeticiones.
+    No toca la base; vive aquí porque la regla es la del corpus.
+    """
+    return _hash_pmids(set(pmids))
+
+
 def cobertura_corpus(con, corpus_id):
     """Cuanto texto hay para este corpus, por tipo. Contesta PLAN.md 8.3."""
     def cuenta(sql, params=()):

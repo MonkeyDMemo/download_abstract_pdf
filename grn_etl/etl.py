@@ -28,7 +28,8 @@ def _nada(*_a, **_k):
 # ------------------------------------------------------------- abstracts
 
 def ingestar(con, cliente, nombre_consulta, orden="relevance", limite=None,
-             mindate=None, maxdate=None, tam_lote=200, pausa=0, log=_nada):
+             mindate=None, maxdate=None, tam_lote=200, pausa=0, log=_nada,
+             tipo_fecha="pdat"):
     """Corre una consulta y guarda los abstracts que falten.
 
     El flujo es: pedir a PubMed la lista completa de PMIDs (por tramos de
@@ -40,13 +41,23 @@ def ingestar(con, cliente, nombre_consulta, orden="relevance", limite=None,
 
     `pausa` son segundos de espera entre lotes de efetch, ademas del
     limitador de tasa del cliente; por omision ninguna.
+
+    `tipo_fecha` es la fecha que acotan `mindate` y `maxdate` y por la que
+    se parte una consulta grande (`pubmed.TIPOS_FECHA`): pdat, la de
+    publicación, por omisión; edat o crdt para pedir lo dado de alta en
+    PubMed desde la última descarga. Queda en `parametros` siempre, también
+    el de omisión: es lo que dice, meses después, qué fecha tenía el rango.
     """
     consulta = db.obtener_consulta(con, nombre_consulta)
     if not consulta:
         raise ValueError(f"No existe la consulta '{nombre_consulta}'")
+    # Antes de abrir la ejecución, como la consulta inexistente: un tipo de
+    # fecha mal escrito no es una corrida que falló, es una que no empezó.
+    pubmed.validar_tipo_fecha(tipo_fecha)
 
-    parametros = {"orden": orden, "limite": limite, "desde": mindate,
-                  "hasta": maxdate, "lote": tam_lote, "pausa": pausa}
+    parametros = {"orden": orden, "limite": limite, "tipo_fecha": tipo_fecha,
+                  "desde": mindate, "hasta": maxdate, "lote": tam_lote,
+                  "pausa": pausa}
     ejecucion_id = db.abrir_ejecucion(con, consulta["id"], parametros)
 
     total = None
@@ -55,9 +66,12 @@ def ingestar(con, cliente, nombre_consulta, orden="relevance", limite=None,
     try:
         avisos, tramos = [], []
         log(f"Buscando en PubMed (orden: {orden})...")
+        if tipo_fecha != "pdat":
+            log(f"  Las fechas son de {pubmed.NOMBRE_FECHA[tipo_fecha]} "
+                f"({tipo_fecha}), no de publicación.")
         total, pmids = pubmed.buscar_pmids(
             cliente, consulta["texto"], mindate, maxdate, orden, limite,
-            avisos, tramos=tramos, log=log,
+            avisos, tramos=tramos, log=log, tipo_fecha=tipo_fecha,
         )
         for a in avisos:
             log(f"  aviso de NCBI: {a}")
