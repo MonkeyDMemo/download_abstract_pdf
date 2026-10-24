@@ -10,8 +10,9 @@
     python -m grn_verificacion.cli contraste --base XLSX --carpeta DIR --informe MD --confidencial DIR ...
     python -m grn_verificacion.cli tablas --base XLSX --carpeta DIR --xml DIR --informe MD --confidencial DIR [--cuantos N] ...
     python -m grn_verificacion.cli muestra --carpeta DIR --reservas TSV --n N --salida DIR [--semilla S] [--fraccion-doble F] [--tandas 1|2] [--excluir-muestra DIR ...]
-    python -m grn_verificacion.cli precision-ciega --anotacion CSV --llave CSV --carpeta DIR [--json J]
+    python -m grn_verificacion.cli precision-ciega --anotacion CSV --llave CSV --carpeta DIR [--json J] [--red NOMBRE] [--capa CSV] [--excluir-pmids TSV ...] [--particion DIR] [--etiqueta T]
     python -m grn_verificacion.cli verificar-contaminacion (--lista ARCHIVO | --consulta NOMBRE) [--corpus NOMBRE | --sin-corpus] [--reservas TSV ...] [--muestra DIR ...] [--juzgadas CSV] [--particion DIR ...] [--base XLSX] [--json J]
+    python -m grn_verificacion.cli concordancia --experto CSV --modelo CSV [--llave CSV] [--json J]
 
 Lo normal es no llamarlo a mano: `python flujo.py` corre los pasos en orden y
 se salta lo que ya está hecho.
@@ -860,6 +861,47 @@ def _sub_verificar_contaminacion(sub):
     vc.set_defaults(func=cmd_verificar_contaminacion)
 
 
+def cmd_concordancia(args):
+    """concordancia --experto A --modelo B [--llave L] [--json J]. Solo
+    conteos: ni oraciones, ni PMIDs, ni ids pasan por `log`."""
+    from grn_verificacion import concordancia
+    try:
+        concordancia.ejecutar(args.experto, args.modelo,
+                              ruta_llave=args.llave, ruta_json=args.json,
+                              log=log)
+    except KeyboardInterrupt:
+        log("Interrumpido.")
+        return 3
+    except Exception as e:
+        # Corre también en el servidor (docs/ouroboros-v0.md): sin traceback
+        # y sin rutas, como evaluar y precision-ciega.
+        log("ERROR: %s" % _error_publicable(
+            e, [args.experto, args.modelo, args.llave, args.json]))
+        return 1
+    return 0
+
+
+def _sub_concordancia(sub):
+    co = sub.add_parser(
+        "concordancia",
+        help="Acuerdo de Ouroboros con el experto sobre la misma hoja: por "
+             "campo, kappa de Cohen en relación, matrices de confusión y, con "
+             "la llave, el modelo como filtro de los pares del bronce.")
+    co.add_argument("--experto", required=True,
+                    help="La hoja anotada por el experto, o el CSV que "
+                         "exporta la página de revisión.")
+    co.add_argument("--modelo", required=True,
+                    help="anotaciones.csv de una corrida de Ouroboros; la "
+                         "abstención es un ítem con la anotación vacía.")
+    co.add_argument("--llave", default=None,
+                    help="llave.csv del sorteo: con ella, el modelo como "
+                         "filtro (acepta = relación si con la dirección del "
+                         "bronce).")
+    co.add_argument("--json", default=None,
+                    help="Escribe ahí el resultado completo.")
+    co.set_defaults(func=cmd_concordancia)
+
+
 def consola_tolerante():
     """La consola de Windows imprime cp1252: los acentos caben, pero la barra
     de progreso de transformers («█») o una sigma no, y un `print` con ellos
@@ -961,6 +1003,7 @@ def main(argv=None):
     _sub_muestra(sub)
     _sub_precision_ciega(sub)
     _sub_verificar_contaminacion(sub)
+    _sub_concordancia(sub)
 
     args = ap.parse_args(argv)
     return args.func(args)
