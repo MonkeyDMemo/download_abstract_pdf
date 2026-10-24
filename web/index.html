@@ -2442,14 +2442,18 @@ function cargarEjecuciones() {
   });
 }
 
-/* 'parametros' llega como texto JSON: orden, límite, fechas, lote, pausa y
-   los tramos en que se partió la consulta. Se resume en una línea. */
+/* 'parametros' llega como texto JSON: orden, límite, fechas y su tipo, lote,
+   pausa y los tramos en que se partió la consulta. Se resume en una línea.
+   El tipo de fecha se dice solo si no es pdat: una corrida por fecha de alta
+   (edat) trae otros PMIDs que una por fecha de publicación con las mismas
+   fechas, y sin él las dos se veían iguales. */
 function resumenParametros(crudo) {
   if (!crudo) { return ""; }
   var p;
   try { p = JSON.parse(crudo); } catch (e) { return recortar(crudo, 60); }
   var partes = [];
-  if (p.desde || p.hasta) { partes.push((p.desde || "...") + " - " + (p.hasta || "...")); }
+  var tipoFecha = (p.tipo_fecha && p.tipo_fecha !== "pdat") ? " (" + p.tipo_fecha + ")" : "";
+  if (p.desde || p.hasta) { partes.push((p.desde || "...") + " - " + (p.hasta || "...") + tipoFecha); }
   if (p.limite) { partes.push("límite " + miles(p.limite)); }
   if (p.tramos && p.tramos.length) { partes.push(p.tramos.length + " tramos"); }
   if (p.pausa) { partes.push("pausa " + p.pausa + " s"); }
