@@ -76,10 +76,13 @@ reutiliza.
 - Las salidas van a `salidas/ouroboros/`. El CLI rechaza una `--salida`
   dentro de `salidas/revision`, la carpeta del experto, y el experto no ve
   nada de Ouroboros.
-- Ninguna sesión de Claude, la principal ni Hermes, lee los veredictos de
-  Ouroboros sobre la tanda 2 antes de evaluarla. Eso es `anotaciones.csv`,
-  `veredictos.jsonl` e `informe_evals.json` de esa carpeta. Lo que se ve son
-  los conteos que imprimen `anotar`, `evals` y `concordancia`.
+- Ninguna sesión de Claude, la principal ni Hermes, abre lo que Ouroboros
+  deja de la tanda 2 antes de evaluarla: `anotaciones.csv`,
+  `veredictos.jsonl`, `experimento.json` e `informe_evals.json` de esa
+  carpeta. Llevan sus veredictos o las oraciones de la hoja, que también es
+  ciega: `experimento.json` no trae veredictos, pero copia la hoja entera.
+  Lo que se ve son los conteos que imprimen `anotar`, `evals` y
+  `concordancia`, y `corrida.json`, que no lleva oraciones.
 - La hoja del experto la lee `concordancia`; ninguna sesión la abre.
 - La tanda 2 se corre solo con el prompt congelado en un commit y con
   `docs/protocolo-tanda2.md` commiteado. La huella del prompt queda en
@@ -180,4 +183,6 @@ nohup $OPY -m grn_ouroboros.cli anotar --hoja <muestra_t2>/hoja_tanda1.csv \
 - `veredictos.jsonl`: la caché, con el fragmento, el motivo y los tiempos;
 - `corrida.json`: versiones, configuración, huellas y conteos, sin
   oraciones;
-- con `evals`, además `experimento.json` e `informe_evals.json`.
+- con `evals`, además `experimento.json` (un caso por ítem, con su oración)
+  e `informe_evals.json` (los casos con el veredicto y lo que dijo cada
+  evaluador).
