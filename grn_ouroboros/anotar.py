@@ -60,6 +60,13 @@ Las salidas
 Una carpeta que ya tiene una corrida con otra hoja, otro prompt, otro modelo u
 otra configuración no se reutiliza: esa corrida pudo estar pre-registrada.
 
+La carpeta nunca cae dentro de `salidas/revision`, que es la del experto
+(`validar_salida`): las salidas de Ouroboros van a `salidas/ouroboros/`, y sus
+veredictos no pueden quedar donde se anota.
+
+`leer_corrida` devuelve los ítems y los veredictos de una corrida terminada,
+para evaluarla otra vez (`evals.py`) sin volver a llamar al modelo.
+
 Biblioteca estándar y Python 3.8. No imprime: reporta por `log`.
 """
 
@@ -93,9 +100,36 @@ PAQUETES = ("strands-agents", "strands-agents-evals", "strands-agents-tools",
 
 _THINK = re.compile(r"<think>.*?</think>", re.S)
 
+# La carpeta del experto: ahí viven la hoja que anota, sus anotaciones y la
+# llave del sorteo (`servidor.py --revision salidas/revision/...`).
+CARPETA_DEL_EXPERTO = ("salidas", "revision")
+
 
 def _nada(_mensaje):
     pass
+
+
+def validar_salida(salida):
+    """La carpeta resuelta, o ValueError si cae dentro de salidas/revision.
+
+    Se compara la ruta resuelta (sin `..` ni enlaces) componente por
+    componente y con `normcase`, que en Windows no distingue mayúsculas:
+    `Salidas\\Revision` es la misma carpeta. Por componentes y no por la raíz
+    del repositorio, para que tampoco pase la `salidas/revision` de otro clon
+    o de otro worktree.
+    """
+    resuelta = os.path.realpath(os.path.abspath(salida))
+    partes = [os.path.normcase(p)
+              for p in os.path.normpath(resuelta).split(os.sep)]
+    prohibida = [os.path.normcase(p) for p in CARPETA_DEL_EXPERTO]
+    for i in range(len(partes) - 1):
+        if partes[i:i + 2] == prohibida:
+            raise ValueError(
+                "La salida cae dentro de salidas/revision, la carpeta del "
+                "experto. Las salidas de Ouroboros van a salidas/ouroboros/: "
+                "el experto no las ve, y sus veredictos no pueden quedar "
+                "donde se anota.")
+    return resuelta
 
 
 def ahora():
@@ -358,6 +392,7 @@ def ejecutar(ruta_hoja, salida, anotador, entradas, configuracion=None,
     que salieron de la caché; `segundos_esta_corrida` es el reloj de esta.
     """
     _exigir_entradas(entradas)
+    validar_salida(salida)
     items = calibracion.leer_hoja(ruta_hoja)
     os.makedirs(salida, exist_ok=True)
     ruta_veredictos = os.path.join(salida, VEREDICTOS)
@@ -415,4 +450,64 @@ def ejecutar(ruta_hoja, salida, anotador, entradas, configuracion=None,
         salidas={ANOTACIONES: procedencia.huella(ruta_anotaciones),
                  VEREDICTOS: procedencia.huella(ruta_veredictos)})
     _escribir_json(ruta_corrida, resumen)
+    return {"items": items, "resultados": resultados, "resumen": resumen}
+
+
+# ------------------------------------------------------ una corrida hecha
+
+def _items_de(ruta_anotaciones):
+    """Los ítems de `anotaciones.csv`, que trae las cuatro columnas de la
+    hoja tal como se leyeron: con ellas sale la misma llave de la caché."""
+    with io.open(ruta_anotaciones, encoding="utf-8-sig", newline="") as f:
+        lector = csv.DictReader(f)
+        if lector.fieldnames != rubrica.COLUMNAS_HOJA:
+            raise ValueError("%s no tiene las columnas de la hoja."
+                             % ANOTACIONES)
+        return [dict((c, fila[c] or "") for c in rubrica.COLUMNAS_ITEM)
+                for fila in lector]
+
+
+def leer_corrida(salida):
+    """{"items", "resultados", "resumen"} de una corrida terminada, como los
+    devuelve `ejecutar`, sin llamar al modelo.
+
+    Se exige que la corrida haya terminado bien y que `anotaciones.csv` y
+    `veredictos.jsonl` sean los que dejó (sus huellas están en
+    `corrida.json`): si cambiaron después, ya no describen esa corrida. Cada
+    veredicto se busca por la llave que dan las entradas de la corrida, no
+    por el `id_item` del JSONL: dos ítems con la misma oración y las mismas
+    entidades comparten llave, y el segundo nunca llegó a escribirse.
+    """
+    ruta_corrida = os.path.join(salida, CORRIDA)
+    if not os.path.isfile(ruta_corrida):
+        raise ValueError("La carpeta no tiene una corrida de Ouroboros "
+                         "(falta %s)." % CORRIDA)
+    try:
+        with io.open(ruta_corrida, encoding="utf-8") as f:
+            resumen = json.load(f)
+    except ValueError:
+        raise ValueError("%s no se puede leer." % CORRIDA)
+    if not isinstance(resumen, dict) or resumen.get("estatus") != "ok":
+        raise ValueError(
+            "La corrida no terminó bien: vuelve a correr anotar con la misma "
+            "hoja y la misma configuración para retomarla.")
+    salidas = resumen.get("salidas") or {}
+    for nombre in (ANOTACIONES, VEREDICTOS):
+        ruta = os.path.join(salida, nombre)
+        if procedencia.huella(ruta) != salidas.get(nombre):
+            raise ValueError("%s no es el que dejó la corrida." % nombre)
+    entradas = (resumen.get("identidad") or {}).get("entradas") or {}
+    _exigir_entradas(entradas)
+    items = _items_de(os.path.join(salida, ANOTACIONES))
+    cache = leer_veredictos(os.path.join(salida, VEREDICTOS))
+    resultados, faltan = {}, 0
+    for item in items:
+        valor = cache.get(llave_cache(item, entradas))
+        if valor is None:
+            faltan += 1
+        else:
+            resultados[item["id_item"]] = valor
+    if faltan:
+        raise ValueError("Faltan los veredictos de %d ítems en %s."
+                         % (faltan, VEREDICTOS))
     return {"items": items, "resultados": resultados, "resumen": resumen}

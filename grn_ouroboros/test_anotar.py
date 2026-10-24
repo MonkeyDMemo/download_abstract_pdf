@@ -314,5 +314,87 @@ class PruebasSalidas(Base):
                          ["entidad_1", "entidad_2", "id_item", "oracion"])
 
 
+class PruebasCarpetaDelExperto(Base):
+    """Las salidas nunca caen en salidas/revision, y nada se crea antes de
+    rechazarla."""
+
+    def test_rechaza_la_carpeta_y_lo_que_cuelga_de_ella(self):
+        for partes in (("salidas", "revision"),
+                       ("salidas", "revision", "muestra200", "ouro"),
+                       ("salidas", "ouroboros", "..", "revision", "t1")):
+            ruta = os.path.join(self.tmp, *partes)
+            with self.assertRaises(ValueError) as caja:
+                anotar.validar_salida(ruta)
+            self.assertIn("salidas/ouroboros/", str(caja.exception))
+
+    def test_la_del_repositorio_tambien(self):
+        raiz = os.path.dirname(os.path.dirname(os.path.abspath(
+            anotar.__file__)))
+        with self.assertRaises(ValueError):
+            anotar.validar_salida(os.path.join(raiz, "salidas", "revision",
+                                               "muestra200", "x"))
+
+    @unittest.skipUnless(os.name == "nt", "solo Windows no distingue "
+                                          "mayúsculas en las rutas")
+    def test_sin_distinguir_mayusculas_en_windows(self):
+        with self.assertRaises(ValueError):
+            anotar.validar_salida(os.path.join(self.tmp, "SALIDAS",
+                                               "Revision", "x"))
+
+    def test_lo_demas_pasa(self):
+        for partes in (("salidas", "ouroboros", "t1"),
+                       ("salidas", "revision2"), ("revision", "salidas")):
+            ruta = os.path.join(self.tmp, *partes)
+            self.assertEqual(anotar.validar_salida(ruta),
+                             os.path.realpath(ruta))
+
+    def test_ejecutar_no_escribe_ahi(self):
+        prohibida = os.path.join(self.tmp, "salidas", "revision", "t1")
+        with self.assertRaises(ValueError):
+            self.correr(salida=prohibida)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "salidas")))
+
+
+class PruebasLeerCorrida(Base):
+
+    def test_los_mismos_items_y_veredictos_sin_llamar(self):
+        r, _ = self.correr()
+        leida = anotar.leer_corrida(self.salida)
+        self.assertEqual(leida["items"], r["items"])
+        self.assertEqual(leida["resultados"], r["resultados"])
+        self.assertEqual(leida["resumen"]["estatus"], "ok")
+
+    def test_dos_items_que_comparten_llave(self):
+        """El segundo sale de la caché y no tiene línea propia en el
+        JSONL: se busca por la llave, no por el id_item."""
+        with io.open(self.hoja, "a", encoding="utf-8", newline="") as f:
+            csv.writer(f).writerow(["m-1004", ORACIONES["m-1001"][0],
+                                    "GenX", "genY"] + [""] * 7)
+        self.correr(dict(self.respuestas, **{"m-1004": "no se usa"}))
+        leida = anotar.leer_corrida(self.salida)
+        self.assertEqual(leida["resultados"]["m-1004"],
+                         leida["resultados"]["m-1001"])
+
+    def test_una_corrida_que_no_termino(self):
+        cortada = dict(self.respuestas, **{"m-1003": RuntimeError("caído")})
+        with self.assertRaises(RuntimeError):
+            self.correr(cortada)
+        with self.assertRaises(ValueError):
+            anotar.leer_corrida(self.salida)
+
+    def test_una_anotacion_tocada_despues(self):
+        self.correr()
+        with io.open(os.path.join(self.salida, anotar.ANOTACIONES), "a",
+                     encoding="utf-8") as f:
+            f.write("\n")
+        with self.assertRaises(ValueError) as caja:
+            anotar.leer_corrida(self.salida)
+        self.assertIn(anotar.ANOTACIONES, str(caja.exception))
+
+    def test_sin_corrida(self):
+        with self.assertRaises(ValueError):
+            anotar.leer_corrida(self.tmp)
+
+
 if __name__ == "__main__":
     unittest.main()
