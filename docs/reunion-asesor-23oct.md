@@ -153,9 +153,29 @@ contra v2 es exploratoria (`protocolo-curada-v1.md:245-248`).
   - con la abstención como error, 11/15 contra 11/15. El 73.3 % es esa base.
   - Las curadas se recalculan en el servidor.
 - **La v2 se eligió después de ver las 50,** así que es exploratoria.
-- **Separar los pares que el modelo vio al entrenar** (memorización): el
-  código está desde la fase 2 (`evaluar --particion` y `precision-ciega
-  --particion`). Corre en el servidor (`servidor-cierre.md` §5 y §6).
+- **El par visto al entrenar** (memorización; `evaluar --particion`): 12 de
+  las 50 tienen el par visto.
+  - En la v2, 5/8 con el par visto y 11/20 sin él. En la v1, 2/3 y 3/6.
+  - El bronce sin filtro también acierta más en los vistos (6/12 contra 16/38).
+    Son más fáciles para todos, así que **no hay evidencia de memorización**.
+  - El signo de la v2 con la abstención como error da 9/15, contra 11/15 de
+    «siempre +».
+- **La tanda 1 sin los artículos del entrenamiento de las curadas**
+  (`precision-ciega --particion`):
+  - **Lo que se excluye:** 92 PMIDs, 30 ítems. Quedan 169 anotados.
+  - **Bronce:** 86/169 = 50.9 %.
+
+  | modelo | red, con dirección | retiene de las verdaderas | diferencia pareada |
+  |---|---|---|---|
+  | *E. coli* | 73/121 = 60.3 % [51.4, 68.6] | 84.9 % | [+4.7, +14.9] |
+  | curada v2 | 70/112 = 62.5 % [53.3, 70.9] | 81.4 % | [+6.2, +17.3] |
+  | curada v1 | 10/13 = 76.9 % [49.7, 91.8] | 11.6 % | [+2.1, +47.9] |
+
+  - **La v2 no supera a *E. coli*** sobre ítems limpios: las diferencias caen
+    dentro de los intervalos.
+  - **Su signo empata con «siempre +»** (39/53 contra 39/53).
+  - **La v1 descarta casi todo.**
+  - Esto sostiene la decisión g: el flujo sigue con *E. coli*.
 
 ---
 

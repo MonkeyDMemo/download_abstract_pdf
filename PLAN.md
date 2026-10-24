@@ -96,7 +96,10 @@ Verificado contra el repositorio el 10-sep-2026.
     - cuando BioBERT da signo, 11/11, contra 9/11 de «siempre +» en las mismas;
     - con la abstención como error, 11/15 contra 11/15. El 73.3 % era esta segunda base.
     - Las curadas se recalculan en el servidor (`servidor-cierre.md` §6). Con n = 11 no se concluye nada sobre el signo.
-  - Separar los pares que cada modelo vio al entrenar: el código está (`evaluar --particion`) y corre en el servidor.
+  - **Por par visto al entrenar** (`evaluar --particion`, en el servidor, 23-oct). De las 50, 12 tienen el par visto, y ninguna su PMID ni su texto.
+    - v2: visto 5/8, no visto 11/20. Con signo, 9/12 cuando lo da, igual que «siempre +»; con la abstención como error, 9/15 contra 11/15.
+    - v1: visto 2/3, no visto 3/6. Con signo, 5/12 contra 9/12.
+    - El bronce sin filtro también acierta más en los vistos (6/12 contra 16/38): son más fáciles para todos, así que no hay evidencia de memorización.
 - Guarda anticircularidad: `test_contaminacion.py` impide que el bronce nombre `oro_pseudomonas`.
 
 ### 2.4 Evaluación contra la base curada — medido el 10-sep-2026
@@ -191,6 +194,19 @@ La muestra ciega es de 200 oraciones de la misma población que el 44 % (las can
   - El 70.7 % que se citaba era la base del bronce, 53/75.
   - Tomar el signo por (par, oración) en vez de por par no movió ninguna de las dos cifras.
 - **Sensibilidad,** con las 5 negadas anotadas `si` tratadas como `no`: 51.0 % y 59.9 %, diferencia [+4.3, +13.2].
+- **Sin el entrenamiento de las curadas** (`precision-ciega --particion`, en el servidor, 23-oct):
+  - **Lo que se excluye:** salen los ítems de 92 PMIDs de train o dev, los mismos para v1 y v2, que son 30 ítems. Quedan 169 anotados, y ninguno tiene su oración en train.
+  - **Bronce:** 86/169 = 50.9 % [43.4, 58.3].
+  - **Las redes, sobre los mismos 169 ítems:**
+
+    | modelo | red, con dirección | retiene de las verdaderas | diferencia pareada |
+    |---|---|---|---|
+    | *E. coli* | 73/121 = 60.3 % [51.4, 68.6] | 73/86 = 84.9 % | [+4.7, +14.9] |
+    | curada v2 | 70/112 = 62.5 % [53.3, 70.9] | 70/86 = 81.4 % | [+6.2, +17.3] |
+    | curada v1 | 10/13 = 76.9 % [49.7, 91.8] | 10/86 = 11.6 % | [+2.1, +47.9] |
+
+  - **El signo, con la abstención como error:** *E. coli* 38/51, contra 36/51 de «siempre +»; v2 39/53, contra 39/53; v1 2/8, contra 5/8.
+  - **Lectura:** la v2 no supera a *E. coli* sobre ítems limpios, y la v1 descarta casi todo.
 - **Normalización:** solo de códigos, 46 direcciones vacías y 43 signos `0`.
 - **Sin tiempos ni κ.**
 - **Diseño desde aquí** (rúbrica, enmienda 2): la tanda 1 es de desarrollo y la tanda 2 de prueba. La tanda 2 sale sin los PMIDs ni los códigos de la tanda 1, y toda regla nueva se reporta en ella.

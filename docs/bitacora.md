@@ -356,11 +356,44 @@ implementador y un revisor, fusionada sobre la fase 2 sin conflictos.
   - En la §2 del informe las columnas suman 702 y no 672: 30 filas citan dos de
     los cinco artículos y cuentan en las dos.
   - La §1 cuenta cada fila una vez.
-- **`precision-ciega` sin el train de v1 y v2:** las 4 corridas.
-- **`evaluar --particion`,** para v2 y v1.
-- **Las cifras de §5 y §6 no llegaron a esta sesión.** Faltan las líneas que
-  imprimió cada corrida para ponerlas en PLAN y en la hoja. Lo que sí se sabe
-  es que dieron lo esperado.
+- **`precision-ciega` sin el train de v1 y v2** (las 4 corridas, código 0):
+  - **Lo que se excluye:** las particiones de v1 y v2 sacan los mismos 92
+    PMIDs y 30 ítems. Quedan 169 anotados (1 sin anotar), y ninguno tiene su
+    oración en train.
+  - **El bronce:** 86/169 = 50.9 % [43.4, 58.3] con dirección; inversiones
+    36/122.
+  - **Las redes, sobre los mismos 169:**
+
+    | modelo | red, con dirección | retiene de las verdaderas | diferencia pareada | signo, abstención como error («siempre +») |
+    |---|---|---|---|---|
+    | *E. coli* | 73/121 = 60.3 % [51.4, 68.6] | 73/86 = 84.9 % | [+4.7, +14.9] | 38/51 = 74.5 % (36/51) |
+    | curada v2 | 70/112 = 62.5 % [53.3, 70.9] | 70/86 = 81.4 % | [+6.2, +17.3] | 39/53 = 73.6 % (39/53) |
+    | curada v1 | 10/13 = 76.9 % [49.7, 91.8] | 10/86 = 11.6 % | [+2.1, +47.9] | 2/8 (5/8) |
+
+  - *E. coli* da lo mismo con las dos particiones, porque los 92 PMIDs son los
+    mismos.
+  - **La sensibilidad con las negadas como `no`** no cambia la conclusión: el
+    bronce da 82/169, *E. coli* 71/121 y la v2 68/112.
+  - **Avisos de la rúbrica:** 5 `si` con negada y 16 `si` o `dudoso` sin signo
+    o sin tipo.
+- **`evaluar --particion`, el 44 % por par visto al entrenar:**
+  - **Lo visto:** 12 de las 50 tienen el par visto, ninguna su PMID ni su
+    texto.
+  - **v2:** P1 16/28. Con el par visto da 5/8 y sin él 11/20. El signo da 9/12
+    cuando lo da, igual que «siempre +» (9/12). Con la abstención como error
+    da 9/15, contra 11/15.
+  - **v1:** P1 5/9 (visto 2/3, no visto 3/6) y retiene 5 de 22. El signo da
+    5/12 cuando lo da, contra 9/12, y 5/15 con la abstención como error.
+  - **El control:** el bronce sin filtro también acierta más en los pares
+    vistos, 6/12 contra 16/38. Los vistos son más fáciles para todos, así que
+    no hay evidencia de memorización.
+- **Lectura:**
+  - **Con los artículos de su entrenamiento fuera, la v2 no supera a *E.
+    coli*.** Las diferencias caen dentro de los intervalos, y en el signo
+    empata con «siempre +».
+  - **La v1 descarta casi todo.**
+  - **El modelo del flujo sigue siendo el de *E. coli*.** Sobre ítems limpios,
+    su red le gana al bronce por [+4.7, +14.9] puntos.
 - **Los informes filtrados** están en `salidas/contraste/`.
 
 **Lo que pasó antes de la revisión, y la regla que deja.**

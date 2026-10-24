@@ -31,8 +31,8 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
   - las mediciones del servidor: **corrieron todas con `main`** el 23-oct
     (`servidor-cierre.md` §0 a §6), y coinciden. Esto incluye «siempre activa»,
     el techo, la conciliación, la red recomendada, las tablas, la precisión de
-    v1 y v2 sin su entrenamiento y el 44 % por par visto. Falta copiar a PLAN y
-    a la hoja las cifras de §5 y §6;
+    v1 y v2 sin su entrenamiento y el 44 % por par visto. Las cifras están en
+    PLAN §2.3 y §2.5 y en la hoja;
   - ~~recalcular la línea base «siempre +» del signo sobre los mismos ítems~~:
     **hecho** en la fase 2. En la tanda 1, 42/60 contra 41/60; en las 50,
     11/15 contra 11/15;
