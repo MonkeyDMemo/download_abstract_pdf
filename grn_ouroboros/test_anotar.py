@@ -363,6 +363,40 @@ class PruebasSalidas(Base):
         self.assertEqual(sorted(filas), sorted(ORACIONES))
         self.assertEqual(filas["m-1002"]["negada"], "si")
 
+    def test_el_truncado_y_el_json_invalido_son_error_en_concordancia(self):
+        """De punta a punta, contra un experto que anota justo lo que el
+        modelo diría sin abstenerse: las dos abstenciones salen vacías en la
+        hoja y `concordancia` las cuenta como error en todos los campos.
+
+        kappa en relación, a mano: experto (si, no, si), modelo (abstención,
+        abstención, si). p_o = 1/3; p_e = (2/3)(1/3) + (1/3)(0) = 2/9;
+        kappa = (1/3 - 2/9) / (1 - 2/9) = 1/7.
+        """
+        from grn_verificacion import concordancia
+        truncada = {"texto": self.respuestas["m-1001"],
+                    "done_reason": "length", "truncado": True}
+        self.correr(dict(self.respuestas, **{
+            "m-1001": truncada, "m-1002": "La relación es no."}))
+        experto = os.path.join(self.tmp, "experto.csv")
+        with io.open(experto, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=rubrica.COLUMNAS_HOJA)
+            w.writeheader()
+            for id_item, (oracion, e1, e2) in ORACIONES.items():
+                juicio = json.loads(self.respuestas[id_item])
+                fila = dict((c, juicio[c]) for c in rubrica.COLUMNAS_VALORES)
+                fila.update(id_item=id_item, oracion=oracion, entidad_1=e1,
+                            entidad_2=e2)
+                w.writerow(fila)
+        r = concordancia.calcular(
+            experto, os.path.join(self.salida, anotar.ANOTACIONES))
+        self.assertEqual(r["abstenciones_del_modelo"]["k"], 2)
+        for campo, p in r["acuerdo_por_campo"].items():
+            self.assertEqual((p["k"], p["n"]), (1, 3), campo)
+        self.assertAlmostEqual(r["kappa_relacion"], 1 / 7.0, places=3)
+        relacion = r["matrices"]["relacion"]
+        self.assertEqual((relacion["si"][concordancia.ABSTENCION],
+                          relacion["no"][concordancia.ABSTENCION]), (1, 1))
+
     def test_corrida_json_trae_conteos_y_ninguna_oracion(self):
         self.correr()
         texto = self.leer(anotar.CORRIDA).decode("utf-8")
