@@ -293,10 +293,22 @@ class PruebasNuncaBedrock(unittest.TestCase):
             Agent(callback_handler=None)
 
     def test_el_anotador_no_construye_bedrock(self):
-        from grn_ouroboros import agente
-        for herramientas in ("ninguna", "buscar_locus"):
-            agente.crear_anotador(agente.PRINCIPAL, "Sistema.",
-                                  herramientas=herramientas)
+        """Llamándolo, no solo creándolo: el `Agent` se arma dentro del
+        anotador, uno por ítem, y `crear_anotador` solo arma el
+        `OllamaModel`. El cliente de `ollama` es el falso de `test_agente`:
+        ninguna petición sale a la red."""
+        import ollama
+        from grn_ouroboros import agente, test_agente
+        falso = test_agente._ClienteFalso
+        with mock.patch.object(ollama, "AsyncClient", falso), \
+                mock.patch.multiple(falso, peticiones=[], construido_con=[],
+                                    guion=None, texto="{}", razon="stop"):
+            for herramientas in ("ninguna", "buscar_locus"):
+                anotador = agente.crear_anotador(
+                    agente.PRINCIPAL, "Sistema.", herramientas=herramientas)
+                r = anotador(test_agente.ITEM)
+                self.assertEqual(r["done_reason"], "stop", herramientas)
+            self.assertEqual(len(falso.peticiones), 2)
 
     def test_el_experimento_no_construye_bedrock(self):
         r = evals.ejecutar(self.tmp, ITEMS, RESULTADOS, REFERENCIA)
