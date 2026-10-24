@@ -14,6 +14,10 @@ tirando las relaciones buenas no es mejorar.
 
 Las 50 se miraron al revisar el punto 30, así que para la sintaxis son
 desarrollo, no prueba.
+
+**Con `particion`** (la carpeta de los `entity_marked_*.jsonl` del modelo), el
+P1 se separa en los juicios cuyo par el modelo vio al entrenar (en train o en
+dev) y los que no: ver `por_par_visto`. Solo conteos.
 """
 
 import collections
@@ -30,6 +34,7 @@ if _ETAPA2 not in sys.path:
 
 from grn_bronce.texto import normalizar_espacios   # noqa: E402
 from grn_verificacion import capa as _capa, puente  # noqa: E402
+from grn_verificacion import entrenamiento          # noqa: E402
 
 RUTA_JUICIOS = os.path.join(_RAIZ, "etapa2", "evaluacion",
                             "juicio_consolidado.csv")
@@ -120,6 +125,11 @@ def precision(juicios, retenida, relacion=None):
     return proporcion(k, n)
 
 
+def _pasa_umbral(unidas, j):
+    f = unidas.get(j["_linea"])
+    return f is not None and f["pasa_umbral"] == "si"
+
+
 def evaluar(juicios, unidas, sintaxis_presente=False):
     """Las métricas fijadas el 8-oct. Devuelve un dict serializable."""
     rel = collections.Counter(j["relacion"] for j in juicios)
@@ -130,8 +140,7 @@ def evaluar(juicios, unidas, sintaxis_presente=False):
             "11-sep." % (rel["si"], len(juicios)))
 
     def pasa(j):
-        f = unidas.get(j["_linea"])
-        return f is not None and f["pasa_umbral"] == "si"
+        return _pasa_umbral(unidas, j)
 
     def relacion_biobert(j):
         f = unidas.get(j["_linea"])
@@ -239,6 +248,112 @@ def evaluar(juicios, unidas, sintaxis_presente=False):
     return resultado
 
 
+# ------------------------------------------------- lo que el modelo ya vio
+
+def clave_par(tf, target):
+    """El par dirigido (regulador, blanco), cada nombre en la forma canónica
+    de `entrenamiento.canonico`: minúsculas y sin puntuación.
+
+    Así LasR y lasR, o mexEF-oprN y «mexEF oprN», son el mismo nombre (gen y
+    proteína son la misma entidad). Dirigido, como lo mide
+    `etapa2/particionar.py` (`(tf, target)` en minúsculas): el modelo lee el
+    regulador como `<e1>`, y el par al revés es otra entrada con otra
+    etiqueta.
+    """
+    return (entrenamiento.canonico(tf or ""),
+            entrenamiento.canonico(target or ""))
+
+
+def leer_particion(carpeta):
+    """Lo que el modelo vio al entrenar: train y dev, que elige la época; test
+    no. Devuelve {'ejemplos': n, 'pares': set, 'pmids': set, 'textos': set}.
+
+    Se lee como en `verificar` (I3): línea por línea, y un error dice el
+    archivo y la línea, nunca la ruta ni el contenido, que deriva de la base
+    curada. El par está explícito en cada ejemplo: `tf` y `target`, los
+    campos que `particionar.py` exige y con los que mide la fuga por par.
+
+    `~` se expande, como en `precision-ciega --particion`: desde una variable
+    entre comillas simples llega sin expandir, y la misma ruta que allá
+    funciona aquí decía que faltaba train.
+    """
+    carpeta = os.path.expanduser(carpeta)
+    vista = {"ejemplos": 0, "pares": set(), "pmids": set(), "textos": set()}
+    for nombre in entrenamiento.ARCHIVOS[:2]:
+        ruta = os.path.join(carpeta, nombre)
+        if not os.path.isfile(ruta):
+            raise ErrorEvaluacion("Falta %s en la carpeta de --particion."
+                                  % nombre)
+        with io.open(ruta, encoding="utf-8") as f:
+            for numero, linea in enumerate(f, 1):
+                if not linea.strip():
+                    continue
+                try:
+                    e = json.loads(linea)
+                except ValueError:
+                    raise ErrorEvaluacion("%s, línea %d ilegible."
+                                          % (nombre, numero))
+                if not isinstance(e, dict) or not all(
+                        isinstance(e.get(c), str)
+                        for c in ("text", "tf", "target")):
+                    raise ErrorEvaluacion("%s, línea %d sin text, tf o "
+                                          "target." % (nombre, numero))
+                vista["ejemplos"] += 1
+                vista["pares"].add(clave_par(e["tf"], e["target"]))
+                vista["textos"].add(entrenamiento.canonico(e["text"]))
+                pmid = entrenamiento.pmid_valido(e.get("pmid"))
+                if pmid:
+                    vista["pmids"].add(pmid)
+    return vista
+
+
+def por_par_visto(juicios, unidas, vista):
+    """El P1 de las 50, separado por si el modelo vio su par al entrenar.
+
+    Las 50 estaban reservadas: sus PMIDs y sus oraciones no entran al
+    entrenamiento, así que lo que el modelo pudo memorizar de ellas es el par
+    («LasR → lasB es activates», aprendido en otro artículo). Si el P1 de los
+    pares vistos le gana al de los no vistos, parte de la cifra es memoria.
+    El P0 con el mismo corte es el control: si para el bronce los pares
+    vistos también son más ciertos, la diferencia es de los pares (los
+    conocidos son los fáciles) y no del modelo. Que las 50 de verdad no estén
+    en train ni dev se comprueba aquí mismo, por PMID y por texto canónico.
+
+    El par de un juicio es el que leyó el modelo: `tf` y `target` de su fila
+    de la capa, la forma de presentación de los ejemplos; sin esas columnas,
+    el regulador y el blanco del juicio (ids canónicos del bronce), que con
+    `clave_par` dan el mismo nombre. Solo conteos.
+    """
+    def visto(j):
+        f = unidas.get(j["_linea"]) or {}
+        return clave_par(f.get("tf") or j.get("regulador"),
+                         f.get("target") or j.get("blanco")) in vista["pares"]
+
+    def pasa(j):
+        return _pasa_umbral(unidas, j)
+
+    resultado = collections.OrderedDict()
+    resultado["ejemplos_train_dev"] = vista["ejemplos"]
+    resultado["criterio"] = ("par dirigido (tf, target) de los ejemplos de "
+                             "train y dev, cada nombre en la forma canónica "
+                             "de entrenamiento.canonico")
+    resultado["juzgadas_con_par_visto"] = proporcion(
+        sum(1 for j in juicios if visto(j)), len(juicios))
+    resultado["P1_par_visto"] = precision(
+        juicios, lambda j: pasa(j) and visto(j))
+    resultado["P1_par_no_visto"] = precision(
+        juicios, lambda j: pasa(j) and not visto(j))
+    resultado["P0_par_visto"] = precision(juicios, visto)
+    resultado["P0_par_no_visto"] = precision(juicios, lambda j: not visto(j))
+    resultado["juzgadas_con_pmid_en_train_dev"] = sum(
+        1 for j in juicios
+        if entrenamiento.pmid_valido(j.get("pmid")) in vista["pmids"])
+    resultado["juzgadas_con_texto_en_train_dev"] = sum(
+        1 for j in juicios
+        if entrenamiento.canonico(j.get("oracion") or "") in vista["textos"])
+    return resultado
+
+
 def _categoria(signos):
     signos = set(s for s in signos if s)
     con_signo = signos & {"+", "-"}
@@ -309,9 +424,13 @@ def _signo_cercano(fila, vocab):
     return mejor
 
 
-def evaluar_carpeta(carpeta, ruta_bronce=None, log=_nada):
-    """Escribe `evaluacion.json` en la carpeta del flujo."""
+def evaluar_carpeta(carpeta, ruta_bronce=None, log=_nada, particion=None):
+    """Escribe `evaluacion.json` en la carpeta del flujo. Con `particion`,
+    además `P1_por_par_visto` (ver `por_par_visto`)."""
     from grn_bronce import vocabulario
+    # Antes que nada: una partición que no se puede leer no deja a medias un
+    # evaluacion.json sin la sección que se pidió.
+    vista = leer_particion(particion) if particion else None
     ruta_capa = os.path.join(carpeta, "capa_pares.csv")
     with io.open(ruta_capa, encoding="utf-8-sig", newline="") as f:
         filas = list(csv.DictReader(f))
@@ -328,6 +447,8 @@ def evaluar_carpeta(carpeta, ruta_bronce=None, log=_nada):
     resultado["sin_unir"] = sin_unir
     resultado["disparador_dominante_punto_18"] = disparador_dominante(
         filas, vocabulario.Vocabulario.cargar())
+    if vista is not None:
+        resultado["P1_por_par_visto"] = por_par_visto(juicios, unidas, vista)
     puente.escribir_json(os.path.join(carpeta, "evaluacion.json"), resultado)
 
     def pct(d):
@@ -362,4 +483,17 @@ def evaluar_carpeta(carpeta, ruta_bronce=None, log=_nada):
     log("            control léxico %s" % dd["lexico"])
     if sintaxis_presente:
         log("            sintaxis %s" % dd["sintaxis"])
+    if vista is not None:
+        m = resultado["P1_por_par_visto"]
+        log("  M1  P1, par visto al entrenar:    %s" % pct(m["P1_par_visto"]))
+        log("      P1, par no visto:             %s"
+            % pct(m["P1_par_no_visto"]))
+        log("      P0 (control), visto / no:     %s / %s"
+            % (pct(m["P0_par_visto"]), pct(m["P0_par_no_visto"])))
+        log("      juzgadas con el par visto: %d de %d; con su PMID en "
+            "train o dev: %d; con su texto: %d"
+            % (m["juzgadas_con_par_visto"]["k"],
+               m["juzgadas_con_par_visto"]["n"],
+               m["juzgadas_con_pmid_en_train_dev"],
+               m["juzgadas_con_texto_en_train_dev"]))
     return resultado

@@ -3,7 +3,7 @@
     python -m grn_verificacion.cli pares --bronce CSV --carpeta DIR [--limite N]
     python -m grn_verificacion.cli biobert --carpeta DIR --modelo DIR [--reusar-de DIR]
     python -m grn_verificacion.cli capa --carpeta DIR --bronce CSV [--sintaxis JSONL]
-    python -m grn_verificacion.cli evaluar --carpeta DIR --bronce CSV
+    python -m grn_verificacion.cli evaluar --carpeta DIR --bronce CSV [--particion DIR]
     python -m grn_verificacion.cli verificar --carpeta DIR [--datos D] [--particion P] [--contra J] [--json J] [--html H]
     python -m grn_verificacion.cli datos-entrenamiento --pares JSONL --base XLSX ...
     python -m grn_verificacion.cli reentrenar correr|estado|detener --raiz DIR ...
@@ -121,7 +121,8 @@ def cmd_capa(args):
 
 def cmd_evaluar(args):
     from grn_verificacion import evaluar
-    evaluar.evaluar_carpeta(args.carpeta, args.bronce, log=log)
+    evaluar.evaluar_carpeta(args.carpeta, args.bronce, log=log,
+                            particion=args.particion)
     return 0
 
 
@@ -628,7 +629,10 @@ def cmd_precision_ciega(args):
     from grn_verificacion import precision_ciega
     try:
         precision_ciega.ejecutar(args.anotacion, args.llave, args.carpeta,
-                                 args.json, log=log)
+                                 args.json, log=log, red=args.red,
+                                 excluir=args.excluir_pmids,
+                                 particion=args.particion, capa=args.capa,
+                                 etiqueta=args.etiqueta)
     except (ValueError, OSError, KeyError) as e:
         log("ERROR: %s" % e)
         return 1
@@ -649,6 +653,27 @@ def _sub_precision_ciega(sub):
                     help="Carpeta del flujo: capa_pares.csv, red.tsv y "
                          "red_evidencias.tsv.")
     pc.add_argument("--json", help="Escribe ahí el resultado completo.")
+    pc.add_argument("--red", default=None, metavar="NOMBRE",
+                    help="Mide la red con otras reglas red_NOMBRE.tsv "
+                         "(grn_red consolidar) en vez de red.tsv; sus "
+                         "aristas expandidas no se leen.")
+    pc.add_argument("--capa", default=None, metavar="RUTA",
+                    help="El capa_pares.csv de la llave; por omisión, el de "
+                         "--carpeta. Para medir la carpeta de otro modelo con "
+                         "la capa del sorteo.")
+    pc.add_argument("--excluir-pmids", dest="excluir_pmids", action="append",
+                    default=[], metavar="ARCHIVO",
+                    help="PMIDs con el formato de reservas.tsv "
+                         "(pmid<TAB>número): sus ítems salen de todo, bronce "
+                         "y red. Se puede repetir.")
+    pc.add_argument("--particion", default=None, metavar="DIR",
+                    help="Carpeta con los entity_marked_*.jsonl del modelo: "
+                         "los ítems de artículos de train o dev salen de "
+                         "todo, y se cuenta cuántos de los demás tienen su "
+                         "oración en train. Solo conteos.")
+    pc.add_argument("--etiqueta", default=None, metavar="TEXTO",
+                    help="Texto libre que solo se guarda en el JSON (por "
+                         "ejemplo, tanda2).")
     pc.set_defaults(func=cmd_precision_ciega)
 
 
@@ -702,6 +727,10 @@ def main(argv=None):
     ev = sub.add_parser("evaluar", help="Recalcula el 44 %% con BioBERT.")
     ev.add_argument("--carpeta", required=True)
     ev.add_argument("--bronce", required=True)
+    ev.add_argument("--particion", default=None, metavar="DIR",
+                    help="Carpeta con los entity_marked_{train,dev}.jsonl del "
+                         "modelo: separa el P1 de las 50 en par visto y par "
+                         "no visto al entrenar. Solo conteos.")
     ev.set_defaults(func=cmd_evaluar)
 
     vf = sub.add_parser(

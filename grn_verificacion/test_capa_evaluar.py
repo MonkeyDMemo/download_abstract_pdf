@@ -384,5 +384,165 @@ class PruebasEvaluacion(unittest.TestCase):
         self.assertIsNone(evaluar.proporcion(0, 0)["valor"])
 
 
+def _kn(p):
+    return (p["k"], p["n"])
+
+
+class PruebasParVisto(unittest.TestCase):
+    """`evaluar --particion`: el P1 de las 50 por si el modelo vio el par."""
+
+    def setUp(self):
+        import tempfile
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = tmp.name
+        self.particion = os.path.join(self.tmp, "particion")
+        os.makedirs(self.particion)
+        # rA -> rB está en train escrito RA / rb: en la forma canónica es el
+        # mismo par. El segundo ejemplo trae el PMID del juicio 0 y el texto
+        # del juicio 1, que no deberían estar.
+        self._jsonl("train", [
+            {"text": "<e1>RA</e1> activa <e2>rb</e2>.", "label": "activates",
+             "pmid": 900, "tf": "RA", "target": "rb"},
+            {"text": "<e1>Oración</e1> <e2>1</e2>.", "label": "no_relation",
+             "pmid": 100, "tf": "rQ", "target": "rZ"}])
+        self._jsonl("dev", [
+            {"text": "<e1>rC</e1> reprime <e2>rD</e2>.", "label": "represses",
+             "pmid": 901, "tf": "rC", "target": "rD"}])
+        # test no cuenta: el modelo no lo vio al entrenar.
+        self._jsonl("test", [
+            {"text": "<e1>rX</e1> y <e2>rY</e2>.", "label": "activates",
+             "pmid": 902, "tf": "rX", "target": "rY"}])
+
+    def _jsonl(self, parte, filas):
+        import json
+        with open(os.path.join(self.particion,
+                               "entity_marked_%s.jsonl" % parte), "w",
+                  encoding="utf-8", newline="\n") as f:
+            for fila in filas:
+                f.write(json.dumps(fila, ensure_ascii=False) + "\n")
+
+    def _juicios(self):
+        """Los 22 `si` son las líneas 0 a 21. El par visto (rA -> rB) queda en
+        las 0 a 10; la 11 lo trae al revés, y la 12 tiene en la capa el par
+        de dev (rC -> rD), que es el que el modelo leyó."""
+        juicios = _juicios()
+        for i, j in enumerate(juicios):
+            if i >= 11:
+                j["regulador"], j["blanco"] = "rX", "rY"
+        juicios[11]["regulador"], juicios[11]["blanco"] = "rB", "rA"
+        unidas = _unidas(juicios, pasa=lambda j: j["_linea"] < 30)
+        unidas[juicios[12]["_linea"]].update(tf="rC", target="rD")
+        return juicios, unidas
+
+    def test_separa_el_p1_por_par_visto(self):
+        juicios, unidas = self._juicios()
+
+        m = evaluar.por_par_visto(juicios, unidas,
+                                  evaluar.leer_particion(self.particion))
+
+        self.assertEqual(m["ejemplos_train_dev"], 3)
+        self.assertEqual(_kn(m["juzgadas_con_par_visto"]), (12, 50))
+        # Las 28 primeras pasan el umbral: las 12 vistas, y de las no vistas,
+        # 16, con 10 `si` (la 11 y de la 13 a la 21).
+        self.assertEqual(_kn(m["P1_par_visto"]), (12, 12))
+        self.assertEqual(_kn(m["P1_par_no_visto"]), (10, 16))
+        self.assertEqual(_kn(m["P0_par_visto"]), (12, 12))
+        self.assertEqual(_kn(m["P0_par_no_visto"]), (10, 38))
+        self.assertEqual(m["juzgadas_con_pmid_en_train_dev"], 1)
+        self.assertEqual(m["juzgadas_con_texto_en_train_dev"], 1)
+
+        # P1 es con el umbral: una vista que no lo pasa sale de P1 y no de P0.
+        unidas[juicios[0]["_linea"]]["pasa_umbral"] = "no"
+        m = evaluar.por_par_visto(juicios, unidas,
+                                  evaluar.leer_particion(self.particion))
+        self.assertEqual(_kn(m["P1_par_visto"]), (11, 11))
+        self.assertEqual(_kn(m["P0_par_visto"]), (12, 12))
+
+    def test_expande_la_tilde_como_precision_ciega(self):
+        """Desde una variable entre comillas simples `~` llega sin expandir;
+        `precision-ciega --particion` ya lo expandía."""
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"HOME": self.tmp,
+                                          "USERPROFILE": self.tmp}):
+            vista = evaluar.leer_particion(os.path.join("~", "particion"))
+        self.assertEqual(vista["ejemplos"], 3)
+
+    def test_sin_dev_se_detiene_sin_decir_la_ruta(self):
+        os.remove(os.path.join(self.particion, "entity_marked_dev.jsonl"))
+        with self.assertRaises(evaluar.ErrorEvaluacion) as ctx:
+            evaluar.leer_particion(self.particion)
+        self.assertIn("entity_marked_dev.jsonl", str(ctx.exception))
+        self.assertNotIn(self.particion, str(ctx.exception))
+
+    def test_un_ejemplo_sin_par_se_detiene_con_la_linea_y_sin_el_texto(self):
+        self._jsonl("dev", [{"text": "<e1>secreto</e1> <e2>x</e2>",
+                             "label": "activates", "pmid": 1}])
+        with self.assertRaises(evaluar.ErrorEvaluacion) as ctx:
+            evaluar.leer_particion(self.particion)
+        self.assertIn("línea 1", str(ctx.exception))
+        self.assertNotIn("secreto", str(ctx.exception))
+
+    def test_evaluar_carpeta_escribe_la_seccion_solo_con_particion(self):
+        import csv
+        import json
+        from unittest import mock
+        juicios, unidas = self._juicios()
+        carpeta = os.path.join(self.tmp, "corrida")
+        os.makedirs(carpeta)
+        columnas = ["pmid", "oracion", "tf_id", "target_id", "tf", "target",
+                    "pasa_umbral", "prediccion", "signo_sugerido",
+                    "par_del_bronce", "mencion_tf", "mencion_target",
+                    "direccion_sintaxis", "signo_dominante"]
+        with open(os.path.join(carpeta, "capa_pares.csv"), "w",
+                  encoding="utf-8", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=columnas)
+            w.writeheader()
+            for j in juicios:
+                u = unidas[j["_linea"]]
+                w.writerow({"pmid": j["pmid"], "oracion": j["oracion"],
+                            "tf_id": j["regulador"], "target_id": j["blanco"],
+                            "tf": u.get("tf", j["regulador"]),
+                            "target": u.get("target", j["blanco"]),
+                            "pasa_umbral": u["pasa_umbral"],
+                            "prediccion": u["prediccion"],
+                            "signo_sugerido": "+", "par_del_bronce": "directo",
+                            "mencion_tf": j["regulador"],
+                            "mencion_target": j["blanco"],
+                            "direccion_sintaxis": "", "signo_dominante": ""})
+
+        def leer():
+            return [dict(j) for j in juicios]
+
+        lineas = []
+        with mock.patch.object(evaluar, "leer_juicios", leer):
+            evaluar.evaluar_carpeta(carpeta, log=lineas.append)
+            with open(os.path.join(carpeta, "evaluacion.json"),
+                      encoding="utf-8") as f:
+                self.assertNotIn("P1_por_par_visto", json.load(f))
+            evaluar.evaluar_carpeta(carpeta, log=lineas.append,
+                                    particion=self.particion)
+        with open(os.path.join(carpeta, "evaluacion.json"),
+                  encoding="utf-8") as f:
+            m = json.load(f)["P1_por_par_visto"]
+        self.assertEqual(_kn(m["P1_par_visto"]), (12, 12))
+        self.assertTrue(any("M1" in l for l in lineas))
+        self.assertFalse(any("rA" in l or "rC" in l for l in lineas))
+
+    def test_la_cli_pasa_la_particion(self):
+        from unittest import mock
+        from grn_verificacion import cli
+        with mock.patch.object(evaluar, "evaluar_carpeta") as falso, \
+                mock.patch.object(cli, "log", lambda m: None):
+            codigo = cli.main(["evaluar", "--carpeta", "C", "--bronce", "B",
+                               "--particion", self.particion])
+        self.assertEqual(codigo, 0)
+        self.assertEqual(falso.call_args[1]["particion"], self.particion)
+        with mock.patch.object(evaluar, "evaluar_carpeta") as falso, \
+                mock.patch.object(cli, "log", lambda m: None):
+            cli.main(["evaluar", "--carpeta", "C", "--bronce", "B"])
+        self.assertIsNone(falso.call_args[1]["particion"])
+
+
 if __name__ == "__main__":
     unittest.main()
