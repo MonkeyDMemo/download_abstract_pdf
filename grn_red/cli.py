@@ -3,6 +3,8 @@ en `consolidar.py`.
 
     python -m grn_red.cli consolidar --carpeta salidas/flujo/corrida4_run22
     python -m grn_red.cli consolidar --carpeta ... --perfil recomendado
+    python -m grn_red.cli consolidar --carpeta ... --signo-lexico evidencias \
+        --voto-articulo --nombre signo
     python -m grn_red.cli paquete --carpeta salidas/flujo/corrida4_run22
 
 Lo normal es no llamarlo a mano: `python flujo.py` corre `consolidar` en los
@@ -46,7 +48,8 @@ def cmd_consolidar(args):
             nivel_soporte=args.nivel_soporte, operones=args.operones,
             mayoria=args.mayoria, umbrales=args.umbrales,
             min_evidencias=args.min_evidencias,
-            min_articulos=args.min_articulos)
+            min_articulos=args.min_articulos,
+            signo_lexico=args.signo_lexico, voto_articulo=args.voto_articulo)
         resumen = consolidar.consolidar(args.carpeta, cfg, nombre=args.nombre,
                                         log=log)
     except consolidar.ErrorConsolidar as e:
@@ -106,10 +109,23 @@ def main(argv=None):
                     default=None)
     cs.add_argument("--min-articulos", dest="min_articulos", type=int,
                     default=None)
+    cs.add_argument("--signo-lexico", dest="signo_lexico", default=None,
+                    choices=["evidencias", "aristas"],
+                    help="Voto léxico de las evidencias que BioBERT dejó en "
+                         "regulates, con el disparador con signo más cercano: "
+                         "evidencias (todas) o aristas (solo las aristas sin "
+                         "voto con signo de BioBERT). Apagado por omisión; "
+                         "pide --nombre.")
+    cs.add_argument("--voto-articulo", dest="voto_articulo",
+                    action="store_const", const=True, default=None,
+                    help="En las aristas con votos + y -, cada artículo vota "
+                         "con la mayoría de sus oraciones. Apagado por "
+                         "omisión; pide --nombre.")
     cs.add_argument("--nombre", default=None,
                     help="Las salidas van a red_<nombre>*.tsv/json "
                          "(recomendada, si las reglas no son las por "
-                         "omisión).")
+                         "omisión). Obligatorio con --signo-lexico o "
+                         "--voto-articulo.")
     cs.set_defaults(func=cmd_consolidar)
     pq = sub.add_parser(
         "paquete",

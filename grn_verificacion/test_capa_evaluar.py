@@ -18,6 +18,7 @@ _RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _RAIZ)
 
 from grn_bronce import operones   # noqa: E402
+from grn_comun import signo_lexico   # noqa: E402
 from grn_verificacion import capa, evaluar   # noqa: E402
 
 ETIQUETAS = ["activates", "no_relation", "regulates", "represses"]
@@ -173,7 +174,12 @@ def _unidas(juicios, pasa=lambda j: True, clase="activates", direccion=""):
 
 
 class PruebasControlLexico(unittest.TestCase):
-    """Punto 18: el signo del disparador CON SIGNO más cercano."""
+    """Punto 18: el signo del disparador CON SIGNO más cercano.
+
+    Desde el 23-oct-2026 el algoritmo vive en `grn_comun/signo_lexico.py`,
+    que la red también usa como voto: cada caso pasa por las dos puertas, la
+    de la capa y la de `signo_cercano`, y las dos tienen que decir lo mismo.
+    """
 
     class _Vocab(object):
         def __init__(self, disparadores):
@@ -181,6 +187,13 @@ class PruebasControlLexico(unittest.TestCase):
 
         def disparadores_en(self, oracion):
             return self.disparadores
+
+    def signo(self, fila, vocab):
+        de_la_capa = evaluar._signo_cercano(fila, vocab)
+        self.assertEqual(signo_lexico.signo_cercano(
+            fila["oracion"], fila["mencion_tf"], fila["mencion_target"],
+            vocab), de_la_capa)
+        return de_la_capa
 
     def test_un_interrogacion_cercano_no_le_gana_a_un_signo_lejano(self):
         """Así estaba la primera medición: un «regulates» junto al par le
@@ -190,13 +203,13 @@ class PruebasControlLexico(unittest.TestCase):
                 "mencion_target": "wvaA"}
         vocab = self._Vocab([(5, 14, "regulates", "?"),
                              (36, 45, "represses", "-")])
-        self.assertEqual(evaluar._signo_cercano(fila, vocab), "-")
+        self.assertEqual(self.signo(fila, vocab), "-")
 
     def test_sin_disparadores_con_signo_no_hay_signo(self):
         fila = {"oracion": "QzaR regulates wvaA.", "mencion_tf": "QzaR",
                 "mencion_target": "wvaA"}
         vocab = self._Vocab([(5, 14, "regulates", "?")])
-        self.assertEqual(evaluar._signo_cercano(fila, vocab), "")
+        self.assertEqual(self.signo(fila, vocab), "")
 
     def test_gana_el_mas_cercano_al_tramo(self):
         oracion = "Upon induction QzaR activates wvaA but represses wvbA."
@@ -204,7 +217,7 @@ class PruebasControlLexico(unittest.TestCase):
                 "mencion_target": "wvaA"}
         vocab = self._Vocab([(20, 29, "activates", "+"),
                              (39, 48, "represses", "-")])
-        self.assertEqual(evaluar._signo_cercano(fila, vocab), "+")
+        self.assertEqual(self.signo(fila, vocab), "+")
 
 
 class PruebasCapaExigeLasPrediccionesDeEsosPares(unittest.TestCase):
