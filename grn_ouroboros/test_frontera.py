@@ -37,10 +37,13 @@ NOMBRE = os.path.basename(PAQUETE)
 TERCEROS = ("strands", "strands_evals", "ollama", "pydantic")
 
 # Lo que el recorrido no mira: las carpetas ocultas (los .venv*, .claude con
-# sus worktrees, .git), las salidas y los datos, que no son código del
-# proyecto, y lo que dejan pip y Python. Un worktree dentro de .claude es otra
-# copia de todo el repositorio, con su propio grn_ouroboros.
-EXCLUIDAS = ("salidas", "datos", "build", "dist", "venv", "__pycache__",
+# sus worktrees, .git), lo que dejan pip y Python, y las salidas y los datos,
+# que no son código del proyecto. Un worktree dentro de .claude es otra copia
+# de todo el repositorio, con su propio grn_ouroboros. `runs` y `resultados`
+# son lo que `reentrenar` deja en el servidor, junto a `datos`: derivan de la
+# base curada, y ni una prueba entra ahí.
+EXCLUIDAS = ("salidas", "datos", "datos_etapa2", "runs", "resultados",
+             "modelo_limpio_run22", "build", "dist", "venv", "__pycache__",
              "node_modules")
 
 CARPETA_CORRIDA4 = os.path.join(RAIZ, "salidas", "flujo", "corrida4_run22")
