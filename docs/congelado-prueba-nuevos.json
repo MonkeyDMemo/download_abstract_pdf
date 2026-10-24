@@ -1,0 +1,58 @@
+{
+  "que_es": "El congelamiento de la prueba con abstracts nuevos (docs/protocolo-prueba-nuevos.md): nada de esto cambia hasta reportarla.",
+  "fecha": "2026-10-23",
+  "codigo": {
+    "commit": "3767db8",
+    "etiqueta": "congelado-prueba-nuevos",
+    "nota": "El código es el del commit; la etiqueta va en el commit que agrega este archivo."
+  },
+  "modelo": {
+    "descripcion": "BioBERT run 22 de E. coli, el de la red oficial",
+    "huellas_modelo": {
+      "pytorch_model.bin": "67bf1fee8589d7a3",
+      "special_tokens_map.json": "b6d346be366a7d1d",
+      "tokenizer.json": "c7a8838a901d812c",
+      "tokenizer_config.json": "ae57eda34a3d4e3b",
+      "vocab.txt": "eeaa9875b23b04b4"
+    },
+    "id2label": {
+      "0": "activates",
+      "1": "no_relation",
+      "2": "regulates",
+      "3": "represses"
+    },
+    "max_length": 512,
+    "do_lower_case": true
+  },
+  "red": {
+    "regla": "etapa2/red.py por omisión (grn_red.cli consolidar sin opciones)",
+    "umbrales": {
+      "activates": 0.65,
+      "represses": 0.7,
+      "regulates": 0.6
+    },
+    "fuente_umbrales": "por omision",
+    "mayoria": 0.66,
+    "max_por_par": 200,
+    "min_evidencias": 1,
+    "min_articulos": 1,
+    "incluir_autorregulacion": "false",
+    "sha256_red_corrida4": "5f9dc6d4664548ee8cd56e7a3708b303ad850cf996c0b7c9755c13b55ed14946"
+  },
+  "recursos_sha256": {
+    "grn_bronce/recursos/genes_pao1.tsv": "ef8aa4e584f3bab6eb29578598f25de9f31e07040d35f15a1734ac95ca6d87fd",
+    "grn_bronce/recursos/manual_pao1.tsv": "dabc9a9983279273ab25601fc4443e4ce8eb36c5be904bb9a5a7156c2c5fce10",
+    "grn_bronce/recursos/operones_pao1.tsv": "8340a7ccac7611be800382c59d8c4c81ab0d5050d592ffebcfdae2b56104dfb6",
+    "grn_bronce/recursos/operones_base.tsv": "66b594bba16236d916425949af645cf9de880b3eebbde94d936004f34d5042ba",
+    "grn_bronce/recursos/disparadores.csv": "50cb71967b228ff469665b71e661a3d4c2201f497b3afdb2da99519b9a03666e",
+    "grn_bronce/recursos/contexto_regulatorio.csv": "e5ab40916faf3e81f5a85dad8e13b26297632b84d6e80f2a0b7751d2996fac32",
+    "grn_bronce/recursos/evidencia_experimental.csv": "52ec8d36b21d40892f556151d2622cbb59b2c67abdcd2e67b8571d7fb62ee71b",
+    "grn_bronce/recursos/funciones_semilla.csv": "0adf9b8c8c4172cd38c13244f9298bde2d4eeed978063bd0ffce7851cd503cb8",
+    "grn_bronce/recursos/palabras_comunes.txt": "70140fe0a46fd94ac37ecd31c602c2fed8cad2e3773f8500f2e4a9b5ec3777b6",
+    "grn_bronce/secciones.tsv": "f2570566ee8204caf156fa24d0c82d8b6161663bcd2b3de61496e0f4c7224b25"
+  },
+  "fuera": {
+    "ouroboros": "Por omisión no entra a esta prueba: es exploratorio y su prompt todavía se ajusta con la calibración. Si entra, va con una enmienda del protocolo y la huella del prompt congelado.",
+    "signo_como_parametro": "Las reglas de signo siguen apagadas: la prueba mide la red oficial. Las redes de signo se miden en la tanda 2."
+  }
+}

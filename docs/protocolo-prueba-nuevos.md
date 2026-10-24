@@ -87,3 +87,20 @@ posterior a ver alguna cifra.
 - No se ajusta ninguna regla, umbral ni prompt con lo que salga.
 - No se repite la descarga para «mejorar» la muestra.
 - No se excluyen artículos después de ver sus juicios.
+
+## Enmienda 1 (23-oct-2026): el congelamiento, hecho
+
+Es anterior a descargar nada.
+
+- **Lo congelado:** `docs/congelado-prueba-nuevos.json` y la etiqueta de git
+  `congelado-prueba-nuevos`. Llevan:
+  - las huellas del modelo de *E. coli*;
+  - los umbrales y parámetros de `red.py` (0.65 / 0.70 / 0.60, mayoría 0.66);
+  - la sha256 de la red de la corrida 4;
+  - las de los recursos del bronce: el diccionario, el catálogo y la base de
+    operones, los vocabularios y `secciones.tsv`.
+- **Lo que se mide es la red oficial.** Las reglas de signo siguen apagadas;
+  sus redes se miden en la tanda 2.
+- **Ouroboros no entra, por omisión.** Es exploratorio, y su prompt todavía
+  se ajusta con la calibración. Si entra, va con otra enmienda y la huella del
+  prompt congelado.
