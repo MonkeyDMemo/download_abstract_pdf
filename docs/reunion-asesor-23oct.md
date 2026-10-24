@@ -315,6 +315,17 @@ el §5 d y g. Las candidatas nuevas se quedan en la carpeta confidencial.
   el servidor, con qwen3:8b local y fuera del flujo y de la red.
 - **Decidí** las herramientas apagadas por omisión y la corrida principal sin
   think, con T = 0. Con think, T = 0.6, como secundaria.
+- **El código está desde el 23-oct** (`grn_ouroboros`, `docs/ouroboros-v0.md`)
+  y corre en el servidor (`servidor-cierre.md` §7). Lo decidido por omisión al
+  construirlo:
+  - una respuesta truncada, sin JSON válido o fuera de la rúbrica es
+    abstención, y cuenta como error en todos los campos;
+  - con herramientas, el esquema va en el prompt y no restringido, porque la
+    restricción impediría llamarlas;
+  - `--num-ctx` y `--kv-cache` se pueden cambiar por corrida, y entran a la
+    llave de la caché. El tipo de caché KV se declara, porque Ollama no lo
+    informa.
+- **Su cifra no entra a la red ni a la entrega:** es una comparación.
 - **Si prefiere** que juzgue con herramientas: `--herramientas todas`. La
   corrida queda como secundaria, porque un juez que sabe más que el experto
   deja de medir lo mismo (`decisiones.md`).

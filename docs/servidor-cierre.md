@@ -34,10 +34,10 @@ python3 -m unittest discover               # y con el 3.8 del sistema, que es el
 
 **Lo que se espera:** las dos suites en verde, con el mismo conteo que la
 laptop menos las pruebas que piden spaCy o Strands, que se saltan diciendo por
-qué. En la laptop, con `593377d`, la raíz da 1 543 (61 saltadas). Es la primera
-vez que el 3.8 corre el código de las fases 2 y 3: en la laptop solo se revisó
-su gramática. Una falla ahí se reporta con su línea, no se arregla en el
-servidor.
+qué. En la laptop, con la fase 4 fusionada, la raíz da 1 772 (84 saltadas, las
+de Strands entre ellas). Un revisor ya la corrió con un Python 3.8.20 en verde,
+pero es la primera vez en el 3.8 del servidor. Una falla ahí se reporta con su
+línea, no se arregla en el servidor.
 
 ## 1. Lo que sube la laptop
 
@@ -199,31 +199,106 @@ puede estar memorizando.
 
 ## 7. Ouroboros v0 (fase 4) [servidor]
 
-Se completa en la fase 4. Lo que ya está fijo del entorno:
+La guía completa está en `docs/ouroboros-v0.md`: configuraciones, abstención,
+caché y ceguera. Aquí va el orden con las rutas del servidor.
 
-```bash
-nvidia-smi                                   # la GPU es compartida
-~/grn-guillermo/ollama.sh start              # o status / stop
-curl -s http://127.0.0.1:11500/api/version   # se anota la versión que conteste
-```
-
+**Lo que ya está fijo del entorno:**
 - **Ollama** está instalado en `~/grn-guillermo/ollama`, con la sha256
   verificada.
 - **El modelo** es `qwen3:8b`, con digest `500a1f067a9f` y cuantización
   Q4_K_M. Corre en 127.0.0.1:11500: da unos 65-70 tokens/s y usa 6.7 GB de
-  VRAM con `num_ctx` 4 096.
-- **Si la corrida con think a `num_ctx` 8 192 no cabe en los 8 GB,** se arranca
-  con `OLLAMA_KV_CACHE_TYPE=q8_0` antes de recortar el contexto.
-- **El entorno.** En SSH no interactivo, `python3` es el 3.8 del sistema, así
-  que el entorno se crea con miniforge (3.12):
+  VRAM con `num_ctx` 4 096. Un digest o una cuantización distintos detienen la
+  corrida antes de anotar.
+- **El Python.** En SSH no interactivo, `python3` es el 3.8 del sistema, así
+  que el entorno se crea con miniforge (3.12).
 
-  ```bash
-  ~/miniforge3/bin/python3 -m venv ~/grn-guillermo/download_abstract_pdf/.venv-ouroboros
-  ```
+**Una sola vez**, desde el clon:
 
-  Lo que se instala y cómo se corre se completa en la fase 4.
-- **Al terminar:** `~/grn-guillermo/ollama.sh stop`. Si algo pasa de 4 horas,
-  se detiene y se anota (`CLAUDE.md`, máquina del laboratorio).
+```bash
+cd ~/grn-guillermo/download_abstract_pdf
+~/miniforge3/bin/python3 -m venv .venv-ouroboros
+.venv-ouroboros/bin/python -m pip install -r grn_ouroboros/requisitos-servidor.txt
+mkdir -p salidas/ouroboros
+```
+
+`requisitos-servidor.txt` fija `strands-agents[ollama]`, `strands-agents-evals`,
+`ollama`, `strands-agents-tools` y `pydantic`. Si pip no resuelve el `pydantic`
+fijado, se reporta y no se cambia aquí.
+
+**En cada sesión:**
+
+```bash
+cd ~/grn-guillermo/download_abstract_pdf && git pull --ff-only
+OPY=.venv-ouroboros/bin/python
+T1=~/grn-guillermo/revision/muestra200
+$OPY -m unittest discover -s grn_ouroboros -t .   # aquí sí corren las de Strands
+nvidia-smi                                        # la GPU es compartida
+~/grn-guillermo/ollama.sh start
+$OPY -m grn_ouroboros.cli humo                    # se anota lo que conteste
+```
+
+**1. Calibración**, que es sintética y pública:
+
+```bash
+$OPY -m grn_ouroboros.cli anotar --hoja docs/calibracion-hoja.csv \
+    --salida salidas/ouroboros/calibracion_principal --config principal
+$OPY -m grn_ouroboros.cli calibracion \
+    --anotacion salidas/ouroboros/calibracion_principal/anotaciones.csv
+$OPY -m grn_ouroboros.cli evals --salida salidas/ouroboros/calibracion_principal
+```
+
+- Lo mismo con `--config con_think` en `calibracion_con_think`, mirando
+  `nvidia-smi`.
+- Si los 8 192 de `con_think` no caben, se reinicia Ollama con
+  `OLLAMA_KV_CACHE_TYPE=q8_0` y `OLLAMA_FLASH_ATTENTION=1`, y se corre con
+  `--kv-cache q8_0` en otra carpeta. Solo si aún no caben, `--num-ctx` menor.
+- **A la laptop vuelve** la salida de `calibracion`, que es por ítem pero de
+  oraciones sintéticas, y la de `evals`.
+
+**2. Tanda 1 con la principal.** Es de desarrollo, así que sus conteos pueden
+servir para ajustar el prompt. Sus anotaciones son juicios y no salen del
+servidor:
+
+```bash
+nohup $OPY -m grn_ouroboros.cli anotar --hoja $T1/hoja_tanda1.csv \
+    --salida salidas/ouroboros/tanda1_principal --config principal \
+    > salidas/ouroboros/tanda1_principal.log 2>&1 &
+tail -n 5 salidas/ouroboros/tanda1_principal.log   # volver a lanzarla retoma
+$OPY -m grn_verificacion.cli concordancia \
+    --experto $T1/anotacion_experto_tanda1_tal_cual.csv \
+    --modelo salidas/ouroboros/tanda1_principal/anotaciones.csv \
+    --llave $T1/llave.csv --json salidas/ouroboros/tanda1_principal/concordancia.json
+```
+
+- **A la laptop vuelven** solo las líneas de `concordancia`, que son conteos.
+- El acuerdo en `tipo` de la tanda 1 lleva su salvedad: el experto marcó
+  «directa» donde la rúbrica pide `no_se`.
+- Lo mismo con `con_think`, y con `--herramientas buscar_locus`, si hay
+  tiempo. `todas` necesita la base de la corrida 4, que no está en el
+  servidor.
+
+**3. El congelamiento del prompt,** en la laptop y no aquí:
+- con lo que vuelva de 1 y 2, la sesión principal ajusta el prompt si hace
+  falta, y lo declara;
+- después lo congela con un commit, y anota su sha256 en una enmienda de
+  `docs/protocolo-tanda2.md`.
+
+**4. Tanda 2:** solo después del congelamiento, y con el prompt de ese commit.
+
+```bash
+nohup $OPY -m grn_ouroboros.cli anotar --hoja ~/grn-guillermo/revision/muestra200_t2/hoja_tanda1.csv \
+    --salida salidas/ouroboros/tanda2_principal --config principal \
+    > salidas/ouroboros/tanda2_principal.log 2>&1 &
+```
+
+- **La ceguera:** Hermes no abre nada de `salidas/ouroboros/tanda2_*`.
+- **A la laptop vuelven** solo `corrida.json` y lo que imprime `anotar`, que
+  son conteos.
+- **La concordancia de la tanda 2** se corre cuando el experto termine, con
+  su exportación, y la decide el protocolo.
+
+**Al terminar:** `~/grn-guillermo/ollama.sh stop`. Si algo pasa de 4 horas, se
+detiene y se anota (`CLAUDE.md`, máquina del laboratorio).
 
 ## Qué reporta Hermes
 

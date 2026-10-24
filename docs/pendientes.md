@@ -37,7 +37,9 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
   - ~~recalcular la línea base «siempre +» del signo sobre los mismos ítems~~:
     **hecho** en la fase 2. En la tanda 1, 42/60 contra 41/60; en las 50,
     11/15 contra 11/15;
-  - Ouroboros v0, exploratorio y fuera del flujo;
+  - Ouroboros v0, exploratorio y fuera del flujo: el código está desde el
+    23-oct (fase 4). Falta correrlo en el servidor y congelar el prompt antes
+    de la tanda 2;
   - `docs/protocolo-tanda2.md` antes de evaluar la tanda 2;
   - la prueba con abstracts nuevos: el código (`run --tipo-fecha`,
     `verificar-contaminacion`) y el protocolo ya están; falta el congelamiento;

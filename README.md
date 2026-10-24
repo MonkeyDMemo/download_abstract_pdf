@@ -404,7 +404,7 @@ python3 -m unittest discover          # desde la raíz del proyecto
 python3 -m unittest discover etapa2   # etapa2 no es un paquete y va aparte
 ```
 
-1 543 pruebas en la raíz (`pruebas/` y los paquetes `grn_*`) y 528 en `etapa2`
+1 772 pruebas en la raíz (`pruebas/` y los paquetes `grn_*`) y 528 en `etapa2`
 al 23-oct-2026, con `unittest` de la biblioteca estándar. **Ninguna toca la
 red.** Se inyecta `pruebas.falsos.ClienteFalso`, que devuelve XML o
 JSON fijo y registra cada llamada; además, la clase base deja `urlopen`

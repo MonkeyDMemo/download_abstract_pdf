@@ -299,6 +299,12 @@ grn_verificacion/      paso 2, en construccion
   contaminacion_nuevos.py  los cruces de una lista de articulos nuevos con
                          todo lo ya visto, por PMID y DOI; sale con 1 ante
                          cualquiera
+  concordancia.py        el acuerdo de Ouroboros con el experto sobre la misma
+                         hoja: por campo, kappa, matrices y el modelo como
+                         filtro; la abstencion cuenta como error
+grn_ouroboros/         Ouroboros v0, el juez LLM exploratorio: CLI aparte,
+                       fuera del flujo y de la red, con Strands y Ollama en el
+                       servidor (.venv-ouroboros); docs/ouroboros-v0.md
 grn_red/               paso 3; solo estandar y compatible con 3.8
   consolidar.py          las reglas de consolidacion como parametros
                          (autorregulacion, nivel de soporte, operones, mayoria,
@@ -620,6 +626,13 @@ python3 -m grn_verificacion.cli contraste --base X --carpeta C --excluir-pmids A
 python3 -m grn_verificacion.cli tablas --base X --carpeta C --xml DIR --excluir-pmids A \
     --informe M --confidencial D
 python3 -m grn_verificacion.cli evaluar --carpeta C --bronce CSV [--particion DIR]
+python3 -m grn_verificacion.cli concordancia --experto A --modelo B [--llave L] [--json J]
+
+# Ouroboros, en el servidor y con su entorno; ver docs/ouroboros-v0.md
+.venv-ouroboros/bin/python -m grn_ouroboros.cli humo
+.venv-ouroboros/bin/python -m grn_ouroboros.cli anotar --hoja H --salida salidas/ouroboros/X \
+    --config principal|con_think [--semilla S] [--herramientas ninguna|buscar_locus|todas]
+.venv-ouroboros/bin/python -m grn_ouroboros.cli calibracion --anotacion A | evals --salida D
 
 # en el servidor, con el python de pseudoRE; ver docs/entrenamiento-curada.md
 $PY -m grn_verificacion.cli reentrenar correr --raiz ~/grn-guillermo --pares P \
@@ -745,7 +758,12 @@ Son tres comandos: `etapa2/` no es un paquete, asi que el `discover` de la
 raiz no lo recoge (los paquetes nuevos si lo son y por eso caen en el
 primero), y las pruebas de `sintaxis.py` que cargan el modelo de spaCy se
 saltan donde no está, el `.venv`: el tercer comando las corre en el
-`.venv-nlp` (en Linux, `.venv-nlp/bin/python`).
+`.venv-nlp` (en Linux, `.venv-nlp/bin/python`). Lo mismo con las de
+`grn_ouroboros` que piden Strands: se saltan donde no esta, y corren en el servidor
+con `.venv-ouroboros/bin/python -m unittest discover -s grn_ouroboros -t .`.
+`grn_ouroboros/test_frontera.py` falla si algo fuera del paquete lo importa,
+si el paquete no parsea con la gramatica de 3.8 o si el prompt comparte 40
+caracteres con una oracion candidata del corpus.
 
 Las dos fallas conocidas de `etapa2` (puntos 36 y 37 del PLAN) se arreglaron el
 8-oct-2026: `test_clasificar` fuerza «sin torch» con `mock.patch.dict(sys.modules,
@@ -778,9 +796,10 @@ Las pruebas que no pueden faltar:
   con las oraciones auditadas es por igualdad de texto, sin identificador
   estable, y su guardian solo salta por debajo de 80 de 93 uniones.
 - **La frontera de la contaminacion**
-  (`etapa2/test_contaminacion.py`). Vigila los cinco paquetes (`etapa2`,
-  `grn_bronce`, `grn_comun`, desde el 27-sep-2026 `grn_operones` y desde el
-  8-oct-2026 `grn_verificacion`), subcarpetas
+  (`etapa2/test_contaminacion.py`). Vigila seis paquetes (`etapa2`,
+  `grn_bronce`, `grn_comun`, desde el 27-sep-2026 `grn_operones`, desde el
+  8-oct-2026 `grn_verificacion` y desde el 23-oct-2026 `grn_ouroboros`, con
+  sus prompts), subcarpetas
   incluidas y sin distinguir mayusculas, y protege cuatro nombres: el patron
   de oro, la auditoria de signo, la base curada (`GRN_experimental`) y su
   carpeta (`datos/validacion`). Si una referencia entra al diccionario, al

@@ -110,8 +110,10 @@ Apagadas por omisión: el experto juzga solo la oración (rúbrica §2).
 
 ## En el servidor, en orden
 
-Todo desde `~/grn-guillermo`. Los marcadores entre `<>` son rutas de datos
-que no se escriben aquí:
+Todo desde el clon, `~/grn-guillermo/download_abstract_pdf`: las rutas
+relativas de abajo (`.venv-ouroboros`, `docs/`, `salidas/ouroboros`) son de
+ahí. Los marcadores entre `<>` son rutas de datos que no se escriben aquí;
+`docs/servidor-cierre.md` §7 dice cuáles son en el servidor:
 
 - `<muestra_t1>` y `<muestra_t2>`: las carpetas de los sorteos;
 - `<hoja_normalizada_t1>`: la hoja de la tanda 1 anotada por el experto, ya

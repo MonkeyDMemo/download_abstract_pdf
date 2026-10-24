@@ -279,11 +279,75 @@ implementador y un revisor, fusionada sobre la fase 2 sin conflictos.
     el léxico queda sin confianza.
 - **Suites:** raíz 1 543 y etapa2 528.
 
+**Fase 4, cerrada en código: Ouroboros v0** (`docs/ouroboros-v0.md`).
+- **Cómo se hizo:** el implementador se cortó por el límite de sesión, y una
+  continuación terminó la rama en el mismo worktree. Después la revisaron dos
+  revisores.
+- **Lo que entra:**
+  - `grn_ouroboros`, con estas piezas:
+    - la rúbrica y su esquema;
+    - la calibración;
+    - el motor, que exige el digest y la cuantización;
+    - las cinco herramientas, apagadas por omisión;
+    - el anotador con su caché por entradas;
+    - el agente de Strands sobre `OllamaModel`;
+    - Strands Evals con evaluadores propios;
+    - el CLI y el prompt v0.
+  - `grn_bronce/db.vecinas()`, en solo lectura.
+  - `grn_verificacion/concordancia.py` y `cli concordancia`, de biblioteca
+    estándar.
+  - El extra `[ouroboros]`, con versiones fijas y el marcador `python_version
+    >= '3.10'`.
+  - `.venv-ouroboros` en `.gitignore`.
+  - `test_contaminacion` vigila el paquete y sus prompts; etapa2 sigue en 528.
+- **Las configuraciones pre-registradas:**
+  - `principal`: sin think, T = 0, semilla 42, `num_ctx` 4 096 y
+    `num_predict` 512;
+  - `con_think`: T = 0.6, top_p 0.95, top_k 20, `num_ctx` 8 192 y
+    `num_predict` 4 096.
+  - Una respuesta truncada, sin JSON válido o fuera de la rúbrica es
+    abstención, y la abstención cuenta como error en todos los campos.
+- **Las revisiones corrigieron ocho defectos.**
+  - **Ceguera:**
+    - una `--salida` bajo `salidas/revision` se colaba con un enlace;
+    - la lista de archivos ciegos de la tanda 2 omitía `experimento.json`,
+      que copia la hoja.
+  - **Fugas en `concordancia`:**
+    - imprimía en las matrices un valor fuera de la rúbrica;
+    - imprimía el valor en sus errores de lectura.
+  - **Guardas incompletas:**
+    - la guarda de Bedrock no llamaba al anotador;
+    - la de contaminación no leía los prompts.
+  - **La llave de la caché** no medía el código de las herramientas, cuyas
+    descripciones lee el modelo.
+  - **Versiones:** `pydantic` iba sin versión fija.
+
+  Además, con 50 mutaciones a propósito, se reforzaron las pruebas de la
+  caché, de la abstención y del rechazo de la carpeta del experto.
+- **Python 3.8 de verdad, por primera vez.** Un revisor instaló un 3.8.20 en
+  el scratchpad, sin tocar el sistema. La raíz y etapa2 pasan ahí. Las pruebas
+  de Strands corrieron en un entorno del scratchpad: 199 en verde y una
+  saltada, la del corpus.
+- **Al fusionar:**
+  - **El conflicto en `grn_verificacion/cli.py`:** se quedan los dos
+    subcomandos, y `concordancia` pasa sus errores por el mismo filtro que
+    `evaluar`.
+  - **Una prueba de `concordancia`** se ajustó a que `leer_anotacion` valida
+    ya la rúbrica entera, desde la fase 2.
+  - **La frontera del prompt:** en el checkout principal, donde sí está el
+    CSV de candidatas, la prueba corre de verdad. El prompt no comparte 40
+    caracteres con ninguna oración candidata.
+- **Suites:** raíz 1 772 (84 saltadas, las de Strands entre ellas) y etapa2
+  528, con el `.venv` y con el Python del sistema.
+- **Todavía no ha corrido contra Ollama.** Eso lo hace Hermes
+  (`servidor-cierre.md` §7). El prompt se congela con un commit, y su huella
+  en una enmienda del protocolo, antes de la tanda 2.
+
 **Abierto:**
 - la sesión de calibración 2 con el experto, y luego la tanda 2 en la página:
   `python servidor.py --revision salidas/revision/muestra200_t2 --abrir`;
-- lo que corre Hermes en el servidor (`servidor-cierre.md` §2 a §6);
-- la fase 4, Ouroboros;
+- lo que corre Hermes en el servidor (`servidor-cierre.md` §2 a §7);
+- congelar el prompt de Ouroboros después de la calibración y la tanda 1;
 - las reglas de dirección con las 39 inversiones de la tanda 1 (3.2, si
   alcanza).
 
