@@ -32,6 +32,11 @@ primero de todos, si es su primer guardado) hasta ese `guardado`.
   ítem sin tiempo. Sin ningún tramo, `inicio` y `segundos` quedan vacíos.
 - `inicio` es el del primer tramo y `fin` el último `guardado`; con varios
   tramos, `segundos` no es `fin − inicio`.
+- **Un tramo de más de 15 minutos no se suma** y se cuenta en
+  `tramos_largos`: es la página abierta mientras la anotadora hacía otra
+  cosa, y un solo tramo así pesa más que veinte ítems bien medidos. La página
+  portátil (`revision_portatil.py`) aplica el mismo tope, para que las dos
+  midan igual.
 
 Si la anotadora abre un ítem, pasa a otro y vuelve, el tiempo de en medio
 cuenta para el primero: es una simplificación a sabiendas, porque medir
@@ -65,7 +70,11 @@ COLUMNAS_HOJA = ["id_item", "oracion", "entidad_1", "entidad_2", "relacion",
                  "comentario"]
 COLUMNAS_ITEM = COLUMNAS_HOJA[:4]
 COLUMNAS_VALORES = COLUMNAS_HOJA[4:]
-COLUMNAS_EXPORTADAS = COLUMNAS_HOJA + ["inicio", "fin", "segundos"]
+COLUMNAS_EXPORTADAS = COLUMNAS_HOJA + ["inicio", "fin", "segundos",
+                                       "tramos_largos"]
+
+# El tope de un tramo de tiempo (ver el docstring del módulo).
+TOPE_TRAMO = 15 * 60
 
 # Los valores cerrados de §6. El comentario es texto libre.
 OPCIONES = {
@@ -159,6 +168,14 @@ def leer_cola(carpeta):
         raise HojaAusente(
             "La carpeta de revisión no tiene %s. Es la hoja que deja "
             "`grn_verificacion.cli muestra`." % HOJA)
+    return leer_items(ruta)
+
+
+def leer_items(ruta):
+    """Lo de `leer_cola`, desde la ruta de una hoja con cualquier nombre: la
+    página portátil también anota hojas que no son de una carpeta del sorteo,
+    como la de la segunda anotadora."""
+    nombre = os.path.basename(ruta)
     # utf-8-sig: la hoja lleva BOM para Excel (§6), y sin quitarlo la
     # primera columna se llamaría '﻿id_item'.
     with io.open(ruta, encoding="utf-8-sig", newline="") as f:
@@ -166,18 +183,18 @@ def leer_cola(carpeta):
         if lector.fieldnames != COLUMNAS_HOJA:
             raise HojaInvalida(
                 "La hoja %s no tiene las columnas de la rúbrica (§6), en "
-                "su orden: %s." % (HOJA, ", ".join(COLUMNAS_HOJA)))
+                "su orden: %s." % (nombre, ", ".join(COLUMNAS_HOJA)))
         items, vistos = [], set()
         for n, fila in enumerate(lector, start=2):
             id_item = (fila.get("id_item") or "").strip()
             if not id_valido(id_item):
                 raise HojaInvalida(
                     "Línea %d de %s: el id_item '%s' no tiene la forma "
-                    "m-NNNN." % (n, HOJA, id_item[:40]))
+                    "m-NNNN." % (n, nombre, id_item[:40]))
             if id_item in vistos:
                 raise HojaInvalida(
                     "Línea %d de %s: el id_item %s está repetido."
-                    % (n, HOJA, id_item))
+                    % (n, nombre, id_item))
             vistos.add(id_item)
             oracion = fila.get("oracion") or ""
             e1 = (fila.get("entidad_1") or "").strip()
@@ -229,27 +246,40 @@ def _eventos(carpeta):
             if not linea:
                 continue
             try:
-                ev = json.loads(linea)
+                eventos.append(json.loads(linea))
             except ValueError:
                 continue
-            if (not isinstance(ev, dict) or not id_valido(ev.get("id_item"))
-                    or ev.get("evento") not in ("inicio", "guardado")
-                    or not isinstance(ev.get("hora"), str)):
-                continue
-            if ev["evento"] == "guardado" and not isinstance(
-                    ev.get("valores"), dict):
-                continue
-            eventos.append(ev)
-    return eventos
+    return eventos_validos(eventos)
+
+
+def eventos_validos(eventos):
+    """Los eventos que se entienden, en orden. Es el filtro del JSONL, y el
+    mismo para el respaldo de la página portátil, que trae la misma forma."""
+    validos = []
+    for ev in eventos:
+        if (not isinstance(ev, dict) or not id_valido(ev.get("id_item"))
+                or ev.get("evento") not in ("inicio", "guardado")
+                or not isinstance(ev.get("hora"), str)):
+            continue
+        if ev["evento"] == "guardado" and not isinstance(
+                ev.get("valores"), dict):
+            continue
+        validos.append(ev)
+    return validos
 
 
 def anotaciones(carpeta):
-    """{id_item: {"valores", "inicio", "fin", "segundos"}} con el último
-    guardado de cada ítem. `segundos` es un entero o None. Las reglas del
-    tiempo están en el docstring del módulo."""
+    """{id_item: {"valores", "inicio", "fin", "segundos", "tramos_largos"}}
+    con el último guardado de cada ítem. `segundos` es un entero o None. Las
+    reglas del tiempo están en el docstring del módulo."""
+    return anotaciones_de_eventos(_eventos(carpeta))
+
+
+def anotaciones_de_eventos(eventos):
+    """`anotaciones` sobre una lista de eventos ya filtrados."""
     abierto = {}     # id -> primer inicio desde su último guardado
     vigentes = {}
-    for ev in _eventos(carpeta):
+    for ev in eventos:
         id_item = ev["id_item"]
         if ev["evento"] == "inicio":
             abierto.setdefault(id_item, ev["hora"])
@@ -260,12 +290,17 @@ def anotaciones(carpeta):
         inicio_tramo = abierto.pop(id_item, None)
         tramo = _segundos(inicio_tramo, ev["hora"])
         segundos = previo.get("segundos")
+        largos = previo.get("tramos_largos", 0)
         if tramo is not None:
-            segundos = (segundos or 0) + tramo
+            if tramo > TOPE_TRAMO:
+                largos += 1
+            else:
+                segundos = (segundos or 0) + tramo
         vigentes[id_item] = {"valores": valores,
                              "inicio": previo.get("inicio") or inicio_tramo,
                              "fin": ev["hora"],
-                             "segundos": segundos}
+                             "segundos": segundos,
+                             "tramos_largos": largos}
     return vigentes
 
 
@@ -377,27 +412,42 @@ def validar(valores):
 
 def _segundos(inicio, fin):
     """Segundos enteros de `inicio` a `fin`, o None si falta o no se lee
-    alguna de las dos horas."""
+    alguna de las dos horas.
+
+    La «Z» final se cambia por +00:00: la página portátil guarda las horas
+    con `toISOString()`, y `fromisoformat` no la acepta antes de 3.11."""
     try:
-        a = datetime.fromisoformat(inicio)
-        b = datetime.fromisoformat(fin)
+        a = datetime.fromisoformat(_sin_z(inicio))
+        b = datetime.fromisoformat(_sin_z(fin))
     except (TypeError, ValueError):
         return None
     return max(0, int((b - a).total_seconds()))
 
 
+def _sin_z(hora):
+    if isinstance(hora, str) and hora.endswith("Z"):
+        return hora[:-1] + "+00:00"
+    return hora
+
+
 def exportar_csv(carpeta):
     """Escribe `anotaciones_exportadas.csv` y devuelve su ruta.
 
-    Las columnas de la hoja, en su orden, más `inicio`, `fin` y `segundos`;
+    Las columnas de la hoja, en su orden, más `inicio`, `fin`, `segundos` y
+    `tramos_largos`;
     una fila por ítem en el orden de la hoja, con las de anotación vacías si
     el ítem no se anotó. UTF-8 con BOM, como la hoja (§6). Se escribe a un
     `.tmp` y se pone en su lugar al final: un corte a media escritura no
     deja un CSV a medias que parezca completo.
     """
-    items = leer_cola(carpeta)
-    vigentes = anotaciones(carpeta)
     ruta = ruta_exportada(carpeta)
+    escribir_csv(leer_cola(carpeta), anotaciones(carpeta), ruta)
+    return ruta
+
+
+def escribir_csv(items, vigentes, ruta):
+    """El CSV exportado, en `ruta`: lo usan el tablero y el respaldo de la
+    página portátil, que tiene que dar el mismo archivo byte a byte."""
     tmp = ruta + ".tmp"
     with io.open(tmp, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=COLUMNAS_EXPORTADAS)
@@ -413,6 +463,6 @@ def exportar_csv(carpeta):
                 fila["fin"] = hecho["fin"]
                 fila["segundos"] = ("" if hecho["segundos"] is None
                                     else str(hecho["segundos"]))
+                fila["tramos_largos"] = str(hecho.get("tramos_largos", 0))
             w.writerow(fila)
     archivos.reemplazar(tmp, ruta)
-    return ruta

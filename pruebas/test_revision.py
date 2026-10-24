@@ -385,6 +385,31 @@ class PruebasTiempos(BasePruebaRevision):
         self.assertEqual(filas[1]["inicio"], "")
         self.assertEqual(filas[1]["segundos"], "")
 
+    def test_un_tramo_de_mas_de_15_minutos_no_se_suma(self):
+        """La página abierta mientras se hacía otra cosa: se cuenta en
+        `tramos_largos` y no infla `segundos`. Es el mismo tope de la página
+        portátil, para que las dos midan igual."""
+        c = self.carpeta
+        revision.registrar_inicio(c, "m-1234", "2026-10-22T10:00:00+00:00")
+        revision.guardar(c, "m-1234", dict(VALIDOS),
+                         "2026-10-22T10:01:00+00:00")
+        revision.registrar_inicio(c, "m-1234", "2026-10-22T11:00:00+00:00")
+        revision.guardar(c, "m-1234", dict(VALIDOS),
+                         "2026-10-22T11:15:01+00:00")
+        revision.registrar_inicio(c, "m-2345", "2026-10-22T12:00:00+00:00")
+        revision.guardar(c, "m-2345", dict(VALIDOS),
+                         "2026-10-22T12:15:00+00:00")
+        v = revision.anotaciones(c)
+        self.assertEqual((v["m-1234"]["segundos"],
+                          v["m-1234"]["tramos_largos"]), (60, 1))
+        # Exactamente 15 minutos todavía cuenta.
+        self.assertEqual((v["m-2345"]["segundos"],
+                          v["m-2345"]["tramos_largos"]), (900, 0))
+        ruta = revision.exportar_csv(c)
+        with io.open(ruta, encoding="utf-8-sig", newline="") as f:
+            fila = list(csv.DictReader(f))[0]
+        self.assertEqual((fila["segundos"], fila["tramos_largos"]), ("60", "1"))
+
     def test_corregir_sin_reabrir_no_borra_el_tiempo(self):
         """Lo que pasó en la prueba del 23-oct: se guarda, se reinicia el
         tablero y se corrige el mismo ítem sin un `inicio` nuevo. Antes el
@@ -427,7 +452,7 @@ class PruebasExportar(BasePruebaRevision):
         self.assertTrue(crudo.startswith(b"\xef\xbb\xbf"), "sin BOM")
         lector = csv.DictReader(io.StringIO(crudo.decode("utf-8-sig")))
         self.assertEqual(lector.fieldnames, revision.COLUMNAS_HOJA
-                         + ["inicio", "fin", "segundos"])
+                         + ["inicio", "fin", "segundos", "tramos_largos"])
         filas = list(lector)
         self.assertEqual([f["id_item"] for f in filas],
                          ["m-1234", "m-2345", "m-3456"])
@@ -438,7 +463,9 @@ class PruebasExportar(BasePruebaRevision):
                          ("no", "ninguna", "", "si", "F6; «cepa PA14»"))
         self.assertTrue(hecha["inicio"] and hecha["fin"])
         self.assertTrue(hecha["segundos"].isdigit())
-        for c in revision.COLUMNAS_VALORES + ["inicio", "fin", "segundos"]:
+        self.assertEqual(hecha["tramos_largos"], "0")
+        for c in revision.COLUMNAS_VALORES + ["inicio", "fin", "segundos",
+                                              "tramos_largos"]:
             self.assertEqual(filas[0][c], "", c)
         self.assertIn("β-lactamase", filas[2]["oracion"])
 
