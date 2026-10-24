@@ -145,5 +145,50 @@ class PruebasChat(unittest.TestCase):
         self.assertEqual(espera, motor.ESPERA_CHAT)
 
 
+class PruebasHumo(unittest.TestCase):
+
+    def responder(self, mensaje, **ollama):
+        falso = OllamaFalso(**ollama)
+        falso.rutas["/api/chat"] = {"message": dict(role="assistant",
+                                                    **mensaje),
+                                    "done_reason": "stop", "eval_count": 3,
+                                    "total_duration": 2500000000}
+        return motor.humo(abrir=falso), falso
+
+    def test_el_pre_registrado_sin_razonamiento(self):
+        r, falso = self.responder({"content": "listo"})
+        self.assertEqual(r["problemas"], [])
+        self.assertTrue(r["sin_razonamiento"])
+        self.assertEqual((r["done_reason"], r["tokens"], r["segundos"]),
+                         ("stop", 3, 2.5))
+        _metodo, ruta, cuerpo, _espera = falso.peticiones[-1]
+        self.assertEqual(ruta, "/api/chat")
+        self.assertIs(cuerpo["think"], False)
+        self.assertEqual(cuerpo["messages"][0]["content"], motor.PROMPT_HUMO)
+
+    def test_con_razonamiento_en_el_campo_o_en_el_texto(self):
+        for mensaje in ({"content": "listo", "thinking": "Pienso..."},
+                        {"content": "<think>Pienso.</think>listo"},
+                        {"content": "<think>Me corté"}):
+            r, _ = self.responder(mensaje)
+            self.assertFalse(r["sin_razonamiento"], mensaje)
+            self.assertGreater(r["caracteres_de_razonamiento"], 0)
+
+    def test_un_bloque_vacio_no_es_razonamiento(self):
+        r, _ = self.responder({"content": "<think>\n\n</think>\n\nlisto"})
+        self.assertTrue(r["sin_razonamiento"])
+
+    def test_otro_modelo_es_un_problema_y_no_una_excepcion(self):
+        r, _ = self.responder({"content": "listo"}, cuantizacion="Q8_0")
+        self.assertEqual(len(r["problemas"]), 1)
+        self.assertIn("Q8_0", r["problemas"][0])
+
+    def test_sin_ollama_es_error_del_motor(self):
+        falso = OllamaFalso(fallar={
+            "/api/version": urllib.error.URLError("rechazada")})
+        with self.assertRaises(motor.ErrorMotor):
+            motor.humo(abrir=falso)
+
+
 if __name__ == "__main__":
     unittest.main()

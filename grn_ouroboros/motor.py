@@ -13,6 +13,10 @@ veredicto:
 pre-registrados: un `qwen3:8b` que alguien volvió a bajar puede ser otro
 modelo con el mismo nombre, y sus veredictos no serían comparables.
 
+`humo()` es la prueba antes de anotar: describe el modelo, dice si es el
+pre-registrado y comprueba que con `think: false` la respuesta llega sin
+razonamiento.
+
 Solo `http://127.0.0.1`: el juez es local, y lo que se le manda son las
 oraciones de una hoja de anotación. Sin proxies, aunque el entorno los tenga:
 `urllib` los respeta por omisión y mandaría la petición al proxy en vez de al
@@ -23,6 +27,7 @@ Biblioteca estándar y Python 3.8. No imprime: lanza `ErrorMotor`.
 
 import hashlib
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -31,6 +36,13 @@ HOST = "http://127.0.0.1:11500"
 MODELO = "qwen3:8b"
 DIGEST_PREFIJO = "500a1f067a9f"
 CUANTIZACION = "Q4_K_M"
+
+# La prueba de humo: una instrucción inventada, sin nada del corpus, y un tope
+# corto, porque solo se mira si la respuesta trae razonamiento.
+PROMPT_HUMO = "Responde solo con la palabra: listo."
+OPCIONES_HUMO = {"temperature": 0, "seed": 42, "num_predict": 64}
+
+_BLOQUE_THINK = re.compile(r"<think>(.*?)</think>", re.S)
 
 # Leer la versión o la lista de modelos es inmediato. Un chat puede esperar a
 # que el modelo se cargue en la GPU y generar miles de tokens con think.
@@ -150,3 +162,50 @@ def chat(cuerpo, host=HOST, espera=ESPERA_CHAT, abrir=None):
     anotación de verdad pasa por Strands (`agente.py`)."""
     cuerpo = dict(cuerpo, stream=False)
     return _pedir(host, "/api/chat", cuerpo, espera=espera, abrir=abrir)
+
+
+def razonamiento_de(mensaje):
+    """El razonamiento que trae un mensaje de `/api/chat`, o "".
+
+    Es el campo `thinking` más lo que haya dentro de `<think>…</think>` en el
+    contenido, o después de un `<think>` sin cierre. Un bloque vacío no
+    cuenta: así marcan algunos templates que no hubo razonamiento.
+    """
+    partes = [mensaje.get("thinking") or ""]
+    contenido = mensaje.get("content") or ""
+    partes.extend(_BLOQUE_THINK.findall(contenido))
+    resto = _BLOQUE_THINK.sub("", contenido)
+    if "<think>" in resto:
+        partes.append(resto.split("<think>", 1)[1])
+    return "".join(p.strip() for p in partes)
+
+
+def humo(host=HOST, modelo=MODELO, abrir=None):
+    """La prueba de humo: {descripcion, problemas, sin_razonamiento,
+    caracteres_de_razonamiento, done_reason, tokens, segundos}.
+
+    `problemas` dice qué no coincide con lo pre-registrado; vacío, el modelo
+    es el que se registró. Si con `think: false` llegara razonamiento, la
+    corrida principal razonaría sin que su configuración lo dijera, y el tope
+    de 512 tokens la truncaría. Lanza ErrorMotor si Ollama no contesta.
+    """
+    descripcion = describir(host, modelo, abrir=abrir)
+    problemas = []
+    try:
+        exigir(descripcion)
+    except ErrorMotor as e:
+        problemas.append(str(e))
+    respuesta = chat({"model": modelo,
+                      "messages": [{"role": "user", "content": PROMPT_HUMO}],
+                      "think": False, "options": dict(OPCIONES_HUMO)},
+                     host=host, abrir=abrir)
+    razonamiento = razonamiento_de(respuesta.get("message") or {})
+    return {
+        "descripcion": descripcion,
+        "problemas": problemas,
+        "sin_razonamiento": not razonamiento,
+        "caracteres_de_razonamiento": len(razonamiento),
+        "done_reason": respuesta.get("done_reason"),
+        "tokens": respuesta.get("eval_count"),
+        "segundos": round((respuesta.get("total_duration") or 0) / 1e9, 1),
+    }
