@@ -145,6 +145,13 @@ class PruebasNingunJuezTraeModelo(unittest.TestCase):
 
 class PruebasSinStrandsEvals(unittest.TestCase):
 
+    def setUp(self):
+        # Una carpeta propia y no la temporal del sistema: ahí otro proceso
+        # puede tener un `salidas/revision` a medias, y la prueba fallaría
+        # sin que el módulo hubiera creado nada.
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
     def test_disponible_no_revienta(self):
         self.assertIsInstance(evals.disponible(), bool)
 
@@ -158,20 +165,22 @@ class PruebasSinStrandsEvals(unittest.TestCase):
     def test_no_corre_si_mandaria_a_cloudwatch(self):
         with mock.patch.dict(os.environ, {"AGENT_OBSERVABILITY_ENABLED": "1"}):
             with self.assertRaises(RuntimeError):
-                evals.ejecutar(tempfile.gettempdir(), ITEMS, RESULTADOS)
+                evals.ejecutar(self.tmp, ITEMS, RESULTADOS)
+        # Se detiene antes de armar el experimento: no escribe nada.
+        self.assertEqual(os.listdir(self.tmp), [])
 
     def test_nunca_en_la_carpeta_del_experto(self):
-        carpeta = os.path.join(tempfile.gettempdir(), "salidas", "revision",
-                               "t1")
+        carpeta = os.path.join(self.tmp, "salidas", "revision", "t1")
         with self.assertRaises(ValueError):
             evals.ejecutar(carpeta, ITEMS, RESULTADOS)
-        self.assertFalse(os.path.exists(carpeta))
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "salidas")))
 
     def test_faltan_veredictos(self):
         incompletos = dict(RESULTADOS)
         del incompletos["c04"]
         with self.assertRaises(ValueError):
-            evals.ejecutar(tempfile.gettempdir(), ITEMS, incompletos)
+            evals.ejecutar(self.tmp, ITEMS, incompletos)
+        self.assertEqual(os.listdir(self.tmp), [])
 
     def test_los_nombres_de_los_archivos_no_llevan_puntos(self):
         self.assertNotIn(".", evals.NOMBRE_EXPERIMENTO)
