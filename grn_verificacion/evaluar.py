@@ -293,7 +293,13 @@ def leer_particion(carpeta):
         if not os.path.isfile(ruta):
             raise ErrorEvaluacion("Falta %s en la carpeta de --particion."
                                   % nombre)
-        with io.open(ruta, encoding="utf-8") as f:
+        try:
+            f = io.open(ruta, encoding="utf-8")
+        except OSError:
+            # Su str lleva la ruta, que en el servidor es la de la cuenta.
+            raise ErrorEvaluacion("No pude leer %s de --particion." % nombre) \
+                from None
+        with f:
             for numero, linea in enumerate(f, 1):
                 if not linea.strip():
                     continue

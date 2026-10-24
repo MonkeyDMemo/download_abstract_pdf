@@ -494,6 +494,34 @@ class PruebasParVisto(unittest.TestCase):
         self.assertIn("entity_marked_dev.jsonl", str(ctx.exception))
         self.assertNotIn(self.particion, str(ctx.exception))
 
+    def test_un_archivo_que_no_se_abre_no_dice_su_ruta(self):
+        """El str de un OSError lleva la ruta, y en el servidor es la de la
+        cuenta: se dice solo el archivo."""
+        from unittest import mock
+        ruta = os.path.join(self.particion, "entity_marked_train.jsonl")
+        with mock.patch.object(evaluar.io, "open", side_effect=PermissionError(
+                13, "Permission denied", ruta)):
+            with self.assertRaises(evaluar.ErrorEvaluacion) as ctx:
+                evaluar.leer_particion(self.particion)
+        self.assertIn("entity_marked_train.jsonl", str(ctx.exception))
+        self.assertNotIn(self.tmp, str(ctx.exception))
+
+    def test_la_cli_da_una_linea_sin_ruta_ni_traceback(self):
+        """`evaluar --particion` corre en el servidor (`servidor-cierre.md`
+        §6): el error sale en una línea, sin las rutas de la cuenta."""
+        from unittest import mock
+        from grn_verificacion import cli
+        os.remove(os.path.join(self.particion, "entity_marked_dev.jsonl"))
+        lineas = []
+        with mock.patch.object(cli, "log", lineas.append):
+            codigo = cli.main(["evaluar", "--carpeta", self.tmp,
+                               "--bronce", os.path.join(self.tmp, "b.csv"),
+                               "--particion", self.particion])
+        self.assertEqual(codigo, 1)
+        salida = "\n".join(lineas)
+        self.assertIn("entity_marked_dev.jsonl", salida)
+        self.assertNotIn(os.path.basename(self.tmp), salida)
+
     def test_un_ejemplo_sin_par_se_detiene_con_la_linea_y_sin_el_texto(self):
         self._jsonl("dev", [{"text": "<e1>secreto</e1> <e2>x</e2>",
                              "label": "activates", "pmid": 1}])

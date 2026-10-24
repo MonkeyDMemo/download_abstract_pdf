@@ -643,6 +643,26 @@ class PruebasCli(Base):
                                "--carpeta", self.carpeta])
         self.assertEqual(codigo, 1)
 
+    def test_un_archivo_que_falta_se_nombra_sin_su_ruta(self):
+        """En el servidor la ruta lleva la cuenta (`servidor-cierre.md` §5): el
+        error dice qué archivo faltó, no dónde. Vale para --capa, que se sube
+        aparte, y para la red de --red."""
+        casos = (["--capa", os.path.join(self.tmp, "no", "capa_pares.csv")],
+                 ["--red", "inexistente"])
+        for extra, faltante in zip(casos, ("capa_pares.csv",
+                                           "red_inexistente.tsv")):
+            with self.subTest(extra=extra[0]):
+                lineas = []
+                with mock.patch.object(cli, "log", lineas.append):
+                    codigo = cli.main(["precision-ciega",
+                                       "--anotacion", self.anotacion(),
+                                       "--llave", self.llave,
+                                       "--carpeta", self.carpeta] + extra)
+                self.assertEqual(codigo, 1)
+                salida = "\n".join(lineas)
+                self.assertIn(faltante, salida)
+                self.assertNotIn(os.path.basename(self.tmp), salida)
+
     def test_con_todas_las_banderas(self):
         for sufijo in ("", "_evidencias"):
             shutil.copy(os.path.join(self.carpeta, "red%s.tsv" % sufijo),

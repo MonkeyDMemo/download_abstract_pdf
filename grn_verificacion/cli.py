@@ -36,6 +36,24 @@ def _etiqueta_modelo(modelo):
     return "run%s" % m.group(1) if m else nombre
 
 
+def _error_publicable(error, rutas):
+    """El error como se puede imprimir en el servidor: sin las rutas dadas
+    (`contraste.mensaje_publicable`) y, si es de un archivo, con su nombre sin
+    la carpeta, que dice cuál faltó sin decir la cuenta."""
+    from grn_verificacion import contraste, reentrenar
+    texto = contraste.mensaje_publicable(error, rutas)
+    nombre = getattr(error, "filename", None)
+    if isinstance(error, OSError) and isinstance(nombre, str):
+        nombre = os.path.basename(nombre)
+        try:
+            reentrenar.verificar_publicable(nombre)
+        except ValueError:
+            return texto
+        if nombre:
+            texto += " (%s)" % nombre
+    return texto
+
+
 def _rel(ruta):
     """Relativa a la raíz, con `/`; absoluta si está en otra unidad de
     Windows, donde `os.path.relpath` lanza ValueError y tumbaba el paso."""
@@ -122,9 +140,19 @@ def cmd_capa(args):
 
 
 def cmd_evaluar(args):
+    """Con --particion corre en el servidor (`servidor-cierre.md` §6): ningún
+    error sale como traceback, que traería las rutas de la cuenta."""
     from grn_verificacion import evaluar
-    evaluar.evaluar_carpeta(args.carpeta, args.bronce, log=log,
-                            particion=args.particion)
+    try:
+        evaluar.evaluar_carpeta(args.carpeta, args.bronce, log=log,
+                                particion=args.particion)
+    except KeyboardInterrupt:
+        log("Interrumpido.")
+        return 3
+    except Exception as e:
+        log("ERROR: %s" % _error_publicable(
+            e, [args.carpeta, args.bronce, args.particion]))
+        return 1
     return 0
 
 
@@ -694,7 +722,9 @@ def _sub_muestra(sub):
 
 
 def cmd_precision_ciega(args):
-    """Solo cifras: ni oraciones ni PMIDs pasan por `log`."""
+    """Solo cifras: ni oraciones, ni PMIDs, ni rutas pasan por `log`. Con
+    --particion corre en el servidor (`servidor-cierre.md` §5), así que
+    tampoco sale un traceback."""
     from grn_verificacion import precision_ciega
     try:
         precision_ciega.ejecutar(args.anotacion, args.llave, args.carpeta,
@@ -702,8 +732,13 @@ def cmd_precision_ciega(args):
                                  excluir=args.excluir_pmids,
                                  particion=args.particion, capa=args.capa,
                                  etiqueta=args.etiqueta)
-    except (ValueError, OSError, KeyError) as e:
-        log("ERROR: %s" % e)
+    except KeyboardInterrupt:
+        log("Interrumpido.")
+        return 3
+    except Exception as e:
+        log("ERROR: %s" % _error_publicable(
+            e, [args.anotacion, args.llave, args.carpeta, args.capa,
+                args.json, args.particion] + list(args.excluir_pmids or [])))
         return 1
     return 0
 
