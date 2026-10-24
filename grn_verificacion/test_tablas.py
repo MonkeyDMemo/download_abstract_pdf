@@ -727,6 +727,22 @@ class PruebasEjecutar(_ConEscenario):
         self.assertFalse(os.path.exists(self.confidencial))
         self.assertFalse(os.path.exists(self.informe))
 
+    def test_dos_xml_del_mismo_articulo_se_avisan(self):
+        resultado, _ = self.correr()
+        self.assertFalse(any("más de un XML" in a
+                             for a in resultado["avisos"]))
+        escribir(os.path.join(self.xml, "%s_PMC9100009.xml" % P1),
+                 u"<article><body><p>The wvkA gene.</p></body></article>")
+        resultado, lineas = self.correr()
+        self.assertIn("AVISO: 1 de los artículos tiene más de un XML en --xml "
+                      "(con otro PMCID) y se leyeron juntos: si uno es de otro "
+                      "artículo, sus genes cuentan como de este.", lineas)
+        # Se juntan: el gen del segundo cuenta en el texto del artículo 1, y
+        # la fila 13 pasa de «ninguno» a «tabla y texto».
+        self.assertEqual(3, resultado["xml"]["archivos"])
+        self.assertEqual(3, resultado["juntos"]["categorias"]["tabla_y_texto"])
+        self.assertSinContenido("\n".join(lineas))
+
     def test_cuantos(self):
         resultado, _ = self.correr(cuantos=1)
         self.assertEqual(1, len(resultado["por_articulo"]))

@@ -828,6 +828,8 @@ def ejecutar(base, carpeta, xml, confidencial, informe=None, excluir=(),
     for pmid in mayores:
         archivos_xml = xml_de(xml, pmid)
         c_xml["archivos"] += len(archivos_xml)
+        if len(archivos_xml) > 1:
+            c_xml["con_varios"] += 1
         indices[pmid], estados[pmid] = None, "no"
         if not archivos_xml:
             continue
@@ -851,6 +853,15 @@ def ejecutar(base, carpeta, xml, confidencial, informe=None, excluir=(),
         avisos.append("ninguno de los artículos tiene su XML en --xml: revisa "
                       "que la carpeta sea la de los XML del corpus de este "
                       "bronce.")
+    if c_xml["con_varios"]:
+        # Pasa cuando se corrigió el PMCID en el tablero y se volvió a bajar:
+        # el XML viejo, que puede ser de otro artículo, sigue en la carpeta y
+        # el bronce ya no lo lee.
+        avisos.append("%s de los artículos %s más de un XML en --xml (con "
+                      "otro PMCID) y se leyeron juntos: si uno es de otro "
+                      "artículo, sus genes cuentan como de este."
+                      % (_n(c_xml["con_varios"]),
+                         "tiene" if c_xml["con_varios"] == 1 else "tienen"))
 
     juntos, por_articulo = medir(exigibles, pares, indices, mayores)
     articulos = []
