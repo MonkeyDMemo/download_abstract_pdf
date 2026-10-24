@@ -1,0 +1,19 @@
+# Lo que grn_ouroboros necesita en el servidor del asesor, con versión fija.
+# Es la excepción del 23-oct-2026 (CLAUDE.md, «Restricciones duras»;
+# docs/decisiones.md, «Ouroboros v0»), y no se instala en ningún otro entorno.
+#
+# Strands pide Python 3.10 o más, y el Python del sistema del servidor es 3.8:
+# el entorno se arma con el de miniforge, en ~/grn-guillermo, así:
+#
+#   ~/miniforge3/bin/python3 -m venv .venv-ouroboros
+#   .venv-ouroboros/bin/python -m pip install -r grn_ouroboros/requisitos-servidor.txt
+#
+# pydantic, httpx y lo demás llegan como dependencias de estos cuatro; las
+# versiones que quedaron instaladas las anota cada corrida en corrida.json.
+# Verificado contra estas versiones: think y format van en additional_args
+# de OllamaModel, que pide el cliente ollama 0.5 o más.
+strands-agents[ollama]==1.62.0
+strands-agents-evals==1.7.0
+# Dependencia de strands-agents-evals; se fija para que no la elija pip.
+strands-agents-tools==0.8.10
+ollama==0.6.3
