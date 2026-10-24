@@ -169,9 +169,11 @@ def evaluar(juicios, unidas, sintaxis_presente=False):
 
     # Signo, la primera medición sobre P. aeruginosa con relaciones juzgadas.
     # Solo las `si` con signo claro; `regulates` no afirma signo y cuenta como
-    # no cubierta. La línea base es «siempre +».
+    # no cubierta. La línea base es «siempre +», y cada acierto va contra la
+    # suya sobre los mismos ítems: el 9/12 de la v2 se comparaba con un 73.3 %
+    # de todas las `si` con signo claro, que no es k/12.
     con_signo = [j for j in si if j["signo_correcto"] in ("+", "-")]
-    cubiertas = acertadas = 0
+    cubiertas = acertadas = positivos_cubiertas = 0
     cubiertas_umbral = acertadas_umbral = 0
     lexico_cubiertas = lexico_acertadas = 0
     for j in con_signo:
@@ -182,6 +184,7 @@ def evaluar(juicios, unidas, sintaxis_presente=False):
         if s in ("+", "-"):
             cubiertas += 1
             acertadas += s == j["signo_correcto"]
+            positivos_cubiertas += j["signo_correcto"] == "+"
             if f["pasa_umbral"] == "si":
                 cubiertas_umbral += 1
                 acertadas_umbral += s == j["signo_correcto"]
@@ -195,6 +198,12 @@ def evaluar(juicios, unidas, sintaxis_presente=False):
         "filas_con_signo_claro": len(con_signo),
         "biobert": {"cubiertas": cubiertas,
                     "acierto": proporcion(acertadas, cubiertas)},
+        # Las dos lecturas, cada una con su «siempre +»: cuando BioBERT da
+        # signo, y con la abstención como error sobre todas las de signo
+        # claro (cuya línea base es `linea_base_siempre_mas`).
+        "linea_base_siempre_mas_cubiertas": proporcion(positivos_cubiertas,
+                                                       cubiertas),
+        "biobert_abstencion_es_error": proporcion(acertadas, len(con_signo)),
         "biobert_con_umbral": {"cubiertas": cubiertas_umbral,
                                "acierto": proporcion(acertadas_umbral,
                                                      cubiertas_umbral)},
@@ -467,10 +476,12 @@ def evaluar_carpeta(carpeta, ruta_bronce=None, log=_nada, particion=None):
     log("  E1  no descartadas:               %s"
         % pct(resultado["E1_no_descartadas"]))
     s1 = resultado["S1_signo"]
-    log("  S1  signo BioBERT:                %s de %d con signo claro"
-        % (pct(s1["biobert"]["acierto"]), s1["filas_con_signo_claro"]))
-    log("      línea base «siempre +»:       %s"
-        % pct(s1["linea_base_siempre_mas"]))
+    log("  S1  signo BioBERT, cuando lo da:  %s; «siempre +» en las mismas: %s"
+        % (pct(s1["biobert"]["acierto"]),
+           pct(s1["linea_base_siempre_mas_cubiertas"])))
+    log("      con la abstención como error: %s; «siempre +» en la misma "
+        "base: %s" % (pct(s1["biobert_abstencion_es_error"]),
+                      pct(s1["linea_base_siempre_mas"])))
     if "D_direccion_sintaxis" in resultado:
         d = resultado["D_direccion_sintaxis"]
         log("  D1  dirección corregida (de 4):   %s"

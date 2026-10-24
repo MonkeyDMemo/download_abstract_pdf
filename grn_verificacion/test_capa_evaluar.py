@@ -364,6 +364,25 @@ class PruebasEvaluacion(unittest.TestCase):
         self.assertEqual(s1["biobert"]["cubiertas"], 22)
         self.assertEqual(s1["biobert"]["acierto"]["k"], 11)
 
+    def test_cada_acierto_de_signo_va_con_su_linea_base(self):
+        """«siempre +» sobre los mismos ítems que el acierto: antes solo
+        había la de todas las `si` con signo claro, y un acierto sobre las
+        que BioBERT cubre se comparaba con ella."""
+        j = _juicios()
+        unidas = _unidas(j)
+        # BioBERT da signo solo en las 12 primeras `si`: 6 «+» y 6 «-».
+        for x in j:
+            if x["relacion"] == "si" and x["_linea"] >= 14:
+                unidas[x["_linea"]]["prediccion"] = "regulates"
+        s1 = evaluar.evaluar(j, unidas)["S1_signo"]
+
+        def kn(d):
+            return d["k"], d["n"]
+        self.assertEqual(kn(s1["biobert"]["acierto"]), (6, 12))
+        self.assertEqual(kn(s1["linea_base_siempre_mas_cubiertas"]), (6, 12))
+        self.assertEqual(kn(s1["biobert_abstencion_es_error"]), (6, 22))
+        self.assertEqual(kn(s1["linea_base_siempre_mas"]), (11, 22))
+
     def test_la_direccion_solo_aparece_si_hubo_sintaxis(self):
         j = _juicios()
         self.assertNotIn("D_direccion_sintaxis",
