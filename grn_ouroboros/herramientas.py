@@ -46,7 +46,8 @@ from grn_bronce import operones as _operones
 from grn_bronce.texto import normalizar_espacios
 from grn_comun import procedencia
 
-_RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_ESTE = os.path.abspath(__file__)
+_RAIZ = os.path.dirname(os.path.dirname(_ESTE))
 RUTA_GENES = os.path.join(_RAIZ, "grn_bronce", "recursos", "genes_pao1.tsv")
 RUTA_OPERONES = _operones.RUTA_POR_OMISION
 
@@ -196,14 +197,23 @@ class Recursos(object):
         return self._posiciones
 
     def huellas(self, cuales):
-        """La huella de lo que leen las herramientas pedidas. Entra a la
-        llave de la caché: con otro diccionario, otro veredicto."""
+        """La huella de lo que leen las herramientas pedidas y la de su
+        código. Entra a la llave de la caché: con otro diccionario, otro
+        veredicto.
+
+        El código cuenta igual que los datos: los docstrings de
+        `para_strands` son la descripción de cada herramienta que el modelo
+        lee en la petición, y de aquí sale lo que contestan. Sin su huella,
+        una descripción reescrita reusaría en la misma carpeta los
+        veredictos de la vieja.
+        """
         if cuales not in OPCIONES:
             raise ValueError("herramientas es ninguna, buscar_locus o todas.")
         if cuales == "ninguna":
             return {}
-        huellas = {"genes_pao1.tsv": procedencia.huella_texto(
-            self.ruta_genes)}
+        huellas = {"herramientas.py": procedencia.huella_texto(_ESTE),
+                   "genes_pao1.tsv": procedencia.huella_texto(
+                       self.ruta_genes)}
         if cuales == "todas":
             huellas["operones_pao1.tsv"] = procedencia.huella_texto(
                 self.ruta_operones)

@@ -64,7 +64,8 @@ sha256 de sus entradas:
 - la decodificación completa (think, temperatura, top_p, top_k, semilla,
   `num_ctx`, `num_predict`, caché KV, `format` y el tope de turnos);
 - la versión y la huella del esquema de la respuesta;
-- las herramientas y la huella de los recursos que leen.
+- las herramientas, la huella de su código (sus descripciones son parte de
+  lo que el modelo lee) y la de los recursos que leen.
 
 Lo mismo dos veces no vuelve a llamar al modelo. Una corrida cortada se
 retoma corriendo el mismo comando. Una carpeta con otra corrida no se

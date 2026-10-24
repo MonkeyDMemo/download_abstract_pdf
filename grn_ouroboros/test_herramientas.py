@@ -18,6 +18,7 @@ import tempfile
 import unittest
 
 from grn_bronce import db as bdb
+from grn_comun import procedencia
 from grn_ouroboros import herramientas as H
 
 TIENE_STRANDS = importlib.util.find_spec("strands") is not None
@@ -227,13 +228,21 @@ class PruebasHuellas(Base):
 
     def test_cada_modo_mide_lo_que_lee(self):
         self.assertEqual(self.recursos.huellas("ninguna"), {})
-        self.assertEqual(list(self.recursos.huellas("buscar_locus")),
-                         ["genes_pao1.tsv"])
+        self.assertEqual(sorted(self.recursos.huellas("buscar_locus")),
+                         ["genes_pao1.tsv", "herramientas.py"])
         todas = H.Recursos(self.genes, self.operones, ruta_llave=self.genes,
                            corrida_bronce=4).huellas("todas")
         self.assertEqual(sorted(todas), ["corrida_bronce", "genes_pao1.tsv",
-                                         "llave", "operones_pao1.tsv"])
+                                         "herramientas.py", "llave",
+                                         "operones_pao1.tsv"])
         self.assertEqual(todas["corrida_bronce"], 4)
+
+    def test_el_codigo_de_las_herramientas_entra(self):
+        """Sus docstrings son la descripción que el modelo lee: si cambian,
+        cambia la llave de la caché."""
+        huella = self.recursos.huellas("buscar_locus")["herramientas.py"]
+        self.assertEqual(huella, procedencia.huella_texto(H.__file__))
+        self.assertIsNotNone(huella)
 
     def test_otro_diccionario_otra_huella(self):
         antes = self.recursos.huellas("buscar_locus")

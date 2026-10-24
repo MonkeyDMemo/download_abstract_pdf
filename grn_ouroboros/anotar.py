@@ -25,12 +25,12 @@ La llave de cada ítem es el sha256 de sus **entradas**, no del ítem ni de la
 hora: la oración y sus dos entidades, la huella del prompt, el digest y la
 cuantización del modelo, la huella de su template, la versión de Ollama, la
 configuración de decodificación completa, la versión y la huella del esquema,
-las herramientas y la huella de sus recursos. Con `contexto` encendida entra
-también el `id_item`, porque lo que esa herramienta devuelve depende de dónde
-está la oración y no solo de su texto. Lo mismo dos veces no vuelve a llamar al
-modelo; cualquier cambio en lo que decide el veredicto, sí. La
-reproducibilidad no depende de T = 0: la da esta caché (`docs/decisiones.md`,
-«El LLM sobre la oración es trabajo de tesis»).
+las herramientas, la huella de su código y la de sus recursos. Con `contexto`
+encendida entra también el `id_item`, porque lo que esa herramienta devuelve
+depende de dónde está la oración y no solo de su texto. Lo mismo dos veces no
+vuelve a llamar al modelo; cualquier cambio en lo que decide el veredicto, sí.
+La reproducibilidad no depende de T = 0: la da esta caché
+(`docs/decisiones.md`, «El LLM sobre la oración es trabajo de tesis»).
 
 `veredictos.jsonl` es de solo anexar, con flush y fsync por línea: una corrida
 cortada conserva cada veredicto que alcanzó a escribir, y una línea cortada a
