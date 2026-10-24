@@ -34,7 +34,10 @@ python3 -m unittest discover               # y con el 3.8 del sistema, que es el
 
 **Lo que se espera:** las dos suites en verde, con el mismo conteo que la
 laptop menos las pruebas que piden spaCy o Strands, que se saltan diciendo por
-qué.
+qué. En la laptop, con `593377d`, la raíz da 1 543 (61 saltadas). Es la primera
+vez que el 3.8 corre el código de las fases 2 y 3: en la laptop solo se revisó
+su gramática. Una falla ahí se reporta con su línea, no se arregla en el
+servidor.
 
 ## 1. Lo que sube la laptop
 
