@@ -558,6 +558,18 @@ class PruebasEntrada(Base):
         self.assertEqual(r["tiempo"]["items_con_tiempo"], 3)
         self.assertEqual(r["tiempo"]["items_sin_tiempo"], 1)
         self.assertEqual(r["tiempo"]["minutos_total"], 3.0)
+        self.assertEqual(r["tiempo"]["tramos_largos"], 0)
+
+    def test_cuenta_los_tramos_largos(self):
+        """La columna de la página: un tramo de más de 15 minutos no se sumó,
+        y el resumen dice cuántos quedaron fuera."""
+        extra = dict((i, {"segundos": "60",
+                          "tramos_largos": "2" if n == 0 else "0"})
+                     for n, (i, *_) in enumerate(ITEMS))
+        r = self.calcular(extra=extra,
+                          columnas=HOJA + ["segundos", "tramos_largos"])
+        self.assertEqual((r["tiempo"]["tramos_largos"],
+                          r["tiempo"]["items_con_tramo_largo"]), (2, 1))
 
     def test_sin_tiempos_no_inventa_cifra(self):
         self.assertIsNone(self.calcular()["tiempo"])

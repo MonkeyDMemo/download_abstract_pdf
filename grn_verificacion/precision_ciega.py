@@ -448,10 +448,20 @@ def _tiempos(anotados):
             pass
     if not segundos:
         return None
+    # Los tramos de más de 15 minutos que la página no sumó (revision.py):
+    # si son muchos, el tiempo medido se queda corto.
+    largos = []
+    for it in anotados:
+        try:
+            largos.append(int(it["fila"].get("tramos_largos") or 0))
+        except ValueError:
+            pass
     bloques = [round(sum(segundos[i:i + BLOQUE]) / 60.0, 1)
                for i in range(0, len(segundos), BLOQUE)]
     return {"items_con_tiempo": len(segundos),
             "items_sin_tiempo": len(anotados) - len(segundos),
+            "tramos_largos": sum(largos),
+            "items_con_tramo_largo": sum(1 for n in largos if n),
             "minutos_total": round(sum(segundos) / 60.0, 1),
             "segundos_mediana_por_item": round(statistics.median(segundos), 1),
             "minutos_por_bloque_de_%d" % BLOQUE: bloques}
@@ -654,10 +664,12 @@ def lineas(r):
     t = r["tiempo"]
     if t:
         salida.append("tiempo: %.1f min en %d ítems (mediana %.1f s por "
-                      "ítem); sin tiempo: %d" % (
+                      "ítem); sin tiempo: %d; tramos de más de 15 min, no "
+                      "sumados: %d en %d ítems" % (
                           t["minutos_total"], t["items_con_tiempo"],
                           t["segundos_mediana_por_item"],
-                          t["items_sin_tiempo"]))
+                          t["items_sin_tiempo"], t["tramos_largos"],
+                          t["items_con_tramo_largo"]))
     else:
         salida.append("tiempo: ningún ítem trae `segundos` (¿se anotó en la "
                       "hoja?)")
