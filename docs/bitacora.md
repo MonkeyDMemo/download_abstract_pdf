@@ -343,6 +343,42 @@ implementador y un revisor, fusionada sobre la fase 2 sin conflictos.
   (`servidor-cierre.md` §7). El prompt se congela con un commit, y su huella
   en una enmienda del protocolo, antes de la tanda 2.
 
+**Lo que corrió Hermes con `main` en `d530907`** (el 24-oct entre 01:01 y
+01:02 UTC; `servidor-cierre.md` §0 a §6):
+- **Suites:** las dos pasan, 1 543 pruebas, con el 3.10 de pseudoRE y con el
+  3.8 del sistema. Es la primera vez que el 3.8 del servidor corre el código de
+  las fases 2 y 3.
+- **Contraste, red oficial y recomendada:** cifra por cifra lo mismo que la
+  corrida de las 19:40 UTC, incluida la conciliación 6 / 80 / 0. Quedan
+  confirmadas con el código revisado.
+- **Tablas:** iguales a las preliminares. Los arreglos de la revisión no
+  movieron nada, porque en estos 5 artículos hay una sola tabla, de 4 filas.
+  - En la §2 del informe las columnas suman 702 y no 672: 30 filas citan dos de
+    los cinco artículos y cuentan en las dos.
+  - La §1 cuenta cada fila una vez.
+- **`precision-ciega` sin el train de v1 y v2:** las 4 corridas.
+- **`evaluar --particion`,** para v2 y v1.
+- **Las cifras de §5 y §6 no llegaron a esta sesión.** Faltan las líneas que
+  imprimió cada corrida para ponerlas en PLAN y en la hoja. Lo que sí se sabe
+  es que dieron lo esperado.
+- **Los informes filtrados** están en `salidas/contraste/`.
+
+**Lo que pasó antes de la revisión, y la regla que deja.**
+- **Lo que hizo Hermes:**
+  - Integró las tres ramas que ya estaban commiteadas en los worktrees de la
+    laptop.
+  - Empujó esa integración por SSH directo al repositorio del servidor y
+    corrió con ella el contraste y las tablas de las 19:40 UTC.
+  - Después regresó el servidor a `main`.
+  - Subió por `scp` la capa, la red recomendada y los XML.
+- **No se coordinó con la sesión principal.** Fue código sin revisar contra la
+  base curada. Esta vez las cifras coincidieron con las de `main`, pero una
+  revisión que cambiara un conteo habría dejado dos versiones de la misma cifra.
+- **Desde hoy Hermes corre solo `origin/main`:** nunca una rama ni un worktree
+  de la laptop, y no empuja al clon del servidor. Queda en `CLAUDE.md` y en
+  `servidor-cierre.md`.
+- **El respaldo de las tandas,** `muestra200_t2` incluida, lo sube el usuario.
+
 **El cierre del día:**
 - **Los protocolos,** commiteados antes de medir: el de la tanda 2, con la
   enmienda 1 (las huellas de las redes), y el de la prueba con abstracts

@@ -230,6 +230,10 @@ barata de romper algo sin enterarse.
   - Corre los comandos de `docs/servidor-cierre.md`, incluidos los que leen la
     base curada (`contraste`, `tablas`, `precision-ciega --particion`), y
     reporta solo conteos e informes filtrados.
+  - **Corre solo `origin/main`,** despues de `git pull --ff-only`: nunca una
+    rama ni un worktree de la laptop, y no empuja al clon del servidor. El
+    23-oct-2026 corrio contra la base codigo integrado de ramas aun sin
+    revisar; lo que no esta en `main` no corre.
   - Nunca abre la base, `datos/`, `runs/`, las carpetas `--confidencial` ni
     los juicios del experto.
   - El host, la cuenta y la llave no se escriben en el repositorio.

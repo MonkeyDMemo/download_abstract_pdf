@@ -233,11 +233,10 @@ el §5 d y g. Las candidatas nuevas se quedan en la carpeta confidencial.
       **Ahí la red pierde,** porque el 39.5 % se queda sin signo;
   - **candidatas nuevas:** 7 849 pares que la base no registra, reportados como
     candidatas y no como hallazgos.
-- **Las cifras de la fase 2** las corrió Hermes el 23-oct con el código de las
-  ramas antes de su revisión. Los arreglos de la revisión no tocan conteos, y
-  Hermes las confirma con `main` (`servidor-cierre.md` §2).
-- **Tablas, preliminar** (5 artículos, 672 filas; se rehace con el código
-  revisado, §4):
+- **Las cifras de la fase 2,** confirmadas con `main` el mismo día
+  (`servidor-cierre.md` §2 a §4). Dan lo mismo que la primera corrida, hecha
+  con el código aún sin revisar.
+- **Tablas** (5 artículos, 672 filas):
   - 3 de los 5 no tienen XML: 367 filas.
   - En el 2.º, de 191 filas, a 188 les falta del XML al menos uno de los dos
     locus. Lo probable es que la base cite su material suplementario.
@@ -411,7 +410,7 @@ el §5 d y g. Las candidatas nuevas se quedan en la carpeta confidencial.
 |---|---|---|
 | hoy | «Calibración 2»: 12 ítems, unos 30 minutos (`calibracion-anotacion.md` v1.2) | — |
 | unas 6 horas de anotación | la tanda 2, en la pestaña «Revisión», con el tiempo por ítem | la calibración 2 |
-| en el servidor (Hermes) | confirmar con `main` el contraste ya corrido; rehacer las tablas; la precisión de v1 y v2 sin su entrenamiento; el 44 % por par visto (`docs/servidor-cierre.md` §2 a §6) | la fase 2, ya en `main` |
+| en el servidor (Hermes) | §0 a §6 hechos el 23-oct con `main`: todo coincide. Sigue §7, Ouroboros: calibración, tanda 1 y, con el prompt congelado, la tanda 2 (`docs/servidor-cierre.md`) | la fase 4, ya en `main` |
 | antes de evaluar la tanda 2 | `docs/protocolo-tanda2.md`: qué se mide y con qué reglas, commiteado | las fases 3 y 4 |
 | al terminar la tanda 2 | `precision-ciega` sobre la tanda 2: bronce, red, el signo como parámetro y Ouroboros | la tanda 2 |
 | noviembre | el informe del servicio social | todo lo anterior |

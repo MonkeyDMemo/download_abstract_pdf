@@ -6,7 +6,13 @@ Claude del usuario que entra por SSH con llave, con el VoBo del asesor. La
 sesión de la laptop no corre nada aquí: deja los comandos y lee los conteos que
 Hermes reporta.
 
+**Estado:** §0 a §6 corrieron el 24-oct entre 01:01 y 01:02 UTC con `main` en
+`d530907`, y todo coincidió (bitácora del 23-oct). Falta §7, Ouroboros.
+
 **Reglas** (`CLAUDE.md`, Confidencialidad):
+- **Se corre solo `origin/main`,** después de `git pull --ff-only`: nunca una
+  rama ni un worktree de la laptop, y no se empuja al clon del servidor. Lo que
+  no está en `main` no corre (bitácora del 23-oct).
 - Se trabaja solo en `~/grn-guillermo`.
 - Nunca se abren la base curada, `datos/`, `runs/`, las carpetas
   `--confidencial`, los juicios del experto ni la hoja de la tanda 2.
@@ -41,8 +47,11 @@ línea, no se arregla en el servidor.
 
 ## 1. Lo que sube la laptop
 
-Lo sube el usuario con `scp` y el alias `asesor`. No pasa por una sesión de
-Claude.
+Va por `scp` con el alias `asesor`.
+- **Lo público,** que es la red, la capa y el XML, lo puede subir Hermes. El
+  23-oct lo subió él.
+- **El respaldo de las tandas** lo sube solo el usuario, sin abrirlas. No pasa
+  por una sesión de Claude.
 
 | qué | de la laptop | al servidor |
 |---|---|---|
