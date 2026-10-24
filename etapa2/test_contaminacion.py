@@ -67,8 +67,13 @@ RAIZ = os.path.dirname(DIRECTORIO)
 # publica, y el paso 3 es donde la base curada entra para el diff. Si una
 # referencia entrara a sus nodos o a sus aristas, la red publicada diria lo
 # que le sopla la referencia.
+# `grn_ouroboros` entra el 23-oct-2026, el dia que se abre: es el juez LLM que
+# anota las mismas hojas que el experto. No produce filas del pipeline, pero
+# su acuerdo con el experto es una cifra que se reporta, y si la base curada o
+# el oro entraran a su prompt o a sus herramientas, mediria la referencia y no
+# al modelo.
 VIGILADOS = ("etapa2", "grn_bronce", "grn_comun", "grn_operones",
-             "grn_verificacion", "grn_red")
+             "grn_verificacion", "grn_red", "grn_ouroboros")
 
 # Donde viven los scripts de DEL_PIPELINE, que es un subconjunto de VIGILADOS
 # a proposito. `grn_operones` se escanea igual que los demas, pero no aloja
