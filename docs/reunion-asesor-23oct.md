@@ -45,6 +45,10 @@ El servicio social cierra con la capa determinista:
   BioBERT;
 - la tanda 1 de la muestra ciega está anotada: la red sube la precisión del
   bronce de 53.0 % a 61.3 %, con la diferencia pareada en [+3.7, +12.6];
+- **el signo de la red no le gana a decir siempre «activa»** cuando la
+  abstención cuenta como error. En la tanda 1 da 42/60, contra 41/60; en la
+  base curada, 319/605 contra 448/605. Cuando sí da signo, acierta más que la
+  línea base en las dos;
 - la tanda 2, de prueba, está sorteada y se anota en la página.
 
 El LLM sobre la oración pasa a la tesis (`decisiones.md`, «El LLM sobre la
@@ -84,12 +88,19 @@ modelo.
   (87/105)**.
 - **La pérdida más grande son las inversiones:** 39 de 144 relaciones
   verdaderas (27.1 %) [20.5, 34.9] tienen la dirección contraria a la que
-  propuso el bronce.
-- **El signo de la red** acierta 42/48 = 87.5 % cuando lo da, y 42/60 = 70.0 %
-  si la abstención cuenta como error.
-  - La «siempre +» reportada, 70.7 %, no sale de la misma base: no puede ser
-    k/60.
-  - Se recalcula sobre los mismos ítems antes de concluir.
+  propuso el bronce. Entre las que la red retiene son 23 de 110 (20.9 %).
+- **El signo de la red,** con «siempre +» sobre los mismos ítems:
+
+  | | la red | «siempre +» |
+  |---|---|---|
+  | cuando da signo (48) | 42/48 = 87.5 % [75.3, 94.1] | 35/48 = 72.9 % |
+  | con la abstención como error (60) | 42/60 = 70.0 % [57.5, 80.1] | 41/60 = 68.3 % |
+
+  - Con la abstención como error, **empatan**.
+  - El 70.7 % que se citaba antes era la base del bronce (53/75), no la de la
+    red.
+  - Tomar el signo por (par, oración) no movió ninguna de las dos cifras de la
+    red.
 - **Sensibilidad.** Con las 5 negadas anotadas `si` tratadas como `no`, el
   bronce da 51.0 % y la red 59.9 %, con diferencia [+4.3, +13.2]. La
   conclusión no cambia.
@@ -136,10 +147,15 @@ contra v2 es exploratoria (`protocolo-curada-v1.md:245-248`).
   correctas, acepta 28 y no 37.
 - **La v1 retiene solo 5 de las 22.**
 - **El signo de la v2:** 9/12 = 75 % contra 73.3 % de «siempre +», que tampoco
-  es k/12.
+  es k/12. `evaluar` ya da cada acierto con su línea base sobre los mismos
+  ítems. Con *E. coli*:
+  - cuando da signo, 11/11 contra 9/11;
+  - con la abstención como error, 11/15 contra 11/15. El 73.3 % es esa base.
+  - Las curadas se recalculan en el servidor.
 - **La v2 se eligió después de ver las 50,** así que es exploratoria.
-- **Falta separar** los pares que el modelo vio en su entrenamiento
-  (memorización): `precision-ciega` y `evaluar --particion`, fase 2.
+- **Separar los pares que el modelo vio al entrenar** (memorización): el
+  código está desde la fase 2 (`evaluar --particion` y `precision-ciega
+  --particion`). Corre en el servidor (`servidor-cierre.md` §5 y §6).
 
 ---
 
@@ -195,27 +211,37 @@ el §5 d y g. Las candidatas nuevas se quedan en la carpeta confidencial.
 23-oct.
 - **Denominador: 2 077 exigibles.** Son 1 562 en el corpus (859 con XML y 703
   solo abstract) y 46 de autorregulación.
-  - PLAN §2.4 daba 2 003. La conciliación es 2 077 = 2 003 − 6 + 80.
+  - PLAN §2.4 daba 2 003. La conciliación es 2 077 = 2 003 − 6 + 80, contada
+    en el servidor.
   - Las 6 son filas sin dos locus válidos (5 578 de 5 584).
-  - Las 80 se explican porque `motivo_de` excluye una fila solo si **todos**
-    sus PMIDs están en el archivo de exclusiones: son 651 frente a 731.
+  - Las 80 citan el artículo excluido junto con otro. `motivo_de` excluye una
+    fila solo si **todos** sus PMIDs están en el archivo de exclusiones: son
+    651 frente a 731.
+  - Ninguna fila de homología cita el artículo excluido.
 - **Cobertura del bronce:**
   - regla b) con XML, 30.2 % (259/859) [27.2, 33.3];
   - 24.8 % sin la expansión de operones;
   - regla a), 43.1 % en todas.
 - **La red:**
   - **dirigido,** sin el estrato BioBERT, 41.2 % (642/1 560) [38.7, 43.6];
-  - **orientación,** 95.3 % (642/674);
-  - **el signo,** cuando lo da, acierta 319/366 [83.3, 90.2], y el 39.5 % de
-    las dirigidas con signo se queda sin él;
+  - **orientación,** 95.3 % (642/674): Histórica 505/536 y Ambos 137/138;
+  - **el techo de la regla a)** en esas 1 560 es 720 (46.2 %). Las 674 que la
+    red encuentra en alguna dirección caen todas dentro: 0 fuera;
+  - **el signo,** con «siempre activa» sobre los mismos ítems:
+    - cuando lo da, 319/366 [83.3, 90.2], contra 280/366 (76.5 %);
+    - con la abstención como error, 319/605 (52.7 %) contra 448/605 (74.0 %).
+      **Ahí la red pierde,** porque el 39.5 % se queda sin signo;
   - **candidatas nuevas:** 7 849 pares que la base no registra, reportados como
     candidatas y no como hallazgos.
-- **Pendiente en el servidor** (fase 2):
-  - la línea base «siempre activa» sobre las 366 y las 605;
-  - el techo de la regla a) en el estrato sin BioBERT;
-  - la red recomendada;
-  - la medición de tablas en los 5 artículos con más filas, que reúnen 672 de
-    las 2 077.
+- **Las cifras de la fase 2** las corrió Hermes el 23-oct con el código de las
+  ramas antes de su revisión. Los arreglos de la revisión no tocan conteos, y
+  Hermes las confirma con `main` (`servidor-cierre.md` §2).
+- **Tablas, preliminar** (5 artículos, 672 filas; se rehace con el código
+  revisado, §4):
+  - 3 de los 5 no tienen XML: 367 filas.
+  - En el 2.º, de 191 filas, a 188 les falta del XML al menos uno de los dos
+    locus. Lo probable es que la base cite su material suplementario.
+  - Ninguna fila tiene los dos locus en una misma tabla.
 
 **e) La evidencia de PA14 se anota como cualquier otra, con su cepa en el comentario.**
 - **Decidí eso porque** es *P. aeruginosa* (rúbrica, paso 5 del árbol), y la
@@ -250,9 +276,15 @@ el §5 d y g. Las candidatas nuevas se quedan en la carpeta confidencial.
 - **Si prefiere la recomendada como red oficial,** las reglas ya son
   parámetros (`grn_red.cli consolidar`). Falta que el paquete y la evaluación
   lean `red_recomendada.tsv`, que es un cambio pequeño en `flujo.py`.
-- **Su contraste está pendiente.** Hoy `contraste --red` se detiene con las
-  aristas expandidas, que no tienen evidencia propia; se arregla en la fase 2.
-  Ninguna cifra suya se escribe hasta medirla.
+- **Su contraste,** medido el 23-oct (`contraste --red recomendada`):
+  - **Las aristas:** de las 10 592, se omiten y se cuentan las 1 533
+    expandidas, que no tienen evidencia propia.
+  - **Los pares:** da 9 012 pares de locus, uno más que `red.tsv`, y el mismo
+    dirigido, 642/1 560.
+  - **El signo:** 313/360 cuando lo da, contra 276/360 de «siempre activa».
+    Con la abstención como error, 313/605.
+  - **Por qué baja el signo:** sus autorregulaciones marcadas le cambian el
+    signo a 28 pares que `red.tsv` ya tenía. Por eso queda 313 y no 319.
 
 **g) El modelo del flujo sigue siendo el de *E. coli*.**
 - **Decidí eso porque** ninguna versión curada cumple el criterio 2 de la
@@ -289,10 +321,17 @@ el §5 d y g. Las candidatas nuevas se quedan en la carpeta confidencial.
 
 **j) El signo de la red como parámetro, apagado por omisión.**
 - **Decidí** el voto léxico por evidencia como regla principal, que es la
-  lectura literal de «cuando la predicción sea `regulates`». La variante por
-  arista, que solo toca las aristas que `red.py` dejó `regulates`, va como
-  secundaria.
-- **Voto por artículo:** solo en las aristas con votos + y −.
+  lectura literal de «cuando la predicción sea `regulates`».
+- **La variante por arista va como secundaria.** Solo vota en las aristas sin
+  ningún voto con signo de BioBERT: 4 105 de las 4 642 que `red.py` dejó
+  `regulates`.
+  - Las otras 537 son conflictos de BioBERT (votos + y −), y no se tocan.
+  - Con la lectura amplia, 36 de esos conflictos cambiarían de signo.
+- **Voto por artículo:** solo en las aristas con votos + y −. Cada artículo
+  vota con su mayoría, y la arista con la mayoría de los artículos.
+  - Si todos los artículos se abstienen, la arista sigue `regulates` y con
+    `conflicto` = sí. En la corrida 4 son 170.
+  - Contarlas como conflictos resueltos inflaría lo que logra la regla.
 - **Si prefiere otra,** se cambia `--signo-lexico` en `grn_red.cli
   consolidar`. Ninguna toca la red oficial.
 - **Las cifras salen de la tanda 2,** con la abstención como error y contra
@@ -337,8 +376,12 @@ el §5 d y g. Las candidatas nuevas se quedan en la carpeta confidencial.
 - No «la base curada tiene ~3 500 interacciones». Sí: «5 584 filas, de las
   que 2 077 son exigibles con la regla versionada (2 003 en PLAN §2.4)».
 - No «el signo de la red acierta 87.2 %» sin su base. Sí: «319/366 cuando da
-  signo; con la abstención como error, 319/605». «Siempre activa», sobre la
-  misma base, está por medirse.
+  signo, contra 280/366 de "siempre activa"; con la abstención como error,
+  319/605 contra 448/605».
+- No «el signo de la red le gana a la línea base». Sí: «cuando da signo, sí
+  (42/48 contra 35/48 en la tanda 1). Con la abstención como error, empata en
+  la tanda 1 (42/60 contra 41/60) y pierde contra la base curada (319/605
+  contra 448/605)».
 - No «la precisión subió del 44 % al 53 %». Sí: «53.0 % [46.1, 59.9] en la
   tanda 1, contra 44.0 % [31.2, 57.7] en las 50. Son muestras distintas y los
   intervalos se solapan».
@@ -357,7 +400,7 @@ el §5 d y g. Las candidatas nuevas se quedan en la carpeta confidencial.
 |---|---|---|
 | hoy | «Calibración 2»: 12 ítems, unos 30 minutos (`calibracion-anotacion.md` v1.2) | — |
 | unas 6 horas de anotación | la tanda 2, en la pestaña «Revisión», con el tiempo por ítem | la calibración 2 |
-| en el servidor (Hermes) | «siempre activa», techo de la regla a), la red recomendada, las tablas, y la precisión de v1 y v2 sin su entrenamiento (`docs/servidor-cierre.md`) | la fase 2 |
+| en el servidor (Hermes) | confirmar con `main` el contraste ya corrido; rehacer las tablas; la precisión de v1 y v2 sin su entrenamiento; el 44 % por par visto (`docs/servidor-cierre.md` §2 a §6) | la fase 2, ya en `main` |
 | antes de evaluar la tanda 2 | `docs/protocolo-tanda2.md`: qué se mide y con qué reglas, commiteado | las fases 3 y 4 |
 | al terminar la tanda 2 | `precision-ciega` sobre la tanda 2: bronce, red, el signo como parámetro y Ouroboros | la tanda 2 |
 | noviembre | el informe del servicio social | todo lo anterior |

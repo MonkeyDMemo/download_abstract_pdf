@@ -140,11 +140,113 @@ implementador y un revisor independiente, cada uno en su worktree.
   después de reiniciar y exporta, y `precision-ciega` lee lo exportado.
 - **Suites:** raíz 1 333 y etapa2 528.
 
+**Fase 2, cerrada: la evaluación honesta.** Cinco piezas, cada una con su
+implementador y un revisor independiente, en su worktree. Se fusionaron en el
+orden del plan (cimientos, contraste, precisión, tablas, nuevos) sin un solo
+conflicto.
+- **Cimientos:** `grn_comun/redes.py` es la única fuente de los nombres de red,
+  y `entrenamiento` expone `leer_pmids`, `pmid_valido` y `reservada`. Después
+  de fusionar, `tablas` y `verificar-contaminacion` leen los PMIDs con
+  `leer_pmids`, como el contraste.
+- **`contraste`:** la línea base «siempre activa», la orientación por estrato,
+  el techo de la regla a), la conciliación del denominador y `--red NOMBRE`,
+  que omite y cuenta las aristas expandidas.
+- **`precision-ciega` v2:**
+  - opciones `--particion`, `--excluir-pmids`, `--red`, `--capa` y
+    `--etiqueta`;
+  - el signo por (par, oración);
+  - las inversiones, «siempre +» sobre la misma base, la sensibilidad de las
+    negadas y los avisos de la rúbrica;
+  - todo lo que imprime pasa por el filtro de publicación.
+  - **`evaluar --particion`** separa el P1 de las 50 en par visto y par no
+    visto al entrenar.
+- **`cli tablas`:** tablas o redacción en los 5 artículos con más filas. Lee el
+  JATS, incluidas las celdas que abarcan filas y el título de un grupo de
+  tablas.
+- **La prueba con abstracts nuevos:**
+  - `cli.py run --tipo-fecha {pdat,edat,crdt}`, con `pdat` por omisión y una
+    prueba de que la petición de hoy no cambia;
+  - `cli verificar-contaminacion`, que sale con 1 ante cualquier cruce.
+- **Lo que agregué al fusionar:** el signo del 44 % (`evaluar`) lleva ahora su
+  «siempre +» sobre los mismos ítems. El encargo de la precisión no lo cubría.
+
+**Verificación real:**
+- **El flujo de la corrida 4** rehízo `pares` y lo que sigue, porque `pares`
+  declara `grn_verificacion/cli.py`.
+  - 41 de las 47 salidas son idénticas byte a byte: `red.tsv`,
+    `red_evidencias.tsv`, la red recomendada, `pares.jsonl`, las predicciones,
+    la capa, `evaluacion.json` y el grafo.
+  - Solo cambian el estado y los informes que llevan fecha.
+  - La segunda corrida salió toda «saltado», y `verificar` da 0.
+- **`precision-ciega` v2 sobre la tanda 1 reproduce todo:**
+  - bronce 105/198, red 87/142, retención 87/105 y diferencia [+3.7, +12.6];
+  - inversiones 39/144;
+  - con las negadas como `no`, 101/198 y 85/142, diferencia [+4.3, +13.2].
+  - Tomar el signo por (par, oración) no movió ni el 42/48 ni el 42/60.
+- **Lo nuevo de la tanda 1:**
+  - **«siempre +» sobre la misma base.** Con la abstención como error, la red
+    da 42/60 (70.0 %) y «siempre +» 41/60 (68.3 %): empatan. Cuando la red da
+    signo, 42/48 contra 35/48 (72.9 %). El 70.7 % que se citaba era la base del
+    bronce (53/75).
+  - **Inversiones de la red:** 23 de los 110 `si` que retiene (20.9 %).
+- **El 44 % con *E. coli*:** cuando BioBERT da signo, 11/11 contra 9/11 de
+  «siempre +» en las mismas; con la abstención como error, 11/15 contra 11/15.
+  El 73.3 % era esa segunda base.
+- **Una revisión adversarial de `main` ya fusionado,** con tres lentes
+  (integración, confidencialidad y reglas). Cada hallazgo pasó por un
+  verificador que intentó refutarlo. Quedaron tres defectos, ya corregidos:
+  - `evaluar --particion` dejaba salir un traceback con las rutas del clon;
+  - `precision-ciega` imprimía la ruta absoluta de un archivo que faltaba,
+    como `--capa` o la red de `--red`. En el servidor esa ruta lleva la
+    cuenta;
+  - el tablero no decía el tipo de fecha de una corrida por fecha de alta.
+- **Suites:** raíz 1 493 y etapa2 528, con el `.venv` y con el Python del
+  sistema.
+
+**Lo que Hermes ya corrió** el 23-oct a las 19:40 UTC, con el código de las
+ramas antes de su revisión. Los informes filtrados están en
+`salidas/contraste/`.
+- **Contraste, red oficial:** las cifras de antes, y además:
+  - **el signo contra «siempre activa»:**
+    - cuando la red da signo, 319/366 contra 280/366 (76.5 %);
+    - con la abstención como error, la red da 319/605 (52.7 %) y «siempre
+      activa» 448/605 (74.0 %). **Con la abstención como error, la red pierde
+      contra decir siempre activa;**
+  - **la orientación por estrato:** Histórica 505/536 y Ambos 137/138;
+  - **el techo de la regla a):** 720 de las 1 560, con 0 filas encontradas por
+    la red fuera de él;
+  - **la conciliación, cerrada:** 6 filas con locus inválido, 80 que citan el
+    artículo excluido junto con otro, y ninguna de homología que lo cite.
+- **Contraste, red recomendada:**
+  - 10 592 aristas, de las que 1 533 son expandidas y se omiten;
+  - 9 012 pares de locus y el mismo dirigido, 642/1 560;
+  - signo 313/360 cuando lo da;
+  - 7 850 candidatas nuevas.
+- **Tablas, preliminar:**
+  - 3 de los 5 artículos no tienen XML (367 de las 672 filas).
+  - El 2.º sí tiene: de sus 191 filas, en 188 falta del XML al menos uno de
+    los dos locus. Lo probable es material suplementario.
+  - El revisor arregló después las celdas que abarcan filas y el título de los
+    grupos de tablas, así que se rehace con el código fusionado.
+- **Lo que vale:** los arreglos de la revisión del contraste no tocan conteos,
+  así que sus cifras se quedan. Hermes las vuelve a correr con `main` para
+  confirmarlo.
+
+**Decisiones por omisión** (van a la hoja de entrega):
+- **Una inversión** es todo `si` cuya dirección difiere de la del bronce, y
+  eso incluye `ninguna`.
+- **Los ítems de `precision-ciega --particion`** cuya oración está en train se
+  cuentan y no se excluyen. Solo se excluye por PMID.
+- **Si un mismo (par, oración) sostiene aristas de signos distintos,** el ítem
+  queda sin signo. No pasa en la corrida 4.
+- **`verificar-contaminacion`** lee la base curada solo con `--base` explícito,
+  nunca de `BASE_CURADA`.
+
 **Abierto:**
 - la sesión de calibración 2 con el experto, y luego la tanda 2 en la página:
   `python servidor.py --revision salidas/revision/muestra200_t2 --abrir`;
-- las fases 2 a 4: mediciones en el servidor, el signo como parámetro y
-  Ouroboros.
+- lo que corre Hermes en el servidor (`servidor-cierre.md` §2 a §6);
+- las fases 3 y 4: el signo como parámetro y Ouroboros.
 
 ## 22 de octubre de 2026 — el sorteo de la muestra ciega, la tesis al día y la pregunta de operones reescrita
 

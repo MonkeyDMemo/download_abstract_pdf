@@ -92,7 +92,11 @@ Verificado contra el repositorio el 10-sep-2026.
   - *E. coli*: 16/37 = 43.2 %, retiene 16 de las 22 correctas.
   - Curada v1: 5/9 = 55.6 % [26.7, 81.1], retiene 5 de 22.
   - Curada v2: 16/28 = 57.1 % [39.1, 73.5], retiene 16 de 22. Su signo acierta 9/12, contra un 73.3 % de «siempre +» que no sale de la misma base. La v2 se eligió después de ver las 50, así que es exploratoria.
-  - Falta separar los pares que cada modelo vio en su entrenamiento (`evaluar --particion`, en el servidor).
+  - **El signo con su línea base sobre los mismos ítems** (`evaluar`, desde el 23-oct). Con *E. coli*, de las 15 `si` con signo claro:
+    - cuando BioBERT da signo, 11/11, contra 9/11 de «siempre +» en las mismas;
+    - con la abstención como error, 11/15 contra 11/15. El 73.3 % era esta segunda base.
+    - Las curadas se recalculan en el servidor (`servidor-cierre.md` §6). Con n = 11 no se concluye nada sobre el signo.
+  - Separar los pares que cada modelo vio al entrenar: el código está (`evaluar --particion`) y corre en el servidor.
 - Guarda anticircularidad: `test_contaminacion.py` impide que el bronce nombre `oro_pseudomonas`.
 
 ### 2.4 Evaluación contra la base curada — medido el 10-sep-2026
@@ -143,23 +147,31 @@ La regla b) mide si el paso 1 recupera la evidencia citada; la a) mide lo que el
 | en el corpus / con XML / solo abstract | 1 562 / 859 / 703 | 1 488 / 791 / 697 |
 | autorregulación | 46 | 43 |
 
-- **Conciliación:** 2 077 = 2 003 − 6 + 80.
+- **Conciliación:** 2 077 = 2 003 − 6 + 80, contada en el servidor el 23-oct.
   - Las 6 son filas con un locus inválido.
-  - Las 80 vienen de la regla de `motivo_de`: una fila sale por el archivo solo si **todos** sus PMIDs están en él, y la homología va primero.
-  - El reparto exacto de las 80 se cuenta en el servidor.
+  - Las 80 citan el artículo excluido junto con otro, y se quedan: una fila sale por el archivo solo si **todos** sus PMIDs están en él (`motivo_de`).
+  - Ninguna fila de homología cita el artículo excluido, así que el orden de las dos exclusiones no mueve nada.
 - **Cobertura, con expansión:**
   - regla a), 43.1 % en todas y 45.3 % con XML;
   - regla b), 17.6 % en todas y **30.2 % (259/859) [27.2, 33.3] con XML**;
   - sin expansión, la b) con XML da 24.8 %.
 - **La red, en el estrato sin BioBERT:**
   - **dirigido, 41.2 % (642/1 560) [38.7, 43.6]**; solo al revés, 2.1 %;
-  - orientación, 95.3 % (642/674);
+  - orientación, 95.3 % (642/674): Histórica 505/536 y Ambos 137/138;
   - el estrato BioBERT, circular, va aparte, con 30.2 %.
+- **El techo de la regla a)** sobre esas 1 560 es 720 (46.2 %) [43.7, 48.6]. La red encuentra 674 en alguna dirección, todas dentro del techo: 0 fuera, como debe ser.
 - **El signo.** De las 605 dirigidas con signo en la base, 319 coinciden, 47 contradicen, 155 son `regulates` y 84 son mixtas.
-  - Cuando la red da signo, acierta **319/366 [83.3, 90.2]**, y el 39.5 % se queda sin signo.
-  - Se escribe así, y no «87.2 %», porque esa cifra ya significa otra cosa en la tabla de arriba.
+  - Cuando la red da signo, acierta **319/366 [83.3, 90.2]**, contra 280/366 (76.5 %) [71.9, 80.6] de «siempre activa» en las mismas.
+  - **Con la abstención como error, la red pierde:** 319/605 (52.7 %) [48.7, 56.7], contra 448/605 (74.0 %) [70.4, 77.4] de «siempre activa». El 39.5 % se queda sin signo.
+  - Se escribe 319/366, y no «87.2 %», porque esa cifra ya significa otra cosa en la tabla de arriba.
 - **Candidatas nuevas:** 7 849, reportadas como candidatas.
 - **Concentración:** 5 artículos reúnen 672 de las 2 077 (32.4 %).
+- **La red recomendada** (`contraste --red recomendada`, el mismo día; `salidas/contraste/CONTRASTE_recomendada.md`):
+  - Tiene 10 592 aristas: 8 747 llevadas a locus, 131 sin locus, 181 de autorregulación con un solo locus y 1 533 expandidas, que se omiten porque no tienen evidencia propia.
+  - Da 9 012 pares de locus, los 9 011 de `red.tsv` más uno, y el mismo dirigido, 642/1 560.
+  - **Signo:** 313/360 cuando lo da, contra 276/360 de «siempre activa»; con la abstención como error, 313/605.
+  - **Candidatas nuevas:** 7 850.
+  - Sus autorregulaciones marcadas le cambian el signo a 28 pares que `red.tsv` ya tenía.
 
 ### 2.5 Precisión ciega con un experto — tanda 1, 23-oct-2026
 
@@ -172,8 +184,12 @@ La muestra ciega es de 200 oraciones de la misma población que el 44 % (las can
 
 - **Diferencia pareada,** red menos bronce: **[+3.7, +12.6]** por bootstrap.
 - **Retención:** 71.7 % del total y **82.9 % de las verdaderas (87/105)**.
-- **Inversiones:** 39 de 144 (27.1 %) [20.5, 34.9]. Es la pérdida más grande; ver la fila 30.
-- **Signo de la red:** 42/48 cuando lo da y 42/60 con la abstención como error. El 70.7 % de «siempre +» no sale de la misma base y se recalcula.
+- **Inversiones:** 39 de 144 (27.1 %) [20.5, 34.9]. Es la pérdida más grande; ver la fila 30. Entre los `si` que la red retiene son 23 de 110 (20.9 %) [14.4, 29.4].
+- **Signo de la red,** con su «siempre +» sobre los mismos ítems (`precision-ciega` v2, 23-oct):
+  - cuando lo da, 42/48 (87.5 %) [75.3, 94.1], contra 35/48 (72.9 %);
+  - con la abstención como error, 42/60 (70.0 %) [57.5, 80.1], contra 41/60 (68.3 %): **empata con «siempre +»**.
+  - El 70.7 % que se citaba era la base del bronce, 53/75.
+  - Tomar el signo por (par, oración) en vez de por par no movió ninguna de las dos cifras.
 - **Sensibilidad,** con las 5 negadas anotadas `si` tratadas como `no`: 51.0 % y 59.9 %, diferencia [+4.3, +13.2].
 - **Normalización:** solo de códigos, 46 direcciones vacías y 43 signos `0`.
 - **Sin tiempos ni κ.**
@@ -243,7 +259,7 @@ contraste con la base curada y la red no se recortan.
 |---|---|---|
 | 10 | Vocabulario de `Origen`, `Interaction`, `Reference` | **Hecho** (2.4) |
 | 11 | Decidir dónde vive el cargador de la base curada | **Decidido el 8-oct:** `grn_verificacion/validacion.py`, solo estándar, con la ruta por argumento (la guarda de contaminación sigue con la lista blanca vacía). Corre en el servidor del asesor, donde vive el `.xlsx`; lo usa `entrenamiento.py` para la supervisión distante. Las tablas `validacion_interacciones` y `particion` quedan propuestas, sin aplicar |
-| 12 | Cruce de PMIDs con normalización | **Hecho** (2.4). **Versionado el 21-oct** en `grn_verificacion/contraste.py` (`cli contraste`), que reproduce el 2.4 y mide además el recall de la red. Probado con bases sintéticas; falta correrlo contra la base real, donde viva la base (`docs/contraste-curada.md`). **Corrido el 23-oct en el servidor**: denominador 2 077 conciliado con 2 003, regla b) con XML 30.2 %, red dirigida 41.2 % (2.4, nota del 23-oct) |
+| 12 | Cruce de PMIDs con normalización | **Hecho** (2.4). **Versionado el 21-oct** en `grn_verificacion/contraste.py` (`cli contraste`), que reproduce el 2.4 y mide además el recall de la red. Probado con bases sintéticas; falta correrlo contra la base real, donde viva la base (`docs/contraste-curada.md`). **Corrido el 23-oct en el servidor**: denominador 2 077 conciliado con 2 003, regla b) con XML 30.2 %, red dirigida 41.2 % (2.4, nota del 23-oct). **Fase 2, el mismo día:** suma la línea base «siempre activa», la orientación por estrato, el techo de la regla a) y `--red NOMBRE`, que contrasta la red recomendada |
 | 13 | Separar el denominador por origen | **Hecho**: 2 003 filas exigibles, vía la etiqueta de homología |
 | 14 | Reportar candidatas nuevas: pares del bronce ausentes de la base curada | **Código listo el 21-oct:** `cli contraste` escribe las aristas de la red que la base no tiene, en las dos direcciones, solo en la carpeta confidencial; al informe va su conteo. Falta correrlo contra la base real. Entregable que el asesor quiere ver. **Corrido el 23-oct:** 7 849 candidatas nuevas, cuya lista se queda en la carpeta confidencial; al informe va solo el conteo |
 | 26 | Adoptar el vocabulario de signo de `Interaction` como tabla de equivalencias en el paso 2 | `+`/`-`/`Unknown` ↔ `+`/`-`/`?`. Sin tocar el bronce. `d` sin mapear hasta que el asesor lo defina |
@@ -258,7 +274,7 @@ contraste con la base curada y la red no se recortan.
 | 18 | Disparador dominante | Sube el signo utilizable de 114 a ~675 pares. También desbloquea la medición de signo, hoy imposible: 14 de las 22 relaciones juzgadas traen `signo_sugerido` sin resolver y queda 1 evaluable. No arregla la inversión del fenotipo del mutante **8-oct, medido sin tocar el bronce** (`grn_verificacion/evaluar.py`, sobre los 1 186 pares dirigidos de la corrida 4, techo 674): con signo único, el bronce de hoy da 114; el control léxico (el disparador con signo, + o −, más cercano; solo estándar), 537 (contradictorios de 194 a 137); la sintaxis, 166 (contradictorios 47, pero 483 pares sin disparador en el árbol). Es consistencia, no acierto: falta medir el acierto contra signos juzgados y elegir la regla de la v5. **23-oct:** en la tanda 1 la red da signo en 48 de los 60 `si` bien orientados con signo y acierta 42. El voto léxico (por evidencia o por arista) y el voto por artículo entran como parámetros apagados de `consolidar`, y se miden solo en la tanda 2 |
 | 19 | Lista `requiere_contexto` para símbolos ambiguos (`tag` = PA0010, 568 menciones de jerga) | |
 | 20 | Pruebas para `unir_juicios.py`, `evaluar_cobertura_bronce.py` y el subcomando `pares` | Tres piezas sin cobertura |
-| 27 | Revisar el 2.º PMID más frecuente del denominador: 179 filas, XML disponible, 25.1 % de cobertura | O reporta en tablas, o hay un patrón de redacción que el bronce no capta. **23-oct:** los 5 artículos con más filas reúnen 672 de las 2 077 exigibles; la medición de tablas (`cli tablas`) corre en el servidor |
+| 27 | Revisar el 2.º PMID más frecuente del denominador: 179 filas, XML disponible, 25.1 % de cobertura | O reporta en tablas, o hay un patrón de redacción que el bronce no capta. **23-oct:** los 5 artículos con más filas reúnen 672 de las 2 077 exigibles; la medición de tablas (`cli tablas`) corre en el servidor. **Primera corrida, preliminar** (código anterior a su revisión; se rehace, `servidor-cierre.md` §4): 3 de los 5 artículos no tienen XML (367 filas; uno está fuera del corpus y dos solo tienen abstract). El 2.º sí: de sus 191 filas, la regla b) cubre 3, y en las otras 188 falta del XML al menos uno de los dos locus (en 113, los dos). Lo probable es que la base cite su material suplementario, que no viene en el XML, y no una redacción que el bronce no capte |
 | 28 | Unificar la cifra de autorregulación | El comentario de `evaluar_cobertura_bronce.py` dice 10 filas / 5.7 %, la bitácora mezcla 4.5 puntos con 5.7 %, y lo medido es 8 de 176 (4.5 puntos) y 11 de 190 (5.8 puntos). Tres cifras para lo mismo en tres lugares |
 | 29 | Versionar el script que sorteó la muestra de 50 | **Hecho** el 11-sep: `etapa2/evaluacion/muestrear_candidatas.py` reproduce el archivo fila por fila |
 | 30 | Inversión de dirección | 6 de 24 errores de la muestra son pares correctos mal orientados. Hoy la dirección sale de `es_tf`; revisar los 6 casos para ver si son dos TF, ninguno, o sintaxis contraria a la heurística. Candidato: parseo de dependencias con scispaCy. **8-oct:** revisados los 6 a mano en `docs/ficha-invertidos-punto30.md` (en los seis el regulador verdadero no es TF; el BioBERT no puede corregirlos); la sintaxis con spaCy de `grn_bronce/sintaxis.py` se mide contra esa ficha. **Medido:** corrige 1 de los 4 recuperables (la 20; se esperaban 2), no rompe ninguna de las 22 `si` y confirma 6. No cumple el criterio (≥ 3 de 4 y 0 rotas): la dirección sintáctica queda como columna informativa de la capa. La 8 falla por la regla «X-dependent»; no se ajusta con estas 50. **21-oct, alineación v2** (`sintaxis.py` VERSION 2): la mención que pierde en `filter_spans` se alinea a su contenedor, y los pares `sin_alineacion` bajan de 8 485 a 0 sin cambiar ninguna otra línea. De esos pares, 600 ahora se orientan y 4 646 salen `mismo_token`. D1 sigue en 1 de 4, así que la dirección sintáctica sigue informativa (`docs/plan-sintaxis-bronce.md` §7). **23-oct, tanda 1:** 39 de 144 relaciones verdaderas (27.1 %) tienen la dirección contraria a la del bronce, contra 6 de 28 en las 50. Es la pérdida más grande; las reglas de dirección se proponen con la tanda 1 y se miden en la tanda 2 |

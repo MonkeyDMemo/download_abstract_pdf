@@ -292,7 +292,13 @@ grn_verificacion/      paso 2, en construccion
   muestra.py             el sorteo de la muestra ciega para anotar con
                          ayudantes (docs/rubrica-anotacion.md §6 a §8)
   precision_ciega.py     la precision pareada del bronce y de la red final
-                         sobre la muestra anotada, con la retencion de la red
+                         sobre la muestra anotada, con la retencion de la red;
+                         sin los articulos de entrenamiento con --particion
+  tablas.py              tablas o redaccion en los articulos con mas filas de
+                         la base (PLAN 3.4, punto 27; informe filtrado)
+  contaminacion_nuevos.py  los cruces de una lista de articulos nuevos con
+                         todo lo ya visto, por PMID y DOI; sale con 1 ante
+                         cualquiera
 grn_red/               paso 3; solo estandar y compatible con 3.8
   consolidar.py          las reglas de consolidacion como parametros
                          (autorregulacion, nivel de soporte, operones, mayoria,
@@ -595,10 +601,17 @@ python3 -m grn_bronce.cli sintaxis --comparar ANTES --salida DESPUES [--json R] 
 python3 -m grn_verificacion.cli muestra --carpeta salidas/flujo/corrida4_run22 \
     --reservas salidas/flujo/reservas.tsv --n 200 --tandas 1 --fraccion-doble 0     --salida salidas/revision/muestra200   # la tanda 1 (desarrollo)
 #   la tanda 2 (prueba): lo mismo con --semilla 20261023 #   --excluir-muestra salidas/revision/muestra200 --salida salidas/revision/muestra200_t2
-python3 -m grn_verificacion.cli precision-ciega --anotacion A --llave L --carpeta C [--json J]
-# donde viva la base; ver docs/contraste-curada.md
+python3 -m grn_verificacion.cli precision-ciega --anotacion A --llave L --carpeta C [--json J] \
+    [--red NOMBRE] [--capa RUTA] [--excluir-pmids A] [--particion DIR] [--etiqueta T]
+python3 cli.py run <nombre> --tipo-fecha edat --desde 2026/08/19   # lo nuevo por fecha de alta
+python3 -m grn_verificacion.cli verificar-contaminacion --consulta <nombre> \
+    --muestra salidas/revision/muestra200 --reservas salidas/flujo/reservas.tsv
+# donde viva la base; ver docs/contraste-curada.md y docs/servidor-cierre.md
 python3 -m grn_verificacion.cli contraste --base X --carpeta C --excluir-pmids A \
+    [--red recomendada] --informe M --confidencial D
+python3 -m grn_verificacion.cli tablas --base X --carpeta C --xml DIR --excluir-pmids A \
     --informe M --confidencial D
+python3 -m grn_verificacion.cli evaluar --carpeta C --bronce CSV [--particion DIR]
 
 # en el servidor, con el python de pseudoRE; ver docs/entrenamiento-curada.md
 $PY -m grn_verificacion.cli reentrenar correr --raiz ~/grn-guillermo --pares P \

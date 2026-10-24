@@ -27,15 +27,19 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
 - **Nuevos:**
   - sortear y anotar la tanda 2 (de prueba), en la página, con la calibración 2
     antes;
-  - las mediciones del servidor: «siempre activa» sobre las 366 y las 605, el
-    techo de la regla a), el contraste de la red recomendada, la medición de
-    tablas, y la precisión de v1 y v2 sin su entrenamiento;
-  - recalcular la línea base «siempre +» del signo sobre los mismos ítems
-    (70.7 % no sale de la misma base que 70.0 %);
+  - las mediciones del servidor:
+    - **ya corrieron** (fase 2): «siempre activa» sobre las 366 y las 605, el
+      techo de la regla a), la conciliación y el contraste de la red
+      recomendada. Falta confirmarlas con `main`;
+    - **falta** rehacer las tablas con el código revisado, y la precisión de
+      v1 y v2 sin su entrenamiento (`servidor-cierre.md` §4 a §6);
+  - ~~recalcular la línea base «siempre +» del signo sobre los mismos ítems~~:
+    **hecho** en la fase 2. En la tanda 1, 42/60 contra 41/60; en las 50,
+    11/15 contra 11/15;
   - Ouroboros v0, exploratorio y fuera del flujo;
   - `docs/protocolo-tanda2.md` antes de evaluar la tanda 2;
-  - la prueba con abstracts nuevos: protocolo, `verificar-contaminacion` y el
-    congelamiento;
+  - la prueba con abstracts nuevos: el código (`run --tipo-fecha`,
+    `verificar-contaminacion`) y el protocolo ya están; falta el congelamiento;
   - preguntar al asesor dos permisos: Bedrock (por omisión no) y publicar las
     oraciones con los juicios (por omisión no).
 
