@@ -5,8 +5,9 @@ Cuatro nombres que el pipeline no puede teclear: el patron de oro
 (`oro_pseudomonas`), la auditoria de signo (`auditoria_signo`), la base curada
 del laboratorio (`GRN_experimental`) y la carpeta donde vive
 (`datos/validacion`). Esta prueba los busca en el texto de todos los `.py` de
-los paquetes vigilados, subcarpetas incluidas y sin distinguir mayusculas, y
-falla si aparecen fuera de la lista blanca.
+los paquetes vigilados, y de sus prompts (los `.md` de una carpeta
+`prompts/`), subcarpetas incluidas y sin distinguir mayusculas, y falla si
+aparecen fuera de la lista blanca.
 
 Por que una prueba tan tonta merece existir
 ===========================================
@@ -38,7 +39,8 @@ dos cadenas y concatenado, una ruta que llega por `GRN_DATOS` o por un archivo
 de configuracion, un `glob` sobre `*.xlsx` o un `pathlib` armado con variables
 pasan sin que la prueba lo note, y convertirla en un analisis de flujo no vale
 lo que cuesta: quien quiera evadirla puede, y quien no quiere, teclea el
-nombre. Mira solo `.py`: cuadernos, `.sh` y `.ps1` quedan fuera. No vigila
+nombre. Mira solo `.py` y los prompts: cuadernos, `.sh`, `.ps1` y los demas
+`.md` quedan fuera. No vigila
 `grn_etl/` ni los scripts de la raiz, que no producen filas del pipeline. Los
 `test_*` quedan exentos. Si revisa archivos que git ignora, como
 `etapa2/para_colab/`, y es a proposito: lo que se quiere atrapar es el script
@@ -71,9 +73,15 @@ RAIZ = os.path.dirname(DIRECTORIO)
 # anota las mismas hojas que el experto. No produce filas del pipeline, pero
 # su acuerdo con el experto es una cifra que se reporta, y si la base curada o
 # el oro entraran a su prompt o a sus herramientas, mediria la referencia y no
-# al modelo.
+# al modelo. Su prompt es un `.md` (`prompts/anotador_v0.md`): por eso
+# `_fuentes` lee tambien los `.md` de las carpetas `prompts/`. Con solo los
+# `.py`, el prompt quedaba fuera de la guarda que dice protegerlo.
 VIGILADOS = ("etapa2", "grn_bronce", "grn_comun", "grn_operones",
              "grn_verificacion", "grn_red", "grn_ouroboros")
+
+# Los prompts que el modelo lee enteros: un `.md` dentro de una carpeta con
+# este nombre entra a la guarda como si fuera codigo.
+CARPETA_PROMPTS = "prompts"
 
 # Donde viven los scripts de DEL_PIPELINE, que es un subconjunto de VIGILADOS
 # a proposito. `grn_operones` se escanea igual que los demas, pero no aloja
@@ -161,8 +169,18 @@ def _ruta_de(nombre):
     return os.path.join(DIRECTORIO, nombre)
 
 
+def _vigilado(carpeta, nombre):
+    """Si la guarda lee el archivo: todo `.py`, y los `.md` de una carpeta
+    `prompts/`, que es donde vive lo que un modelo lee como instrucciones."""
+    if nombre.endswith(".py"):
+        return True
+    return (nombre.endswith(".md")
+            and os.path.basename(carpeta) == CARPETA_PROMPTS)
+
+
 def _fuentes(raiz=RAIZ, vigilados=VIGILADOS):
-    """(ruta relativa, nombre, texto) de cada `.py` de los paquetes vigilados.
+    """(ruta relativa, nombre, texto) de cada `.py` de los paquetes vigilados
+    y de cada prompt (`_vigilado`).
 
     Entra en las subcarpetas: `etapa2/para_colab/` y `etapa2/evaluacion/`
     tienen scripts, y con `os.listdir` la prueba no los veia. Se saltan
@@ -179,7 +197,7 @@ def _fuentes(raiz=RAIZ, vigilados=VIGILADOS):
                 s for s in subcarpetas
                 if s != "__pycache__" and not s.startswith("."))
             for nombre in sorted(nombres):
-                if not nombre.endswith(".py"):
+                if not _vigilado(actual, nombre):
                     continue
                 ruta = os.path.join(actual, nombre)
                 with open(ruta, encoding="utf-8", errors="replace") as f:
@@ -309,24 +327,34 @@ class PruebasFrontera(unittest.TestCase):
 
     def test_fuentes_recorre_subcarpetas(self):
         """Lo que motivo el cambio: un `.py` en una subcarpeta del paquete
-        tiene que aparecer, y `__pycache__` y las carpetas ocultas no."""
+        tiene que aparecer, y `__pycache__` y las carpetas ocultas no. Un
+        prompt (`.md` en `prompts/`) tambien aparece; otro `.md`, no."""
         with tempfile.TemporaryDirectory() as raiz:
             paquete = os.path.join(raiz, "paq")
             os.makedirs(os.path.join(paquete, "sub", "__pycache__"))
             os.makedirs(os.path.join(paquete, ".oculta"))
+            os.makedirs(os.path.join(paquete, "prompts"))
             for rel in ("arriba.py",
+                        os.path.join("prompts", "juez.md"),
                         os.path.join("sub", "abajo.py"),
                         os.path.join("sub", "__pycache__", "cache.py"),
                         os.path.join(".oculta", "oculto.py"),
-                        os.path.join("sub", "datos.txt")):
+                        os.path.join("sub", "datos.txt"),
+                        os.path.join("sub", "notas.md")):
                 with open(os.path.join(paquete, rel), "w",
                           encoding="utf-8") as f:
                     f.write("# nada\n")
             vistos = [rel for rel, _, _ in _fuentes(raiz, ("paq",))]
         self.assertEqual([os.path.join("paq", "arriba.py"),
+                          os.path.join("paq", "prompts", "juez.md"),
                           os.path.join("paq", "sub", "abajo.py")], vistos)
         self.assertTrue(_en_primer_nivel(vistos[0]))
-        self.assertFalse(_en_primer_nivel(vistos[1]))
+        self.assertFalse(_en_primer_nivel(vistos[2]))
+        # Y el prompt de verdad, el que lee Ouroboros, esta entre lo que se
+        # vigila: si se mudara o cambiara de extension, esto lo dice.
+        self.assertIn(os.path.join("grn_ouroboros", "prompts",
+                                   "anotador_v0.md"),
+                      [rel for rel, _, _ in _fuentes()])
 
     def test_el_diccionario_no_declara_procedencia_de_oro(self):
         """`oro` no es un valor valido de la columna `fuente` (§2).
