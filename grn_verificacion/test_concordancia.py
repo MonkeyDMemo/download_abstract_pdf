@@ -274,6 +274,32 @@ class PruebasSalida(Base):
                 self.assertNotIn("999" + id_item[-2:], texto)   # el PMID
                 self.assertNotIn("GenA" + id_item[-2:], texto)
 
+    def test_un_valor_fuera_de_la_rubrica_no_sale_tal_cual(self):
+        """`leer_anotacion` no valida el tipo: texto libre en esa columna, o
+        en signo, negada o especulativa, cae en FUERA, porque las etiquetas
+        de la matriz salen en el log y en el JSON."""
+        nota = "ver PMID 12345678"
+        items = dict(ITEMS)
+        e, m, d = items["m-3001"]
+        items["m-3001"] = (e[:3] + (nota,) + e[4:], m, d)
+        e, m, d = items["m-3002"]
+        items["m-3002"] = (e[:3] + ("otra cosa",) + e[4:],
+                           m[:3] + ("tampoco",) + m[4:], d)
+        self.escribir(items)
+        ruta_json = os.path.join(self.tmp, "concordancia.json")
+        lineas = []
+        r = co.ejecutar(self.experto, self.modelo, ruta_json=ruta_json,
+                        log=lineas.append)
+        with io.open(ruta_json, encoding="utf-8") as f:
+            texto = f.read() + "\n".join(lineas)
+        for crudo in (nota, "12345678", "otra cosa", "tampoco"):
+            self.assertNotIn(crudo, texto)
+        tipo = r["matrices"]["tipo"]
+        self.assertEqual(tipo[co.FUERA]["no_se"], 1)          # m-3001
+        self.assertEqual(tipo[co.FUERA][co.FUERA], 1)         # m-3002
+        # Dos valores distintos fuera de la rúbrica no son un acuerdo.
+        self.assertEqual(r["acuerdo_por_campo"]["tipo"]["k"], 6 - 2)
+
     def test_el_subcomando(self):
         salida = io.StringIO()
         with contextlib.redirect_stdout(salida):

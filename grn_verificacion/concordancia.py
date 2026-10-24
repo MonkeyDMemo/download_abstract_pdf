@@ -46,9 +46,15 @@ from grn_verificacion import evaluar, precision_ciega
 CAMPOS = ("relacion", "direccion", "signo", "tipo", "negada", "especulativa")
 ABSTENCION = "abstencion"
 VACIO = "vacio"
+# `leer_anotacion` solo valida relación y dirección: en signo, tipo, negada
+# o especulativa puede llegar texto libre (una nota en la columna que no era,
+# con un PMID, por ejemplo), y las etiquetas de la matriz salen en el log y
+# en el JSON. Por eso un valor fuera de la rúbrica se cuenta aquí y nunca
+# sale tal cual.
+FUERA = "fuera_de_rubrica"
 
-# El orden en que salen las filas y columnas de cada matriz; lo que no está
-# aquí (un valor fuera de la rúbrica en signo o tipo) va al final.
+# El orden en que salen las filas y columnas de cada matriz; el vacío y lo
+# que cae en FUERA van al final.
 ORDEN = {
     "relacion": ("si", "no", "dudoso"),
     "direccion": ("1>2", "2>1", "ninguna"),
@@ -68,6 +74,14 @@ NOTAS = (
 
 def _valores(fila):
     return dict((c, (fila.get(c) or "").strip()) for c in CAMPOS)
+
+
+def _etiqueta(campo, valor):
+    """La categoría de un valor en la matriz: el mismo si es de la rúbrica,
+    VACIO si no hay, y FUERA si es cualquier otra cosa."""
+    if not valor:
+        return VACIO
+    return valor if valor in ORDEN[campo] else FUERA
 
 
 def kappa(pares):
@@ -92,8 +106,8 @@ def matriz(pares, orden=()):
 
     Las filas y las columnas son todas las categorías de la rúbrica, en su
     orden, aunque nadie las haya usado, y la abstención va siempre de última
-    columna: así dos corridas se comparan celda por celda. Un valor fuera de
-    la rúbrica se agrega al final.
+    columna: así dos corridas se comparan celda por celda. El vacío y FUERA
+    se agregan al final cuando aparecen.
     """
     conteo = collections.Counter(pares)
     vistos = set(e for e, _m in pares) | set(m for _e, m in pares)
@@ -218,11 +232,14 @@ def calcular(ruta_experto, ruta_modelo, ruta_llave=None):
     n = len(comparados)
     acuerdo, matrices = {}, {}
     for campo in CAMPOS:
-        pares = [(e[campo] or VACIO,
-                  ABSTENCION if abstencion else (m[campo] or VACIO))
-                 for _i, e, m, abstencion in comparados]
+        # El acuerdo, con los valores tal cual: dos valores distintos fuera
+        # de la rúbrica caen los dos en FUERA y no son un acuerdo.
         acuerdo[campo] = evaluar.proporcion(
-            sum(1 for a, b in pares if a == b), n)
+            sum(1 for _i, e, m, abstencion in comparados
+                if not abstencion and e[campo] == m[campo]), n)
+        pares = [(_etiqueta(campo, e[campo]),
+                  ABSTENCION if abstencion else _etiqueta(campo, m[campo]))
+                 for _i, e, m, abstencion in comparados]
         matrices[campo] = matriz(pares, ORDEN[campo])
     abstenciones = sum(1 for c in comparados if c[3])
     resultado = {
