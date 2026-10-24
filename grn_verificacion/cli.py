@@ -646,6 +646,41 @@ def _sub_precision_ciega(sub):
     pc.set_defaults(func=cmd_precision_ciega)
 
 
+def cmd_concordancia(args):
+    """concordancia --experto A --modelo B [--llave L] [--json J]. Solo
+    conteos: ni oraciones, ni PMIDs, ni ids pasan por `log`."""
+    from grn_verificacion import concordancia
+    try:
+        concordancia.ejecutar(args.experto, args.modelo,
+                              ruta_llave=args.llave, ruta_json=args.json,
+                              log=log)
+    except (ValueError, OSError, KeyError) as e:
+        log("ERROR: %s" % e)
+        return 1
+    return 0
+
+
+def _sub_concordancia(sub):
+    co = sub.add_parser(
+        "concordancia",
+        help="Acuerdo de Ouroboros con el experto sobre la misma hoja: por "
+             "campo, kappa de Cohen en relación, matrices de confusión y, con "
+             "la llave, el modelo como filtro de los pares del bronce.")
+    co.add_argument("--experto", required=True,
+                    help="La hoja anotada por el experto, o el CSV que "
+                         "exporta la página de revisión.")
+    co.add_argument("--modelo", required=True,
+                    help="anotaciones.csv de una corrida de Ouroboros; la "
+                         "abstención es un ítem con la anotación vacía.")
+    co.add_argument("--llave", default=None,
+                    help="llave.csv del sorteo: con ella, el modelo como "
+                         "filtro (acepta = relación si con la dirección del "
+                         "bronce).")
+    co.add_argument("--json", default=None,
+                    help="Escribe ahí el resultado completo.")
+    co.set_defaults(func=cmd_concordancia)
+
+
 def consola_tolerante():
     """La consola de Windows imprime cp1252: los acentos caben, pero la barra
     de progreso de transformers («█») o una sigma no, y un `print` con ellos
@@ -741,6 +776,7 @@ def main(argv=None):
     _sub_contraste(sub)
     _sub_muestra(sub)
     _sub_precision_ciega(sub)
+    _sub_concordancia(sub)
 
     args = ap.parse_args(argv)
     return args.func(args)

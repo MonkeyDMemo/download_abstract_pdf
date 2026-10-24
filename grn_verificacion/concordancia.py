@@ -1,0 +1,309 @@
+"""El acuerdo de Ouroboros con el experto sobre la misma hoja.
+
+    python -m grn_verificacion.cli concordancia --experto A.csv \
+        --modelo anotaciones.csv [--llave llave.csv] [--json J]
+
+Ouroboros (`grn_ouroboros`, exploratorio y fuera del pipeline) anota las
+mismas hojas que el experto, con las mismas columnas. Los dos CSV se leen con
+`precision_ciega.leer_anotacion`, el mismo lector que valida la rúbrica, y se
+comparan **sobre los ítems que el experto anotó**:
+
+- el acuerdo exacto por campo, con su intervalo de Wilson;
+- el κ de Cohen en `relacion`;
+- las matrices de confusión de los seis campos cerrados (filas: el experto;
+  columnas: el modelo);
+- las abstenciones del modelo. En su CSV, la abstención es un ítem con los
+  campos de anotación vacíos, y **cuenta como error** en todos los campos.
+  En el κ es una categoría más, que el experto nunca usa: nunca coincide y no
+  suma al acuerdo esperado.
+
+Con `--llave` (la `llave.csv` del sorteo), además, el modelo como filtro de
+los pares del bronce: **acepta** el ítem si dice `relacion` = `si` con la
+dirección del bronce. Es la misma pregunta que `precision-ciega` le hace a la
+red final, y con las mismas reglas: verdadero es `si` con la dirección del
+bronce, y `dudoso` va al denominador, nunca al numerador. Se reporta su
+precisión contra el experto, su retención de las verdaderas y la diferencia
+con la precisión del bronce, con un IC 95 % por bootstrap pareado con la
+semilla y las repeticiones de `precision_ciega`. De la llave se leen solo
+`id_item` y `direccion_bronce`.
+
+Solo conteos en el log y en el JSON: ninguna oración, ningún PMID, ningún
+`id_item`. La tanda 2 es ciega para toda sesión de Claude hasta evaluarla, y
+sus cifras son lo único que se publica.
+
+Biblioteca estándar y Python 3.8. No imprime: reporta por `log`.
+"""
+
+import collections
+import csv
+import io
+import json
+import random
+
+from grn_bronce.texto import normalizar_espacios
+from grn_verificacion import evaluar, precision_ciega
+
+CAMPOS = ("relacion", "direccion", "signo", "tipo", "negada", "especulativa")
+ABSTENCION = "abstencion"
+VACIO = "vacio"
+
+# El orden en que salen las filas y columnas de cada matriz; lo que no está
+# aquí (un valor fuera de la rúbrica en signo o tipo) va al final.
+ORDEN = {
+    "relacion": ("si", "no", "dudoso"),
+    "direccion": ("1>2", "2>1", "ninguna"),
+    "signo": ("+", "-", "?", VACIO),
+    "tipo": ("directa", "indirecta", "no_se", VACIO),
+    "negada": ("si", "no"),
+    "especulativa": ("si", "no"),
+}
+
+NOTAS = (
+    "La abstención del modelo cuenta como error en todos los campos.",
+    "En la tanda 1 el experto marcó «directa» donde la rúbrica pide no_se "
+    "(§3.3; calibración 2, punto 4): el acuerdo en tipo de la tanda 1 lleva "
+    "esa salvedad.",
+)
+
+
+def _valores(fila):
+    return dict((c, (fila.get(c) or "").strip()) for c in CAMPOS)
+
+
+def kappa(pares):
+    """El κ de Cohen de una lista de (experto, modelo), o None si el acuerdo
+    esperado es 1 (los dos usaron una sola y la misma categoría) o no hay
+    pares: ahí el κ no está definido."""
+    n = len(pares)
+    if not n:
+        return None
+    observado = sum(1 for e, m in pares if e == m) / float(n)
+    del_experto = collections.Counter(e for e, _m in pares)
+    del_modelo = collections.Counter(m for _e, m in pares)
+    esperado = sum(del_experto[c] * del_modelo[c]
+                   for c in del_experto) / float(n * n)
+    if esperado >= 1:
+        return None
+    return round((observado - esperado) / (1 - esperado), 4)
+
+
+def matriz(pares, orden=()):
+    """{valor del experto: {valor del modelo: conteo}}.
+
+    Las filas y las columnas son todas las categorías de la rúbrica, en su
+    orden, aunque nadie las haya usado, y la abstención va siempre de última
+    columna: así dos corridas se comparan celda por celda. Un valor fuera de
+    la rúbrica se agrega al final.
+    """
+    conteo = collections.Counter(pares)
+    vistos = set(e for e, _m in pares) | set(m for _e, m in pares)
+    categorias = list(orden) + sorted(vistos - set(orden) - {ABSTENCION})
+    return collections.OrderedDict(
+        (e, collections.OrderedDict((m, conteo[(e, m)])
+                                    for m in categorias + [ABSTENCION]))
+        for e in categorias)
+
+
+def _misma_hoja(fila_e, fila_m):
+    """Si la fila del modelo es del mismo ítem: la misma oración (con los
+    espacios normalizados) y las mismas entidades, cuando las dos las
+    traen."""
+    for columna in ("oracion", "entidad_1", "entidad_2"):
+        e = normalizar_espacios(fila_e.get(columna) or "")
+        m = normalizar_espacios(fila_m.get(columna) or "")
+        if e and m and e != m:
+            return False
+    return True
+
+
+def _leer_direcciones(ruta_llave):
+    """{id_item: direccion_bronce}. Las demás columnas de la llave no se
+    guardan."""
+    with io.open(ruta_llave, encoding="utf-8-sig", newline="") as f:
+        lector = csv.DictReader(f)
+        faltan = [c for c in ("id_item", "direccion_bronce")
+                  if c not in (lector.fieldnames or [])]
+        if faltan:
+            raise ValueError("A la llave le faltan columnas: %s."
+                             % ", ".join(faltan))
+        return dict(((fila["id_item"] or "").strip(),
+                     (fila["direccion_bronce"] or "").strip())
+                    for fila in lector)
+
+
+def _bootstrap_diferencia(items,
+                          repeticiones=precision_ciega.REPETICIONES_BOOTSTRAP,
+                          semilla=precision_ciega.SEMILLA_BOOTSTRAP):
+    """IC 95 % percentil de (precisión del filtro − precisión del bronce),
+    remuestreando ítems: las dos cifras salen de los mismos ítems y no son
+    independientes. `items` es [(verdadero, aceptado)]. Es el mismo
+    procedimiento que `precision_ciega` usa para la red final."""
+    rnd = random.Random(semilla)
+    n = len(items)
+    difs = []
+    for _ in range(repeticiones):
+        mu = [items[rnd.randrange(n)] for _ in range(n)]
+        aceptados = [v for v, a in mu if a]
+        if not aceptados:
+            continue
+        difs.append(sum(aceptados) / float(len(aceptados))
+                    - sum(v for v, _a in mu) / float(n))
+    if not difs:
+        return None
+    difs.sort()
+    return [round(difs[int(0.025 * len(difs))], 4),
+            round(difs[int(0.975 * len(difs)) - 1], 4)]
+
+
+def _filtro(comparados, direcciones):
+    items = []
+    for id_item, e, m, abstencion in comparados:
+        bronce = direcciones[id_item]
+        verdadero = e["relacion"] == "si" and e["direccion"] == bronce
+        aceptado = (not abstencion and m["relacion"] == "si"
+                    and m["direccion"] == bronce)
+        items.append((verdadero, aceptado))
+    n = len(items)
+    aceptados = [v for v, a in items if a]
+    verdaderos = [a for v, a in items if v]
+    bronce = evaluar.proporcion(sum(v for v, _a in items), n)
+    filtro = evaluar.proporcion(sum(aceptados), len(aceptados))
+    tabla = collections.Counter(
+        ("verdadero" if v else "falso", "acepta" if a else "rechaza")
+        for v, a in items)
+    return {
+        "regla": "acepta = relación si con la dirección del bronce",
+        "bronce_precision_con_direccion": bronce,
+        "filtro_precision_con_direccion": filtro,
+        "retencion_de_los_verdaderos": evaluar.proporcion(sum(verdaderos),
+                                                          len(verdaderos)),
+        "retencion_total": evaluar.proporcion(len(aceptados), n),
+        "tabla": dict(("%s|%s" % k, v) for k, v in sorted(tabla.items())),
+        "diferencia_filtro_menos_bronce": (
+            round(filtro["valor"] - bronce["valor"], 4)
+            if filtro["valor"] is not None and bronce["valor"] is not None
+            else None),
+        "diferencia_ic95": _bootstrap_diferencia(items) if n else None,
+    }
+
+
+def calcular(ruta_experto, ruta_modelo, ruta_llave=None):
+    experto = precision_ciega.leer_anotacion(ruta_experto)
+    modelo = precision_ciega.leer_anotacion(ruta_modelo)
+    anotados = sorted(i for i, f in experto.items()
+                      if (f.get("relacion") or "").strip())
+    faltan = [i for i in anotados if i not in modelo]
+    if faltan:
+        raise ValueError("%d ítems que anotó el experto no están en la "
+                         "anotación del modelo: no son la misma hoja."
+                         % len(faltan))
+    otros = sum(1 for i in anotados
+                if not _misma_hoja(experto[i], modelo[i]))
+    if otros:
+        raise ValueError("%d ítems tienen otra oración u otras entidades en "
+                         "la anotación del modelo: no son la misma hoja."
+                         % otros)
+    comparados, mal_formados = [], 0
+    for id_item in anotados:
+        e, m = _valores(experto[id_item]), _valores(modelo[id_item])
+        abstencion = not m["relacion"]
+        if abstencion and any(m.values()):
+            mal_formados += 1
+        comparados.append((id_item, e, m, abstencion))
+    if mal_formados:
+        raise ValueError("%d ítems del modelo vienen sin relación pero con "
+                         "otros valores: la abstención es con todos los "
+                         "campos vacíos." % mal_formados)
+
+    n = len(comparados)
+    acuerdo, matrices = {}, {}
+    for campo in CAMPOS:
+        pares = [(e[campo] or VACIO,
+                  ABSTENCION if abstencion else (m[campo] or VACIO))
+                 for _i, e, m, abstencion in comparados]
+        acuerdo[campo] = evaluar.proporcion(
+            sum(1 for a, b in pares if a == b), n)
+        matrices[campo] = matriz(pares, ORDEN[campo])
+    abstenciones = sum(1 for c in comparados if c[3])
+    resultado = {
+        "metodo": "concordancia",
+        "n_anotados_por_el_experto": n,
+        "n_sin_anotar_por_el_experto": len(experto) - n,
+        "abstenciones_del_modelo": evaluar.proporcion(abstenciones, n),
+        "acuerdo_por_campo": acuerdo,
+        "kappa_relacion": kappa([
+            (e["relacion"], ABSTENCION if abstencion else m["relacion"])
+            for _i, e, m, abstencion in comparados]),
+        "matrices": matrices,
+        "filtro": None,
+        "notas": list(NOTAS),
+    }
+    if ruta_llave:
+        direcciones = _leer_direcciones(ruta_llave)
+        sin_llave = sum(1 for i in anotados if i not in direcciones)
+        if sin_llave:
+            raise ValueError("%d ítems anotados no están en la llave: no es "
+                             "la llave de esta hoja." % sin_llave)
+        resultado["filtro"] = _filtro(comparados, direcciones)
+    return resultado
+
+
+def _fmt(p):
+    if p["valor"] is None:
+        return "%s/%s" % (p["k"], p["n"])
+    return "%s/%s = %.1f %% [%.1f, %.1f]" % (
+        p["k"], p["n"], 100 * p["valor"], 100 * p["ic95"][0],
+        100 * p["ic95"][1])
+
+
+def _lineas_matriz(campo, m):
+    columnas = list(next(iter(m.values())).keys()) if m else []
+    ancho = max([len(c) for c in columnas] + [len(f) for f in m] + [7])
+    lineas = ["  %s (filas: experto; columnas: modelo)" % campo,
+              "    " + " " * ancho + "".join(c.rjust(ancho + 1)
+                                           for c in columnas)]
+    for fila, conteos in m.items():
+        lineas.append("    " + fila.ljust(ancho) + "".join(
+            str(conteos[c]).rjust(ancho + 1) for c in columnas))
+    return lineas
+
+
+def ejecutar(ruta_experto, ruta_modelo, ruta_llave=None, ruta_json=None,
+             log=lambda m: None):
+    r = calcular(ruta_experto, ruta_modelo, ruta_llave)
+    log("ítems anotados por el experto: %d (sin anotar: %d)"
+        % (r["n_anotados_por_el_experto"], r["n_sin_anotar_por_el_experto"]))
+    log("abstenciones del modelo: %s" % _fmt(r["abstenciones_del_modelo"]))
+    log("acuerdo por campo:")
+    for campo in CAMPOS:
+        log("  %-13s %s" % (campo, _fmt(r["acuerdo_por_campo"][campo])))
+    # «kappa» y no la letra griega: fuera de Latin-1 no imprime en la consola
+    # de Windows.
+    k = r["kappa_relacion"]
+    log("kappa de Cohen en relación: %s"
+        % ("no definido" if k is None else "%.3f" % k))
+    log("matrices de confusión:")
+    for campo in CAMPOS:
+        for linea in _lineas_matriz(campo, r["matrices"][campo]):
+            log(linea)
+    f = r["filtro"]
+    if f:
+        log("el modelo como filtro del bronce (%s):" % f["regla"])
+        log("  bronce, precisión con dirección:  %s"
+            % _fmt(f["bronce_precision_con_direccion"]))
+        log("  filtro, precisión con dirección:  %s"
+            % _fmt(f["filtro_precision_con_direccion"]))
+        log("  filtro, retención de los verdaderos: %s"
+            % _fmt(f["retencion_de_los_verdaderos"]))
+        log("  filtro - bronce: %s, IC95 por bootstrap pareado: %s"
+            % (f["diferencia_filtro_menos_bronce"], f["diferencia_ic95"]))
+    for nota in r["notas"]:
+        log("Nota: %s" % nota)
+    if ruta_json:
+        tmp = ruta_json + ".tmp"
+        with io.open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(r, fh, ensure_ascii=False, indent=2)
+            fh.write("\n")
+        from grn_comun import archivos
+        archivos.reemplazar(tmp, ruta_json)
+    return r
