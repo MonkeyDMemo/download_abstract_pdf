@@ -199,6 +199,26 @@ class PruebasAnotar(Base):
         self.assertEqual(corrida["configuracion"]["prompt"],
                          os.path.basename(agente.RUTA_PROMPT))
 
+    def test_las_herramientas_el_prompt_y_el_digest_entran_a_la_llave(self):
+        """Lo que se pide por la línea de comandos llega a las entradas de
+        la caché tal cual: unas herramientas o un prompt que no entraran
+        harían que otra corrida reusara estos veredictos."""
+        prompt = os.path.join(self.tmp, "otro_prompt.md")
+        with io.open(prompt, "w", encoding="utf-8") as f:
+            f.write("Prompt inventado para la prueba.\n")
+        codigo, texto = self.anotar("--herramientas", "buscar_locus",
+                                    "--prompt", prompt)
+        self.assertEqual(codigo, cli.BIEN, texto)
+        with io.open(os.path.join(self.salida, anotar.CORRIDA),
+                     encoding="utf-8") as f:
+            entradas = json.load(f)["identidad"]["entradas"]
+        self.assertEqual(entradas["herramientas"], "buscar_locus")
+        self.assertIn("genes_pao1.tsv", entradas["recursos"])
+        self.assertEqual(entradas["prompt"], agente.huella_prompt(
+            agente.leer_prompt(prompt), "buscar_locus"))
+        self.assertEqual(entradas["modelo"]["digest"], test_motor.DIGEST)
+        self.assertEqual(self.fabricados[0]["herramientas"], "buscar_locus")
+
     def test_la_cache_kv_del_entorno(self):
         os.environ[cli.VARIABLE_KV] = "q8_0"
         _codigo, texto = self.anotar()
