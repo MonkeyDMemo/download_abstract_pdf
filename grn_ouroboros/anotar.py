@@ -345,6 +345,12 @@ def _normalizar(objeto):
     return json.loads(json.dumps(objeto, ensure_ascii=False))
 
 
+class CarpetaOcupada(ValueError):
+    """La carpeta ya tiene una corrida con otras entradas. Tiene clase propia
+    para que el CLI la distinga de un error del anotador, cuyo mensaje no se
+    imprime."""
+
+
 def _exigir_misma_corrida(ruta, identidad):
     if not os.path.isfile(ruta):
         return
@@ -354,7 +360,7 @@ def _exigir_misma_corrida(ruta, identidad):
     except ValueError:
         previo = {}
     if not isinstance(previo, dict) or previo.get("identidad") != identidad:
-        raise ValueError(
+        raise CarpetaOcupada(
             "La carpeta de salida ya tiene una corrida de Ouroboros con otra "
             "hoja, otro prompt, otro modelo u otra configuración, y pudo "
             "estar pre-registrada: usa otra carpeta.")
