@@ -13,7 +13,7 @@ import shutil
 import tempfile
 import unittest
 
-from grn_ouroboros import anotar, rubrica
+from grn_ouroboros import agente, anotar, herramientas, rubrica
 
 ORACIONES = {
     "m-1001": ("GenX activates genY in this invented sentence.", "GenX",
@@ -190,6 +190,75 @@ class PruebasLlave(unittest.TestCase):
         del incompletas["ollama"]
         with self.assertRaises(ValueError):
             anotar.llave_cache(self.item, incompletas)
+
+
+class PruebasOtraConfiguracionNoReusa(Base):
+    """Las entradas armadas como las arma el CLI, con `agente` y
+    `herramientas` de verdad. Las de `PruebasLlave` se cambian a mano después
+    de armarlas, y así no ven si `decodificacion`, `huella_prompt` o
+    `armar_entradas` dejan algo fuera: un prompt reescrito o un digest con el
+    mismo prefijo reusarían los veredictos viejos sin que nada fallara."""
+
+    PROMPT = "Prompt inventado para la prueba: responde con el JSON."
+
+    def entradas(self, config=None, prompt=PROMPT, herr="ninguna",
+                 descripcion=DESCRIPCION):
+        config = config or agente.configuracion("principal")
+        return anotar.armar_entradas(
+            descripcion, agente.decodificacion(config, herr),
+            agente.huella_prompt(prompt, herr), herr,
+            herramientas.Recursos().huellas(herr))
+
+    def variantes(self):
+        """Un cambio a la vez, también los que el CLI no ofrece (think o la
+        temperatura solos): cada uno decide lo que genera el modelo."""
+        principal = agente.configuracion("principal")
+        return {
+            "semilla": self.entradas(
+                agente.configuracion("principal", semilla=43)),
+            "think": self.entradas(dict(principal, think=True)),
+            "temperatura": self.entradas(dict(principal, temperature=0.1)),
+            "num_ctx": self.entradas(
+                agente.configuracion("principal", num_ctx=8192)),
+            "cache_kv": self.entradas(
+                agente.configuracion("principal", kv_cache="q8_0")),
+            "con_think": self.entradas(agente.configuracion("con_think")),
+            "prompt": self.entradas(prompt=self.PROMPT + " Sin más."),
+            "herramientas": self.entradas(herr="buscar_locus"),
+            "digest": self.entradas(descripcion=dict(
+                DESCRIPCION, digest="500a1f067a9f" + "1" * 52)),
+        }
+
+    def test_cada_cambio_da_otra_llave(self):
+        item = PruebasLlave.item
+        base = anotar.llave_cache(item, self.entradas())
+        llaves = dict((nombre, anotar.llave_cache(item, e))
+                      for nombre, e in self.variantes().items())
+        for nombre, llave in llaves.items():
+            self.assertNotEqual(llave, base, nombre)
+        self.assertEqual(len(set(llaves.values())), len(llaves))
+
+    def test_la_decodificacion_lleva_toda_la_configuracion(self):
+        for nombre in agente.CONFIGURACIONES:
+            config = agente.configuracion(nombre)
+            for herr in herramientas.OPCIONES:
+                d = agente.decodificacion(config, herr)
+                self.assertEqual(dict((c, d[c]) for c in config), config)
+
+    def test_en_la_misma_carpeta_vuelve_a_llamar(self):
+        """Sin corrida.json, la guarda de la carpeta no tapa a la llave: lo
+        que se mide aquí es la caché."""
+        corrida = os.path.join(self.salida, anotar.CORRIDA)
+        _r, falso = self.correr(entradas=self.entradas())
+        self.assertEqual(len(falso.llamadas), 3)
+        for nombre, entradas in self.variantes().items():
+            os.remove(corrida)
+            _r, falso = self.correr(entradas=entradas)
+            self.assertEqual(len(falso.llamadas), 3, nombre)
+        # Con las entradas de la primera, la caché sí sirve.
+        os.remove(corrida)
+        _r, falso = self.correr(entradas=self.entradas())
+        self.assertEqual(falso.llamadas, [])
 
 
 class PruebasAbstencion(Base):
