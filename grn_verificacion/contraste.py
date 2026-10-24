@@ -20,10 +20,13 @@ Salen las filas de homología: el artículo citado no reporta la relación, y
 aun con el texto completo a la mano la regla b cubre el 0.3 % de ellas. Salen
 también las filas cuyos PMIDs están todos en el archivo de exclusiones, que es
 por donde llega el artículo de 731 filas que el bronce no puede leer (PDF sin
-XML): su PMID no se escribe en el repositorio. La autorregulación se queda en
-el denominador y nunca cuenta como cubierta: el bronce exige dos genes
-distintos por oración y `red.py` la descarta, así que no es que no se
-encuentre, es que la regla la excluye por construcción.
+XML): su PMID no se escribe en el repositorio. Una fila que cita ese artículo
+junto con otro se queda, porque la regla es «todos sus PMIDs», y se cuenta
+aparte (`citan_excluido_y_otro`), como las de homología que lo citan: con esa
+regla y la homología primero salen 651 filas y no las 731 de PLAN.md 2.4. La
+autorregulación se queda en el denominador y nunca cuenta como cubierta: el
+bronce exige dos genes distintos por oración y `red.py` la descarta, así que
+no es que no se encuentre, es que la regla la excluye por construcción.
 
 El estrato BioBERT
 ------------------
@@ -31,6 +34,26 @@ Las filas con `Origen` BioBERT las propuso el modelo del asesor, con la misma
 receta del run 22 que el modelo que clasifica los pares de la red. Su recall
 mediría al modelo contra sus propias propuestas y saldría alto por
 construcción: van en su estrato y fuera de la cifra principal.
+
+El signo contra una línea base, y el techo de la red
+----------------------------------------------------
+Entre las exigibles hay más del doble de `+` que de `-` (1 238 contra 579 el
+23-oct-2026), así que un acuerdo de signo alto puede salir de decir siempre
+activates. Cada estrato lleva esa línea base: sobre las filas en que la red
+resolvió el signo (acuerdo o contrario) y sobre todas las dirigidas con signo
+en la base, donde la red se abstiene (regulates, mixto) y la línea base no.
+
+La red sale de las oraciones candidatas del bronce: una fila que encuentra,
+en cualquier dirección, tiene sus dos locus juntos en alguna candidata. La
+cobertura de la regla a) con expansión sobre las filas de la cifra principal
+es su techo (`techo_sin_biobert`).
+
+Otra red
+--------
+Con `red` (`--red NOMBRE`) se contrasta `red_<NOMBRE>.tsv`, la que arma
+`grn_red.consolidar` con otras reglas, en vez de `red.tsv`. Sus aristas
+expandidas de un operón se omiten: no tienen evidencia propia, y la arista
+del operón, que se queda en la red, ya da un par de locus por gen.
 
 Confidencialidad
 ----------------
@@ -59,7 +82,7 @@ import json
 import os
 import re
 
-from grn_comun import archivos, procedencia
+from grn_comun import archivos, procedencia, redes
 from grn_verificacion import entrenamiento, evaluar, reentrenar, validacion
 
 GRUPOS = ("todas", "en_corpus", "con_xml", "solo_abstract")
@@ -342,11 +365,18 @@ def denominador(interacciones, excluir=()):
     las reconoce porque `Reference` dice «homolog») y las filas cuyos PMIDs
     están todos en `excluir`. La autorregulación se queda y se cuenta aparte,
     porque nunca puede contar como cubierta. Los conteos son solo números.
+
+    Dos conteos concilian con PLAN.md 2.4, que restó 731 filas por el
+    artículo excluido: `citan_excluido_y_otro`, las exigibles que lo citan
+    junto con otro artículo y se quedan por la regla «todos sus PMIDs», y
+    `homologia_que_cita_excluido`, las que lo citan pero ya salieron por
+    homología. Citar el excluido es citar algún PMID de `excluir`.
     """
     excluir = set(excluir or ())
     c = collections.OrderedDict([
         ("base", 0), ("homologia", 0), ("excluidas_por_archivo", 0),
         ("exigibles", 0), ("autorregulacion", 0), ("sin_pmid", 0),
+        ("citan_excluido_y_otro", 0), ("homologia_que_cita_excluido", 0),
         ("signo", collections.OrderedDict(
             (s, 0) for s in validacion.SIGNOS + ("ilegible",))),
         ("origen", collections.OrderedDict(
@@ -356,15 +386,22 @@ def denominador(interacciones, excluir=()):
     exigibles = []
     for fila in interacciones:
         c["base"] += 1
+        cita_excluido = any(p in excluir for p in fila["pmids"])
         motivo = motivo_de(fila, excluir)
         if motivo == "homologia":
             c["homologia"] += 1
+            if cita_excluido:
+                c["homologia_que_cita_excluido"] += 1
             continue
         if motivo == "excluida_por_archivo":
             c["excluidas_por_archivo"] += 1
             continue
         exigibles.append(fila)
         c["exigibles"] += 1
+        if cita_excluido:
+            # Exigible y citando al excluido: tiene por fuerza otro PMID
+            # fuera del archivo.
+            c["citan_excluido_y_otro"] += 1
         if fila["regulador"] == fila["blanco"]:
             c["autorregulacion"] += 1
         if not fila["pmids"]:
@@ -466,6 +503,43 @@ def cobertura_bronce(exigibles, docs, pares):
     return salida
 
 
+def estrato_de(fila):
+    """'historica', 'ambos', 'biobert' u 'otro': el estrato de `Origen`.
+
+    Una sola definición para el recall de la red y para su techo: si cada uno
+    decidiera por su cuenta qué filas son «sin BioBERT», el techo se mediría
+    sobre otras filas que la cifra que acota.
+    """
+    return fila["origen"] if fila["origen"] in ESTRATOS else "otro"
+
+
+def techo_sin_biobert(exigibles, docs, pares, aristas=None):
+    """La cobertura del bronce en las filas de la cifra principal de la red.
+
+    La red sale de las oraciones candidatas del bronce, que el puente vuelve a
+    leer con el léxico de etapa2: una fila que la red encuentra, en cualquier
+    dirección, tiene sus dos locus juntos en alguna candidata. La regla a)
+    con expansión es su techo. Se mide sobre las mismas filas que el recall
+    «sin BioBERT» (`estrato_de`), con las reglas, variantes y grupos de
+    `cobertura_bronce`.
+
+    `red_cualquiera_fuera_de_a` cuenta las filas que la red encuentra y la
+    regla a) con expansión no cubre. Por construcción debería ser 0; si no lo
+    es, es un dato y no un error: el puente llevó a locus en una oración algo
+    que el bronce no llevó, o lo llevó a otro. None sin red.
+    """
+    filas = [f for f in exigibles if estrato_de(f) != "biobert"]
+    fuera = None
+    if aristas is not None and "con_expansion" in pares:
+        fuera = sum(1 for f in filas
+                    if en_red(f, aristas)[0] != "no"
+                    and not cubierta(f, pares["con_expansion"], "a"))
+    return collections.OrderedDict([
+        ("n", len(filas)),
+        ("cobertura", cobertura_bronce(filas, docs, pares)),
+        ("red_cualquiera_fuera_de_a", fuera)])
+
+
 # --------------------------------------------------------------------- red
 
 def _locus_de_pares(ruta_pares, necesarios):
@@ -493,6 +567,11 @@ def _locus_de_pares(ruta_pares, necesarios):
     return locus
 
 
+def _verdadero(valor):
+    """Un booleano de los TSV de `red.py`, que escribe true/false."""
+    return (valor or "").strip().lower() in ("true", "1")
+
+
 def aristas_en_locus(ruta_red, ruta_evidencias, ruta_pares):
     """({(regulador, blanco): [arista, ...]}, conteos).
 
@@ -509,15 +588,27 @@ def aristas_en_locus(ruta_red, ruta_evidencias, ruta_pares):
     autorregulación). Un `id_par` de las evidencias que no está en
     `pares.jsonl` detiene todo: la red y los pares no son de la misma
     corrida.
+
+    Una red de `grn_red.consolidar` con otras reglas trae dos columnas que
+    aquí son opcionales. Las filas con `expandida_de` se omiten y se cuentan
+    en `expandidas_omitidas`: no tienen evidencia propia (la suya es la de la
+    arista del operón, que se queda en la red) y esa arista ya da un par de
+    locus por gen. Una fila con `autorregulacion` cuyo par queda en un solo
+    locus se cuenta en `solo_autorregulacion` y no en `sin_locus`: tiene
+    locus de PAO1, lo que no tiene es un segundo gen.
     """
+    nombre_red = os.path.basename(ruta_red)
+    nombre_evidencias = os.path.basename(ruta_evidencias)
     _, red = _filas_csv(ruta_red, ("tf", "blanco", "signo", "pmids"),
-                        "red.tsv", delimitador="\t", sin_comillas=True)
+                        nombre_red, opcionales=("expandida_de",
+                                                "autorregulacion"),
+                        delimitador="\t", sin_comillas=True)
     red = list(red)
     ids = collections.defaultdict(set)
     pmids_ev = collections.defaultdict(set)
     _, evidencias = _filas_csv(ruta_evidencias,
                                ("tf", "blanco", "id_par", "pmid"),
-                               "red_evidencias.tsv", delimitador="\t",
+                               nombre_evidencias, delimitador="\t",
                                sin_comillas=True)
     for fila in evidencias:
         clave = (fila["tf"], fila["blanco"])
@@ -532,9 +623,9 @@ def aristas_en_locus(ruta_red, ruta_evidencias, ruta_pares):
     faltan = len(necesarios - set(locus))
     if faltan:
         raise ValueError(
-            "%d id_par de red_evidencias.tsv no están en pares.jsonl: la red "
-            "y los pares no son de la misma corrida. Corre antes el paso red "
-            "del flujo." % faltan)
+            "%d id_par de %s no están en pares.jsonl: la red y los pares no "
+            "son de la misma corrida. Corre antes el paso red del flujo."
+            % (faltan, nombre_evidencias))
 
     c = collections.Counter()
     por_signo = collections.Counter()
@@ -544,20 +635,36 @@ def aristas_en_locus(ruta_red, ruta_evidencias, ruta_pares):
         clave = (fila["tf"], fila["blanco"])
         signo = fila["signo"].strip()
         if signo not in SIGNOS_RED:
-            raise ValueError("red.tsv trae una arista con un signo que no es "
-                             "activates, represses ni regulates.")
+            raise ValueError("%s trae una arista con un signo que no es "
+                             "activates, represses ni regulates." % nombre_red)
+        if (fila.get("expandida_de") or "").strip():
+            # Antes de exigir evidencia: en red_recomendada.tsv de la corrida
+            # 4, 838 de las 1 533 expandidas no tienen ninguna bajo su nombre,
+            # y el contraste se detenía en la primera. Las otras la tienen
+            # porque una arista observada se llama igual, y esa se cuenta
+            # sola.
+            c["expandidas_omitidas"] += 1
+            continue
         if clave not in ids:
-            raise ValueError("Una arista de red.tsv no tiene evidencias en "
-                             "red_evidencias.tsv: no son de la misma corrida.")
+            raise ValueError("Una arista de %s no tiene evidencias en %s: no "
+                             "son de la misma corrida."
+                             % (nombre_red, nombre_evidencias))
         dirigidos = set()
+        de_tf, de_blanco = set(), set()
         for i in ids[clave]:
             tf_locus, target_locus = locus[i]
+            de_tf |= tf_locus
+            de_blanco |= target_locus
             for a in tf_locus:
                 for b in target_locus:
                     if a != b:
                         dirigidos.add((a, b))
         if not dirigidos:
-            c["sin_locus"] += 1
+            if (_verdadero(fila.get("autorregulacion")) and de_tf
+                    and de_tf == de_blanco and len(de_tf) == 1):
+                c["solo_autorregulacion"] += 1
+            else:
+                c["sin_locus"] += 1
             continue
         c["con_locus"] += 1
         por_signo[signo] += 1
@@ -569,9 +676,14 @@ def aristas_en_locus(ruta_red, ruta_evidencias, ruta_pares):
                   "pmids": frozenset(pmids | pmids_ev[clave])}
         for par in dirigidos:
             por_par[par].append(arista)
+    # aristas = con_locus + sin_locus + solo_autorregulacion +
+    # expandidas_omitidas; `expandidas` son las de más de un par de locus.
     conteos = collections.OrderedDict([
         ("aristas", c["aristas"]), ("con_locus", c["con_locus"]),
-        ("sin_locus", c["sin_locus"]), ("expandidas", c["expandidas"]),
+        ("sin_locus", c["sin_locus"]),
+        ("solo_autorregulacion", c["solo_autorregulacion"]),
+        ("expandidas_omitidas", c["expandidas_omitidas"]),
+        ("expandidas", c["expandidas"]),
         ("pares_locus", len(por_par)),
         ("por_signo", collections.OrderedDict(
             (s, por_signo[s]) for s in SIGNOS_RED)),
@@ -654,6 +766,16 @@ def recall_red(exigibles, aristas, solo_pmids=None):
     filas las propuso el modelo del asesor con la receta del run 22, la del
     modelo de la red: su recall sería circular.
 
+    Por estrato van también la `orientacion` (dirigido entre dirigido más
+    solo al revés: de lo que la red encuentra, cuánto va en la dirección de
+    la base) y la línea base de decir siempre activates, sin la cual un
+    acuerdo alto no dice si la red lee el signo (ver el docstring del
+    módulo). `acuerdo_si_da_signo` y `linea_base_siempre_mas` se miden en las
+    `resueltas`, las filas en que la red dijo activates o represses (acuerdo
+    más contrario); `linea_base_siempre_mas_con_abstencion`, en todas las
+    dirigidas con signo en la base, contra el `acuerdo` de siempre: ahí la
+    red se abstiene en las regulates y las mixtas, y la línea base no.
+
     `solo_pmids`, para una red armada con un modelo entrenado con la base: se
     evalúan solo las filas cuyos PMIDs están todos en ese conjunto (los de
     test), y de la red solo cuentan las aristas con evidencia en alguno de
@@ -673,12 +795,13 @@ def recall_red(exigibles, aristas, solo_pmids=None):
             ("mezcla", clases["mezcla"]), ("fuera", clases["fuera"])])
     acumulado = collections.defaultdict(collections.Counter)
     for fila in filas:
-        estrato = fila["origen"] if fila["origen"] in ESTRATOS else "otro"
+        estrato = estrato_de(fila)
         destinos = ((estrato,) if estrato == "biobert"
                     else (estrato, PRINCIPAL))
         estado, signo = en_red(fila, aristas, solo)
         juicio = juicio_signo(fila["signo"], signo) \
             if estado == "dirigido" else None
+        mas = fila["signo"] == "+"
         for d in destinos:
             c = acumulado[d]
             c["n"] += 1
@@ -688,6 +811,12 @@ def recall_red(exigibles, aristas, solo_pmids=None):
             if juicio:
                 c["con_signo"] += 1
                 c[juicio] += 1
+                if mas:
+                    c["con_signo_mas"] += 1
+                if juicio in ("acuerdo", "contrario"):
+                    c["resueltas"] += 1
+                    if mas:
+                        c["resueltas_mas"] += 1
     estratos = collections.OrderedDict()
     for nombre in (PRINCIPAL,) + ESTRATOS:
         c = acumulado[nombre]
@@ -697,12 +826,23 @@ def recall_red(exigibles, aristas, solo_pmids=None):
             ("inverso", evaluar.proporcion(c["inverso"], c["n"])),
             ("cualquiera", evaluar.proporcion(c["dirigido"] + c["inverso"],
                                               c["n"])),
+            ("orientacion", evaluar.proporcion(
+                c["dirigido"], c["dirigido"] + c["inverso"])),
             ("signo", collections.OrderedDict([
                 ("n", c["con_signo"]),
                 ("acuerdo", evaluar.proporcion(c["acuerdo"], c["con_signo"])),
                 ("contrario", c["contrario"]),
                 ("regulates", c["regulates"]),
-                ("mixto", c["mixto"])])),
+                ("mixto", c["mixto"]),
+                ("resueltas", c["resueltas"]),
+                ("resueltas_mas", c["resueltas_mas"]),
+                ("con_signo_mas", c["con_signo_mas"]),
+                ("acuerdo_si_da_signo", evaluar.proporcion(
+                    c["acuerdo"], c["resueltas"])),
+                ("linea_base_siempre_mas", evaluar.proporcion(
+                    c["resueltas_mas"], c["resueltas"])),
+                ("linea_base_siempre_mas_con_abstencion", evaluar.proporcion(
+                    c["con_signo_mas"], c["con_signo"]))])),
         ])
     return collections.OrderedDict([("solo_pmids", reparto),
                                     ("estratos", estratos)])
@@ -810,6 +950,13 @@ def _cuantas(n, singular, plural):
     return "%s %s" % (_n(n), singular if n == 1 else plural)
 
 
+def _enumerar(partes):
+    """«a», «a y b», «a, b y c»."""
+    if len(partes) < 2:
+        return "".join(partes)
+    return "%s y %s" % (", ".join(partes[:-1]), partes[-1])
+
+
 def _pct(p):
     if not p or not p.get("n"):
         return "—"
@@ -835,23 +982,70 @@ def _corrida(corrida):
 
 def _tabla_recall(w, recall):
     w("| estrato | filas | autorregulación | dirigido | solo al revés | "
-      "cualquier dirección | acuerdo de signo |")
-    w("|---|---:|---:|---|---|---|---|")
+      "cualquier dirección | orientación | acuerdo de signo |")
+    w("|---|---:|---:|---|---|---|---|---|")
     for nombre in (PRINCIPAL,) + ESTRATOS:
         e = recall["estratos"][nombre]
-        w("| %s | %s | %s | %s | %s | %s | %s |" % (
+        w("| %s | %s | %s | %s | %s | %s | %s | %s |" % (
             NOMBRE_ESTRATO[nombre], _n(e["n"]), _n(e["autorregulacion"]),
             _prop(e["dirigido"]), _prop(e["inverso"]), _prop(e["cualquiera"]),
-            _prop(e["signo"]["acuerdo"])))
+            _prop(e["orientacion"]), _prop(e["signo"]["acuerdo"])))
     w("")
     w("| estrato | dirigidas con signo en la base | acuerdo | contrario | "
-      "regulates | mixto |")
-    w("|---|---:|---:|---:|---:|---:|")
+      "regulates | mixto | acuerdo cuando da signo | siempre activa en esas "
+      "filas |")
+    w("|---|---:|---:|---:|---:|---:|---|---|")
     for nombre in (PRINCIPAL,) + ESTRATOS:
         s = recall["estratos"][nombre]["signo"]
-        w("| %s | %s | %s | %s | %s | %s |" % (
+        w("| %s | %s | %s | %s | %s | %s | %s | %s |" % (
             NOMBRE_ESTRATO[nombre], _n(s["n"]), _n(s["acuerdo"]["k"]),
-            _n(s["contrario"]), _n(s["regulates"]), _n(s["mixto"])))
+            _n(s["contrario"]), _n(s["regulates"]), _n(s["mixto"]),
+            _prop(s["acuerdo_si_da_signo"]),
+            _prop(s["linea_base_siempre_mas"])))
+    w("")
+
+
+def _tabla_cobertura(w, cob):
+    w("| regla | variante | todas | en el corpus | con XML | solo abstract |")
+    w("|---|---|---|---|---|---|")
+    for regla in REGLAS:
+        for v in VARIANTES:
+            if v in cob:
+                w("| %s | %s | %s |" % (
+                    NOMBRE_REGLA[regla], NOMBRE_VARIANTE[v],
+                    " | ".join(_prop(cob[v][regla][g]) for g in GRUPOS)))
+    w("")
+
+
+def _archivo_red(red):
+    """El nombre del archivo de la red contrastada, `red.tsv` o el de
+    `--red`: el informe dice cuál midió."""
+    return red.get("archivo") or redes.RED
+
+
+def _techo_markdown(w, techo, principal):
+    """La subsección del techo, con la red de la cifra principal al lado."""
+    w("### El techo de la regla a), sin BioBERT")
+    w("")
+    w("La red sale de las oraciones candidatas del bronce: una fila que "
+      "encuentra, en cualquier dirección, tiene sus dos locus juntos en "
+      "alguna candidata, así que la regla a) con expansión es su techo. Es "
+      "la cobertura de la sección 3 sobre las mismas %s de la cifra "
+      "principal." % _cuantas(techo["n"], "fila", "filas"))
+    w("")
+    _tabla_cobertura(w, techo["cobertura"])
+    w("- La red en esas filas: dirigido %s; cualquier dirección %s."
+      % (_prop(principal["dirigido"]), _prop(principal["cualquiera"])))
+    fuera = techo["red_cualquiera_fuera_de_a"]
+    if fuera == 0:
+        w("- Filas que la red encuentra en alguna dirección y la regla a) "
+          "con expansión no cubre: 0, como debe ser.")
+    elif fuera:
+        w("- Filas que la red encuentra en alguna dirección y la regla a) "
+          "con expansión no cubre: **%s**. Debería ser 0, y es un dato, no "
+          "un error: el puente vuelve a leer las oraciones del bronce con el "
+          "léxico de etapa2, y en esas filas llevó a locus algo que el bronce "
+          "no llevó, o lo llevó a otro." % _n(fuera))
     w("")
 
 
@@ -879,8 +1073,8 @@ def informe_markdown(resultado):
       % (_corrida(b["corrida"]), _n(b["documentos"]), _n(b["con_xml"]),
          _n(b["solo_abstract"]), _n(b["oraciones"])))
     if red:
-        w("- Red: %s aristas de `red.tsv`%s."
-          % (_n(red["conteos"]["aristas"]),
+        w("- Red: %s aristas de `%s`%s."
+          % (_n(red["conteos"]["aristas"]), _archivo_red(red),
              "; con `--solo-pmids`" if red.get("recall_test") else ""))
     else:
         w("- Red: no se contrastó (`--sin-red`).")
@@ -934,6 +1128,12 @@ def informe_markdown(resultado):
       "corrida 1: referencia, no criterio. Con otro corpus cambian los "
       "artículos con XML, y una base nueva cambia todo.")
     w("")
+    if "locus_invalido" in base:
+        # La primera fila de la tabla contra las filas de PLAN.md 2.4: la
+        # diferencia son filas que el lector descarta, no filas perdidas.
+        w("- %s con valores, %s con los dos locus: %s con un locus inválido."
+          % (_cuantas(base["filas"], "fila", "filas"),
+             _n(base["interacciones"]), _n(base["locus_invalido"])))
     sg, og = d["signo"], d["origen"]
     w("- Signo de las exigibles: + %s; - %s; ? %s; d %s; ilegible %s."
       % (_n(sg["+"]), _n(sg["-"]), _n(sg["?"]), _n(sg["d"]),
@@ -952,6 +1152,19 @@ def informe_markdown(resultado):
       % (_cuantas(ex["archivos"], "archivo", "archivos"),
          _cuantas(ex["pmids"], "PMID", "PMIDs"),
          _cuantas(ex["pmids_citados"], "citado", "citados")))
+    if ex["archivos"] and "citan_excluido_y_otro" in d:
+        # Concilia la fila del archivo con las 731 de PLAN.md 2.4: la
+        # diferencia sale de «todos sus PMIDs» y de descontar antes la
+        # homología, y aquí se cuentan las dos en vez de deducirlas.
+        otro = d["citan_excluido_y_otro"]
+        uno = ex["pmids_citados"] <= 1
+        w("- %s %s %s junto con otro y %s, porque la regla es «todos sus "
+          "PMIDs». Las de homología que %s citan (%s) salen antes, por "
+          "homología."
+          % (_n(otro), "cita" if otro == 1 else "citan",
+             "el artículo excluido" if uno else "un artículo excluido",
+             "se queda" if otro == 1 else "se quedan", "lo" if uno else "los",
+             _n(d["homologia_que_cita_excluido"])))
     w("")
 
     w("## 3. Cobertura del bronce")
@@ -962,15 +1175,7 @@ def informe_markdown(resultado):
       "oración del artículo que la fila cita: es si el paso 1 recupera la "
       "evidencia citada. Con expansión, un operón cuenta por sus genes.")
     w("")
-    w("| regla | variante | todas | en el corpus | con XML | solo abstract |")
-    w("|---|---|---|---|---|---|")
-    for regla in REGLAS:
-        for v in VARIANTES:
-            if v in cob:
-                w("| %s | %s | %s |" % (
-                    NOMBRE_REGLA[regla], NOMBRE_VARIANTE[v],
-                    " | ".join(_prop(cob[v][regla][g]) for g in GRUPOS)))
-    w("")
+    _tabla_cobertura(w, cob)
     if "solo_por_expansion" in cob:
         se = cob["solo_por_expansion"]
         w("- Solo por la expansión de operones: regla a) %s filas (%s con "
@@ -1016,25 +1221,73 @@ def informe_markdown(resultado):
         w("")
     else:
         cr = red["conteos"]
-        w("- %s de `red.tsv`: %s llevadas a locus por `id_par` y "
-          "`pares.jsonl` (%s con más de un par porque un extremo es un "
-          "operón) y %s sin locus de PAO1; en total, %s de locus dirigidos."
-          % (_cuantas(cr["aristas"], "arista", "aristas"),
-             _n(cr["con_locus"]), _n(cr["expandidas"]), _n(cr["sin_locus"]),
-             _cuantas(cr["pares_locus"], "par", "pares")))
+        partes = ["%s llevadas a locus por `id_par` y `pares.jsonl` (%s con "
+                  "más de un par porque un extremo es un operón)"
+                  % (_n(cr["con_locus"]), _n(cr["expandidas"])),
+                  "%s sin locus de PAO1" % _n(cr["sin_locus"])]
+        # Solo las trae una red con otras reglas: en la de red.py serían
+        # dos ceros que no dicen nada.
+        auto = cr.get("solo_autorregulacion")
+        omitidas = cr.get("expandidas_omitidas")
+        if auto:
+            partes.append("%s de autorregulación con un solo locus"
+                          % _n(auto))
+        if omitidas:
+            partes.append("%s de un operón" % _cuantas(
+                omitidas, "expandida", "expandidas"))
+        w("- %s de `%s`: %s; en total, %s de locus dirigidos."
+          % (_cuantas(cr["aristas"], "arista", "aristas"), _archivo_red(red),
+             _enumerar(partes), _cuantas(cr["pares_locus"], "par", "pares")))
+        if auto:
+            w("- La autorregulación con un solo locus no da par: no tiene un "
+              "segundo gen.")
+        if omitidas:
+            w("- %s: no %s evidencia propia, y la arista del operón, que "
+              "sigue en la red, ya da un par de locus por gen."
+              % ("La expandida se omite" if omitidas == 1
+                 else "Las expandidas se omiten",
+                 "tiene" if omitidas == 1 else "tienen"))
         w("")
         w("Por fila de la base: **dirigido** si la red tiene la arista del "
           "regulador al blanco; **solo al revés** si solo tiene la del blanco "
-          "al regulador. El signo se juzga en las dirigidas con `+` o `-` en "
+          "al regulador. La **orientación** es dirigido entre cualquier "
+          "dirección: de lo que la red encuentra, cuánto va en la dirección "
+          "de la base. El signo se juzga en las dirigidas con `+` o `-` en "
           "la base, contra activates y represses de la red. Una arista "
           "`regulates` o un par cuyas aristas no dicen lo mismo (mixto) no "
           "es acuerdo.")
+        w("")
+        w("Con %s `+` y %s `-` entre las exigibles, el signo se lee contra la "
+          "línea base de decir siempre activates. **Acuerdo cuando da signo** "
+          "cuenta solo las filas en que la red resolvió activates o represses "
+          "(acuerdo más contrario), y **siempre activa en esas filas** es lo "
+          "que acertaría la línea base en ellas: las que la base dice `+`."
+          % (_n(d["signo"]["+"]), _n(d["signo"]["-"])))
         w("")
         _tabla_recall(w, red["recall"])
         w("BioBERT va aparte: esas filas las propuso el modelo del asesor con "
           "la receta del run 22, la misma del clasificador de la red, y su "
           "recall sería circular. La cifra principal es la de «sin BioBERT».")
         w("")
+        sp = red["recall"]["estratos"][PRINCIPAL]["signo"]
+        w("- Con abstención, sin BioBERT: de las %s dirigidas con signo en la "
+          "base, la red acuerda en %s y decir siempre activates acertaría en "
+          "%s. La red se abstiene en las regulates y las mixtas; la línea "
+          "base no."
+          % (_n(sp["n"]), _prop(sp["acuerdo"]),
+             _prop(sp["linea_base_siempre_mas_con_abstencion"])))
+        nv = red["candidatas_nuevas"]
+        ps = nv["por_signo"]
+        w("- Candidatas nuevas: %s pares de locus de la red que la base no "
+          "registra en ninguna dirección (activates %s; represses %s; "
+          "regulates %s; mixto %s). La lista se queda en la carpeta "
+          "confidencial: su complemento dice qué registra la base."
+          % (_n(nv["pares"]), _n(ps["activates"]), _n(ps["represses"]),
+             _n(ps["regulates"]), _n(ps["mixto"])))
+        w("")
+        techo = resultado.get("techo_sin_biobert")
+        if techo:
+            _techo_markdown(w, techo, red["recall"]["estratos"][PRINCIPAL])
         rt = red.get("recall_test")
         if rt:
             rp = rt["solo_pmids"]
@@ -1051,15 +1304,6 @@ def informe_markdown(resultado):
                  _n(rp["mezcla"]), _n(rp["fuera"])))
             w("")
             _tabla_recall(w, rt)
-        nv = red["candidatas_nuevas"]
-        ps = nv["por_signo"]
-        w("- Candidatas nuevas: %s pares de locus de la red que la base no "
-          "registra en ninguna dirección (activates %s; represses %s; "
-          "regulates %s; mixto %s). La lista se queda en la carpeta "
-          "confidencial: su complemento dice qué registra la base."
-          % (_n(nv["pares"]), _n(ps["activates"]), _n(ps["represses"]),
-             _n(ps["regulates"]), _n(ps["mixto"])))
-        w("")
 
     w("## 5. Cautelas")
     w("")
@@ -1127,12 +1371,31 @@ def resumen(resultado):
     red = resultado.get("red")
     if red:
         e = red["recall"]["estratos"]
+        sp = e[PRINCIPAL]["signo"]
         lineas.append(
-            "Red: %s aristas, %s llevadas a locus. Sin BioBERT: dirigido %s, "
-            "solo al revés %s, acuerdo de signo %s."
-            % (_n(red["conteos"]["aristas"]), _n(red["conteos"]["con_locus"]),
+            "Red: %s aristas de %s, %s llevadas a locus. Sin BioBERT: "
+            "dirigido %s, solo al revés %s, acuerdo de signo %s."
+            % (_n(red["conteos"]["aristas"]), _archivo_red(red),
+               _n(red["conteos"]["con_locus"]),
                _pct(e[PRINCIPAL]["dirigido"]), _pct(e[PRINCIPAL]["inverso"]),
-               _pct(e[PRINCIPAL]["signo"]["acuerdo"])))
+               _pct(sp["acuerdo"])))
+        lineas.append(
+            "  Sin BioBERT: orientación %s; acuerdo cuando da signo %s, "
+            "siempre activa en esas filas %s; siempre activa en las dirigidas "
+            "con signo %s."
+            % (_pct(e[PRINCIPAL]["orientacion"]),
+               _pct(sp["acuerdo_si_da_signo"]),
+               _pct(sp["linea_base_siempre_mas"]),
+               _pct(sp["linea_base_siempre_mas_con_abstencion"])))
+        techo = resultado.get("techo_sin_biobert")
+        if techo and "con_expansion" in techo["cobertura"]:
+            lineas.append(
+                "  Techo sin BioBERT: la regla a con expansión cubre %s; la "
+                "red encuentra %s en cualquier dirección; fuera de la regla "
+                "a: %s."
+                % (_pct(techo["cobertura"]["con_expansion"]["a"]["todas"]),
+                   _pct(e[PRINCIPAL]["cualquiera"]),
+                   _n(techo["red_cualquiera_fuera_de_a"])))
         lineas.append("  BioBERT, aparte por circular: dirigido %s."
                       % _pct(e["biobert"]["dirigido"]))
         rt = red.get("recall_test")
@@ -1190,13 +1453,54 @@ def exigir_confidencial_fuera(ruta):
             "$GRN_DATOS.") from None
 
 
-def ubicar_archivos(carpeta, sin_red=False):
+def archivos_de_red(red=None, sin_red=False):
+    """(red, evidencias, informe) de la red que se contrasta, o ValueError.
+
+    Sin `red`, los de la red por omisión (`red.tsv`); con él, los de
+    `grn_comun.redes`, la misma fuente de los nombres que usa
+    `grn_red.consolidar` para escribirlos. El mensaje de error no repite el
+    nombre: lo que llega por --red puede ser una ruta.
+
+    Un nombre que `grn_red` acepta todavía puede no servir aquí: el informe y
+    la terminal nombran el archivo de la red y pasan por el filtro de
+    publicación, que toma siete u ocho dígitos seguidos por un PMID (una
+    fecha en el nombre: `red_umbral_<aaaammdd>.tsv`). Se dice antes de abrir
+    la base; si no, el contraste corría entero y se detenía al final con
+    «posible PMID en la línea 5».
+    """
+    if red is None:
+        return redes.archivos_de_red()
+    if sin_red:
+        raise ValueError("--red y --sin-red se excluyen: --red elige qué red "
+                         "se contrasta y --sin-red no contrasta ninguna.")
+    try:
+        nombres = redes.archivos_de_red(red)
+    except ValueError as e:
+        raise ValueError("--red: %s" % e) from None
+    try:
+        reentrenar.verificar_publicable(nombres[0])
+    except ValueError:
+        # Con el patrón de `redes` (minúsculas, dígitos y «_») no cabe una
+        # ruta, un locus ni un marcador: lo único que el filtro puede ver es
+        # la forma de un PMID.
+        raise ValueError("--red: el nombre lleva siete u ocho dígitos "
+                         "seguidos, con forma de PMID, y el informe que lo "
+                         "nombra no pasaría el filtro de publicación. Arma "
+                         "esa red con otro nombre (`python -m grn_red.cli "
+                         "consolidar --nombre`).") from None
+    return nombres
+
+
+def ubicar_archivos(carpeta, sin_red=False, red=None):
     """Las rutas de lo que se lee de la carpeta del flujo.
 
     El CSV de candidatas es el que `flujo.py` anotó en `estado.json` (el
     nombre lleva la fecha y en una carpeta puede haber varios); si no hay
-    estado, el más reciente. Las menciones son las del mismo volcado.
+    estado, el más reciente. Las menciones son las del mismo volcado. La red
+    es `red.tsv`, o con `red` la `red_<red>.tsv` de `grn_red.consolidar`, con
+    sus evidencias y su informe (`archivos_de_red`).
     """
+    nombres_red = archivos_de_red(red, sin_red)
     if not os.path.isdir(carpeta):
         raise ValueError("No encuentro la carpeta de --carpeta.")
     candidatas = None
@@ -1228,15 +1532,24 @@ def ubicar_archivos(carpeta, sin_red=False):
     rutas = {"carpeta": carpeta, "candidatas": candidatas,
              "menciones": menciones}
     if not sin_red:
-        for llave, nombre in (("red", "red.tsv"),
-                              ("evidencias", "red_evidencias.tsv"),
+        nombre_red, nombre_evidencias, nombre_informe = nombres_red
+        if red is None:
+            pista = "corre antes el paso red del flujo, o usa --sin-red"
+        else:
+            pista = ("arma antes esa red con `python -m grn_red.cli "
+                     "consolidar` (la recomendada la arma el paso "
+                     "red_recomendada del flujo)")
+        for llave, nombre in (("red", nombre_red),
+                              ("evidencias", nombre_evidencias),
                               ("pares", "pares.jsonl")):
             ruta = os.path.join(carpeta, nombre)
             if not os.path.isfile(ruta):
-                raise ValueError("Falta %s en la carpeta: corre antes el paso "
-                                 "red del flujo, o usa --sin-red." % nombre)
+                # Solo el nombre: con --red, ya pasó por el patrón cerrado de
+                # `redes` y no es una ruta.
+                raise ValueError("Falta %s en la carpeta: %s." % (nombre,
+                                                                  pista))
             rutas[llave] = ruta
-        rutas["red_informe"] = os.path.join(carpeta, "red_informe.json")
+        rutas["red_informe"] = os.path.join(carpeta, nombre_informe)
     return rutas
 
 
@@ -1251,9 +1564,12 @@ def comprobar_procedencia_red(rutas):
     sello = procedencia.leer_sello(rutas["red_informe"])
     anotada = (sello.get("pares") or {}).get("huella")
     if not anotada:
-        return ["la carpeta no trae red_informe.json con la huella de "
-                "pares.jsonl: no se pudo comprobar que la red salió de estos "
-                "pares."]
+        # El nombre del informe que falta y no `red_informe.json` a secas: con
+        # --red, el aviso va al informe publicado, y `red_informe.json` puede
+        # estar en la carpeta.
+        return ["la carpeta no trae %s con la huella de pares.jsonl: no se "
+                "pudo comprobar que la red salió de estos pares."
+                % os.path.basename(rutas["red_informe"])]
     if anotada != procedencia.huella(rutas["pares"]):
         raise ValueError("La red se armó con otro pares.jsonl (las huellas no "
                          "coinciden): corre antes el paso red del flujo.")
@@ -1327,23 +1643,29 @@ def _escribir_texto(ruta, texto):
 
 def ejecutar(base, carpeta, confidencial, informe=None, hoja=None,
              excluir=(), solo=(), sin_red=False, aceptar_base_distinta=False,
-             log=_nada):
+             red=None, log=_nada):
     """Contrasta el bronce y la red de `carpeta` con la base y escribe.
 
     `base`: el .xlsx, por ruta. `carpeta`: la del flujo (CSV del bronce y,
     salvo `sin_red`, `red.tsv`, `red_evidencias.tsv` y `pares.jsonl`).
-    `excluir` y `solo`: archivos con el formato de `reservas.tsv`.
+    `red`: el nombre de una red con otras reglas, para contrastar
+    `red_<red>.tsv` y sus evidencias en vez de `red.tsv`; no va con
+    `sin_red`. `excluir` y `solo`: archivos con el formato de `reservas.tsv`.
     `confidencial`: carpeta fuera de todo repositorio para
     `cobertura_por_fila.tsv`, `candidatas_nuevas.tsv` y `contraste.json`.
     `informe`: dónde va el Markdown publicable, o None para no escribirlo.
 
-    Las comprobaciones van antes de abrir la base: la carpeta confidencial,
-    que existan las entradas y que la red sea de estos pares. Después, la
-    base se coteja con `reentrenar.BASE_ESPERADA` y, si no cuadra, se detiene
-    con ValueError salvo `aceptar_base_distinta`. El informe y las líneas de
-    `log` pasan por `verificar_publicable` antes de escribir nada. Devuelve
-    el resultado: solo conteos, proporciones e intervalos.
+    Las comprobaciones van antes de abrir la base: los argumentos, la carpeta
+    confidencial, que existan las entradas y que la red sea de estos pares.
+    Después, la base se coteja con `reentrenar.BASE_ESPERADA` y, si no
+    cuadra, se detiene con ValueError salvo `aceptar_base_distinta`. El
+    informe y las líneas de `log` pasan por `verificar_publicable` antes de
+    escribir nada. Devuelve el resultado: solo conteos, proporciones e
+    intervalos.
     """
+    # Primero: es un error de argumentos, y no hace falta tocar nada para
+    # decirlo.
+    archivos_de_red(red, sin_red)
     confidencial = _expandir(confidencial, "--confidencial")
     exigir_confidencial_fuera(confidencial)
     base = _expandir(base, "--base")
@@ -1360,7 +1682,7 @@ def ejecutar(base, carpeta, confidencial, informe=None, hoja=None,
             raise ValueError("No encuentro el archivo de %s. Usa una ruta "
                              "absoluta; entre comillas simples, ~ y $HOME no "
                              "se expanden." % flag)
-    rutas = ubicar_archivos(carpeta, sin_red)
+    rutas = ubicar_archivos(carpeta, sin_red, red)
     avisos = []
     if not sin_red:
         avisos.extend(comprobar_procedencia_red(rutas))
@@ -1413,7 +1735,9 @@ def ejecutar(base, carpeta, confidencial, informe=None, hoja=None,
     homologia = cobertura_bronce([f for f in interacciones if f["homologia"]],
                                  docs, pares)
 
-    red, aristas, nuevas = None, None, []
+    # `contrastada` y no `red`, que es el nombre que llegó por argumento y va
+    # a los parámetros del registro.
+    contrastada, aristas, nuevas = None, None, []
     if not sin_red:
         aristas, c_red = aristas_en_locus(rutas["red"], rutas["evidencias"],
                                           rutas["pares"])
@@ -1424,17 +1748,22 @@ def ejecutar(base, carpeta, confidencial, informe=None, hoja=None,
                 not recall_test["solo_pmids"]["evaluadas"]:
             avisos.append("ninguna fila exigible tiene todos sus PMIDs en "
                           "--solo-pmids: el recall de test queda vacío.")
-        red = collections.OrderedDict([
+        contrastada = collections.OrderedDict([
+            ("archivo", os.path.basename(rutas["red"])),
             ("conteos", c_red),
             ("recall", recall_red(exigibles, aristas)),
             ("recall_test", recall_test),
             ("candidatas_nuevas", _conteo_nuevas(nuevas)),
         ])
+    techo = techo_sin_biobert(exigibles, docs, pares, aristas)
 
     resultado = collections.OrderedDict([
         ("generado_en", _ahora()),
         ("base", collections.OrderedDict([
-            ("filas", c_base["filas"]), ("cotejo", cotejo),
+            ("filas", c_base["filas"]),
+            ("interacciones", c_base["interacciones"]),
+            ("locus_invalido", c_base["locus_invalido"]),
+            ("cotejo", cotejo),
             ("diferencias", len(distintas)),
             ("aceptada_distinta", bool(distintas))])),
         ("exclusiones", collections.OrderedDict([
@@ -1454,7 +1783,8 @@ def ejecutar(base, carpeta, confidencial, informe=None, hoja=None,
                 (v, len(pares[v][0])) for v in VARIANTES))])),
         ("cobertura", cobertura),
         ("homologia", homologia),
-        ("red", red),
+        ("techo_sin_biobert", techo),
+        ("red", contrastada),
         ("avisos", avisos),
     ])
     texto = informe_markdown(resultado)
@@ -1487,7 +1817,7 @@ def ejecutar(base, carpeta, confidencial, informe=None, hoja=None,
     huellas["solo"] = [procedencia.huella(r) for r in solo]
     registro = collections.OrderedDict([
         ("parametros", collections.OrderedDict([
-            ("hoja", hoja), ("sin_red", bool(sin_red)),
+            ("hoja", hoja), ("sin_red", bool(sin_red)), ("red", red),
             ("aceptar_base_distinta", bool(aceptar_base_distinta)),
             ("archivos_excluir", len(excluir)),
             ("archivos_solo", len(solo))])),

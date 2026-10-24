@@ -8,7 +8,7 @@ los que existen: nada de aquí viene de la base del laboratorio, ni como dato
 ni como forma.
 
 El escenario tiene una fila por caso, y las cifras esperadas se sacaron a
-mano de la tabla de abajo:
+mano de la tabla de abajo (las de las pruebas más nuevas, en su docstring):
 
     fila  par              cita            origen     qué prueba
      2    9001 -> 9002     XML             Histórica  cubierta por a y b; red dirigida, acuerdo
@@ -25,6 +25,11 @@ mano de la tabla de abajo:
     13    9024 -> 9025     TEST            Histórica  su arista solo tiene evidencia de XML
     14    9026 -> 9027     un DOI          Histórica  sin PMID
     15    9040 -> 9042     XML             Histórica  la red llega por un operón
+
+`red_prueba.tsv` es una red con otras reglas, como las de
+`grn_red.consolidar`: las aristas de `red.tsv`, una autorregulación de un solo
+locus (9043) y una arista expandida del operón de la fila 15, sin evidencia
+propia.
 """
 
 import collections
@@ -41,7 +46,7 @@ import unittest
 from unittest import mock
 
 from grn_bronce.exportar import COLUMNAS_CANDIDATAS, COLUMNAS_MENCIONES
-from grn_comun import procedencia
+from grn_comun import procedencia, redes
 from grn_verificacion import cli
 from grn_verificacion import contraste as C
 from grn_verificacion import entrenamiento as E
@@ -141,6 +146,14 @@ ARISTAS = [
      [("e12", P_ABS, ["PA9012"], ["PA9013"])]),
 ]
 
+# Para una red con otras reglas (`grn_red.consolidar`): una autorregulación
+# que el perfil recomendado marca en vez de descartar, con sus dos lados en
+# el mismo locus, y una expansión del operón de la e07, que copia su fila y
+# no tiene evidencia propia.
+AUTORREGULADA = ("QzpR", "qzpR", "activates", [P_XML],
+                 [("e13", P_XML, ["PA9043"], ["PA9043"])])
+OPERON, GEN_EXPANDIDO = ARISTAS[6], "wvnB"
+
 # Lo que no puede salir en nada publicable.
 _LOCUS = re.compile(r"PA[0-9]{4}")
 _SIETE_U_OCHO = re.compile(r"(?<![0-9])[0-9]{7,8}(?![0-9])")
@@ -177,52 +190,120 @@ def escribir_menciones(ruta, unidades):
     return ruta
 
 
+def _oracion(tf, blanco):
+    # Una oración que empieza con comillas: leída con el csv por omisión, se
+    # comería las líneas siguientes.
+    return u'"%s" controla a %s, dice el texto.' % (tf, blanco)
+
+
+def _fila_red(tf, blanco, signo, pmids, evidencias, autorregulacion=False):
+    """Una fila de red.tsv con las columnas de etapa2/red.py."""
+    return {"tf": tf, "blanco": blanco, "signo": signo,
+            "conflicto": "false", "n_evidencias": len(evidencias),
+            "n_activates": int(signo == "activates"),
+            "n_represses": int(signo == "represses"),
+            "n_regulates": int(signo == "regulates"),
+            "n_articulos": len(pmids), "confianza": "0.9000",
+            "autorregulacion": "true" if autorregulacion else "false",
+            "secciones": "results", "pmids": "|".join(pmids),
+            "oracion_representativa": _oracion(tf, blanco)}
+
+
+def _escribir_evidencias(fe, fp, tf, blanco, signo, evidencias,
+                         autorregulacion=False):
+    """Las filas de red_evidencias.tsv de una arista y, si `fp` no es None,
+    sus pares en pares.jsonl."""
+    for id_par, pmid, tf_locus, target_locus in evidencias:
+        ev = {"tf": tf, "blanco": blanco, "id_par": id_par, "pmid": pmid,
+              "seccion": "results", "fuente": "fulltext",
+              "prediccion": signo, "probabilidad": "0.900000",
+              "redaccion": "directa", "oracion": _oracion(tf, blanco)}
+        fe.write("\t".join(str(ev[c]) for c in RED.COLUMNAS_EVIDENCIAS)
+                 + "\n")
+        if fp is not None:
+            fp.write(json.dumps({
+                "id_par": id_par, "pmid": int(pmid), "tf": tf,
+                "target": blanco,
+                "text": "<e1> %s </e1> controla a <e2> %s </e2> ."
+                        % (tf, blanco),
+                "tf_locus": tf_locus, "target_locus": target_locus,
+                "autorregulacion": autorregulacion},
+                ensure_ascii=False) + "\n")
+
+
+def sellar_red(carpeta, informe=redes.INFORME):
+    """El sello de `red.py` en su informe: la huella del pares.jsonl."""
+    huella = procedencia.huella(os.path.join(carpeta, "pares.jsonl"))
+    with io.open(os.path.join(carpeta, informe), "w", encoding="utf-8") as f:
+        json.dump({"huellas": {"pares": {"huella": huella}}}, f)
+
+
 def escribir_red(carpeta, aristas, sellar=True):
     """red.tsv y red_evidencias.tsv con las columnas de etapa2/red.py, el
     pares.jsonl del puente y el sello de red_informe.json."""
-    ruta_pares = os.path.join(carpeta, "pares.jsonl")
     with io.open(os.path.join(carpeta, "red.tsv"), "w", encoding="utf-8",
                  newline="\n") as fr, \
             io.open(os.path.join(carpeta, "red_evidencias.tsv"), "w",
                     encoding="utf-8", newline="\n") as fe, \
-            io.open(ruta_pares, "w", encoding="utf-8", newline="\n") as fp:
+            io.open(os.path.join(carpeta, "pares.jsonl"), "w",
+                    encoding="utf-8", newline="\n") as fp:
         fr.write("\t".join(RED.COLUMNAS_RED) + "\n")
         fe.write("\t".join(RED.COLUMNAS_EVIDENCIAS) + "\n")
         for tf, blanco, signo, pmids, evidencias in aristas:
-            # Una oración que empieza con comillas: leída con el csv por
-            # omisión, se comería las líneas siguientes.
-            oracion = u'"%s" controla a %s, dice el texto.' % (tf, blanco)
-            fila = {"tf": tf, "blanco": blanco, "signo": signo,
-                    "conflicto": "false", "n_evidencias": len(evidencias),
-                    "n_activates": int(signo == "activates"),
-                    "n_represses": int(signo == "represses"),
-                    "n_regulates": int(signo == "regulates"),
-                    "n_articulos": len(pmids), "confianza": "0.9000",
-                    "autorregulacion": "false", "secciones": "results",
-                    "pmids": "|".join(pmids),
-                    "oracion_representativa": oracion}
+            fila = _fila_red(tf, blanco, signo, pmids, evidencias)
             fr.write("\t".join(str(fila[c]) for c in RED.COLUMNAS_RED)
                      + "\n")
-            for id_par, pmid, tf_locus, target_locus in evidencias:
-                ev = {"tf": tf, "blanco": blanco, "id_par": id_par,
-                      "pmid": pmid, "seccion": "results",
-                      "fuente": "fulltext", "prediccion": signo,
-                      "probabilidad": "0.900000", "redaccion": "directa",
-                      "oracion": oracion}
-                fe.write("\t".join(str(ev[c])
-                                   for c in RED.COLUMNAS_EVIDENCIAS) + "\n")
-                fp.write(json.dumps({
-                    "id_par": id_par, "pmid": int(pmid), "tf": tf,
-                    "target": blanco,
-                    "text": "<e1> %s </e1> controla a <e2> %s </e2> ."
-                            % (tf, blanco),
-                    "tf_locus": tf_locus, "target_locus": target_locus,
-                    "autorregulacion": False}, ensure_ascii=False) + "\n")
+            _escribir_evidencias(fe, fp, tf, blanco, signo, evidencias)
     if sellar:
-        with io.open(os.path.join(carpeta, "red_informe.json"), "w",
-                     encoding="utf-8") as f:
-            json.dump({"huellas": {"pares": {
-                "huella": procedencia.huella(ruta_pares)}}}, f)
+        sellar_red(carpeta)
+
+
+def escribir_red_con_reglas(carpeta, nombre, aristas, autorreguladas=(),
+                            expandidas=()):
+    """red_<nombre>.tsv, sus evidencias y su informe, como los deja
+    `grn_red.consolidar` con el perfil recomendado.
+
+    Las columnas son las de etapa2/red.py más `nivel_soporte` y
+    `expandida_de`. Las evidencias son las de red.py, de las aristas
+    observadas: una expandida, dada como (arista del operón, gen), copia la
+    fila del operón y no tiene ninguna. Los pares de las autorreguladas se
+    agregan a pares.jsonl, y los dos informes se vuelven a sellar con la
+    huella nueva. Va después de `escribir_red`, que escribe pares.jsonl.
+    """
+    archivo_red, archivo_evidencias, archivo_informe = \
+        redes.archivos_de_red(nombre)
+    filas = []
+    with io.open(os.path.join(carpeta, archivo_evidencias), "w",
+                 encoding="utf-8", newline="\n") as fe, \
+            io.open(os.path.join(carpeta, "pares.jsonl"), "a",
+                    encoding="utf-8", newline="\n") as fp:
+        fe.write("\t".join(RED.COLUMNAS_EVIDENCIAS) + "\n")
+        for tf, blanco, signo, pmids, evidencias in aristas:
+            filas.append(_fila_red(tf, blanco, signo, pmids, evidencias))
+            # Sus pares ya están: los escribió escribir_red.
+            _escribir_evidencias(fe, None, tf, blanco, signo, evidencias)
+        for tf, blanco, signo, pmids, evidencias in autorreguladas:
+            filas.append(_fila_red(tf, blanco, signo, pmids, evidencias,
+                                   autorregulacion=True))
+            _escribir_evidencias(fe, fp, tf, blanco, signo, evidencias,
+                                 autorregulacion=True)
+    for (tf, blanco, signo, pmids, evidencias), gen in expandidas:
+        fila = _fila_red(tf, gen, signo, pmids, evidencias)
+        fila["oracion_representativa"] = _oracion(tf, blanco)
+        fila["expandida_de"] = blanco
+        filas.append(fila)
+    columnas = list(RED.COLUMNAS_RED) + ["nivel_soporte", "expandida_de"]
+    with io.open(os.path.join(carpeta, archivo_red), "w", encoding="utf-8",
+                 newline="\n") as fr:
+        fr.write("\t".join(columnas) + "\n")
+        for fila in filas:
+            fila.setdefault("expandida_de", "")
+            fila["nivel_soporte"] = ("candidata" if fila["n_articulos"] == 1
+                                     else "soporte_multiple")
+            fr.write("\t".join(str(fila[c]) for c in columnas) + "\n")
+    if os.path.isfile(os.path.join(carpeta, redes.INFORME)):
+        sellar_red(carpeta)
+    sellar_red(carpeta, archivo_informe)
 
 
 def escribir_lista(ruta, pmids):
@@ -274,11 +355,17 @@ class _ConEscenario(unittest.TestCase):
     def docs(self):
         return C.documentos_del_bronce(self.menciones)
 
-    def aristas(self):
+    def aristas(self, red=None):
+        nombre_red, nombre_evidencias, _ = redes.archivos_de_red(red)
         return C.aristas_en_locus(
-            os.path.join(self.carpeta, "red.tsv"),
-            os.path.join(self.carpeta, "red_evidencias.tsv"),
+            os.path.join(self.carpeta, nombre_red),
+            os.path.join(self.carpeta, nombre_evidencias),
             os.path.join(self.carpeta, "pares.jsonl"))
+
+    def con_reglas(self):
+        """Escribe `red_prueba.tsv` junto a `red.tsv`."""
+        escribir_red_con_reglas(self.carpeta, "prueba", ARISTAS,
+                                [AUTORREGULADA], [(OPERON, GEN_EXPANDIDO)])
 
     def correr(self, **kwargs):
         lineas = []
@@ -335,6 +422,23 @@ class PruebasDenominador(_ConEscenario):
         exigibles, c = C.denominador(self.interacciones())
         self.assertEqual((0, 13), (c["excluidas_por_archivo"],
                                    c["exigibles"]))
+        self.assertEqual((0, 0), (c["citan_excluido_y_otro"],
+                                  c["homologia_que_cita_excluido"]))
+
+    def test_la_conciliacion_con_el_archivo_de_exclusiones(self):
+        """Con P_B sale la fila 7 y se queda la 8, que cita además P_ABS:
+        es la que separa «todos sus PMIDs» de «cita el artículo». Con P_XML
+        salen las 2, 4, 5 y 15, se queda la 12 (cita también P_TEST) y la 6,
+        que lo cita, ya había salido por homología: 14 - 1 - 4 = 9."""
+        _, c = C.denominador(self.interacciones(), {P_B})
+        self.assertEqual((1, 1, 0), (c["excluidas_por_archivo"],
+                                     c["citan_excluido_y_otro"],
+                                     c["homologia_que_cita_excluido"]))
+        _, c = C.denominador(self.interacciones(), {P_XML})
+        self.assertEqual((1, 4, 1, 1, 9),
+                         (c["homologia"], c["excluidas_por_archivo"],
+                          c["citan_excluido_y_otro"],
+                          c["homologia_que_cita_excluido"], c["exigibles"]))
 
 
 class PruebasBronce(_ConEscenario):
@@ -506,6 +610,11 @@ class PruebasRed(_ConEscenario):
         principal = r["estratos"][C.PRINCIPAL]
         self.assertEqual((2, 1), (principal["n"], principal["dirigido"]["k"]))
         self.assertEqual(0, principal["signo"]["n"])
+        # La 11 dirigida y nada al revés; sin signo que juzgar, la línea base
+        # queda sin denominador.
+        self.assertEqual((1, 1), (principal["orientacion"]["k"],
+                                  principal["orientacion"]["n"]))
+        self.assertIsNone(principal["signo"]["acuerdo_si_da_signo"]["valor"])
 
     def test_el_estrato_biobert_va_aparte(self):
         aristas, _ = self.aristas()
@@ -519,6 +628,190 @@ class PruebasRed(_ConEscenario):
         # La principal junta Histórica, Ambos y otro, y nada de BioBERT.
         self.assertEqual(e["historica"]["n"] + e["ambos"]["n"]
                          + e["otro"]["n"], e[C.PRINCIPAL]["n"])
+
+    def test_el_estrato_de_una_fila(self):
+        filas = self.por_fila(self.exigibles())
+        self.assertEqual(("historica", "ambos", "biobert"),
+                         (C.estrato_de(filas[2]), C.estrato_de(filas[4]),
+                          C.estrato_de(filas[10])))
+        # Un valor que no es de los medidos cuenta como «otro».
+        self.assertEqual("otro", C.estrato_de(dict(filas[2], origen="nuevo")))
+
+    def test_la_linea_base_y_la_orientacion_por_estrato(self):
+        """Las dirigidas con signo sin BioBERT son la 2 (+, acuerdo), la 4
+        (+, contrario), la 8 (+, mixto), la 13 (+, acuerdo) y la 15 (-,
+        acuerdo). Resueltas, las de acuerdo o contrario: 2, 4, 13 y 15; con
+        + en la base, 2, 4 y 13. Siempre activa acierta en 4 de las 5
+        dirigidas con signo. La orientación: 6 dirigidas de las 7 que la red
+        encuentra (la 3 va al revés).
+
+        Por estrato, (orientación, resueltas, resueltas con +, dirigidas con
+        signo y +, acuerdo cuando da signo, siempre activa en las resueltas,
+        siempre activa con abstención), con cada proporción como (k, n)."""
+        aristas, _ = self.aristas()
+        e = C.recall_red(self.exigibles(), aristas)["estratos"]
+
+        def kn(p):
+            return (p["k"], p["n"])
+
+        esperado = {
+            C.PRINCIPAL: ((6, 7), 4, 3, 4, (3, 4), (3, 4), (4, 5)),
+            "historica": ((5, 6), 3, 2, 3, (3, 3), (2, 3), (3, 4)),
+            "ambos": ((1, 1), 1, 1, 1, (0, 1), (1, 1), (1, 1)),
+            "otro": ((0, 0), 0, 0, 0, (0, 0), (0, 0), (0, 0)),
+            "biobert": ((1, 1), 1, 1, 1, (1, 1), (1, 1), (1, 1)),
+        }
+        for nombre, valores in esperado.items():
+            s = e[nombre]["signo"]
+            self.assertEqual(valores, (
+                kn(e[nombre]["orientacion"]), s["resueltas"],
+                s["resueltas_mas"], s["con_signo_mas"],
+                kn(s["acuerdo_si_da_signo"]), kn(s["linea_base_siempre_mas"]),
+                kn(s["linea_base_siempre_mas_con_abstencion"])), nombre)
+        p = e[C.PRINCIPAL]
+        # Resueltas es acuerdo más contrario; con abstención, el mismo
+        # denominador que el acuerdo de siempre; la orientación, dirigido
+        # entre cualquier dirección (642/674 en la corrida 4).
+        self.assertEqual(p["signo"]["acuerdo"]["k"] + p["signo"]["contrario"],
+                         p["signo"]["resueltas"])
+        self.assertEqual(p["signo"]["n"], p["signo"]
+                         ["linea_base_siempre_mas_con_abstencion"]["n"])
+        self.assertEqual((p["dirigido"]["k"], p["cualquiera"]["k"]),
+                         kn(p["orientacion"]))
+        self.assertIsNone(e["otro"]["orientacion"]["valor"])
+
+    def test_regulates_no_cuenta_entre_las_resueltas(self):
+        """En el escenario ninguna dirigida con signo en la base sale
+        regulates (la 11 es `?`), así que nada distinguía «resueltas» de
+        «acuerdo, contrario y regulates». Con la arista de la fila 2 en
+        regulates, las dirigidas con signo sin BioBERT siguen siendo 5, y las
+        resueltas son la 4 (+, contrario), la 13 (+, acuerdo) y la 15 (-,
+        acuerdo): 3, con 2 de +. La 8 sigue mixta."""
+        aristas, _ = self.aristas()
+        aristas = dict(aristas)
+        aristas[("PA9001", "PA9002")] = [
+            dict(a, signo="regulates") for a in aristas[("PA9001", "PA9002")]]
+        s = C.recall_red(self.exigibles(),
+                         aristas)["estratos"][C.PRINCIPAL]["signo"]
+
+        def kn(p):
+            return (p["k"], p["n"])
+
+        self.assertEqual((5, 2, 1, 1, 1), (s["n"], s["acuerdo"]["k"],
+                                           s["contrario"], s["regulates"],
+                                           s["mixto"]))
+        self.assertEqual((3, 2, 4), (s["resueltas"], s["resueltas_mas"],
+                                     s["con_signo_mas"]))
+        self.assertEqual(((2, 3), (2, 3), (4, 5)), (
+            kn(s["acuerdo_si_da_signo"]), kn(s["linea_base_siempre_mas"]),
+            kn(s["linea_base_siempre_mas_con_abstencion"])))
+
+    def test_el_techo_sin_biobert(self):
+        """Sin BioBERT son 11 filas, todas menos la 10: 9 en el corpus (no la
+        9 ni la 14), 7 con XML y 2 solo abstract (la 3 y la 8). La regla a)
+        con expansión cubre la 2, 3, 4, 8, 9, 11, 13 y 15; sin expansión
+        pierde la 4 y la 15. La b) con expansión, la 2, 4, 8, 11, 13 y 15;
+        sin expansión, la 2, 8, 11 y 13. La red encuentra en alguna
+        dirección la 2, 3, 4, 8, 11, 13 y 15, todas dentro de la a)."""
+        aristas, _ = self.aristas()
+        exigibles, docs, pares = self.exigibles(), self.docs(), self.pares()
+        techo = C.techo_sin_biobert(exigibles, docs, pares, aristas)
+        self.assertEqual(11, techo["n"])
+        cob = techo["cobertura"]
+        self.assertEqual({"todas": 11, "en_corpus": 9, "con_xml": 7,
+                          "solo_abstract": 2}, dict(cob["n"]))
+        esperado = {
+            ("con_expansion", "a"): (8, 7, 5, 2),
+            ("con_expansion", "b"): (6, 6, 5, 1),
+            ("sin_expansion", "a"): (6, 5, 3, 2),
+            ("sin_expansion", "b"): (4, 4, 3, 1),
+        }
+        for (v, regla), ks in esperado.items():
+            self.assertEqual(ks, tuple(cob[v][regla][g]["k"]
+                                       for g in C.GRUPOS), (v, regla))
+        self.assertEqual(0, techo["red_cualquiera_fuera_de_a"])
+        # Las mismas filas que la cifra principal de la red.
+        principal = C.recall_red(exigibles, aristas)["estratos"][C.PRINCIPAL]
+        self.assertEqual(principal["n"], techo["n"])
+
+        # Una arista que la a) no cubre, al revés de la fila 12 (que no tiene
+        # candidata): la red la encuentra y queda fuera. Es un dato.
+        otra = dict(aristas)
+        otra[("PA9021", "PA9020")] = [{"tf": "x", "blanco": "y",
+                                       "signo": "activates",
+                                       "pmids": frozenset()}]
+        self.assertEqual(1, C.techo_sin_biobert(
+            exigibles, docs, pares, otra)["red_cualquiera_fuera_de_a"])
+        # La misma fila con Origen BioBERT no entra al techo.
+        con_biobert = [dict(f, origen="biobert") if f["fila_origen"] == 12
+                       else f for f in exigibles]
+        techo = C.techo_sin_biobert(con_biobert, docs, pares, otra)
+        self.assertEqual((10, 0), (techo["n"],
+                                   techo["red_cualquiera_fuera_de_a"]))
+        # Sin red no hay cruce.
+        self.assertIsNone(C.techo_sin_biobert(
+            exigibles, docs, pares)["red_cualquiera_fuera_de_a"])
+
+    def test_una_red_con_otras_reglas(self):
+        """red_prueba.tsv: las 12 aristas de red.tsv, la autorregulación de un
+        solo locus y la expandida sin evidencia propia, 14 filas. No se
+        detiene, y da los mismos pares de locus que red.tsv."""
+        self.con_reglas()
+        normal, c_normal = self.aristas()
+        otra, c = self.aristas("prueba")
+        self.assertEqual((14, 11, 1, 1, 1, 1, 11),
+                         (c["aristas"], c["con_locus"], c["sin_locus"],
+                          c["solo_autorregulacion"], c["expandidas_omitidas"],
+                          c["expandidas"], c["pares_locus"]))
+        self.assertEqual(normal, otra)
+        self.assertEqual(c_normal["por_signo"], c["por_signo"])
+        self.assertEqual((0, 0), (c_normal["solo_autorregulacion"],
+                                  c_normal["expandidas_omitidas"]))
+        # Lo que decide es la marca y no el locus: la misma arista sin marcar
+        # cuenta como sin locus, como en red.tsv.
+        escribir_red_con_reglas(self.carpeta, "sin_marca",
+                                ARISTAS + [AUTORREGULADA])
+        _, c = self.aristas("sin_marca")
+        self.assertEqual((13, 2, 0), (c["aristas"], c["sin_locus"],
+                                      c["solo_autorregulacion"]))
+
+    def test_una_expandida_que_se_llama_como_una_observada_tambien_se_omite(
+            self):
+        """En red_recomendada.tsv de la corrida 4, 695 de las 1 533 expandidas
+        se llaman como una arista observada y tienen evidencias bajo ese
+        nombre. Se omiten igual: leída con las evidencias de la observada, la
+        expandida, que copia el signo de su operón, le pondría al par un signo
+        que no es el suyo. Aquí la observada es la de la fila 2 (activates) y
+        la expandida, de un operón inventado, dice represses."""
+        operon = ("QzaR", "wvaXYZ", "represses", [P_XML], [])
+        escribir_red_con_reglas(self.carpeta, "prueba", ARISTAS,
+                                expandidas=[(operon, "wvaA")])
+        normal, _ = self.aristas()
+        otra, c = self.aristas("prueba")
+        self.assertEqual((13, 1, 11), (c["aristas"], c["expandidas_omitidas"],
+                                       c["con_locus"]))
+        self.assertEqual(normal, otra)
+        self.assertEqual("activates", C.signo_par(otra[("PA9001", "PA9002")]))
+
+    def test_sin_expandida_de_una_arista_sin_evidencias_detiene(self):
+        """La expandida se omite por su columna, no por faltarle evidencia:
+        vacía la marca y la misma fila detiene el contraste, con el mensaje
+        en los archivos de esa red."""
+        self.con_reglas()
+        ruta = os.path.join(self.carpeta, "red_prueba.tsv")
+        with io.open(ruta, encoding="utf-8") as f:
+            lineas = f.readlines()
+        marca = "\t" + OPERON[1] + "\n"
+        lineas = [l[:-len(marca)] + "\t\n" if l.endswith(marca) else l
+                  for l in lineas]
+        with io.open(ruta, "w", encoding="utf-8", newline="\n") as f:
+            f.writelines(lineas)
+        with self.assertRaises(ValueError) as ctx:
+            self.aristas("prueba")
+        mensaje = str(ctx.exception)
+        self.assertIn("red_prueba.tsv", mensaje)
+        self.assertIn("red_prueba_evidencias.tsv", mensaje)
+        self.assertNotIn(self.tmp, mensaje)
 
     def test_candidatas_nuevas(self):
         aristas, _ = self.aristas()
@@ -587,6 +880,17 @@ class PruebasEjecutar(_ConEscenario):
         self.assertEqual({"archivos": 1, "pmids": 1, "pmids_citados": 1,
                           "oraciones_ignoradas": 0},
                          dict(resultado["exclusiones"]))
+        self.assertEqual((1, 0), (d["citan_excluido_y_otro"],
+                                  d["homologia_que_cita_excluido"]))
+        self.assertEqual((14, 14, 0), (resultado["base"]["filas"],
+                                       resultado["base"]["interacciones"],
+                                       resultado["base"]["locus_invalido"]))
+        self.assertEqual("red.tsv", red["archivo"])
+        self.assertEqual((0, 0), (red["conteos"]["expandidas_omitidas"],
+                                  red["conteos"]["solo_autorregulacion"]))
+        self.assertEqual((11, 0), (resultado["techo_sin_biobert"]["n"],
+                                   resultado["techo_sin_biobert"]
+                                   ["red_cualquiera_fuera_de_a"]))
 
         with io.open(os.path.join(self.confidencial, C.ARCHIVO_POR_FILA),
                      encoding="utf-8", newline="") as f:
@@ -612,6 +916,7 @@ class PruebasEjecutar(_ConEscenario):
             registro = json.load(f)
         self.assertEqual(procedencia.huella(self.base),
                          registro["huellas"]["base"])
+        self.assertIsNone(registro["parametros"]["red"])
         self.assertTrue(lineas[-1].startswith("Escritos en la carpeta de "
                                               "--confidencial"))
 
@@ -628,6 +933,219 @@ class PruebasEjecutar(_ConEscenario):
         self.assertIn("**DIFIERE**", texto)
         # La corrida 4 no se compara con la 1.
         self.assertNotIn("Frente a PLAN.md 2.4", texto)
+
+    def test_el_informe_lleva_la_conciliacion_del_denominador(self):
+        """Las cifras de las pruebas del denominador, en la sección 2."""
+        _, lineas = self.correr()
+        with io.open(self.informe, encoding="utf-8") as f:
+            texto = f.read()
+        self.assertIn("- 14 filas con valores, 14 con los dos locus: 0 con un "
+                      "locus inválido.", texto)
+        self.assertIn("- 1 cita el artículo excluido junto con otro y se "
+                      "queda, porque la regla es «todos sus PMIDs». Las de "
+                      "homología que lo citan (0) salen antes", texto)
+        self.assertSinContenido(texto)
+        # El aviso sin archivo de exclusiones conserva su 731, y entonces no
+        # hay nada que conciliar.
+        self.correr(excluir=[])
+        with io.open(self.informe, encoding="utf-8") as f:
+            texto = f.read()
+        self.assertNotIn("citan el artículo excluido", texto)
+        self.assertNotIn("cita el artículo excluido", texto)
+
+    def test_el_informe_lleva_el_techo_sin_biobert(self):
+        """Las cifras de test_el_techo_sin_biobert, junto al dirigido y a
+        cualquier dirección de la cifra principal; en la terminal, una
+        línea."""
+        _, lineas = self.correr()
+        with io.open(self.informe, encoding="utf-8") as f:
+            texto = f.read()
+        self.assertIn("### El techo de la regla a), sin BioBERT", texto)
+        self.assertIn("las mismas 11 filas de la cifra principal", texto)
+        self.assertIn("| a) cualquier oración candidata | con expansión | "
+                      "8/11 (72.7 %)", texto)
+        self.assertIn("dirigido 6/11 (54.5 %)", texto)
+        self.assertIn("cualquier dirección 7/11 (63.6 %)", texto)
+        self.assertIn("no cubre: 0, como debe ser.", texto)
+        self.assertSinContenido(texto)
+        todo = "\n".join(lineas)
+        self.assertIn("Techo sin BioBERT: la regla a con expansión cubre "
+                      "72.7 %; la red encuentra 63.6 % en cualquier "
+                      "dirección; fuera de la regla a: 0.", todo)
+        self.assertSinContenido(todo)
+        # Sin red, el techo sigue en el resultado y no en el informe.
+        resultado, _ = self.correr(sin_red=True)
+        self.assertEqual(11, resultado["techo_sin_biobert"]["n"])
+        self.assertIsNone(resultado["techo_sin_biobert"]
+                          ["red_cualquiera_fuera_de_a"])
+        with io.open(self.informe, encoding="utf-8") as f:
+            self.assertNotIn("El techo de la regla a)", f.read())
+
+    def test_el_informe_lleva_la_linea_base_y_la_orientacion(self):
+        """Las cifras de test_la_linea_base_y_la_orientacion_por_estrato, en
+        las tablas de la red, en la línea de la abstención y en la terminal."""
+        _, lineas = self.correr()
+        with io.open(self.informe, encoding="utf-8") as f:
+            texto = f.read()
+        self.assertIn("| cualquier dirección | orientación | acuerdo de "
+                      "signo |", texto)
+        self.assertIn("6/7 (85.7 %)", texto)
+        self.assertIn("| sin BioBERT (la cifra principal) | 5 | 3 | 1 | 0 | "
+                      "1 | 3/4 (75.0 %) [30.1, 95.4] | 3/4 (75.0 %) "
+                      "[30.1, 95.4] |", texto)
+        self.assertIn("la red acuerda en 3/5 (60.0 %)", texto)
+        self.assertIn("acertaría en 4/5 (80.0 %)", texto)
+        self.assertIn("Con 9 `+` y 2 `-` entre las exigibles", texto)
+        self.assertSinContenido(texto)
+        todo = "\n".join(lineas)
+        self.assertIn("orientación 85.7 %; acuerdo cuando da signo 75.0 %, "
+                      "siempre activa en esas filas 75.0 %; siempre activa en "
+                      "las dirigidas con signo 80.0 %", todo)
+        self.assertSinContenido(todo)
+
+    def test_la_conciliacion_con_un_locus_invalido(self):
+        """Una fila 16 con un regulador sin forma de locus: cuenta entre las
+        filas con valores y no entre las de los dos locus, y el resto del
+        denominador no cambia."""
+        filas = dict(FILAS_BASE)
+        filas[16] = ["qzoR", "wvoA", "+", P_XML, "PA12", "PA9043", HIST, "x"]
+        self.base = construir_xlsx(os.path.join(self.tmp, "base_sintetica_16"
+                                                ".xlsx"), [("Hoja1", filas)])
+        resultado, _ = self.correr()
+        self.assertEqual((15, 14, 1), (resultado["base"]["filas"],
+                                       resultado["base"]["interacciones"],
+                                       resultado["base"]["locus_invalido"]))
+        self.assertEqual((14, 12), (resultado["denominador"]["base"],
+                                    resultado["denominador"]["exigibles"]))
+        with io.open(self.informe, encoding="utf-8") as f:
+            texto = f.read()
+        self.assertIn("- 15 filas con valores, 14 con los dos locus: 1 con un "
+                      "locus inválido.", texto)
+        self.assertSinContenido(texto)
+
+    def test_con_otra_red(self):
+        """`red_prueba.tsv` da los mismos pares de locus que `red.tsv`: el
+        mismo recall, también el de test, y el mismo techo. El informe y el
+        registro dicen qué red se midió."""
+        self.con_reglas()
+        normal, _ = self.correr(solo=[self.solo])
+        resultado, lineas = self.correr(solo=[self.solo], red="prueba")
+        red = resultado["red"]
+        self.assertEqual("red_prueba.tsv", red["archivo"])
+        self.assertEqual((14, 1, 1), (red["conteos"]["aristas"],
+                                      red["conteos"]["expandidas_omitidas"],
+                                      red["conteos"]["solo_autorregulacion"]))
+        self.assertEqual(normal["red"]["recall"], red["recall"])
+        self.assertEqual(normal["red"]["recall_test"], red["recall_test"])
+        self.assertEqual(normal["techo_sin_biobert"],
+                         resultado["techo_sin_biobert"])
+        with io.open(self.informe, encoding="utf-8") as f:
+            texto = f.read()
+        self.assertIn("- Red: 14 aristas de `red_prueba.tsv`", texto)
+        self.assertIn("- 14 aristas de `red_prueba.tsv`: 11 llevadas a locus",
+                      texto)
+        self.assertIn(", 1 sin locus de PAO1, 1 de autorregulación con un "
+                      "solo locus y 1 expandida de un operón; en total, 11 "
+                      "pares de locus dirigidos.", texto)
+        self.assertIn("- La expandida se omite: no tiene evidencia propia",
+                      texto)
+        self.assertNotIn("`red.tsv`", texto)
+        self.assertSinContenido(texto)
+        self.assertSinContenido("\n".join(lineas))
+        self.assertIn("Red: 14 aristas de red_prueba.tsv", "\n".join(lineas))
+        with io.open(os.path.join(self.confidencial, C.ARCHIVO_REGISTRO),
+                     encoding="utf-8") as f:
+            registro = json.load(f)
+        self.assertEqual("prueba", registro["parametros"]["red"])
+        self.assertEqual(procedencia.huella(
+            os.path.join(self.carpeta, "red_prueba.tsv")),
+            registro["huellas"]["red"])
+
+    def test_otra_red_de_otros_pares_se_detiene(self):
+        """La procedencia se comprueba con el informe de esa red."""
+        self.con_reglas()
+        with io.open(os.path.join(self.carpeta, "red_prueba_informe.json"),
+                     "w", encoding="utf-8") as f:
+            json.dump({"huellas": {"pares": {"huella": "abcdefabcdefabcd"}}},
+                      f)
+        with self.assertRaises(ValueError) as ctx:
+            self.correr(red="prueba")
+        self.assertIn("otro pares.jsonl", str(ctx.exception))
+        # La red por omisión sigue sellada con los pares de la carpeta.
+        self.correr()
+
+    def test_otra_red_sin_su_sello_lo_avisa_con_su_nombre(self):
+        """El aviso va al informe publicado: tiene que nombrar el informe que
+        falta, no `red_informe.json`, que sí está en la carpeta."""
+        self.con_reglas()
+        os.remove(os.path.join(self.carpeta, "red_prueba_informe.json"))
+        resultado, _ = self.correr(red="prueba")
+        avisos = [a for a in resultado["avisos"] if "huella" in a]
+        self.assertEqual(1, len(avisos), resultado["avisos"])
+        self.assertIn("red_prueba_informe.json", avisos[0])
+        self.assertNotIn("red_informe.json", avisos[0])
+        with io.open(self.informe, encoding="utf-8") as f:
+            texto = f.read()
+        self.assertIn("red_prueba_informe.json", texto)
+        self.assertSinContenido(texto)
+
+    def test_un_nombre_de_red_con_forma_de_pmid_se_rechaza_antes(self):
+        """`x_20990101` vale para `grn_red` (`consolidar --nombre`), pero el
+        informe y la terminal nombran `red_x_20990101.tsv`, y ocho dígitos
+        seguidos tienen forma de PMID: el filtro de publicación rechazaría el
+        informe al final, con la base ya leída. Se dice antes de abrirla, y
+        sin repetir el nombre."""
+        escribir_red_con_reglas(self.carpeta, "x_20990101", ARISTAS)
+        with mock.patch.object(V, "leer_base",
+                               side_effect=AssertionError("abrió la base")):
+            with self.assertRaises(ValueError) as ctx:
+                self.correr(red="x_20990101")
+        mensaje = str(ctx.exception)
+        self.assertTrue(mensaje.startswith("--red: "), mensaje)
+        self.assertNotIn("20990101", mensaje)
+        self.assertSinContenido(mensaje)
+        self.assertFalse(os.path.exists(self.confidencial))
+        self.assertFalse(os.path.exists(self.informe))
+        # Con letras pegadas no tiene forma de PMID, y corre.
+        escribir_red_con_reglas(self.carpeta, "v20990101", ARISTAS)
+        resultado, _ = self.correr(red="v20990101")
+        self.assertEqual("red_v20990101.tsv", resultado["red"]["archivo"])
+
+    def test_red_y_sin_red_se_excluyen(self):
+        self.con_reglas()
+        with mock.patch.object(V, "leer_base",
+                               side_effect=AssertionError("abrió la base")):
+            with self.assertRaises(ValueError) as ctx:
+                self.correr(red="prueba", sin_red=True)
+        mensaje = str(ctx.exception)
+        self.assertIn("--red", mensaje)
+        self.assertIn("--sin-red", mensaje)
+        self.assertSinContenido(mensaje)
+        self.assertFalse(os.path.exists(self.confidencial))
+        self.assertFalse(os.path.exists(self.informe))
+
+    def test_un_nombre_de_red_invalido_no_dice_cual(self):
+        for nombre in (os.path.join(self.tmp, "secreta"), "evidencias",
+                       "Prueba", "prueba\n", ""):
+            with mock.patch.object(V, "leer_base",
+                                   side_effect=AssertionError("abrió la "
+                                                              "base")):
+                with self.assertRaises(ValueError) as ctx:
+                    self.correr(red=nombre)
+            mensaje = str(ctx.exception)
+            self.assertTrue(mensaje.startswith("--red: "), mensaje)
+            self.assertNotIn("secreta", mensaje)
+            self.assertNotIn("Prueba", mensaje)
+            self.assertSinContenido(mensaje)
+            self.assertFalse(os.path.exists(self.confidencial))
+
+    def test_una_red_que_no_esta_dice_como_armarla(self):
+        with self.assertRaises(ValueError) as ctx:
+            self.correr(red="otra")
+        mensaje = str(ctx.exception)
+        self.assertIn("Falta red_otra.tsv", mensaje)
+        self.assertIn("grn_red.cli consolidar", mensaje)
+        self.assertSinContenido(mensaje)
 
     def test_el_informe_pasa_con_entradas_de_forma_real(self):
         """Los CSV llevan fecha en el nombre (el prefijo de `setUp`) y un
@@ -749,9 +1267,9 @@ class PruebasCli(_ConEscenario):
     def test_la_ayuda(self):
         for argv, buscados in ((["contraste", "--help"],
                                 ("--base", "--carpeta", "--excluir-pmids",
-                                 "--solo-pmids", "--sin-red", "--hoja",
-                                 "--aceptar-base-distinta", "--informe",
-                                 "--confidencial")),
+                                 "--solo-pmids", "--sin-red", "--red",
+                                 "--hoja", "--aceptar-base-distinta",
+                                 "--informe", "--confidencial")),
                                (["--help"], ("contraste", "reentrenar"))):
             salida = io.StringIO()
             with contextlib.redirect_stdout(salida):
@@ -769,6 +1287,31 @@ class PruebasCli(_ConEscenario):
         self.assertTrue(os.path.isfile(self.informe))
         self.assertTrue(os.path.isfile(os.path.join(self.confidencial,
                                                     C.ARCHIVO_NUEVAS)))
+
+    def test_otra_red(self):
+        self.con_reglas()
+        codigo, lineas = self.main(self.argv("--red", "prueba",
+                                             "--aceptar-base-distinta"))
+        self.assertEqual(0, codigo, lineas)
+        self.assertSinContenido("\n".join(lineas))
+        self.assertTrue(any("red_prueba.tsv" in l for l in lineas))
+        with io.open(self.informe, encoding="utf-8") as f:
+            self.assertIn("`red_prueba.tsv`", f.read())
+
+    def test_red_con_sin_red_o_un_nombre_invalido_sale_sin_ruta(self):
+        self.con_reglas()
+        secreta = os.path.join(self.tmp, "secreta", "red_prueba.tsv")
+        for extra in (("--red", "prueba", "--sin-red"), ("--red", secreta),
+                      ("--red", "evidencias"), ("--red", "x_20990101")):
+            codigo, lineas = self.main(self.argv(*(extra + (
+                "--aceptar-base-distinta",))))
+            self.assertEqual(1, codigo, extra)
+            self.assertTrue(lineas[-1].startswith("ERROR: --red"), lineas)
+            todo = "\n".join(lineas)
+            self.assertSinContenido(todo)
+            self.assertNotIn("secreta", todo)
+            self.assertFalse(os.path.exists(self.informe))
+            self.assertFalse(os.path.exists(self.confidencial))
 
     def test_un_cotejo_que_no_cuadra_sale_con_error_y_sin_rutas(self):
         codigo, lineas = self.main(self.argv())

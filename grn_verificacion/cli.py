@@ -509,7 +509,7 @@ def cmd_contraste(args):
         contraste.ejecutar(
             args.base, args.carpeta, args.confidencial, informe=args.informe,
             hoja=args.hoja, excluir=args.excluir_pmids, solo=args.solo_pmids,
-            sin_red=args.sin_red,
+            sin_red=args.sin_red, red=args.red,
             aceptar_base_distinta=args.aceptar_base_distinta, log=log)
     except KeyboardInterrupt:
         log("Interrumpido.")
@@ -545,6 +545,12 @@ def _sub_contraste(sub):
                          "test). Mismo formato; se puede repetir.")
     co.add_argument("--sin-red", dest="sin_red", action="store_true",
                     help="Solo la cobertura del bronce, sin la red.")
+    co.add_argument("--red", default=None, metavar="NOMBRE",
+                    help="Contrasta red_NOMBRE.tsv, con sus evidencias y su "
+                         "informe, en vez de red.tsv: una red con otras "
+                         "reglas de grn_red.cli consolidar (recomendada es la "
+                         "del paso red_recomendada del flujo). No va con "
+                         "--sin-red.")
     co.add_argument("--hoja", default=None,
                     help="Nombre de la hoja de la base; por omisión, la "
                          "primera del libro.")
