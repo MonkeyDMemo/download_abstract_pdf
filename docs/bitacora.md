@@ -343,11 +343,27 @@ implementador y un revisor, fusionada sobre la fase 2 sin conflictos.
   (`servidor-cierre.md` §7). El prompt se congela con un commit, y su huella
   en una enmienda del protocolo, antes de la tanda 2.
 
+**El cierre del día:**
+- **Los protocolos,** commiteados antes de medir: el de la tanda 2, con la
+  enmienda 1 (las huellas de las redes), y el de la prueba con abstracts
+  nuevos.
+- **El congelamiento de la prueba con abstracts nuevos:**
+  `docs/congelado-prueba-nuevos.json` y la etiqueta `congelado-prueba-nuevos`,
+  antes de descargar nada.
+  - Lleva el modelo de *E. coli*, los umbrales de `red.py`, la red de la
+    corrida 4 y los recursos del bronce.
+  - Ouroboros no entra, por omisión.
+- **Los worktrees** de las fases 2 a 4 se borraron con sus ramas, ya
+  fusionadas.
+
 **Abierto:**
 - la sesión de calibración 2 con el experto, y luego la tanda 2 en la página:
   `python servidor.py --revision salidas/revision/muestra200_t2 --abrir`;
 - lo que corre Hermes en el servidor (`servidor-cierre.md` §2 a §7);
-- congelar el prompt de Ouroboros después de la calibración y la tanda 1;
+- congelar el prompt de Ouroboros después de la calibración y la tanda 1, con
+  su huella en una enmienda de `protocolo-tanda2.md`;
+- la descarga de los abstracts nuevos (`protocolo-prueba-nuevos.md`), cuando
+  se decida;
 - las reglas de dirección con las 39 inversiones de la tanda 1 (3.2, si
   alcanza).
 

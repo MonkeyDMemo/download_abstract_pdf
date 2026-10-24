@@ -42,7 +42,8 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
     de la tanda 2;
   - `docs/protocolo-tanda2.md` antes de evaluar la tanda 2;
   - la prueba con abstracts nuevos: el código (`run --tipo-fecha`,
-    `verificar-contaminacion`) y el protocolo ya están; falta el congelamiento;
+    `verificar-contaminacion`), el protocolo y el congelamiento ya están
+    (`congelado-prueba-nuevos`). Falta descargar;
   - preguntar al asesor dos permisos: Bedrock (por omisión no) y publicar las
     oraciones con los juicios (por omisión no).
 
