@@ -403,6 +403,16 @@ class PruebasJats(_ConEscenario):
         # En OASIS, `morerows` dice cuántas filas más.
         self.assertEqual([["QzcR", "wveA"], ["QzcR", "wvfA"], ["wvgA"]],
                          t2["filas"])
+        # `rowspan="0"` llega hasta el final de su grupo de filas, y no más.
+        hasta_el_final = escribir(os.path.join(self.tmp, "cero.xml"), (
+            u"<article><body><table-wrap><table>"
+            u"<tbody><tr><td rowspan='0'>QzaR</td><td>wvaA</td></tr>"
+            u"<tr><td>wvbA</td></tr><tr><td>wvcA</td></tr></tbody>"
+            u"<tbody><tr><td>wvdA</td></tr></tbody>"
+            u"</table></table-wrap></body></article>"))
+        self.assertEqual([["QzaR", "wvaA"], ["QzaR", "wvbA"],
+                          ["QzaR", "wvcA"], ["wvdA"]],
+                         T.tablas_de_jats(hasta_el_final)[0]["filas"])
 
     def test_el_titulo_del_grupo_es_el_de_sus_tablas(self):
         ruta = escribir(os.path.join(self.tmp, "abarca.xml"), JATS_ABARCA)
