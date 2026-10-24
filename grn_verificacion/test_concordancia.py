@@ -311,6 +311,25 @@ class PruebasSalida(Base):
         self.assertIn("kappa de Cohen en relación: 0.531", texto)
         self.assertIn("filtro, precisión con dirección:  2/3", texto)
 
+    def test_un_error_de_lectura_dice_la_linea_y_no_el_valor(self):
+        """El mensaje de `leer_anotacion` trae tal cual el valor que no
+        sigue la rúbrica, y el CLI lo imprimiría."""
+        items = dict(ITEMS)
+        e, m, d = items["m-3002"]
+        items["m-3002"] = (("si, ver PMID 12345678",) + e[1:], m, d)
+        self.escribir(items)
+        with self.assertRaises(ValueError) as caja:
+            co.calcular(self.experto, self.modelo)
+        self.assertIn("del experto", str(caja.exception))
+        self.assertIn("líneas 3", str(caja.exception))   # m-3002
+        salida = io.StringIO()
+        with contextlib.redirect_stdout(salida):
+            codigo = cli.main(["concordancia", "--experto", self.experto,
+                               "--modelo", self.modelo])
+        self.assertEqual(codigo, 1)
+        for texto in (str(caja.exception), salida.getvalue()):
+            self.assertNotIn("12345678", texto)
+
     def test_el_subcomando_con_un_error(self):
         salida = io.StringIO()
         with contextlib.redirect_stdout(salida):

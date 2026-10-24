@@ -39,6 +39,7 @@ import csv
 import io
 import json
 import random
+import re
 
 from grn_bronce.texto import normalizar_espacios
 from grn_verificacion import evaluar, precision_ciega
@@ -70,6 +71,22 @@ NOTAS = (
     "(§3.3; calibración 2, punto 4): el acuerdo en tipo de la tanda 1 lleva "
     "esa salvedad.",
 )
+
+
+_LINEA = re.compile(r"línea (\d+)")
+
+
+def _leer(ruta, quien):
+    """`precision_ciega.leer_anotacion`, con sus errores reducidos a los
+    números de línea: su mensaje trae tal cual el valor que no sigue la
+    rúbrica, o el `id_item` repetido, y de aquí solo salen conteos."""
+    try:
+        return precision_ciega.leer_anotacion(ruta)
+    except ValueError as e:
+        lineas = sorted(set(int(n) for n in _LINEA.findall(str(e))))
+        raise ValueError("La anotación %s no sigue la rúbrica (§6)%s." % (
+            quien, " en las líneas %s" % ", ".join(str(n) for n in lineas)
+            if lineas else ""))
 
 
 def _valores(fila):
@@ -202,8 +219,8 @@ def _filtro(comparados, direcciones):
 
 
 def calcular(ruta_experto, ruta_modelo, ruta_llave=None):
-    experto = precision_ciega.leer_anotacion(ruta_experto)
-    modelo = precision_ciega.leer_anotacion(ruta_modelo)
+    experto = _leer(ruta_experto, "del experto")
+    modelo = _leer(ruta_modelo, "del modelo")
     anotados = sorted(i for i, f in experto.items()
                       if (f.get("relacion") or "").strip())
     faltan = [i for i in anotados if i not in modelo]
