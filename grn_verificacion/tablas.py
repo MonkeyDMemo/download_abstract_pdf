@@ -73,7 +73,8 @@ import xml.etree.ElementTree as ET
 from grn_bronce import texto as _texto
 from grn_comun import procedencia
 from grn_etl import pubmed
-from grn_verificacion import contraste, puente, reentrenar, validacion
+from grn_verificacion import (contraste, entrenamiento, puente, reentrenar,
+                              validacion)
 
 CUANTOS = 5
 ARCHIVO_REGISTRO = "tablas.json"
@@ -776,10 +777,10 @@ def ejecutar(base, carpeta, xml, confidencial, informe=None, excluir=(),
                          "<pmid>_<pmcid>.xml. Si es la del texto completo, "
                          "los XML están en su subcarpeta xml.")
     rutas = contraste.ubicar_archivos(carpeta, sin_red=True)
-    # El lector del contraste (en `main`, alias de `entrenamiento.leer_pmids`):
-    # un error dice la línea del archivo y no su ruta.
-    pmids_excluir, c_excluir = contraste._leer_pmids(excluir,
-                                                     "--excluir-pmids")
+    # El mismo lector que el contraste: un error dice la línea del archivo y
+    # no su ruta.
+    pmids_excluir, c_excluir = entrenamiento.leer_pmids(excluir,
+                                                        "--excluir-pmids")
 
     interacciones, c_base = validacion.leer_base(base, hoja)
     # BASE_ESPERADA se lee aquí, como en el contraste: así una prueba la

@@ -295,18 +295,12 @@ def _exigir_pmids(pmids, donde):
 
 
 def _pmids_de_reservas(rutas_reservas):
-    """Los PMIDs de los archivos de reservas, con el lector del entrenamiento.
-    Su error nombra la ruta; aquí sale sin ella."""
-    try:
-        reservas, _ = entrenamiento.leer_reservas(rutas_reservas)
-    except ValueError as e:
-        raise ValueError("--reservas: %s"
-                         % _sin_rutas(str(e), rutas_reservas)) from None
-    except OSError:
-        raise ValueError("No pude leer un archivo de --reservas.") from None
+    """Los PMIDs de los archivos de reservas, con el lector del contraste y de
+    `precision-ciega`: su error dice la línea y no la ruta."""
+    pmids, _ = entrenamiento.leer_pmids(rutas_reservas, "--reservas")
     # Un archivo de solo oraciones es una reserva válida para el
     # entrenamiento, pero aquí no aporta nada: lo que se exige es el total.
-    return _exigir_pmids(set(reservas["pmids"]), "--reservas")
+    return _exigir_pmids(pmids, "--reservas")
 
 
 def _columna_pmid(ruta, donde):
