@@ -383,9 +383,51 @@ class PruebasSalidas(Base):
                          ["entidad_1", "entidad_2", "id_item", "oracion"])
 
 
+def _enlazar(destino, enlace):
+    """Un enlace de carpeta: simbólico donde se puede y, en un Windows sin
+    permiso para eso, una unión (junction), que `realpath` también resuelve.
+    False si no se pudo ninguno."""
+    try:
+        os.symlink(destino, enlace, target_is_directory=True)
+        return True
+    except (OSError, NotImplementedError, AttributeError):
+        pass
+    if os.name == "nt":
+        try:
+            import _winapi
+            _winapi.CreateJunction(destino, enlace)
+            return True
+        except (ImportError, AttributeError, OSError):
+            pass
+    return False
+
+
 class PruebasCarpetaDelExperto(Base):
     """Las salidas nunca caen en salidas/revision, y nada se crea antes de
     rechazarla."""
+
+    def test_ni_por_un_enlace(self):
+        """`salidas` como enlace a una carpeta con otro nombre (la ruta
+        resuelta ya no dice salidas/revision) y un atajo a la carpeta del
+        experto (la ruta escrita no lo dice)."""
+        almacen = os.path.join(self.tmp, "almacen")
+        os.makedirs(os.path.join(almacen, "revision"))
+        proyecto = os.path.join(self.tmp, "proyecto")
+        del_experto = os.path.join(proyecto, "otra", "salidas", "revision")
+        os.makedirs(del_experto)
+        for destino, enlace in ((almacen, os.path.join(proyecto, "salidas")),
+                                (del_experto,
+                                 os.path.join(proyecto, "atajo"))):
+            if not _enlazar(destino, enlace):
+                self.skipTest("este sistema no deja crear enlaces de "
+                              "carpeta")
+            # Se quita el enlace y no lo que apunta: rmdir en Windows (unión
+            # o enlace simbólico de carpeta), unlink en los demás.
+            self.addCleanup(os.rmdir if os.name == "nt" else os.unlink,
+                            enlace)
+        for partes in (("salidas", "revision", "t1"), ("atajo", "t1")):
+            with self.assertRaises(ValueError, msg="/".join(partes)):
+                anotar.validar_salida(os.path.join(proyecto, *partes))
 
     def test_rechaza_la_carpeta_y_lo_que_cuelga_de_ella(self):
         for partes in (("salidas", "revision"),

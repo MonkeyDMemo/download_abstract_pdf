@@ -109,26 +109,36 @@ def _nada(_mensaje):
     pass
 
 
+def _en_la_del_experto(ruta):
+    partes = [os.path.normcase(p)
+              for p in os.path.normpath(ruta).split(os.sep)]
+    prohibida = [os.path.normcase(p) for p in CARPETA_DEL_EXPERTO]
+    return any(partes[i:i + 2] == prohibida for i in range(len(partes) - 1))
+
+
 def validar_salida(salida):
     """La carpeta resuelta, o ValueError si cae dentro de salidas/revision.
 
-    Se compara la ruta resuelta (sin `..` ni enlaces) componente por
-    componente y con `normcase`, que en Windows no distingue mayúsculas:
-    `Salidas\\Revision` es la misma carpeta. Por componentes y no por la raíz
-    del repositorio, para que tampoco pase la `salidas/revision` de otro clon
-    o de otro worktree.
+    Se mira la ruta dos veces, componente por componente y con `normcase`,
+    que en Windows no distingue mayúsculas (`Salidas\\Revision` es la misma
+    carpeta):
+
+    - como se escribió, absoluta y sin `..`: si `salidas` es un enlace a una
+      carpeta con otro nombre, la resuelta ya no dice salidas/revision;
+    - resuelta, sin enlaces: un atajo a la carpeta del experto no lo dice
+      como se escribió.
+
+    Por componentes y no por la raíz del repositorio, para que tampoco pase
+    la `salidas/revision` de otro clon o de otro worktree.
     """
-    resuelta = os.path.realpath(os.path.abspath(salida))
-    partes = [os.path.normcase(p)
-              for p in os.path.normpath(resuelta).split(os.sep)]
-    prohibida = [os.path.normcase(p) for p in CARPETA_DEL_EXPERTO]
-    for i in range(len(partes) - 1):
-        if partes[i:i + 2] == prohibida:
-            raise ValueError(
-                "La salida cae dentro de salidas/revision, la carpeta del "
-                "experto. Las salidas de Ouroboros van a salidas/ouroboros/: "
-                "el experto no las ve, y sus veredictos no pueden quedar "
-                "donde se anota.")
+    escrita = os.path.abspath(salida)
+    resuelta = os.path.realpath(escrita)
+    if _en_la_del_experto(escrita) or _en_la_del_experto(resuelta):
+        raise ValueError(
+            "La salida cae dentro de salidas/revision, la carpeta del "
+            "experto. Las salidas de Ouroboros van a salidas/ouroboros/: "
+            "el experto no las ve, y sus veredictos no pueden quedar "
+            "donde se anota.")
     return resuelta
 
 
