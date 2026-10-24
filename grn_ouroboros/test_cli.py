@@ -345,9 +345,16 @@ class PruebasEvals(Base):
         self.assertIn("corrida.json", texto)
 
     def test_nunca_en_la_carpeta_del_experto(self):
-        codigo, _texto = self.correr("evals", "--salida", os.path.join(
-            self.tmp, "salidas", "revision", "x"))
+        """Ni con una corrida completa ahí: sin corrida, el rechazo se
+        confundiría con el de una carpeta vacía."""
+        self.anotar()
+        prohibida = os.path.join(self.tmp, "salidas", "revision", "x")
+        shutil.copytree(self.salida, prohibida)
+        codigo, texto = self.correr("evals", "--salida", prohibida)
         self.assertEqual(codigo, cli.ENTRADA)
+        self.assertIn("salidas/ouroboros/", texto)
+        self.assertFalse(os.path.exists(os.path.join(
+            prohibida, evals.NOMBRE_EXPERIMENTO + ".json")))
 
     def test_sin_strands_evals(self):
         self.anotar()
