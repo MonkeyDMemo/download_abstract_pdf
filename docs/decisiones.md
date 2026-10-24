@@ -1732,3 +1732,27 @@ Decidido por omisión el 23-oct-2026; se mide solo en la tanda 2.
   es la de su voto.
 - **Cómo se reporta:** con abstención como error y frente a «siempre +» sobre
   la misma base. Cada regla también sola.
+
+## La página portátil de revisión y el tope de 15 minutos por tramo
+
+Decidido el 23-oct-2026, con el usuario, antes de anotar la tanda 2.
+
+- **La tanda 2 se anota en un solo HTML, sin servidor** (`revision_portatil.py`).
+  El experto anota fuera del laboratorio, donde no corre el tablero.
+  - La página no es una segunda implementación libre. Las opciones, las
+    columnas, el tope y el patrón del id salen de `revision.py`.
+  - La lógica que queda escrita en JavaScript (tramos, validación y CSV) se
+    prueba en node contra la de Python. Tiene que dar el mismo veredicto y el
+    mismo CSV byte a byte.
+  - La pestaña «Revisión» sigue, para quien anote en la máquina del tablero.
+- **Un tramo de más de 15 minutos no se suma** y se cuenta en `tramos_largos`,
+  en la página y en el tablero.
+  - **Por qué:** la medición por tramos no sabe si la ventana tenía el foco.
+    Una página abierta en la comida mete una hora en un ítem y pesa más que
+    veinte ítems bien medidos.
+  - **El costo:** un ítem de verdad largo pierde su tiempo, y por eso se
+    cuenta, no se esconde. `precision-ciega` reporta cuántos tramos quedaron
+    fuera y en cuántos ítems.
+  - **Por qué 15 minutos:** es el tope que Hermes eligió para la página. No
+    sale de ningún dato: se fija y se declara antes de anotar, que es lo que
+    lo hace válido para la tanda 2.

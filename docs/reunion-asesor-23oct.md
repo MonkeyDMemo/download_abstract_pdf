@@ -217,6 +217,13 @@ el §5 d y g. Las candidatas nuevas se quedan en la carpeta confidencial.
 - **Decidí eso porque** es un servicio social, con un anotador pagado por
   hora. Sin parte doble no hay κ, y eso se reporta como limitación (rúbrica,
   enmienda 1).
+- **Desde el 23-oct hay una segunda anotadora** sobre 50 ítems de la tanda 1,
+  elegidos al azar (semilla 20261024) entre los 198 que anotó el experto. Con
+  eso sale un acuerdo entre humanos, κ por campo, exploratorio
+  (`concordancia --entre-humanos`). La tanda 2 sigue con una sola anotadora.
+- **La tanda 2 se anota con una página portátil,** un solo HTML sin servidor.
+  Mide el tiempo con un tope de 15 minutos por tramo (`protocolo-tanda2.md`,
+  enmienda 2).
 - **Si prefiere** medir la concordancia: se sortea en otra carpeta con
   `--fraccion-doble 0.25`. Salen las mismas oraciones (hay una prueba que lo
   exige) y 50 ítems para una segunda persona, unas 1.5 horas más.

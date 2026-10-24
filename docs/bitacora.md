@@ -412,6 +412,58 @@ implementador y un revisor, fusionada sobre la fase 2 sin conflictos.
   `servidor-cierre.md`.
 - **El respaldo de las tandas,** `muestra200_t2` incluida, lo sube el usuario.
 
+**La página portátil de revisión y la segunda anotadora.**
+- **Hermes hizo un generador** de la revisión ciega en un solo HTML, sin
+  servidor, para quien anota fuera del laboratorio, con su guía. Entró al
+  repositorio como `revision_portatil.py` y `docs/guia-anotacion.md`.
+  - **`exportar-html`** escribe la página, y **`desde-respaldo`** convierte su
+    respaldo en el CSV.
+  - **Lo que cambió al integrarlo:**
+    - las opciones, las columnas, el tope y el patrón del id salen de
+      `revision.py`, en vez de copiarse a mano;
+    - la lógica (tramos, validación y CSV) va en un bloque sin DOM;
+    - todo `<` de los datos se escapa, para que una oración con `<!--` no
+      altere el bloque.
+  - **Las pruebas** (`pruebas/test_revision_portatil.py`):
+    - la página no lleva nada de la llave ni recursos de fuera;
+    - en node, la lógica de la página valida igual que `revision.validar` en
+      2 304 combinaciones, mide igual que `revision.anotaciones` y exporta el
+      mismo CSV byte a byte;
+    - lo exportado pasa `precision_ciega.leer_anotacion`.
+
+    Dos mutaciones a propósito (el tope con `>=` y el CSV sin comillas en un
+    salto de línea) las hacen fallar. Sin node, esas pruebas se saltan
+    diciendo por qué.
+- **El tope de 15 minutos por tramo también en `revision.py`,** para que las
+  dos midan igual.
+  - Un tramo más largo no se suma y se cuenta en `tramos_largos`, una columna
+    nueva del CSV exportado.
+  - `precision-ciega` reporta esos tramos.
+  - El tope no toca la tanda 1, que no tiene tiempos.
+- **La tanda 2 se anota con la página portátil:** `protocolo-tanda2.md`,
+  enmienda 2, antes de medir. Su página es
+  `salidas/revision/muestra200_t2/revision_tanda2.html`, con 200 ítems. Nadie
+  había empezado a anotar.
+- **La segunda anotadora:**
+  - **Qué anota:** 50 ítems de la tanda 1, elegidos al azar con semilla
+    20261024 entre los 198 que anotó el experto, con
+    `random.Random(20261024).sample` sobre los ids ordenados.
+  - **El registro** está en
+    `salidas/revision/doble_curadora/_registro_seleccion.json`, con los ids y
+    la sha256 de la hoja y de la anotación del experto. No se le manda.
+  - **Su página** la generó Hermes con su script, antes de integrarlo. Tiene
+    las mismas columnas, el mismo tope y la misma validación, así que lo que
+    exporte se lee igual.
+  - **El acuerdo entre humanos** sale con `cli concordancia --experto
+    <tanda 1 normalizada> --modelo <lo que exporte> --entre-humanos`:
+    - compara solo los ítems que anotaron las dos, sin abstenciones ni
+      filtro;
+    - da el acuerdo y el κ de Cohen por campo.
+  - **Es exploratorio:** con 50 ítems el κ tiene un intervalo ancho. El
+    acuerdo en `tipo` lleva la salvedad de la tanda 1.
+- **Suites:** raíz 1 790 y etapa2 528, con el `.venv` y con el Python del
+  sistema.
+
 **El cierre del día:**
 - **Los protocolos,** commiteados antes de medir: el de la tanda 2, con la
   enmienda 1 (las huellas de las redes), y el de la prueba con abstracts

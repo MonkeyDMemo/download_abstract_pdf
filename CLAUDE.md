@@ -325,6 +325,9 @@ flujo.py               el flujo de punta a punta; idempotente por huella
 revision.py            la revisión ciega de la muestra para la pestaña
                        «Revisión»: cola desde hoja_tanda1.csv, anotaciones
                        en un JSONL de solo anexar y su CSV exportado
+revision_portatil.py   la misma revisión en un solo HTML sin servidor, para
+                       quien anota fuera (la tanda 2); su lógica se prueba en
+                       node contra revision.py. Guía: docs/guia-anotacion.md
 grn_comun/             lo que usan los tres pasos
   rutas.py               la precedencia de GRN_DATOS; grn_bronce/rutas.py es
                          su puente desde el 20-oct-2026
@@ -631,6 +634,9 @@ python3 -m grn_verificacion.cli tablas --base X --carpeta C --xml DIR --excluir-
     --informe M --confidencial D
 python3 -m grn_verificacion.cli evaluar --carpeta C --bronce CSV [--particion DIR]
 python3 -m grn_verificacion.cli concordancia --experto A --modelo B [--llave L] [--json J]
+python3 -m grn_verificacion.cli concordancia --experto A --modelo B --entre-humanos   # la segunda anotadora
+python3 revision_portatil.py exportar-html --carpeta salidas/revision/muestra200_t2 --salida P.html
+python3 revision_portatil.py desde-respaldo --respaldo R.json --carpeta C --salida X.csv
 
 # Ouroboros, en el servidor y con su entorno; ver docs/ouroboros-v0.md
 .venv-ouroboros/bin/python -m grn_ouroboros.cli humo

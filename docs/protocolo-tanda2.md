@@ -136,3 +136,35 @@ python -m grn_red.cli consolidar --carpeta salidas/flujo/corrida4_run22 \
   (`65f94c5fa0251c746a12477910a6543f7643f8c33ca01df4895d052eee659dec`).
 - **Antes de medir** se comprueban estas huellas. Si una no coincide, la red se
   vuelve a armar con el mismo commit, o la diferencia se declara aquí.
+
+## Enmienda 2 (23-oct-2026): la tanda 2 se anota con la página portátil
+
+Es anterior a ver cualquier cifra de la tanda 2. Nadie ha anotado todavía: la
+carpeta no tiene `anotaciones.jsonl`.
+
+- **Cambia cómo se anota, no qué se mide.** El experto anota en un solo HTML,
+  sin servidor (`revision_portatil.py`), y no en la pestaña «Revisión» del
+  tablero. Lo hizo Hermes y entró al repositorio con pruebas.
+  - Lleva solo las cuatro columnas de la hoja, nada de la llave.
+  - Valida como `revision.validar`: rechaza `si` con negada = sí.
+  - Exporta el mismo CSV que el tablero, byte a byte.
+  - Las pruebas lo comprueban en node.
+- **La página de la tanda 2:**
+  - `salidas/revision/muestra200_t2/revision_tanda2.html`, generada con
+    `python revision_portatil.py exportar-html --carpeta
+    salidas/revision/muestra200_t2`;
+  - 200 ítems, con la huella de la hoja `dcb5547596826331…`.
+  - La guía que lleva dentro es `docs/guia-anotacion.md`.
+- **El tiempo** se mide por tramos, como en el tablero. **Un tramo de más de 15
+  minutos no se suma** y se cuenta en `tramos_largos`. El tablero aplica desde
+  hoy el mismo tope, así que las dos miden igual.
+  - `precision-ciega` reporta cuántos tramos quedaron fuera y en cuántos
+    ítems.
+  - Las horas son las del navegador de quien anota.
+- **Lo que se recibe:**
+  - el CSV que exporta la página, que lee `precision-ciega` tal cual;
+  - o su respaldo, que `python revision_portatil.py desde-respaldo` convierte
+    en el mismo CSV.
+- **El κ entre humanos** no es de la tanda 2, que sigue con una sola
+  anotadora. Sale de la segunda anotadora sobre 50 ítems de la tanda 1, y es
+  exploratorio (bitácora del 23-oct).
