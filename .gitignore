@@ -18,6 +18,9 @@ venv/
 # El entorno de spaCy va aparte: scispaCy exige numpy<2 y el .venv tiene el
 # numpy 2 de torch. Se rehace con las instrucciones de docs/plan-sintaxis-bronce.md.
 .venv-nlp/
+# El de Ouroboros también: Strands pide Python 3.10 o más y vive en el servidor.
+# Se arma con grn_ouroboros/requisitos-servidor.txt (docs/ouroboros-v0.md).
+.venv-ouroboros/
 # Lo que deja `pip install -e ".[bronce]"` al leer pyproject.toml
 *.egg-info/
 build/
