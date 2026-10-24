@@ -49,6 +49,22 @@ class PruebasConfiguraciones(unittest.TestCase):
         with self.assertRaises(ValueError):
             agente.configuracion("otra")
 
+    def test_num_ctx_y_cache_kv_por_corrida(self):
+        c = agente.configuracion("con_think", num_ctx=6144, kv_cache="q8_0")
+        self.assertEqual(agente.opciones(c)["num_ctx"], 6144)
+        # La caché KV es del servidor: no va en la petición, sí en la llave.
+        self.assertNotIn("kv_cache", agente.opciones(c))
+        d = agente.decodificacion(c)
+        self.assertEqual((d["num_ctx"], d["kv_cache"]), (6144, "q8_0"))
+        self.assertEqual(agente.CON_THINK["num_ctx"], 8192)
+        self.assertEqual(agente.configuracion("principal")["kv_cache"], "f16")
+
+    def test_num_ctx_o_cache_imposibles(self):
+        with self.assertRaises(ValueError):
+            agente.configuracion("con_think", num_ctx=4096)
+        with self.assertRaises(ValueError):
+            agente.configuracion("principal", kv_cache="q2")
+
     def test_options_sin_los_vacios(self):
         self.assertEqual(agente.opciones(agente.PRINCIPAL),
                          {"seed": 42, "num_ctx": 4096, "num_predict": 512})

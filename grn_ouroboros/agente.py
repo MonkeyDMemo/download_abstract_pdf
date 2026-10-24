@@ -46,8 +46,19 @@ Configuraciones pre-registradas
 - `CON_THINK`: think, T = 0.6, `top_p` 0.95, `top_k` 20, `num_ctx` 8192,
   `num_predict` 4096, lo que recomienda Qwen: con T = 0 y think se degrada.
 
-Las herramientas son otra dimensión (`ninguna` por omisión); la semilla se
-puede cambiar por corrida (`--semilla`) y entra a la llave.
+Las dos con la caché KV de Ollama en `f16`, la de omisión.
+
+Las herramientas son otra dimensión (`ninguna` por omisión). Tres valores se
+pueden cambiar por corrida, y los tres entran a la llave:
+
+- la semilla (`--semilla`);
+- `num_ctx` (`--num-ctx`), para recortar el de la corrida con think si los
+  8 192 no caben en la GPU ni con la caché comprimida;
+- el tipo de caché KV (`--kv-cache q8_0`), que es lo primero que se prueba
+  antes de recortar (`docs/decisiones.md`, «Ouroboros v0»). Es una variable
+  del servidor (`OLLAMA_KV_CACHE_TYPE`), no de la petición: no se manda ni se
+  puede leer por la API, así que la corrida la declara. Entra a la llave
+  porque una caché comprimida cambia los números con que el modelo decide.
 """
 
 import hashlib
@@ -63,11 +74,14 @@ RUTA_PROMPT = os.path.join(_AQUI, "prompts", "anotador_v0.md")
 
 PRINCIPAL = {"nombre": "principal", "think": False, "temperature": 0.0,
              "top_p": None, "top_k": None, "seed": 42, "num_ctx": 4096,
-             "num_predict": 512}
+             "num_predict": 512, "kv_cache": "f16"}
 CON_THINK = {"nombre": "con_think", "think": True, "temperature": 0.6,
              "top_p": 0.95, "top_k": 20, "seed": 42, "num_ctx": 8192,
-             "num_predict": 4096}
+             "num_predict": 4096, "kv_cache": "f16"}
 CONFIGURACIONES = {"principal": PRINCIPAL, "con_think": CON_THINK}
+
+# Los que acepta `OLLAMA_KV_CACHE_TYPE`; q8_0 y q4_0 piden flash attention.
+TIPOS_KV = ("f16", "q8_0", "q4_0")
 
 # Lo que el modelo se queda cargado después de la última petición. No cambia
 # ningún veredicto, así que no entra a la llave.
@@ -90,14 +104,27 @@ APENDICE_HERRAMIENTAS = (
     "arriba.\n")
 
 
-def configuracion(nombre, semilla=None):
-    """Una copia de la configuración pre-registrada, con otra semilla si se
-    pide. Copia: nadie modifica las constantes por accidente."""
+def configuracion(nombre, semilla=None, num_ctx=None, kv_cache=None):
+    """Una copia de la configuración pre-registrada, con otra semilla, otro
+    `num_ctx` u otro tipo de caché KV si se piden. Copia: nadie modifica las
+    constantes por accidente."""
     if nombre not in CONFIGURACIONES:
         raise ValueError("La configuración es principal o con_think.")
     config = dict(CONFIGURACIONES[nombre])
     if semilla is not None:
         config["seed"] = int(semilla)
+    if num_ctx is not None:
+        # El contexto lleva el prompt, la oración y la respuesta: con uno que
+        # no pasa de num_predict, ninguna respuesta completa cabría y todo
+        # saldría abstención.
+        if int(num_ctx) <= config["num_predict"]:
+            raise ValueError("num_ctx tiene que pasar de num_predict (%d)."
+                             % config["num_predict"])
+        config["num_ctx"] = int(num_ctx)
+    if kv_cache is not None:
+        if kv_cache not in TIPOS_KV:
+            raise ValueError("La caché KV es %s." % ", ".join(TIPOS_KV))
+        config["kv_cache"] = kv_cache
     return config
 
 
