@@ -84,9 +84,11 @@ def _leer(ruta, quien):
         return precision_ciega.leer_anotacion(ruta)
     except ValueError as e:
         lineas = sorted(set(int(n) for n in _LINEA.findall(str(e))))
+        # `from None`: un traceback encadenado volvería a mostrar el
+        # mensaje original.
         raise ValueError("La anotación %s no sigue la rúbrica (§6)%s." % (
             quien, " en las líneas %s" % ", ".join(str(n) for n in lineas)
-            if lineas else ""))
+            if lineas else "")) from None
 
 
 def _valores(fila):

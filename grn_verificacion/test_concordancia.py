@@ -322,6 +322,8 @@ class PruebasSalida(Base):
             co.calcular(self.experto, self.modelo)
         self.assertIn("del experto", str(caja.exception))
         self.assertIn("líneas 3", str(caja.exception))   # m-3002
+        # Ni encadenado: un traceback mostraría el mensaje original.
+        self.assertTrue(caja.exception.__suppress_context__)
         salida = io.StringIO()
         with contextlib.redirect_stdout(salida):
             codigo = cli.main(["concordancia", "--experto", self.experto,
