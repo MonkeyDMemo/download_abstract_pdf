@@ -86,6 +86,21 @@ class PruebasJueces(unittest.TestCase):
             self.assertEqual((puntaje, paso), (0.0, False), juez.name)
         self.assertEqual(self.juzgar(evals.ValidezRubrica(), "c03")[3],
                          "truncado")
+        self.assertEqual(self.juzgar(evals.FragmentoValido(), "c03")[3],
+                         "abstencion")
+
+    def test_la_abstencion_es_error_aunque_la_llave_diga_no(self):
+        """Con relación «no» la llave deja signo y tipo vacíos, y una
+        abstención no trae valores: sin la regla explícita, el vacío contra
+        el vacío contaría como acuerdo."""
+        for motivo in ("truncado", "json_invalido"):
+            abstencion = {"abstencion": True, "motivo_abstencion": motivo,
+                          "valores": None, "evidencia_invalida": ""}
+            for juez in _jueces():
+                puntaje, paso, _razon, _etiqueta = juez.juzgar(
+                    NO, evals.salida_de(abstencion))
+                self.assertEqual((puntaje, paso), (0.0, False),
+                                 "%s, %s" % (juez.name, motivo))
 
     def test_sin_referencia_no_aplica(self):
         r = self.juzgar(evals.CampoExacto("tipo"), "c01", referencia={})
