@@ -44,7 +44,8 @@ bronce-nlp = ["spacy==3.7.5", "numpy>=1.26,<2", "typer>=0.9,<0.10",
               "click>=8.0,<8.2", "weasel>=0.3,<0.4.2",
               "en_core_sci_md @ https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/en_core_sci_md-0.5.4.tar.gz"]
 # grn_ouroboros/ (aprobado el 23-oct-2026; docs/decisiones.md, «Ouroboros
-# v0»): Strands con el cliente de Ollama y Strands Evals, con versión fija.
+# v0»): Strands con el cliente de Ollama, Strands Evals y pydantic, con
+# versión fija.
 # Piden Python 3.10 o más y viven en `.venv-ouroboros`, en el servidor; el
 # marcador hace que en el 3.8 del sistema el extra no instale nada en vez de
 # fallar. Son las mismas de grn_ouroboros/requisitos-servidor.txt, y una
@@ -52,7 +53,8 @@ bronce-nlp = ["spacy==3.7.5", "numpy>=1.26,<2", "typer>=0.9,<0.10",
 ouroboros = ["strands-agents[ollama]==1.62.0; python_version >= '3.10'",
              "strands-agents-evals==1.7.0; python_version >= '3.10'",
              "strands-agents-tools==0.8.10; python_version >= '3.10'",
-             "ollama==0.6.3; python_version >= '3.10'"]
+             "ollama==0.6.3; python_version >= '3.10'",
+             "pydantic==2.14.1; python_version >= '3.10'"]
 
 [tool.setuptools]
 packages = ["grn_etl", "grn_bronce", "grn_comun", "grn_operones",
