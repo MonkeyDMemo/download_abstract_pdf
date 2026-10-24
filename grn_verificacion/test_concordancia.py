@@ -344,3 +344,71 @@ class PruebasSalida(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PruebasEntreHumanos(unittest.TestCase):
+    """La segunda anotadora: 50 ítems de la tanda 1, una parte de la hoja.
+    Aquí, la columna del «modelo» de ITEMS hace de segunda anotadora."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = tmp.name
+        self.experto = os.path.join(self.tmp, "experto.csv")
+        _escribir(self.experto, HOJA,
+                  [_fila(i, e) for i, (e, _m, _d) in sorted(ITEMS.items())])
+
+    def segunda(self, ids):
+        ruta = os.path.join(self.tmp, "segunda.csv")
+        _escribir(ruta, HOJA, [_fila(i, ITEMS[i][1]) for i in ids])
+        return ruta
+
+    def test_compara_lo_que_anotaron_las_dos(self):
+        """m-3010 la segunda no lo anotó (fuera, no es abstención); m-3011
+        solo lo anotó ella.
+
+        Sobre los 9 comunes, relación (filas el experto):
+            si: 4 si, 1 no; no: 1 si, 2 no; dudoso: 1 dudoso
+        p_o = 7/9; p_e = (5*5 + 3*3 + 1*1) / 81 = 35/81
+        kappa = (63 - 35) / (81 - 35) = 28/46 = 0.6087
+        """
+        r = co.calcular(self.experto, self.segunda(sorted(ITEMS)),
+                        entre_humanos=True)
+        self.assertEqual(r["n_comunes"], 9)
+        self.assertEqual(r["n_del_experto_que_la_segunda_no_anoto"], 1)
+        self.assertEqual(r["n_que_solo_anoto_la_segunda"], 1)
+        self.assertIsNone(r["abstenciones_del_modelo"])
+        self.assertAlmostEqual(r["kappa_relacion"], 0.6087, places=4)
+        self.assertEqual(r["kappa_por_campo"]["relacion"], r["kappa_relacion"])
+        self.assertEqual(sorted(r["kappa_por_campo"]), sorted(co.CAMPOS))
+        self.assertEqual(r["acuerdo_por_campo"]["relacion"]["k"], 7)
+        self.assertEqual(r["acuerdo_por_campo"]["relacion"]["n"], 9)
+
+    def test_una_hoja_con_solo_unas_filas(self):
+        r = co.calcular(self.experto,
+                        self.segunda(["m-3001", "m-3002", "m-3003"]),
+                        entre_humanos=True)
+        self.assertEqual(r["n_comunes"], 3)
+        self.assertEqual(r["n_del_experto_que_la_segunda_no_anoto"], 7)
+        # Sin el modo, esa misma hoja no es «la misma hoja».
+        with self.assertRaises(ValueError):
+            co.calcular(self.experto,
+                        self.segunda(["m-3001", "m-3002", "m-3003"]))
+
+    def test_sin_llave(self):
+        with self.assertRaises(ValueError):
+            co.calcular(self.experto, self.segunda(sorted(ITEMS)),
+                        ruta_llave=self.experto, entre_humanos=True)
+
+    def test_el_subcomando(self):
+        salida = io.StringIO()
+        with contextlib.redirect_stdout(salida):
+            codigo = cli.main(["concordancia", "--experto", self.experto,
+                               "--modelo", self.segunda(sorted(ITEMS)),
+                               "--entre-humanos"])
+        texto = salida.getvalue()
+        self.assertEqual(codigo, 0)
+        self.assertIn("ítems que anotaron las dos: 9", texto)
+        self.assertIn("kappa de Cohen por campo: relacion 0.609", texto)
+        self.assertNotIn("abstenciones", texto)
+        self.assertNotIn("m-30", texto)

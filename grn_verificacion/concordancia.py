@@ -9,7 +9,7 @@ mismas hojas que el experto, con las mismas columnas. Los dos CSV se leen con
 comparan **sobre los ítems que el experto anotó**:
 
 - el acuerdo exacto por campo, con su intervalo de Wilson;
-- el κ de Cohen en `relacion`;
+- el κ de Cohen en `relacion`, y en cada campo;
 - las matrices de confusión de los seis campos cerrados (filas: el experto;
   columnas: el modelo);
 - las abstenciones del modelo. En su CSV, la abstención es un ítem con los
@@ -26,6 +26,10 @@ precisión contra el experto, su retención de las verdaderas y la diferencia
 con la precisión del bronce, con un IC 95 % por bootstrap pareado con la
 semilla y las repeticiones de `precision_ciega`. De la llave se leen solo
 `id_item` y `direccion_bronce`.
+
+Con `--entre-humanos`, la segunda anotación es de otra persona sobre una
+parte de la hoja: el acuerdo y el κ por campo (exploratorio) sobre los ítems
+que anotaron las dos, sin abstenciones ni filtro (ver `calcular`).
 
 Solo conteos en el log y en el JSON: ninguna oración, ningún PMID, ningún
 `id_item`. La tanda 2 es ciega para toda sesión de Claude hasta evaluarla, y
@@ -70,6 +74,14 @@ NOTAS = (
     "En la tanda 1 el experto marcó «directa» donde la rúbrica pide no_se "
     "(§3.3; calibración 2, punto 4): el acuerdo en tipo de la tanda 1 lleva "
     "esa salvedad.",
+)
+
+
+NOTAS_HUMANOS = (
+    "Acuerdo entre dos anotadoras humanas, sobre los ítems que anotaron las "
+    "dos. Es exploratorio: con unos 50 ítems el kappa tiene un intervalo "
+    "ancho y aquí no se calcula.",
+    NOTAS[1],
 )
 
 
@@ -220,11 +232,33 @@ def _filtro(comparados, direcciones):
     }
 
 
-def calcular(ruta_experto, ruta_modelo, ruta_llave=None):
+def _anotado(fila):
+    return bool((fila.get("relacion") or "").strip())
+
+
+def calcular(ruta_experto, ruta_modelo, ruta_llave=None, entre_humanos=False):
+    """Con `entre_humanos`, la segunda anotación es de otra persona sobre una
+    parte de la hoja (la segunda anotadora anota 50 ítems de la tanda 1): se
+    comparan los ítems que anotaron las dos, y un ítem que la segunda no
+    anotó queda fuera y se cuenta, porque no es una abstención sino un ítem
+    que no le tocó. Sin la llave: el filtro es una pregunta para un modelo."""
+    if entre_humanos and ruta_llave:
+        raise ValueError("Entre humanas no hay filtro: --llave es para una "
+                         "corrida de Ouroboros.")
     experto = _leer(ruta_experto, "del experto")
-    modelo = _leer(ruta_modelo, "del modelo")
-    anotados = sorted(i for i, f in experto.items()
-                      if (f.get("relacion") or "").strip())
+    modelo = _leer(ruta_modelo, "de la segunda anotadora" if entre_humanos
+                   else "del modelo")
+    anotados = sorted(i for i, f in experto.items() if _anotado(f))
+    fuera_de_la_segunda = solo_en_la_segunda = 0
+    if entre_humanos:
+        solo_en_la_segunda = sum(1 for i, f in modelo.items()
+                                 if _anotado(f) and i not in anotados)
+        fuera_de_la_segunda = sum(1 for i in anotados
+                                  if not _anotado(modelo.get(i, {})))
+        anotados = [i for i in anotados if _anotado(modelo.get(i, {}))]
+        if not anotados:
+            raise ValueError("Ningún ítem lo anotaron las dos: no son la "
+                             "misma hoja o la segunda está vacía.")
     faltan = [i for i in anotados if i not in modelo]
     if faltan:
         raise ValueError("%d ítems que anotó el experto no están en la "
@@ -261,19 +295,29 @@ def calcular(ruta_experto, ruta_modelo, ruta_llave=None):
                  for _i, e, m, abstencion in comparados]
         matrices[campo] = matriz(pares, ORDEN[campo])
     abstenciones = sum(1 for c in comparados if c[3])
+    kappas = dict((campo, kappa([
+        (_etiqueta(campo, e[campo]),
+         ABSTENCION if abstencion else _etiqueta(campo, m[campo]))
+        for _i, e, m, abstencion in comparados])) for campo in CAMPOS)
     resultado = {
-        "metodo": "concordancia",
+        "metodo": "concordancia_entre_humanos" if entre_humanos
+                  else "concordancia",
         "n_anotados_por_el_experto": n,
-        "n_sin_anotar_por_el_experto": len(experto) - n,
-        "abstenciones_del_modelo": evaluar.proporcion(abstenciones, n),
+        "n_sin_anotar_por_el_experto": len(experto) - n - fuera_de_la_segunda,
+        "abstenciones_del_modelo": (None if entre_humanos
+                                    else evaluar.proporcion(abstenciones, n)),
         "acuerdo_por_campo": acuerdo,
-        "kappa_relacion": kappa([
-            (e["relacion"], ABSTENCION if abstencion else m["relacion"])
-            for _i, e, m, abstencion in comparados]),
+        "kappa_relacion": kappas["relacion"],
+        "kappa_por_campo": kappas,
         "matrices": matrices,
         "filtro": None,
-        "notas": list(NOTAS),
+        "notas": list(NOTAS_HUMANOS if entre_humanos else NOTAS),
     }
+    if entre_humanos:
+        resultado["n_comunes"] = n
+        resultado["n_del_experto_que_la_segunda_no_anoto"] = \
+            fuera_de_la_segunda
+        resultado["n_que_solo_anoto_la_segunda"] = solo_en_la_segunda
     if ruta_llave:
         direcciones = _leer_direcciones(ruta_llave)
         sin_llave = sum(1 for i in anotados if i not in direcciones)
@@ -292,10 +336,10 @@ def _fmt(p):
         100 * p["ic95"][1])
 
 
-def _lineas_matriz(campo, m):
+def _lineas_matriz(campo, m, columnas_de="modelo"):
     columnas = list(next(iter(m.values())).keys()) if m else []
     ancho = max([len(c) for c in columnas] + [len(f) for f in m] + [7])
-    lineas = ["  %s (filas: experto; columnas: modelo)" % campo,
+    lineas = ["  %s (filas: experto; columnas: %s)" % (campo, columnas_de),
               "    " + " " * ancho + "".join(c.rjust(ancho + 1)
                                            for c in columnas)]
     for fila, conteos in m.items():
@@ -304,23 +348,36 @@ def _lineas_matriz(campo, m):
     return lineas
 
 
+def _k(valor):
+    return "no definido" if valor is None else "%.3f" % valor
+
+
 def ejecutar(ruta_experto, ruta_modelo, ruta_llave=None, ruta_json=None,
-             log=lambda m: None):
-    r = calcular(ruta_experto, ruta_modelo, ruta_llave)
-    log("ítems anotados por el experto: %d (sin anotar: %d)"
-        % (r["n_anotados_por_el_experto"], r["n_sin_anotar_por_el_experto"]))
-    log("abstenciones del modelo: %s" % _fmt(r["abstenciones_del_modelo"]))
+             log=lambda m: None, entre_humanos=False):
+    r = calcular(ruta_experto, ruta_modelo, ruta_llave, entre_humanos)
+    if entre_humanos:
+        log("ítems que anotaron las dos: %d (del experto que la segunda no "
+            "anotó: %d; que solo anotó la segunda: %d)"
+            % (r["n_comunes"], r["n_del_experto_que_la_segunda_no_anoto"],
+               r["n_que_solo_anoto_la_segunda"]))
+    else:
+        log("ítems anotados por el experto: %d (sin anotar: %d)"
+            % (r["n_anotados_por_el_experto"],
+               r["n_sin_anotar_por_el_experto"]))
+        log("abstenciones del modelo: %s" % _fmt(r["abstenciones_del_modelo"]))
     log("acuerdo por campo:")
     for campo in CAMPOS:
         log("  %-13s %s" % (campo, _fmt(r["acuerdo_por_campo"][campo])))
     # «kappa» y no la letra griega: fuera de Latin-1 no imprime en la consola
     # de Windows.
-    k = r["kappa_relacion"]
-    log("kappa de Cohen en relación: %s"
-        % ("no definido" if k is None else "%.3f" % k))
+    log("kappa de Cohen en relación: %s" % _k(r["kappa_relacion"]))
+    log("kappa de Cohen por campo: %s" % "; ".join(
+        "%s %s" % (campo, _k(r["kappa_por_campo"][campo]))
+        for campo in CAMPOS))
     log("matrices de confusión:")
     for campo in CAMPOS:
-        for linea in _lineas_matriz(campo, r["matrices"][campo]):
+        for linea in _lineas_matriz(campo, r["matrices"][campo],
+                                    "segunda" if entre_humanos else "modelo"):
             log(linea)
     f = r["filtro"]
     if f:

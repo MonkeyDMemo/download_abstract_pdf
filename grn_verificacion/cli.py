@@ -868,7 +868,7 @@ def cmd_concordancia(args):
     try:
         concordancia.ejecutar(args.experto, args.modelo,
                               ruta_llave=args.llave, ruta_json=args.json,
-                              log=log)
+                              log=log, entre_humanos=args.entre_humanos)
     except KeyboardInterrupt:
         log("Interrumpido.")
         return 3
@@ -899,6 +899,12 @@ def _sub_concordancia(sub):
                          "bronce).")
     co.add_argument("--json", default=None,
                     help="Escribe ahí el resultado completo.")
+    co.add_argument("--entre-humanos", dest="entre_humanos",
+                    action="store_true",
+                    help="--modelo es la anotación de una segunda persona "
+                         "sobre una parte de la hoja: se comparan los ítems "
+                         "que anotaron las dos, sin abstenciones ni filtro, "
+                         "con el kappa por campo (exploratorio).")
     co.set_defaults(func=cmd_concordancia)
 
 
