@@ -39,7 +39,8 @@ números entre corchetes, como **[18]**, son filas de la sección 3 del PLAN.
   - Ouroboros v0, exploratorio y fuera del flujo:
     - ya corrieron la calibración y la tanda 1 (27-oct), y el prompt se
       congeló sin cambios (`protocolo-tanda2.md`, enmienda 3);
-    - faltan sus tres corridas sobre la tanda 2;
+    - sus tres corridas sobre la tanda 2 ya están (27-oct). Falta la
+      concordancia, cuando llegue la exportación del experto;
   - `docs/protocolo-tanda2.md` antes de evaluar la tanda 2;
   - la prueba con abstracts nuevos: el código (`run --tipo-fecha`,
     `verificar-contaminacion`), el protocolo y el congelamiento ya están

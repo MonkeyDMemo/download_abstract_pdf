@@ -179,8 +179,8 @@ desarrollo (bitácora del 27-oct).
   congela tal como entró en `e4d2071`, sin cambios:
   - `grn_ouroboros/prompts/anotador_v0.md`, sha256
     `0871a83924ca8bfe936434f9630a459b318d534aa0c7ef757c3282221ed77796`;
-  - la huella que guarda cada `corrida.json` (`agente.huella_prompt`: el
-    sistema más la plantilla del mensaje):
+  - la huella que guarda cada `corrida.json` en el campo
+    `identidad.entradas.prompt` (el sistema más la plantilla del mensaje):
     - sin herramientas, `2f80f09a5850fbf7860d8cb305dbf5fd47703b3aa97df86ab9cc72ace9d7ddcc`;
     - con `buscar_locus`, `c90cf9f2317ad4ea0a254a931c7ca60b455f9adcf5412a8cf1a57d06b412647c`.
   - Una corrida de la tanda 2 con otra huella no cuenta.
@@ -204,3 +204,13 @@ desarrollo (bitácora del 27-oct).
 - **Cómo se reporta:** igual que en la tanda 1, con `concordancia` contra la
   exportación del experto, la abstención como error y el filtro con la llave.
   En la tanda 2, `tipo` se compara sin salvedad.
+
+## Fe de erratas de la enmienda 3 (27-oct-2026)
+
+Es anterior a ver cualquier cifra de concordancia de la tanda 2: nadie ha
+abierto sus salidas.
+- **Lo que decía:** que la huella era `agente.huella_prompt`. Esa es la
+  función que la calcula.
+- **Lo correcto:** el campo de `corrida.json` donde queda es
+  `identidad.entradas.prompt`.
+- **Lo que no cambia:** las huellas, ni nada de lo que se mide.

@@ -13,7 +13,9 @@ Hermes reporta.
   (bitácora del 27-oct).
 - El 3 está hecho: el prompt se congeló sin cambios (`protocolo-tanda2.md`,
   enmienda 3).
-- Falta el 4, la tanda 2.
+- El 4 corrió con `451f20a`: las tres corridas sobre la tanda 2, con las
+  huellas de la enmienda 3.
+- Falta su concordancia, cuando llegue la exportación del experto.
 
 **Reglas** (`CLAUDE.md`, Confidencialidad):
 - **Se corre solo `origin/main`,** después de `git pull --ff-only`: nunca una

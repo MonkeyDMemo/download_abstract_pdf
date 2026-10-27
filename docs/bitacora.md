@@ -59,10 +59,28 @@ Hermes corrió los pasos 1 y 2 de `servidor-cierre.md` §7, con `main` en
   la corrida 4. Las tres semillas siguen opcionales.
 - **Las cifras** quedan en `docs/ouroboros-v0.md` y en la hoja (§5 i).
 
+**El paso 4: Ouroboros sobre la tanda 2,** con `main` en `451f20a` y el
+prompt congelado (sha256 `0871a839…`).
+
+| corrida | válidas | abstenciones | duración |
+|---|---:|---:|---|
+| principal | 187 | 13, por la rúbrica | ~8 min |
+| `buscar_locus` | 186 | 14: 13 por la rúbrica y 1 JSON inválido | ~8 min |
+| con think (q8_0) | 193 | 7 | ~48 min |
+
+- **El cierre:** las tres terminaron con código 0, y Ollama quedó apagado.
+- **Las huellas:** `identidad.entradas.prompt` de cada `corrida.json` coincide
+  con la enmienda 3: `2f80f09a…` en la principal y en la de think, y
+  `c90cf9f2…` en `buscar_locus`.
+- **La ceguera:** nadie abrió las salidas.
+- **La concordancia** se corre cuando llegue la exportación del experto.
+- **Una fe de erratas a la enmienda 3:** el campo es
+  `identidad.entradas.prompt`; `agente.huella_prompt` es la función que lo
+  calcula. No cambia nada medido.
+
 **Abierto:**
-- la tanda 2 del experto en la página portátil;
-- las tres corridas de Ouroboros sobre la tanda 2 (`servidor-cierre.md` §7,
-  paso 4);
+- la tanda 2 del experto en la página portátil, y después la concordancia de
+  las tres corridas;
 - la segunda anotadora sobre 50 ítems de la tanda 1.
 
 ---
