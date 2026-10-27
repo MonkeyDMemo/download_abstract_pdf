@@ -8,6 +8,65 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 27 de octubre de 2026 — Ouroboros en la calibración y la tanda 1, y el prompt congelado
+
+Hermes corrió los pasos 1 y 2 de `servidor-cierre.md` §7, con `main` en
+`67e9179`.
+- **El entorno:** `.venv-ouroboros` con Python 3.12.11, `strands-agents`
+  1.62.0, `evals` 1.7.0, `tools` 0.8.10, `ollama` 0.6.3 y `pydantic` 2.14.1.
+- **Las pruebas:** pasan las 199 de `grn_ouroboros`.
+- **El humo** confirma el digest `500a1f067a9f` y Q4_K_M.
+
+**Calibración** (27 ítems sintéticos, contra la llave):
+- **La principal** deja 11 de 27 ítems idénticos, con 1 abstención y 3.6 s
+  por ítem.
+- **Con think** deja 15 de 27, con 1 abstención y 18.6 s por ítem.
+- **Con think, f16 no cabe:** con `num_ctx` 8 192 y caché f16 ocupa 6.15 GiB,
+  de los que solo 5.33 quedan en VRAM y el resto se descarga a la CPU. Con
+  `OLLAMA_KV_CACHE_TYPE=q8_0` y `OLLAMA_FLASH_ATTENTION=1` entra completo en
+  5.24 GiB.
+  - La carpeta f16 quedó incompleta y se descarta.
+  - Valen `calibracion_con_think_q8` y `tanda1_con_think_q8`.
+
+**Tanda 1** (198 anotadas por el experto; la abstención cuenta como error):
+- **El acuerdo:**
+  - principal: relación 60.1 % (κ 0.316), dirección 72.2 % y signo 58.6 %;
+    8 abstenciones;
+  - `buscar_locus`: relación 63.6 % (κ 0.329); 11 abstenciones;
+  - con think: relación 62.1 % (κ 0.353); 6 abstenciones, 1 de ellas
+    truncada.
+
+  El acuerdo en `tipo` (de 43 % a 48 %) lleva la salvedad de la tanda 1.
+- **Como filtro de los pares del bronce:**
+  - principal: 66/70 = 94.3 % [86.2, 97.8], retiene 66/105 = 62.9 %;
+  - `buscar_locus`: 74/84 = 88.1 %, retiene 70.5 %;
+  - con think: 72/75 = 96.0 %, retiene 68.6 %.
+
+  - **Contra el bronce (53.0 %),** los IC 95 % de la diferencia pareada van de
+    [+27.5, +42.4] (`buscar_locus`) a [+35.8, +50.2] (con think).
+  La red de *E. coli* da 61.3 % y retiene 82.9 %. El filtro es mucho más
+  preciso y deja fuera una de cada tres verdaderas.
+- **Es exploratorio:** la tanda 1 es de desarrollo, y el prompt se escribió
+  sabiendo cómo se había desviado el experto en ella.
+
+**El paso 3, el congelamiento** (`protocolo-tanda2.md`, enmienda 3):
+- **El prompt:** v0, sin cambios desde `e4d2071`. La calibración y la tanda 1
+  no lo movieron. Su sha256 y las huellas que guarda cada `corrida.json`
+  quedan en la enmienda.
+- **Las tres corridas sobre la tanda 2:** la principal pre-registrada, sin
+  think; `buscar_locus`; y con think, declarada con q8_0 porque f16 no cabe.
+- **Herramientas:** `todas` no corre en el servidor, porque falta la base de
+  la corrida 4. Las tres semillas siguen opcionales.
+- **Las cifras** quedan en `docs/ouroboros-v0.md` y en la hoja (§5 i).
+
+**Abierto:**
+- la tanda 2 del experto en la página portátil;
+- las tres corridas de Ouroboros sobre la tanda 2 (`servidor-cierre.md` §7,
+  paso 4);
+- la segunda anotadora sobre 50 ítems de la tanda 1.
+
+---
+
 ## 23 de octubre de 2026 — resultados del contraste y de la tanda 1, y el diseño de desarrollo y prueba
 
 La reunión se canceló y el servicio social se entrega con decisiones por

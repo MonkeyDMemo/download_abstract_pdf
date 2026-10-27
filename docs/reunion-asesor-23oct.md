@@ -351,6 +351,23 @@ el §5 d y g. Las candidatas nuevas se quedan en la carpeta confidencial.
   - `--num-ctx` y `--kv-cache` se pueden cambiar por corrida, y entran a la
     llave de la caché. El tipo de caché KV se declara, porque Ollama no lo
     informa.
+- **Lo medido en la tanda 1,** que es de desarrollo, con la abstención como
+  error:
+  - **El acuerdo con el experto en `relacion`:** 60 a 64 %, con κ de 0.32 a
+    0.35.
+  - **Como filtro de los pares del bronce:**
+
+    | corrida | precisión con dirección | retiene de las verdaderas |
+    |---|---|---|
+    | principal | 66/70 = 94.3 % | 62.9 % |
+    | con think | 72/75 = 96.0 % | 68.6 % |
+
+    La red de *E. coli* da 61.3 % y retiene 82.9 %.
+  - El detalle está en `docs/ouroboros-v0.md`.
+- **El prompt v0 se congeló sin cambios** antes de la tanda 2
+  (`protocolo-tanda2.md`, enmienda 3). Ahí se corren la principal,
+  `buscar_locus` y con think. Con think va con caché q8_0, porque con f16 no
+  cabe en los 8 GB.
 - **Su cifra no entra a la red ni a la entrega:** es una comparación.
 - **Si prefiere** que juzgue con herramientas: `--herramientas todas`. La
   corrida queda como secundaria, porque un juez que sabe más que el experto

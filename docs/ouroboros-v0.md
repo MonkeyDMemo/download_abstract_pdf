@@ -29,6 +29,10 @@ de anotar. El juez nunca es Claude: el modelo va siempre explícito.
 | `num_predict` | 512 | 4 096 |
 | caché KV | f16 | f16 |
 
+- **En el servidor, `con_think` corre con la caché q8_0.** Con f16, los 8 192
+  de contexto no caben en los 8 GB. Se arranca Ollama con
+  `OLLAMA_KV_CACHE_TYPE=q8_0` y `OLLAMA_FLASH_ATTENTION=1`, y la corrida lleva
+  `--kv-cache q8_0` (`protocolo-tanda2.md`, enmienda 3).
 - **Herramientas**, la otra dimensión: `ninguna` (por omisión), `buscar_locus`
   o `todas` (además `es_tf`, `operon_de`, `funcion_anotada` y `contexto`).
 - **Sin herramientas, la respuesta va restringida al esquema** (`format`).
@@ -188,3 +192,53 @@ nohup $OPY -m grn_ouroboros.cli anotar --hoja <muestra_t2>/hoja_tanda1.csv \
 - con `evals`, además `experimento.json` (un caso por ítem, con su oración)
   e `informe_evals.json` (los casos con el veredicto y lo que dijo cada
   evaluador).
+
+## Lo medido antes de la tanda 2
+
+Hermes lo corrió en el servidor con `main` en `67e9179`.
+- **El entorno:** `.venv-ouroboros` con Python 3.12.11 y las versiones fijadas.
+- **Las pruebas:** pasan las 199 del paquete.
+- **El humo** confirma el digest `500a1f067a9f` y la cuantización Q4_K_M.
+
+El prompt v0 no se ajustó con nada de esto, y quedó congelado
+(`protocolo-tanda2.md`, enmienda 3).
+
+**Calibración** (27 ítems sintéticos; acuerdo con la llave):
+
+| | idénticos | relación | dirección | signo | tipo | negada | especulativa | abstenciones | s por ítem |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| principal | 11/27 | 74 % | 81 % | 63 % | 67 % | 89 % | 93 % | 1 | 3.6 |
+| con think (q8_0) | 15/27 | 85 % | 89 % | 81 % | 67 % | 96 % | 96 % | 1 | 18.6 |
+
+La primera corrida con think, con caché f16, quedó incompleta porque no cabía,
+y se descarta. Valen `calibracion_con_think_q8` y `tanda1_con_think_q8`.
+
+**Tanda 1** (198 anotadas por el experto; la abstención cuenta como error):
+
+| | relación (κ) | dirección (κ) | signo (κ) | tipo | negada | especulativa | abstenciones | s por ítem |
+|---|---|---|---|---:|---:|---:|---:|---:|
+| principal | 60.1 % (0.316) | 72.2 % (0.562) | 58.6 % (0.433) | 43.4 % | 93.4 % | 84.3 % | 8 | 4.2 |
+| `buscar_locus` | 63.6 % (0.329) | 73.2 % (0.571) | 61.1 % (0.463) | 45.5 % | 92.9 % | 80.3 % | 11 | — |
+| con think (q8_0) | 62.1 % (0.353) | 72.2 % (0.585) | 63.6 % (0.507) | 48.0 % | 94.4 % | 90.4 % | 6, 1 truncada | 16.9 |
+
+**Como filtro de los pares del bronce:** acepta si dice `si` con la dirección
+del bronce.
+
+| | precisión con dirección | retiene de las verdaderas | filtro − bronce, IC 95 % |
+|---|---|---|---|
+| principal | 66/70 = 94.3 % [86.2, 97.8] | 66/105 = 62.9 % | [+33.8, +48.9] |
+| `buscar_locus` | 74/84 = 88.1 % [79.5, 93.4] | 70.5 % | [+27.5, +42.4] |
+| con think (q8_0) | 72/75 = 96.0 % [88.9, 98.6] | 68.6 % | [+35.8, +50.2] |
+
+**Lectura, con sus cautelas:**
+- **Sobre los mismos ítems, la red de *E. coli*** da 87/142 = 61.3 % y retiene
+  el 82.9 % de las verdaderas.
+- **Ouroboros como filtro** es mucho más preciso y retiene menos: descarta una
+  de cada tres verdaderas.
+- **El acuerdo campo por campo es moderado:** κ de 0.32 a 0.35 en relación.
+- **El acuerdo en `tipo`** lleva la salvedad de la tanda 1: el experto marcó
+  «directa» donde la rúbrica pide `no_se`.
+- **La tanda 1 es de desarrollo.** El prompt se escribió el 23-oct,
+  sabiendo ya en qué se había desviado el experto en ella (la calibración 2).
+  Que no se haya ajustado con sus cifras no la vuelve de prueba. La cifra que
+  cuenta es la de la tanda 2.

@@ -168,3 +168,39 @@ carpeta no tiene `anotaciones.jsonl`.
 - **El κ entre humanos** no es de la tanda 2, que sigue con una sola
   anotadora. Sale de la segunda anotadora sobre 50 ítems de la tanda 1, y es
   exploratorio (bitácora del 23-oct).
+
+## Enmienda 3 (27-oct-2026): el prompt de Ouroboros, congelado sin cambios
+
+Es anterior a correr Ouroboros sobre la tanda 2. Lo que se vio antes son las
+cifras de la calibración, que es sintética, y las de la tanda 1, que es de
+desarrollo (bitácora del 27-oct).
+
+- **El prompt v0 no se ajustó** con la calibración ni con la tanda 1. Se
+  congela tal como entró en `e4d2071`, sin cambios:
+  - `grn_ouroboros/prompts/anotador_v0.md`, sha256
+    `0871a83924ca8bfe936434f9630a459b318d534aa0c7ef757c3282221ed77796`;
+  - la huella que guarda cada `corrida.json` (`agente.huella_prompt`: el
+    sistema más la plantilla del mensaje):
+    - sin herramientas, `2f80f09a5850fbf7860d8cb305dbf5fd47703b3aa97df86ab9cc72ace9d7ddcc`;
+    - con `buscar_locus`, `c90cf9f2317ad4ea0a254a931c7ca60b455f9adcf5412a8cf1a57d06b412647c`.
+  - Una corrida de la tanda 2 con otra huella no cuenta.
+- **Las tres corridas sobre la tanda 2:**
+
+  | corrida | configuración | papel |
+  |---|---|---|
+  | principal | sin think, T = 0, semilla 42, `num_ctx` 4 096, `num_predict` 512 | la que se reporta primero |
+  | `buscar_locus` | la principal con `--herramientas buscar_locus` | secundaria |
+  | con think | T = 0.6, top_p 0.95, top_k 20, `num_ctx` 8 192, `num_predict` 4 096, **caché KV q8_0** | secundaria |
+
+- **Con think va con la caché q8_0** y `OLLAMA_FLASH_ATTENTION=1`. Con f16, el
+  contexto de 8 192 no cabe en los 8 GB: ocupa 6.15 GiB, de los que solo
+  5.33 quedan en VRAM y el resto se descarga a la CPU. Es la salida que la
+  tabla de arriba ya preveía, y no recorta el contexto.
+- **Las herramientas son solo `buscar_locus`.** `todas` necesita la base de la
+  corrida 4, que no está en el servidor. Las otras cuatro pasan a la tesis,
+  como estaba previsto si había atraso.
+- **Las tres semillas no se corren.** Siguen siendo opcionales, si sobra
+  tiempo, y entonces se reportan como variabilidad.
+- **Cómo se reporta:** igual que en la tanda 1, con `concordancia` contra la
+  exportación del experto, la abstención como error y el filtro con la llave.
+  En la tanda 2, `tipo` se compara sin salvedad.

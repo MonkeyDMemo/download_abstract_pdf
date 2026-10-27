@@ -6,8 +6,14 @@ Claude del usuario que entra por SSH con llave, con el VoBo del asesor. La
 sesión de la laptop no corre nada aquí: deja los comandos y lee los conteos que
 Hermes reporta.
 
-**Estado:** §0 a §6 corrieron el 24-oct entre 01:01 y 01:02 UTC con `main` en
-`d530907`, y todo coincidió (bitácora del 23-oct). Falta §7, Ouroboros.
+**Estado:**
+- §0 a §6 corrieron el 24-oct entre 01:01 y 01:02 UTC con `main` en
+  `d530907`, y todo coincidió (bitácora del 23-oct).
+- De §7 corrieron 1 y 2 (la calibración y la tanda 1) con `67e9179`
+  (bitácora del 27-oct).
+- El 3 está hecho: el prompt se congeló sin cambios (`protocolo-tanda2.md`,
+  enmienda 3).
+- Falta el 4, la tanda 2.
 
 **Reglas** (`CLAUDE.md`, Confidencialidad):
 - **Se corre solo `origin/main`,** después de `git pull --ff-only`: nunca una
@@ -286,25 +292,44 @@ $OPY -m grn_verificacion.cli concordancia \
   tiempo. `todas` necesita la base de la corrida 4, que no está en el
   servidor.
 
-**3. El congelamiento del prompt,** en la laptop y no aquí:
-- con lo que vuelva de 1 y 2, la sesión principal ajusta el prompt si hace
-  falta, y lo declara;
-- después lo congela con un commit, y anota su sha256 en una enmienda de
-  `docs/protocolo-tanda2.md`.
+**3. El congelamiento del prompt:** hecho el 27-oct, en la laptop. El prompt v0
+quedó sin cambios, y su huella está en la enmienda 3 de
+`docs/protocolo-tanda2.md`:
+- sin herramientas, `2f80f09a…`;
+- con `buscar_locus`, `c90cf9f2…`.
 
-**4. Tanda 2:** solo después del congelamiento, y con el prompt de ese commit.
+**4. Tanda 2:** las tres corridas de la enmienda 3, con `main` al día. Primero
+la principal y `buscar_locus`, con Ollama arrancado como siempre:
 
 ```bash
-nohup $OPY -m grn_ouroboros.cli anotar --hoja ~/grn-guillermo/revision/muestra200_t2/hoja_tanda1.csv \
-    --salida salidas/ouroboros/tanda2_principal --config principal \
-    > salidas/ouroboros/tanda2_principal.log 2>&1 &
+H=~/grn-guillermo/revision/muestra200_t2/hoja_tanda1.csv
+nohup $OPY -m grn_ouroboros.cli anotar --hoja $H     --salida salidas/ouroboros/tanda2_principal --config principal     > salidas/ouroboros/tanda2_principal.log 2>&1 &
+# cuando termine:
+nohup $OPY -m grn_ouroboros.cli anotar --hoja $H     --salida salidas/ouroboros/tanda2_buscar_locus --config principal     --herramientas buscar_locus     > salidas/ouroboros/tanda2_buscar_locus.log 2>&1 &
 ```
 
-- **La ceguera:** Hermes no abre nada de `salidas/ouroboros/tanda2_*`.
+Después, con think, reiniciando Ollama con la caché q8_0, como en la
+calibración:
+
+```bash
+~/grn-guillermo/ollama.sh stop
+OLLAMA_KV_CACHE_TYPE=q8_0 OLLAMA_FLASH_ATTENTION=1 ~/grn-guillermo/ollama.sh start
+nohup $OPY -m grn_ouroboros.cli anotar --hoja $H     --salida salidas/ouroboros/tanda2_con_think_q8 --config con_think --kv-cache q8_0     > salidas/ouroboros/tanda2_con_think_q8.log 2>&1 &
+```
+
+- **La huella:** antes de reportar, Hermes comprueba en el `corrida.json` de
+  cada corrida que `identidad.entradas.prompt` sea la de la enmienda 3. Si no
+  lo es, la corrida no cuenta.
+- **La ceguera:**
+  - Hermes no abre `anotaciones.csv`, `veredictos.jsonl`, `experimento.json`
+    ni `informe_evals.json` de `salidas/ouroboros/tanda2_*`;
+  - sí `corrida.json`, que no lleva oraciones.
 - **A la laptop vuelven** solo `corrida.json` y lo que imprime `anotar`, que
   son conteos.
-- **La concordancia de la tanda 2** se corre cuando el experto termine, con
-  su exportación, y la decide el protocolo.
+- **La concordancia de la tanda 2** se corre cuando el experto termine. El
+  usuario sube su exportación a `~/grn-guillermo/revision/muestra200_t2/`, sin
+  abrirla, y se corre `concordancia` como en el paso 2, con `--llave` de esa
+  carpeta.
 
 **Al terminar:** `~/grn-guillermo/ollama.sh stop`. Si algo pasa de 4 horas, se
 detiene y se anota (`CLAUDE.md`, máquina del laboratorio).
