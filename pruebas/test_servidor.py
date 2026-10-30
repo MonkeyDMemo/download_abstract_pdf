@@ -928,6 +928,39 @@ class PruebasIntroYRed(BasePruebaServidor):
         recolorear un escudo institucional."""
         self.assertIn("placa-logo", self.pagina)
 
+    def test_abre_en_la_portada_del_proyecto(self):
+        """La pestana que abre explica que hace el proyecto; el Panel del ETL
+        sigue a un clic."""
+        import re
+        activa = re.search(r'<button class="pestana activa"[^>]*'
+                           r'data-seccion="(\w+)"', self.pagina)
+
+        self.assertIsNotNone(activa, "ninguna pestana abre activa")
+        self.assertEqual(activa.group(1), "proyecto")
+        self.assertIn('<section class="seccion visible" id="sec-proyecto">',
+                      self.pagina)
+        self.assertIn('<section class="seccion" id="sec-panel">', self.pagina)
+        self.assertIn('var seccionActual = "proyecto";', self.pagina)
+
+    def test_las_cifras_de_la_portada_dicen_de_donde_salen(self):
+        """Estan escritas a mano: sin la fuente al pie nadie sabria de que
+        corrida son ni cuando envejecieron."""
+        self.assertIn("pr-fuente", self.pagina)
+        self.assertIn("docs/reunion-asesor-23oct.md", self.pagina)
+
+    def test_la_portada_se_anima_sin_biblioteca(self):
+        """Lo que harian Anime.js o Motion, con la Web Animations API."""
+        self.assertIn("IntersectionObserver", self.pagina)
+        for biblioteca in ("anime.min.js", "anime.esm", "motion.min.js",
+                           "framer-motion"):
+            self.assertNotIn(biblioteca, self.pagina)
+
+    def test_el_panel_siembra_su_red_aunque_no_abra_primero(self):
+        """Oculto al cargar, el lienzo mide cero y no siembra nodos: se
+        siembra cuando el Panel se muestra."""
+        self.assertIn("if (visible && !nodos.length) { reiniciar(); return; }",
+                      self.pagina)
+
 
 class PruebasArchivosDeDocumento(BasePruebaServidor):
     """Las rutas que sirven el texto y el PDF de un documento.

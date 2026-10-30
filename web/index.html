@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tablero GRN - ETL de PubMed</title>
+<title>Tablero GRN - de la literatura a la red de regulación</title>
 <style>
 /* Sin librerias externas: la maquina de laboratorio puede no tener salida a
    internet. Todo el CSS y el JavaScript viven en este archivo, por la misma
@@ -593,6 +593,86 @@ mark.e2::after { content: "2"; }
   .tarjeta { padding: 12px; }
   .cifra .n { font-size: 22px; }
 }
+/* =========================================================== PROYECTO */
+/* La portada que explica el proyecto. Las gráficas son CSS y las animaciones
+   son nativas (Web Animations API e IntersectionObserver): lo que harían
+   Anime.js o Motion, sin meter una biblioteca a un tablero de un solo
+   archivo. */
+.pr-hero {
+  display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
+  gap: 22px; padding: 26px; position: relative; overflow: hidden;
+  background:
+    radial-gradient(900px 320px at -8% -45%, rgba(145, 132, 217, .20), transparent 62%),
+    radial-gradient(600px 260px at 110% 120%, rgba(125, 219, 164, .07), transparent 60%),
+    var(--panel);
+}
+.pr-kicker { font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+             color: var(--acento); margin-bottom: 8px; }
+.pr-titulo { font-size: 27px; line-height: 1.18; margin-bottom: 12px; letter-spacing: -.01em; }
+.pr-lead { font-size: 15px; line-height: 1.62; max-width: 64ch; margin-bottom: 14px; }
+.pr-pastillas { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; padding: 0; margin: 0; }
+.pr-pastillas li { font-size: 12.5px; background: var(--acento2); border: 1px solid var(--borde);
+                   border-radius: 999px; padding: 3px 11px; }
+.pr-hero-cifras { display: grid; gap: 10px; align-content: center; }
+.pr-kpi { display: flex; flex-direction: column; gap: 3px; padding: 11px 14px;
+          border: 1px solid var(--borde2); border-radius: var(--radio); background: var(--panel2); }
+.pr-n { font-size: 28px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.pr-et { font-size: 12.5px; color: var(--tenue); line-height: 1.4; }
+.pr-kpi.grande .pr-n { font-size: 38px; color: var(--acento); }
+.pr-h3 { margin-bottom: 14px; }
+
+.pr-flujo { list-style: none; padding: 0; margin: 0; position: relative;
+            display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+.pr-flujo::before {
+  content: ""; position: absolute; left: 18px; right: 18px; top: 17px; height: 2px;
+  background: linear-gradient(90deg, var(--acento), rgba(145, 132, 217, .18));
+  transform-origin: left center;
+}
+.pr-flujo.pr-dibujar::before { animation: pr-linea 1.3s cubic-bezier(.2, .7, .2, 1) both; }
+@keyframes pr-linea { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.pr-paso { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.pr-num { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center;
+          font-weight: 700; background: var(--panel2); border: 2px solid var(--acento);
+          position: relative; z-index: 1; margin-bottom: 6px;
+          box-shadow: 0 0 0 4px var(--panel), 0 0 14px rgba(145, 132, 217, .35); }
+.pr-paso strong { font-size: 14px; }
+.pr-desc { font-size: 12.5px; color: var(--tenue); line-height: 1.45; }
+.pr-exploratorio .pr-num { border-style: dashed; }
+
+.pr-rejilla { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.pr-rejilla > .tarjeta { margin-bottom: 0; }
+.pr-rejilla { margin-bottom: 14px; }
+.pr-barras { display: grid; gap: 11px; margin: 14px 0; }
+.pr-barra { display: grid; grid-template-columns: 190px minmax(0, 1fr) 64px; align-items: center; gap: 10px; }
+.pr-nombre { font-size: 13px; }
+.pr-pista { height: 12px; background: var(--panel2); border: 1px solid var(--borde2);
+            border-radius: 999px; overflow: hidden; }
+.pr-relleno { display: block; height: 100%; background: var(--acento); border-radius: 999px;
+              transform-origin: left center; }
+.pr-relleno.pr-tenue { background: #5b5f74; }
+.pr-relleno.pr-ok { background: var(--ok); }
+.pr-valor { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+.pr-ahorro { display: grid; gap: 10px; margin: 4px 0 12px; }
+
+.pr-confianza, .pr-sigue { list-style: none; padding: 0; margin: 0; display: grid; gap: 9px; }
+.pr-confianza li, .pr-sigue li { font-size: 13.5px; line-height: 1.55; padding-left: 14px;
+                                 border-left: 2px solid var(--acento2); }
+.pr-estado { display: inline-block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+             border-radius: 999px; padding: 1px 8px; margin-right: 6px; border: 1px solid var(--borde); }
+.pr-estado.en-curso { color: var(--alerta); background: var(--alerta2); }
+.pr-estado.listo { color: var(--ok); background: var(--ok2); }
+.pr-estado.despues { color: var(--tenue); }
+.pr-fuente { margin-top: 14px; }
+
+@media (max-width: 900px) {
+  .pr-hero, .pr-rejilla { grid-template-columns: 1fr; }
+  .pr-flujo { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pr-flujo::before { display: none; }
+  .pr-barra { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 56px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pr-flujo.pr-dibujar::before { animation: none; }
+}
 </style>
 </head>
 <body>
@@ -604,8 +684,8 @@ mark.e2::after { content: "2"; }
            alt="Universidad Nacional Autónoma de México · IIMAS">
     </span>
     <div>
-      <h1>Tablero GRN <span class="et-nombre">·</span> ETL de PubMed</h1>
-      <p class="sub">Descarga y control de literatura científica</p>
+      <h1>Tablero GRN <span class="et-nombre">·</span> de la literatura a la red de regulación</h1>
+      <p class="sub">Propone cada relación regulador → blanco con la oración que la sostiene, y mide qué tan bien lo hace</p>
     </div>
   </div>
   <div class="conexion">
@@ -619,7 +699,8 @@ mark.e2::after { content: "2"; }
 </div>
 
 <nav class="pestanas" id="pestanas" role="tablist">
-  <button class="pestana activa" role="tab" aria-selected="true" data-seccion="panel">Panel</button>
+  <button class="pestana activa" role="tab" aria-selected="true" data-seccion="proyecto">Proyecto</button>
+  <button class="pestana" role="tab" aria-selected="false" data-seccion="panel">Panel</button>
   <button class="pestana" role="tab" aria-selected="false" data-seccion="consultas">Consultas</button>
   <button class="pestana" role="tab" aria-selected="false" data-seccion="documentos">Documentos</button>
   <button class="pestana" role="tab" aria-selected="false" data-seccion="descargas">Descargas</button>
@@ -632,8 +713,135 @@ mark.e2::after { content: "2"; }
 
 <main>
 
+<!-- =========================================================== PROYECTO -->
+<!-- La portada: qué hace el proyecto, cómo, qué tan bien y qué falta. Las
+     cifras están escritas a mano y llevan su fuente al pie; se actualizan
+     cuando cambia la hoja de entrega. -->
+<section class="seccion visible" id="sec-proyecto">
+
+  <div class="tarjeta pr-hero">
+    <div class="pr-hero-texto">
+      <p class="pr-kicker">Servicio social · IIMAS, UNAM</p>
+      <h2 class="pr-titulo">De la literatura a la red de regulación génica</h2>
+      <p class="pr-lead">Curar a mano una red de regulación obliga a leer miles
+         de artículos para encontrar, oración por oración, qué gen regula a
+         cuál. Este proyecto automatiza esa primera lectura: el sistema propone
+         cada relación <strong>regulador → blanco</strong> con la oración y el
+         artículo que la sostienen, y la persona experta solo revisa.</p>
+      <ul class="pr-pastillas">
+        <li>Organismo de prueba: <em>Pseudomonas aeruginosa</em> PAO1</li>
+        <li>Referencia: una base curada a mano de 5,584 relaciones</li>
+        <li>Todo corre en la máquina, sin servicios externos</li>
+      </ul>
+    </div>
+    <div class="pr-hero-cifras">
+      <div class="pr-kpi"><span class="pr-n" data-valor="2354">2,354</span><span class="pr-et">artículos procesados en el flujo</span></div>
+      <div class="pr-kpi"><span class="pr-n" data-valor="29659">29,659</span><span class="pr-et">oraciones candidatas</span></div>
+      <div class="pr-kpi"><span class="pr-n" data-valor="8827">8,827</span><span class="pr-et">relaciones en la red, cada una con su evidencia</span></div>
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <h3 class="pr-h3">Cómo funciona</h3>
+    <ol class="pr-flujo" id="pr-flujo">
+      <li class="pr-paso"><span class="pr-num">1</span><strong>Literatura</strong>
+        <span class="pr-desc">Consultas a PubMed, y el texto completo de PMC cuando es de acceso abierto.</span></li>
+      <li class="pr-paso"><span class="pr-num">2</span><strong>Bronce</strong>
+        <span class="pr-desc">Oraciones donde aparecen un posible regulador y su blanco, con los genes y operones del genoma.</span></li>
+      <li class="pr-paso"><span class="pr-num">3</span><strong>Clasificador</strong>
+        <span class="pr-desc">BioBERT decide si la oración afirma una regulación y con qué signo.</span></li>
+      <li class="pr-paso"><span class="pr-num">4</span><strong>Red</strong>
+        <span class="pr-desc">Se juntan las oraciones de cada par: la arista lleva sus oraciones, sus artículos y su nivel de soporte.</span></li>
+      <li class="pr-paso pr-exploratorio"><span class="pr-num">5</span><strong>Juez Ouroboros</strong>
+        <span class="pr-desc">Un modelo de lenguaje local revisa cada oración con la misma guía que el experto. Marca, no borra. Exploratorio.</span></li>
+      <li class="pr-paso"><span class="pr-num">6</span><strong>Revisión ciega</strong>
+        <span class="pr-desc">Una persona experta anota una muestra al azar sin saber qué propuso el sistema. Así se mide la calidad.</span></li>
+    </ol>
+  </div>
+
+  <div class="pr-rejilla">
+    <div class="tarjeta">
+      <h3 class="pr-h3">Precisión en la muestra ciega</h3>
+      <p class="sub">Qué fracción de lo propuesto confirma el experto, con la dirección correcta. Tanda 1: 198 oraciones al azar.</p>
+      <div class="pr-barras">
+        <div class="pr-barra"><span class="pr-nombre">Sin filtro (bronce)</span><span class="pr-pista"><span class="pr-relleno pr-tenue" style="width:53%"></span></span><span class="pr-valor">53.0&#8239;%</span></div>
+        <div class="pr-barra"><span class="pr-nombre">Red</span><span class="pr-pista"><span class="pr-relleno" style="width:61.3%"></span></span><span class="pr-valor">61.3&#8239;%</span></div>
+        <div class="pr-barra"><span class="pr-nombre">Juez Ouroboros</span><span class="pr-pista"><span class="pr-relleno pr-ok" style="width:94.3%"></span></span><span class="pr-valor">94.3&#8239;%</span></div>
+      </div>
+      <p class="sub">La red conserva 83&#8239;% de las relaciones verdaderas; Ouroboros,
+         más estricto, 63&#8239;% (96.0&#8239;% de precisión y 69&#8239;% conservado
+         cuando razona antes de responder). La mejora de la red sobre el bronce es
+         significativa: de +3.7 a +12.6 puntos.</p>
+    </div>
+    <div class="tarjeta">
+      <h3 class="pr-h3">Contra la base curada</h3>
+      <p class="sub">De las 1,560 relaciones de la base cuyo artículo está en el corpus (sin las que se usaron para entrenar BioBERT):</p>
+      <div class="pr-barras">
+        <div class="pr-barra"><span class="pr-nombre">Alcanzable con las oraciones</span><span class="pr-pista"><span class="pr-relleno pr-tenue" style="width:46.2%"></span></span><span class="pr-valor">46.2&#8239;%</span></div>
+        <div class="pr-barra"><span class="pr-nombre">La red las encuentra</span><span class="pr-pista"><span class="pr-relleno" style="width:43.2%"></span></span><span class="pr-valor">43.2&#8239;%</span></div>
+      </div>
+      <p class="sub">La red recupera ~93&#8239;% de lo alcanzable. Lo que falta no está
+         en las oraciones: viene de material suplementario o de artículos sin texto
+         completo. Además propone 7,849 pares que la base no tiene:
+         candidatos para revisar, no hallazgos.</p>
+    </div>
+  </div>
+
+  <div class="pr-rejilla">
+    <div class="tarjeta">
+      <h3 class="pr-h3">Cuánto trabajo ahorra</h3>
+      <div class="pr-ahorro">
+        <div class="pr-kpi grande"><span class="pr-n" data-valor="28" data-sufijo="&#8239;%">28&#8239;%</span><span class="pr-et">menos oraciones que leer con el filtro de la red</span></div>
+        <div class="pr-kpi grande"><span class="pr-n" data-valor="35" data-sufijo="&#8239;%">35&#8239;%</span><span class="pr-et">de las oraciones las acepta Ouroboros, con 94&#8239;% de acierto</span></div>
+      </div>
+      <p class="sub">Por cada relación correcta, el experto lee 1.89 oraciones sin
+         filtro y 1.63 con la red. En la tanda 2, con el tiempo por oración, esto
+         se convierte en horas.</p>
+    </div>
+    <div class="tarjeta">
+      <h3 class="pr-h3">El signo: activa o reprime</h3>
+      <div class="pr-ahorro">
+        <div class="pr-kpi grande"><span class="pr-n" data-valor="87.2" data-decimales="1" data-sufijo="&#8239;%">87.2&#8239;%</span><span class="pr-et">de acierto cuando la red da signo, contra 76.5&#8239;% de decir siempre «activa»</span></div>
+      </div>
+      <p class="sub">El reto es que no siempre lo da: si la abstención cuenta como
+         error, decir siempre «activa» gana. Hay una regla de respaldo, apagada por
+         omisión, que se mide en la tanda 2.</p>
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <h3 class="pr-h3">Por qué confiar en el resultado</h3>
+    <ul class="pr-confianza">
+      <li><strong>Cada arista trae su evidencia.</strong> La oración, el artículo y
+          el nivel de soporte: nada se afirma sin poder revisarlo.</li>
+      <li><strong>Evaluación ciega y pre-registrada.</strong> El experto no ve lo que
+          propuso el sistema, y qué se mide se escribe antes de mirar.</li>
+      <li><strong>Desarrollo y prueba separados.</strong> Lo que se ajusta con la
+          tanda 1 se mide en la tanda 2, con otros artículos.</li>
+      <li><strong>Reproducible.</strong> Cada corrida guarda las huellas de sus
+          entradas, sus modelos y su prompt.</li>
+      <li><strong>Los datos confidenciales no salen del servidor.</strong> De la base
+          curada solo viajan conteos.</li>
+    </ul>
+  </div>
+
+  <div class="tarjeta">
+    <h3 class="pr-h3">Qué sigue</h3>
+    <ul class="pr-sigue">
+      <li><span class="pr-estado en-curso">en curso</span> Tanda 2: 200 oraciones nuevas, anotadas por el experto con el tiempo de cada una.</li>
+      <li><span class="pr-estado en-curso">en curso</span> Segunda anotadora: el acuerdo entre dos personas expertas.</li>
+      <li><span class="pr-estado listo">registrado</span> Prueba con artículos nuevos: el protocolo se escribió antes de descargar.</li>
+      <li><span class="pr-estado despues">tesis</span> Material suplementario, más herramientas para el juez y otros organismos.</li>
+    </ul>
+    <p class="sub pr-fuente">Cifras al 27-oct-2026: corrida 4 y red de <em>E. coli</em>.
+       Fuentes: la hoja de entrega (<code>docs/reunion-asesor-23oct.md</code>) y la
+       bitácora. La tanda 1 es de desarrollo; las cifras de prueba saldrán de la
+       tanda 2.</p>
+  </div>
+</section>
+
 <!-- ============================================================== PANEL -->
-<section class="seccion visible" id="sec-panel">
+<section class="seccion" id="sec-panel">
 
   <div class="tarjeta hero">
     <canvas id="lienzo-red" aria-hidden="true"></canvas>
@@ -1446,7 +1654,7 @@ function confirmar(titulo, lineas, textoBoton) {
 
 /* -------------------------------------------------------------- pestanas */
 
-var seccionActual = "panel";
+var seccionActual = "proyecto";
 var yaCargada = {};
 
 function mostrarSeccion(nombre) {
@@ -3507,6 +3715,9 @@ function arrancarRed() {
   function segunVisibilidad() {
     var visible = $("sec-panel").classList.contains("visible")
                   && !document.hidden;
+    // Si el Panel no estaba a la vista al cargar (abre la pestaña Proyecto),
+    // el lienzo midió cero y no sembró nodos: se siembra al mostrarlo.
+    if (visible && !nodos.length) { reiniciar(); return; }
     if (visible && !animacion && !quieto) {
       if (medir()) { animacion = requestAnimationFrame(paso); }
     } else if (!visible && animacion) {
@@ -3521,6 +3732,79 @@ function arrancarRed() {
 }
 
 var redAlCambiarSeccion = function () {};
+
+/* =========================================================== PROYECTO */
+
+/* La portada se anima al entrar en pantalla: cada tarjeta aparece, los
+   contadores suben hasta su cifra, las barras crecen y la línea del flujo se
+   dibuja. Es lo que harían Anime.js o Motion, hecho con la Web Animations API
+   y un IntersectionObserver, porque el tablero no carga bibliotecas.
+   El HTML ya trae el estado final: sin JavaScript, o con
+   prefers-reduced-motion, la portada se ve completa y quieta. */
+function arrancarProyecto() {
+  var sec = $("sec-proyecto");
+  if (!sec) { return; }
+  var quieto = window.matchMedia
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (quieto || !("IntersectionObserver" in window) || !sec.animate) { return; }
+
+  var curva = "cubic-bezier(.2, .7, .2, 1)";
+
+  function formatear(v, decimales) {
+    var partes = v.toFixed(decimales).split(".");
+    partes[0] = partes[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return partes.join(".");
+  }
+
+  function contar(el) {
+    var fin = parseFloat(el.getAttribute("data-valor"));
+    if (isNaN(fin)) { return; }
+    var decimales = parseInt(el.getAttribute("data-decimales") || "0", 10);
+    var sufijo = el.getAttribute("data-sufijo") || "";
+    var final = el.textContent;
+    var t0 = null, dura = 1200;
+    function paso(t) {
+      if (t0 === null) { t0 = t; }
+      var p = Math.min(1, (t - t0) / dura);
+      var suave = 1 - Math.pow(1 - p, 3);
+      el.textContent = p < 1 ? formatear(fin * suave, decimales) + sufijo : final;
+      if (p < 1) { requestAnimationFrame(paso); }
+    }
+    requestAnimationFrame(paso);
+  }
+
+  function animarTarjeta(t) {
+    t.animate([{ opacity: 0, transform: "translateY(14px)" },
+               { opacity: 1, transform: "none" }],
+              { duration: 560, easing: curva, fill: "both" })
+     .onfinish = function () { t.style.opacity = ""; };
+    t.querySelectorAll(".pr-n[data-valor]").forEach(contar);
+    t.querySelectorAll(".pr-relleno").forEach(function (r, i) {
+      r.animate([{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }],
+                { duration: 950, delay: 180 + 120 * i, easing: curva, fill: "backwards" });
+    });
+    t.querySelectorAll(".pr-paso").forEach(function (p, i) {
+      p.animate([{ opacity: 0, transform: "translateY(10px)" },
+                 { opacity: 1, transform: "none" }],
+                { duration: 460, delay: 140 * i, easing: curva, fill: "backwards" });
+    });
+    var flujo = t.querySelector(".pr-flujo");
+    if (flujo) { flujo.classList.add("pr-dibujar"); }
+  }
+
+  var tarjetas = sec.querySelectorAll(".tarjeta");
+  var observador = new IntersectionObserver(function (entradas) {
+    entradas.forEach(function (e) {
+      if (!e.isIntersecting) { return; }
+      observador.unobserve(e.target);
+      animarTarjeta(e.target);
+    });
+  }, { threshold: 0.15 });
+  tarjetas.forEach(function (t) {
+    t.style.opacity = "0";
+    observador.observe(t);
+  });
+}
 
 /* =========================================================== REVISION */
 
@@ -3798,6 +4082,8 @@ if (location.protocol === "file:") {
   ticker = setInterval(actualizarTiempo, 1000);
   ajustarSondeo();
 }
+// La portada no necesita al servidor: se anima igual abierta como archivo.
+arrancarProyecto();
 </script>
 
 </body>
