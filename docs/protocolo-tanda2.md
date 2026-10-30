@@ -214,3 +214,29 @@ abierto sus salidas.
 - **Lo correcto:** el campo de `corrida.json` donde queda es
   `identidad.entradas.prompt`.
 - **Lo que no cambia:** las huellas, ni nada de lo que se mide.
+
+## Desviación 1 (30-oct-2026): una sesión de Claude vio un respaldo parcial del experto
+
+Es anterior a medir cualquier cifra de la tanda 2.
+- **Qué pasó.** Al compartir en el chat el respaldo de la página portátil
+  (`respaldo_revision_dcb55475.json`), su contenido entró completo al contexto
+  de la sesión «Hermes» (Claude). Su huella, `dcb55475…`, es la de la hoja de
+  `muestra200_t2`. Trae, para los primeros 50 ítems anotados, el id, los juicios
+  del experto (relación, dirección, signo, tipo, negada, especulativa y
+  comentario) y sus horas. No trae oraciones, PMIDs, la llave ni predicciones.
+- **Por qué no cambia lo que se mide.** Todo lo que se compara con el experto
+  quedó congelado antes de que empezara a anotar, el 29-oct a las 22:36, hora
+  del centro de México:
+  - las redes y sus huellas, en la enmienda 1 (23-oct);
+  - el prompt de Ouroboros, en la enmienda 3 (`451f20a`, 27-oct, 01:04);
+  - las tres corridas de Ouroboros sobre la tanda 2, terminadas el 27-oct entre
+    las 01:18 y las 02:14, con las huellas de la enmienda 3.
+
+  Después de esto no se toca ningún parámetro, umbral ni prompt, y Hermes no
+  analizó esos juicios.
+- **Lo que se hace desde ahora.** Los archivos de la tanda 2 (respaldos y
+  exportación) no se pegan ni se adjuntan en ninguna sesión de Claude. Se
+  guardan en `salidas/revision/muestra200_t2/` y se procesan con los comandos
+  de `docs/servidor-cierre.md`, que imprimen solo conteos.
+- **Cómo se reporta.** En el informe va como desviación, junto a las cifras de
+  la tanda 2.
