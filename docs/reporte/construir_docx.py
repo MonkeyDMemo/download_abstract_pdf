@@ -1,4 +1,4 @@
-"""Genera el reporte en Word a partir de docs/reporte/reporte.md.
+"""Genera la memoria técnica en Word a partir de docs/reporte/reporte.md.
 
 El texto fuente es el Markdown: se edita ahí y este script rehace el .docx,
 así que el Word nunca queda desactualizado respecto al repositorio.
@@ -390,7 +390,7 @@ def main():
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument("--fuente", type=Path, default=AQUI / "reporte.md")
     ap.add_argument("--salida", type=Path,
-                    default=RAIZ / "salidas" / "reporte" / "Reporte_servicio_social.docx")
+                    default=RAIZ / "salidas" / "reporte" / "Memoria_tecnica_servicio_social.docx")
     args = ap.parse_args()
     print(construir(args.fuente, args.salida))
 

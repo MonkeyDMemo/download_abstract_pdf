@@ -1,13 +1,13 @@
-# El reporte técnico
+# La memoria técnica
 
-`reporte.md` es el texto fuente del reporte del servicio social. El Word se
+`reporte.md` es el texto fuente de la memoria técnica del servicio social. El Word se
 genera a partir de él: **se edita el Markdown, nunca el Word**.
 
 | Archivo | Qué es |
 |---|---|
 | `reporte.md` | el texto, con las figuras como bloques mermaid (GitHub las dibuja) |
 | `figuras/*.png` | las mismas figuras exportadas, que el Word inserta |
-| `construir_docx.py` | genera `salidas/reporte/Reporte_servicio_social.docx` |
+| `construir_docx.py` | genera `salidas/reporte/Memoria_tecnica_servicio_social.docx` |
 
 ## Generar el Word
 
