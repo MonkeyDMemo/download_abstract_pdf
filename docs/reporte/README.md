@@ -45,6 +45,13 @@ flowchart TB
    doble de tamaño.
 3. Se vuelve a correr `construir_docx.py`.
 
+## Texto privado
+
+Lo que va en el Word para el asesor pero no en el repositorio público (el
+nombre y el CV del anotador) vive en `salidas/reporte/privado/<clave>.md`, fuera
+de git. En `reporte.md` se marca con `<!-- privado: clave -->`; sin el archivo,
+el Word sale igual, sin ese texto.
+
 ## Lo que nunca va en el reporte
 
 El repositorio es público. Del reporte quedan fuera las filas de la base

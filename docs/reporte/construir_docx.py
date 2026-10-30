@@ -18,7 +18,10 @@ Entiende el Markdown que usa reporte.md y nada más:
 - **negritas**, *cursivas* y `código` dentro del texto;
 - una figura es un comentario `<!-- figura: nombre | pie -->` seguido de su
   bloque mermaid. GitHub dibuja el bloque; aquí se inserta
-  `figuras/nombre.png`, que se exporta del mismo bloque.
+  `figuras/nombre.png`, que se exporta del mismo bloque;
+- `<!-- privado: clave -->` inserta `salidas/reporte/privado/clave.md`, que
+  está fuera de git: lo que no puede ir al repositorio público, como el nombre
+  y el CV del anotador. Si el archivo no existe, no se inserta nada.
 """
 
 import argparse
@@ -35,6 +38,7 @@ from docx.shared import Cm, Pt, RGBColor
 
 AQUI = Path(__file__).resolve().parent
 RAIZ = AQUI.parent.parent
+PRIVADO = RAIZ / "salidas" / "reporte" / "privado"
 
 MORADO = RGBColor(0x4B, 0x3F, 0xA6)
 GRIS = RGBColor(0x5B, 0x5F, 0x74)
@@ -320,7 +324,19 @@ def construir(fuente, salida):
         l = lineas[i]
         s = l.strip()
         fig = re.match(r"<!-- figura: (\w+) \| (.*?) -->", s)
-        if fig:
+        priv = re.match(r"<!-- privado: (\w+) -->", s)
+        if priv:
+            # Texto que no va al repositorio público (p. ej. el nombre y el CV
+            # del anotador): vive en salidas/reporte/privado/<clave>.md, que
+            # está fuera de git. Si no existe, no se inserta nada.
+            soltar_parrafo(); soltar_lista()
+            ruta = PRIVADO / (priv.group(1) + ".md")
+            if ruta.exists():
+                for bloque in ruta.read_text(encoding="utf-8").split("\n\n"):
+                    if bloque.strip():
+                        texto_con_formato(doc.add_paragraph(),
+                                          " ".join(bloque.split()))
+        elif fig:
             soltar_parrafo(); soltar_lista()
             i += 1
             if i < len(lineas) and lineas[i].strip().startswith("```mermaid"):

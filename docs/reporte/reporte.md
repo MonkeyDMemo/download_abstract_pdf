@@ -244,8 +244,8 @@ flowchart TB
   end
   subgraph A["A · Contraste con la base curada (servidor, confidencial)"]
     direction TB
-    BASE[("Base curada<br/>5,584 relaciones")]:::fuente --> EXI["2,077 exigibles:<br/>su artículo está en el corpus"]:::paso
-    EXI --> EST["1,560 sin las que se usaron<br/>para entrenar BioBERT"]:::paso
+    BASE[("Base curada<br/>5,584 relaciones")]:::fuente --> EXI["2,077 exigibles:<br/>sin homología ni el artículo excluido"]:::paso
+    EXI --> EST["1,560 sin el estrato BioBERT:<br/>no se mide contra el propio modelo"]:::paso
     EST --> M1["Se compara con la red:<br/>cobertura, dirección y signo"]:::ev
   end
   classDef fuente fill:#F6F6FA,stroke:#9A9AB0,color:#1F2133
@@ -254,12 +254,43 @@ flowchart TB
   classDef expl fill:#FFF6E5,stroke:#C8962E,stroke-dasharray:5 3,color:#1F2133
 ```
 
-### 5.1 Contraste con la base curada
+### 5.1 La base curada del laboratorio
 
-- **Exigible:** fila de la base cuyo artículo citado está en el corpus (2,077
-  con la regla versionada).
-- **Estratos:** se separan las filas que se usaron para entrenar BioBERT. La
-  cifra principal usa las 1,560 restantes.
+- **Qué es:** relaciones regulatorias de PAO1 curadas a mano en el laboratorio
+  del asesor. *Por completar con el asesor: quién la curó, en qué periodo y
+  con qué criterios.*
+- **Estructura:** 5,584 filas, 8 columnas: `Source`, `Target`, `Interaction`,
+  `Reference`, `Source_Locus_id`, `Target_Locus_id`, `Origen`,
+  `Contributions`. Vive solo en el servidor; aquí van conteos.
+- **`Interaction`** codifica solo el signo: `+` 4,060 · `-` 598 · `?` 909 ·
+  `d` 14 · ilegible 3.
+- **`Origen`** dice en qué versión de la base está la fila: Histórica 4,824 ·
+  BioBERT 544 · Ambos 216. Las de BioBERT las propuso el modelo del asesor,
+  entrenado con la misma receta que el clasificador de la red.
+- **`Reference`:** 309 PMIDs y 1 DOI. 2,850 filas (51 %) llevan la etiqueta
+  de homología: la relación se infirió (p. ej., desde la cepa PA14) y el
+  artículo citado no la reporta.
+- **Locus:** 5,578 filas con los dos locus válidos; 3,006 locus distintos.
+
+**Denominador exigible** (regla versionada en `grn_verificacion/contraste.py`):
+
+| Paso | Filas |
+|---|---|
+| Filas con los dos locus válidos | 5,578 |
+| − homología (el artículo citado no reporta la relación) | 2,850 |
+| − filas que citan solo el artículo excluido (PMID B: sin XML; el bronce no lee PDF) | 651 |
+| **Exigibles** | **2,077** |
+| de ellas, con su artículo en el corpus | 1,562 (859 con XML, 703 solo resumen) |
+| de ellas, sin el estrato BioBERT (cifra principal) | 1,560 (Histórica 1,359 + Ambos 201) |
+
+### 5.2 Contraste con la base curada
+
+- **Exigible:** ver la tabla anterior. Una fila que no es exigible no se le
+  puede pedir a la red.
+- **Estratos:** el recall se reporta por estrato de `Origen`. La cifra
+  principal excluye las 517 exigibles de origen BioBERT: medir la red contra
+  propuestas de un modelo con la misma receta es circular y sale alto por
+  construcción.
 - **Métricas:** recall dirigido, recall en cualquier dirección, orientación,
   signo (con y sin abstención), techo y candidatas nuevas.
 - **Techo (regla a):** fracción de filas cuyos dos locus aparecen juntos en
@@ -268,7 +299,7 @@ flowchart TB
 - **Dónde:** solo en el servidor (`grn_verificacion.cli contraste`); a la
   laptop baja `CONTRASTE.md` con conteos.
 
-### 5.2 Muestra ciega
+### 5.3 Muestra ciega
 
 - **Unidad:** una oración candidata con su par, sin decir cuál es el regulador.
 - **Sorteo:** `cli muestra` con semilla fija. Tanda 1: 200 ítems (198
@@ -283,7 +314,43 @@ flowchart TB
   sobre los propuestos), retención de las verdaderas y diferencia pareada
   red − bronce con IC 95 %. En la tanda 2 también se mide el tiempo por ítem.
 
-### 5.3 Controles contra sesgo
+### 5.4 Curación experta para validar
+
+La precisión depende del juicio de un anotador. Esta sección dice quién es,
+cómo se preparó y qué tan confiable es su juicio.
+
+- **Anotador principal:** licenciado en Biología (UNAM), con formación en
+  genética y citogenética. No es especialista en regulación transcripcional
+  bacteriana.
+
+<!-- privado: anotador -->
+
+- **Tarea:** juzgar lo que afirma la oración, con las etiquetas de la rúbrica.
+  La rúbrica pide no usar conocimiento externo al texto, lo que reduce la
+  dependencia de la especialidad.
+- **Condiciones:** ciego a la hipótesis y a las predicciones; no sabe que su
+  juicio se compara con el sistema; remunerado por hora.
+- **Preparación:** la rúbrica (`docs/rubrica-anotacion.md`) y la guía
+  (`docs/guia-anotacion.md`). **No hubo sesión de calibración** antes de
+  ninguna tanda. Después de la tanda 1, la guía incorporó las fallas
+  observadas: negación, mutantes que invierten el signo y relaciones de otro
+  organismo.
+- **Tanda 1:** 198/200 ítems, anotados en CSV y sin tiempo por ítem. Solo se
+  normalizaron códigos (dirección vacía con `no` o `dudoso` → `ninguna`;
+  signo `0` → `?`). Avisos de consistencia: 5 ítems `si` con `negada = si` y
+  16 `si` o `dudoso` sin signo o sin tipo.
+- **Tanda 2:** página HTML autocontenida (`revision_portatil.py`). Valida las
+  combinaciones de la rúbrica antes de guardar, guarda en el navegador, mide el
+  tiempo por tramo (los tramos de más de 15 min no se suman) y exporta CSV y
+  respaldo.
+- **Control de calidad:** una segunda anotadora revisa 50 ítems de la tanda 1
+  (sorteados con semilla 20261024) para medir el acuerdo entre personas (κ por
+  campo, exploratorio). Pendiente de entrega.
+- **Limitaciones:** un solo anotador principal, sin calibración y sin
+  especialidad en regulación bacteriana. El κ entre anotadores es la medida de
+  su confiabilidad.
+
+### 5.5 Controles contra sesgo
 
 | Riesgo | Control |
 |---|---|
@@ -325,7 +392,7 @@ flowchart TB
 
 ### 6.2 Contraste con la base curada
 
-Sobre las 1,560 filas exigibles sin el estrato de entrenamiento:
+Sobre las 1,560 filas exigibles sin el estrato BioBERT:
 
 | Medida | Resultado |
 |---|---|
@@ -469,8 +536,9 @@ Ouroboros: `docs/ouroboros-v0.md`.
 |---|---|
 | Arista | relación regulador → blanco en la red, con sus oraciones y artículos |
 | Bronce | oraciones candidatas del paso 1; no verificadas |
-| Exigible | fila de la base curada cuyo artículo está en el corpus |
+| Exigible | fila de la base con sus dos locus válidos, que no viene de homología y no cita solo el artículo excluido |
 | Techo | fracción de exigibles con sus dos locus en alguna oración candidata |
+| Estrato BioBERT | filas de la base que propuso el modelo del asesor; fuera de la cifra principal |
 | Huella | SHA-256 de un archivo o de un conjunto de entradas |
 | Idempotente | correrlo dos veces no repite trabajo ni cambia el resultado |
 | κ de Cohen | acuerdo entre dos anotadores corregido por azar |
