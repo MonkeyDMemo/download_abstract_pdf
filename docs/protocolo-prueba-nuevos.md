@@ -104,3 +104,26 @@ Es anterior a descargar nada.
 - **Ouroboros no entra, por omisión.** Es exploratorio, y su prompt todavía
   se ajusta con la calibración. Si entra, va con otra enmienda y la huella del
   prompt congelado.
+
+## Enmienda 2 (4-nov-2026): Ouroboros entra, y el congelamiento comprobado
+
+Es anterior a descargar nada.
+- **El congelamiento, comprobado hoy.** Los 10 recursos del bronce, la red de
+  la corrida 4 y los 5 archivos del modelo coinciden con
+  `docs/congelado-prueba-nuevos.json`. Desde la etiqueta no cambió el código
+  del pipeline (ETL, bronce, operones, red, puente, `etapa2/`, `flujo.py`);
+  solo el de evaluación (`precision_ciega` y `concordancia`: tiempos y acuerdo
+  entre humanos).
+- **Ouroboros entra, exploratorio,** con el prompt congelado en la enmienda 3
+  de `protocolo-tanda2.md` (`anotador_v0.md`, sha256 `0871a839…`; huellas de
+  corrida `2f80f09a…` sin herramientas y `c90cf9f2…` con `buscar_locus`):
+  - sobre la muestra ciega de 200 del corpus nuevo, con las tres
+    configuraciones, **antes** de que el experto la anote. Se mide con
+    `concordancia`, igual que en las tandas;
+  - para mostrar el flujo integrado, la principal sobre todas las candidatas
+    del corpus nuevo. Es descriptivo: no da ninguna cifra de calidad.
+- **Ouroboros marca, no filtra:** no cambia la red oficial ni sus cifras.
+- **El tope de la descarga** es hoy, 2026/11/04.
+- **Calendario.** El experto anota la muestra del corpus nuevo después de
+  terminar la tanda 2, y su cifra va al informe. A la revisión del 6-nov van
+  solo conteos descriptivos y la contaminación.
