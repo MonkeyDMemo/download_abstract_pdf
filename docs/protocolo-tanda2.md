@@ -240,3 +240,27 @@ Es anterior a medir cualquier cifra de la tanda 2.
   de `docs/servidor-cierre.md`, que imprimen solo conteos.
 - **Cómo se reporta.** En el informe va como desviación, junto a las cifras de
   la tanda 2.
+
+## Enmienda 4 (4-nov-2026): un corte intermedio con los primeros 100 ítems
+
+Es anterior a medir cualquier cifra de la tanda 2: nadie ha corrido
+`precision-ciega` ni `concordancia` sobre ella.
+- **El estado.** El experto lleva 100 de 200 ítems (respaldo exportado el
+  2026-11-04 a las 00:39 UTC, huella de la hoja `dcb55475…`). Son exactamente
+  las filas 1 a 100 de la hoja, cuyo orden quedó fijo en el sorteo del 23-oct,
+  antes de anotar: el corte no se eligió. Incluye los 51 ítems de la
+  desviación 1.
+- **Por qué.** La revisión con el asesor del 6-nov.
+- **Lo que se mide en el corte:** todo lo de «Lo que se mide», sobre esos 100
+  ítems y con las mismas comparaciones principales, marcado «corte intermedio
+  (100/200)». Antes de medir se comprobó que las seis redes y las evidencias
+  de la recomendada siguen con las huellas de la enmienda 1.
+- **Reglas:**
+  - el corte no cambia nada: ni redes, ni umbrales, ni el prompt, ni la
+    rúbrica;
+  - el experto termina los 200, sin importar lo que salga y sin conocer
+    ninguna cifra;
+  - **la cifra de prueba es la de los 200.** El corte se reporta junto a ella,
+    sin reemplazarla, y si difieren se reportan las dos;
+  - el respaldo se convierte con `revision_portatil.py desde-respaldo` a
+    `anotacion_experto_tanda2_corte100.csv`, que no se abre.
