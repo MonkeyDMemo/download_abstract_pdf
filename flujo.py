@@ -437,6 +437,11 @@ def _plan(ctx, paso):
                         "grn_verificacion/muestra.py")
         salidas = [ctx.ruta(os.path.join("juez", "hoja.csv")),
                    ctx.ruta(os.path.join("juez", "llave.csv"))]
+        # El tope por arista, si se pidió (`grn_verificacion.cli juez
+        # --max-por-arista`): cambiarlo cambia la hoja.
+        parametros = ctx.ruta(os.path.join("juez", "parametros.json"))
+        if os.path.isfile(parametros):
+            entradas.append(parametros)
         if os.path.isfile(anotaciones):
             entradas.append(anotaciones)
             salidas += [ctx.ruta("red_juez.tsv"),

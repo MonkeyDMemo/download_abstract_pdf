@@ -44,6 +44,16 @@ Veredicto por arista: `confirmada` si alguna oración la confirma; si no,
 `invertida` si alguna la invierte; si no, `dudosa`; si no, `rechazada`; y
 `sin_juicio` si todas se abstuvieron.
 
+TOPE POR ARISTA
+===============
+Una arista llega a tener 200 oraciones y la mitad de las aristas tiene una
+sola: juzgarlas todas cuesta mucho y añade poco. Con `max_por_arista=N` la
+hoja lleva, de cada arista, las N de mayor probabilidad del clasificador (a
+igual probabilidad, por pmid e id_par): las mismas que enseña el visor. El
+tope se guarda en `juez/parametros.json`, para que la segunda pasada arme la
+misma hoja sin repetirlo, y el resumen lo declara. Las oraciones que quedan
+fuera llevan el veredicto vacío: no se juzgaron.
+
 Solo biblioteca estándar.
 """
 
@@ -61,6 +71,7 @@ HOJA = "hoja.csv"
 LLAVE = "llave.csv"
 CARPETA_OUROBOROS = "ouroboros"
 ANOTACIONES = "anotaciones.csv"
+PARAMETROS = "parametros.json"
 
 COLUMNAS_LLAVE = ["id_item", "tf", "blanco", "id_par", "pmid", "fuente",
                   "direccion_red"]
@@ -87,6 +98,7 @@ def _rutas(carpeta, red="red"):
         "hoja": os.path.join(juez, HOJA),
         "llave": os.path.join(juez, LLAVE),
         "anotaciones": os.path.join(juez, CARPETA_OUROBOROS, ANOTACIONES),
+        "parametros": os.path.join(juez, PARAMETROS),
         "red_juez": os.path.join(carpeta, base + "_juez.tsv"),
         "evidencias_juez": os.path.join(carpeta, base + "_evidencias_juez.tsv"),
         "resumen": os.path.join(carpeta, "juez_resumen.json"),
@@ -147,10 +159,60 @@ def _menciones(evidencia, pares):
     return tf, blanco
 
 
-def armar_hoja(carpeta, red="red"):
+def _probabilidad(evidencia):
+    try:
+        return float(evidencia.get("probabilidad") or "")
+    except ValueError:
+        return float("-inf")
+
+
+def recortar(evidencias, max_por_arista):
+    """De cada arista, las `max_por_arista` de mayor probabilidad; a igual
+    probabilidad, por pmid e id_par, para que el recorte no dependa del orden
+    del archivo. Sin tope, todas."""
+    if not max_por_arista:
+        return list(evidencias)
+    por_arista = collections.defaultdict(list)
+    for ev in evidencias:
+        por_arista[(ev["tf"], ev["blanco"])].append(ev)
+    elegidas = []
+    for grupo in por_arista.values():
+        grupo.sort(key=lambda e: (-_probabilidad(e), e.get("pmid") or "",
+                                  e.get("id_par") or ""))
+        elegidas.extend(grupo[:max_por_arista])
+    return elegidas
+
+
+def leer_tope(carpeta):
+    """El tope guardado en juez/parametros.json, o None (todas)."""
+    ruta = _rutas(carpeta)["parametros"]
+    if not os.path.isfile(ruta):
+        return None
+    with io.open(ruta, encoding="utf-8") as f:
+        try:
+            tope = json.load(f).get("max_por_arista")
+        except (ValueError, AttributeError):
+            raise ErrorJuez("juez/parametros.json ilegible: bórralo o vuelve "
+                            "a pedir el tope con --max-por-arista.")
+    if tope is not None and (not isinstance(tope, int) or tope < 1):
+        raise ErrorJuez("juez/parametros.json: max_por_arista tiene que ser "
+                        "un entero ≥ 1 o null.")
+    return tope
+
+
+def guardar_tope(carpeta, max_por_arista):
+    ruta = _rutas(carpeta)["parametros"]
+    os.makedirs(os.path.dirname(ruta), exist_ok=True)
+    with io.open(ruta, "w", encoding="utf-8", newline="\n") as f:
+        json.dump({"max_por_arista": max_por_arista}, f, indent=2)
+        f.write("\n")
+
+
+def armar_hoja(carpeta, red="red", max_por_arista=None):
     """Escribe juez/hoja.csv y juez/llave.csv. Devuelve el número de filas."""
     r = _rutas(carpeta, red)
     _, evidencias = _leer_tsv(r["evidencias"])
+    evidencias = recortar(evidencias, max_por_arista)
     pares = _menciones_por_par(r["capa"])
     evidencias.sort(key=lambda e: (e["tf"], e["blanco"], e.get("pmid") or "",
                                    e.get("id_par") or ""))
@@ -227,7 +289,7 @@ def _leer_anotaciones(r):
     return anotaciones
 
 
-def unir(carpeta, red="red"):
+def unir(carpeta, red="red", max_por_arista=None):
     """Escribe red_juez.tsv, red_evidencias_juez.tsv y juez_resumen.json."""
     r = _rutas(carpeta, red)
     anotaciones = _leer_anotaciones(r)
@@ -279,6 +341,8 @@ def unir(carpeta, red="red"):
         "aristas_por_veredicto": {k: por_veredicto[k]
                                   for k in VEREDICTOS_ARISTA},
         "oraciones": len(llave),
+        "oraciones_en_la_red": len(evidencias),
+        "max_por_arista": max_por_arista,
         "oraciones_por_veredicto": dict(sorted(por_oracion.items())),
         "huellas": {"red": _huella(r["red"]),
                     "evidencias": _huella(r["evidencias"]),
@@ -291,18 +355,28 @@ def unir(carpeta, red="red"):
     return resumen
 
 
-def ejecutar(carpeta, red="red", log=print):
-    """El paso del flujo: siempre la hoja; la unión, si ya está el juicio."""
+def ejecutar(carpeta, red="red", log=print, max_por_arista=None):
+    """El paso del flujo: siempre la hoja; la unión, si ya está el juicio.
+
+    `max_por_arista` dado se guarda y vale para las pasadas siguientes; sin
+    darlo, se usa el guardado (o todas)."""
     r = _rutas(carpeta, red)
-    n = armar_hoja(carpeta, red)
-    log("Hoja del agente: %d oraciones de la red -> %s/%s"
-        % (n, CARPETA_JUEZ, HOJA))
+    if max_por_arista is not None:
+        if max_por_arista < 1:
+            raise ErrorJuez("--max-por-arista tiene que ser ≥ 1.")
+        guardar_tope(carpeta, max_por_arista)
+    else:
+        max_por_arista = leer_tope(carpeta)
+    n = armar_hoja(carpeta, red, max_por_arista)
+    log("Hoja del agente: %d oraciones de la red%s -> %s/%s"
+        % (n, " (hasta %d por arista)" % max_por_arista
+           if max_por_arista else "", CARPETA_JUEZ, HOJA))
     if not os.path.isfile(r["anotaciones"]):
         log("Falta el juicio del agente: corre Ouroboros sobre esa hoja en el "
             "servidor, con --salida %s/%s (docs/ouroboros-v0.md), y vuelve a "
             "correr este paso." % (CARPETA_JUEZ, CARPETA_OUROBOROS))
         return None
-    resumen = unir(carpeta, red)
+    resumen = unir(carpeta, red, max_por_arista)
     a = resumen["aristas_por_veredicto"]
     log("Aristas: %d. Según el agente: %s."
         % (resumen["aristas"], ", ".join("%s %d" % (k, a[k])

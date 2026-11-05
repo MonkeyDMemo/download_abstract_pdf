@@ -59,8 +59,11 @@ def datos_de_carpeta(carpeta, max_oraciones=MAX_ORACIONES):
     aristas = []
     pmids = set()
     for a in red:
+        # El mismo orden que el tope del juez (grn_verificacion.juez.recortar):
+        # así las oraciones que enseña el visor son las que juzgó el agente.
         evs = sorted(por_arista.get((a["tf"], a["blanco"]), []),
-                     key=lambda e: -_flotante(e.get("probabilidad")))
+                     key=lambda e: (-_flotante(e.get("probabilidad")),
+                                    e.get("pmid") or "", e.get("id_par") or ""))
         for e in evs:
             pmids.add(e.get("pmid", ""))
         aristas.append([

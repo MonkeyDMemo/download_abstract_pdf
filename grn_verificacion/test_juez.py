@@ -155,5 +155,81 @@ class PruebasJuez(unittest.TestCase):
         self.assertTrue(any("Falta el juicio" in m for m in mensajes))
 
 
+class PruebasTope(unittest.TestCase):
+    """El tope por arista: las N de mayor probabilidad, guardado en la
+    carpeta para que la segunda pasada arme la misma hoja."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.c = tmp.name
+        _tsv(os.path.join(self.c, "red.tsv"), ["tf", "blanco", "signo"],
+             [{"tf": "LasR", "blanco": "lasB", "signo": "activates"},
+              {"tf": "RhlR", "blanco": "phzA1", "signo": "represses"}])
+        filas = [{"tf": "LasR", "blanco": "lasB", "id_par": "p%d" % i,
+                  "pmid": str(i), "fuente": "abstract",
+                  "probabilidad": str(p),
+                  "oracion": "LasR activates lasB (%d)." % i}
+                 for i, p in enumerate([0.70, 0.95, 0.80, 0.95, 0.60], 1)]
+        filas.append({"tf": "RhlR", "blanco": "phzA1", "id_par": "q1",
+                      "pmid": "9", "fuente": "abstract", "probabilidad": "",
+                      "oracion": ORACION_3})
+        _tsv(os.path.join(self.c, "red_evidencias.tsv"),
+             ["tf", "blanco", "id_par", "pmid", "fuente", "probabilidad",
+              "oracion"], filas)
+
+    def _llave(self):
+        return _leer(os.path.join(self.c, "juez", "llave.csv"))
+
+    def test_toma_las_de_mayor_probabilidad_con_desempate_estable(self):
+        juez.ejecutar(self.c, log=lambda m: None, max_por_arista=2)
+        llave = self._llave()
+        self.assertEqual(sorted(f["id_par"] for f in llave
+                                if f["tf"] == "LasR"), ["p2", "p4"])
+        # Una arista con menos oraciones que el tope (y sin probabilidad)
+        # entra completa.
+        self.assertEqual([f["id_par"] for f in llave if f["tf"] == "RhlR"],
+                         ["q1"])
+
+    def test_el_tope_se_guarda_y_vale_en_la_segunda_pasada(self):
+        juez.ejecutar(self.c, log=lambda m: None, max_por_arista=1)
+        hoja = _bytes(os.path.join(self.c, "juez", "hoja.csv"))
+        juez.ejecutar(self.c, log=lambda m: None)
+        self.assertEqual(_bytes(os.path.join(self.c, "juez", "hoja.csv")),
+                         hoja)
+        self.assertEqual(juez.leer_tope(self.c), 1)
+        self.assertEqual(len(self._llave()), 2)
+
+    def test_sin_tope_van_todas(self):
+        juez.ejecutar(self.c, log=lambda m: None)
+        self.assertEqual(len(self._llave()), 6)
+        self.assertIsNone(juez.leer_tope(self.c))
+
+    def test_las_que_quedan_fuera_no_llevan_veredicto(self):
+        juez.ejecutar(self.c, log=lambda m: None, max_por_arista=1)
+        hoja = _leer(os.path.join(self.c, "juez", "hoja.csv"))
+        anot = []
+        for f in hoja:
+            f = dict(f)
+            f.update({"relacion": "si", "direccion": "1>2", "signo": "+"})
+            anot.append(f)
+        carpeta = os.path.join(self.c, "juez", "ouroboros")
+        os.makedirs(carpeta)
+        _csv(os.path.join(carpeta, "anotaciones.csv"), list(anot[0]), anot)
+        resumen = juez.ejecutar(self.c, log=lambda m: None)
+        self.assertEqual(resumen["max_por_arista"], 1)
+        self.assertEqual(resumen["oraciones"], 2)
+        self.assertEqual(resumen["oraciones_en_la_red"], 6)
+        ev = _leer(os.path.join(self.c, "red_evidencias_juez.tsv"), "\t")
+        juzgadas = [e["id_par"] for e in ev if e["veredicto_agente"]]
+        self.assertEqual(sorted(juzgadas), ["p2", "q1"])
+        red = _leer(os.path.join(self.c, "red_juez.tsv"), "\t")
+        self.assertEqual([a["n_juzgadas"] for a in red], ["1", "1"])
+
+    def test_un_tope_invalido_no_se_acepta(self):
+        with self.assertRaises(juez.ErrorJuez):
+            juez.ejecutar(self.c, log=lambda m: None, max_por_arista=0)
+
+
 if __name__ == "__main__":
     unittest.main()

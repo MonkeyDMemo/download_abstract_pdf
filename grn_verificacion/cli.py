@@ -892,13 +892,19 @@ def _sub_juez(sub):
     ju.add_argument("--red", default="red",
                     help="Qué red: red (por omisión) o el NOMBRE de "
                          "red_NOMBRE.tsv.")
+    ju.add_argument("--max-por-arista", dest="max_por_arista", type=int,
+                    default=None,
+                    help="Juzgar solo las N oraciones de mayor probabilidad "
+                         "de cada arista. Se guarda en juez/parametros.json "
+                         "y vale para las pasadas siguientes.")
     ju.set_defaults(func=cmd_juez)
 
 
 def cmd_juez(args):
     from grn_verificacion import juez
     try:
-        juez.ejecutar(args.carpeta, red=args.red, log=log)
+        juez.ejecutar(args.carpeta, red=args.red, log=log,
+                      max_por_arista=args.max_por_arista)
     except juez.ErrorJuez as e:
         log("ERROR: %s" % e)
         return 1
