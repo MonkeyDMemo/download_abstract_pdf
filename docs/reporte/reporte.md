@@ -6,7 +6,7 @@ encabezado: Memoria técnica · GRN de P. aeruginosa PAO1 desde la literatura
 autor: Guillermo Resendiz
 asesor: Dr. Edgardo Galán-Vásquez
 institucion: IIMAS, UNAM
-version: v0.2 (borrador) · 30-oct-2026
+version: v0.4 (borrador) · 4-nov-2026
 -->
 
 ## Ficha técnica
@@ -23,8 +23,8 @@ version: v0.2 (borrador) · 30-oct-2026
 | Referencias para evaluar | base curada del laboratorio (5,584 filas; 2,077 exigibles), muestra ciega (2 tandas de 200), patrón de oro (190), CollecTF (333 pares) |
 | Núcleo | Python ≥ 3.8, solo biblioteca estándar, SQLite |
 | Entornos aparte | `.venv` (torch, transformers) para BioBERT; `.venv-nlp` (spaCy) para la sintaxis; `.venv-ouroboros` (Strands, Ollama) en el servidor |
-| Pruebas | 1,794 en la raíz y 528 en `etapa2/` |
-| Estado al 30-oct | tanda 2 en anotación; cierre técnico el 4-nov-2026 |
+| Pruebas | 1,804 en la raíz y 528 en `etapa2/` |
+| Estado al 4-nov | tanda 2 medida a la mitad (100/200); prueba con 40 artículos nuevos corrida sin anotación; agente integrado al flujo como paso `juez` |
 
 ## 1. Objetivo y alcance
 
@@ -44,7 +44,7 @@ organismos.
 
 ## 2. Arquitectura
 
-<!-- figura: panorama | Figura 1. Pipeline completo: fuentes, pasos 0 a 3 y las dos evaluaciones. Ouroboros va en paralelo y no alimenta la red. -->
+<!-- figura: panorama | Figura 1. Pipeline completo: fuentes, pasos 0 a 4 y las dos evaluaciones. El juez (Ouroboros) marca la red y no la filtra. -->
 ```mermaid
 flowchart TB
   PM["PubMed<br/>resúmenes"]:::fuente
@@ -56,7 +56,7 @@ flowchart TB
   RED["Paso 3 · Red<br/>8,827 aristas con su evidencia"]:::paso
   CUR["Evaluación A<br/>contraste con la base curada"]:::ev
   CIEGA["Evaluación B<br/>muestra ciega con experto"]:::ev
-  OU["Ouroboros v0<br/>juez LLM, exploratorio"]:::expl
+  OU["Paso 4 · Juez Ouroboros<br/>marca cada arista, no filtra"]:::expl
   PM --> DB
   PMC --> DB
   DB --> OC
@@ -64,7 +64,8 @@ flowchart TB
   OC --> BB --> RED
   RED --> CUR
   RED --> CIEGA
-  OC -.-> OU -.-> CIEGA
+  RED -.-> OU
+  OU -. "concordancia" .-> CIEGA
   classDef fuente fill:#F6F6FA,stroke:#9A9AB0,color:#1F2133
   classDef paso fill:#EFEBFC,stroke:#7A6BD1,color:#1F2133
   classDef ev fill:#E8F6EE,stroke:#3E9B6A,color:#1F2133
@@ -84,6 +85,8 @@ flowchart TB
 | `servidor.py`, `web/index.html` | tablero local: ETL, pipeline, revisión |
 | `revision.py`, `revision_portatil.py` | anotación ciega y página portátil para el experto |
 | `grn_ouroboros/` | juez LLM (Strands + Ollama), solo en el servidor |
+| `grn_verificacion/juez.py` | paso `juez` del flujo: hoja para el agente y unión de su veredicto con la red |
+| `visor_red.py` | visor HTML autocontenido de una red, con su evidencia y el veredicto del agente |
 
 <!-- figura: donde | Figura 2. Dónde corre cada parte y qué viaja entre máquinas. De la base curada solo salen conteos. -->
 ```mermaid
@@ -122,6 +125,7 @@ timeline
   Septiembre : F2 · Paso 1, bronce de punta a punta, precisión 44 % : F3 · Operones y vocabularios, corridas 2 a 4
   Octubre 1-16 : F4 · flujo.py integrado y tablero : F5 · BioBERT reentrenado con la base curada, v1
   Octubre 17-31 : F5 · v2, decisión g : F6 · Contraste y muestra ciega, tanda 1 : F7 · Ouroboros v0 y prompt congelado : F8 · Tanda 2 en anotación
+  Noviembre 1-4 : F9 · Tanda 2 a la mitad, artículos nuevos, agente en el flujo y visor
 ```
 
 | Fase | Fechas | Qué se agregó | Por qué | Resultado |
@@ -135,6 +139,7 @@ timeline
 | F6 · Evaluación | 22–24 oct | `cli muestra` (sorteo), rúbrica, contraste con exigibles y techo, tanda 1 anotada, protocolo de la tanda 2 con huellas, signo como parámetro | Medir precisión y recall con un diseño que no permita ajustar después | Precisión 53.0 % → 61.3 %; recall dirigido 41.2 % |
 | F7 · Ouroboros v0 | 24–27 oct | Juez LLM con Strands y Qwen3-8B en Ollama; calibración; tanda 1 con 3 configuraciones; prompt congelado; tanda 2 corrida | Explorar un filtro automático antes del experto | Filtro: 94.3 % de precisión (66/70) en la principal |
 | F8 · Cierre | 23–30 oct | Página portátil de revisión (ceguera y tiempo por tramo), portada del tablero, desviación 1, esta memoria | Que el experto anote sin ver predicciones y que el proyecto se entienda | Tanda 2 en anotación (50/200 al 30-oct) |
+| F9 · Prueba e integración | 1–4 nov | Tanda 2 medida a la mitad (enmienda 4); descarga de artículos nuevos con su protocolo; Ouroboros como paso `juez` del flujo; visor de la red | Probar lo construido sobre datos que no se usaron para desarrollarlo, y verlo de punta a punta | La red mejora al bronce también en prueba; el agente filtra mejor que la red; 40 artículos nuevos corridos de punta a punta |
 
 **Incidentes con efecto en el diseño:**
 
@@ -421,10 +426,55 @@ Sobre las 1,560 filas exigibles sin el estrato BioBERT:
 - **Sintaxis (spaCy):** orienta 10,299 de 76,453 pares (13.5 %); queda
   informativa.
 
-### 6.4 Tanda 2 (prueba)
+### 6.4 Tanda 2 (prueba), corte intermedio de 100
 
-Pendiente: el experto la termina el fin de semana del 1-nov. Se reporta con
-`precision-ciega` y `concordancia`, según `docs/protocolo-tanda2.md`.
+El experto lleva 100 de 200 ítems. El corte se registró antes de medir
+(enmienda 4 de `docs/protocolo-tanda2.md`): son las filas 1 a 100 de la hoja,
+en el orden fijado en el sorteo, y las redes coinciden con sus huellas
+congeladas. **La cifra de prueba es la de los 200**; esta es intermedia.
+
+| Filtro | Precisión con dirección | Retención de las verdaderas | Diferencia contra el bronce (IC 95 %, bootstrap pareado) |
+|---|---|---|---|
+| Ninguno (bronce) | 39.0 % (39/100) [30.0, 48.8] | — | — |
+| Red oficial | 47.8 % (32/67) [36.2, 59.5] | 82.0 % (32/39) | [+2.3, +15.5] |
+| Ouroboros principal | 71.7 % (33/46) [57.5, 82.7] | 84.6 % (33/39) | [+22.7, +43.6] |
+| Ouroboros con think | 77.1 % (27/35) [61.0, 87.9] | 69.2 % (27/39) | [+26.2, +51.0] |
+
+- **Se sostiene:** la red mejora al bronce (el intervalo no incluye 0) y
+  retiene más del 80 % de las verdaderas, como en la tanda 1.
+- **Baja el nivel:** unos 13 puntos en el bronce y en la red respecto a la
+  tanda 1. La tanda 1 es de desarrollo; además, la tanda 2 tiene menos `si`
+  (57 % contra 73 %), y la guía incorporó las fallas de la tanda 1.
+- **Signo, no se sostiene:** con la abstención como error, la red da 11/24
+  contra 18/24 de «siempre activa»; cuando da signo, 11/18 contra 14/18. Las
+  reglas de respaldo llegan a 13/24 (`signo`) y 14/24 (`signo_conservador`,
+  `signo_articulo`).
+- **Tiempo del experto:** mediana de 89.5 s por oración (201 min en 98).
+
+### 6.5 Prueba con artículos nuevos
+
+Protocolo: `docs/protocolo-prueba-nuevos.md` (enmiendas 1 y 2, anteriores a
+descargar). Mide el pipeline congelado sobre artículos dados de alta en
+PubMed después de armar el corpus.
+
+| Paso | Resultado |
+|---|---|
+| Congelamiento | modelo, umbrales, red y 10 recursos del bronce coinciden con `congelado-prueba-nuevos.json` |
+| Descarga (alta en PubMed del 19-ago al 4-nov-2026) | 40 artículos distintos, solo resumen: 26 + 22 + 2 por consulta |
+| Contaminación | 0 cruces con el corpus, las reservas, las tandas, las juzgadas, la base curada y las particiones de entrenamiento |
+| Bronce (corrida 16) | 425 oraciones, 36 candidatas |
+| Clasificación y red | 109 pares, 95 sobre el umbral, 61 aristas, 36 genes |
+| Contra la red de agosto | 34 aristas confirman pares conocidos (11 con el mismo signo), 27 son nuevas |
+| Juicio del agente (paso `juez`) | 13 confirmadas, 6 invertidas, 5 dudosas, 34 rechazadas, 3 sin juicio |
+
+- **Sin cifra de calidad todavía.** La muestra del protocolo se sortea entre
+  las oraciones con el par del bronce, y en 40 resúmenes son 7. La propuesta
+  es anotar el censo de los 109 pares, con una enmienda previa.
+- **Errores visibles:** coocurrencias en listas («LuxR homologs: LasR, RhlR
+  and QscR») y reguladores fuera del diccionario («Gp53 represses ftsZ, fleQ,
+  pslA and amrZ»; Gp53 es de un fago). El agente rechaza esos casos, pero
+  confirma por error aristas de listas de genes regulados juntos
+  («co-treatment downregulated lasR, rhlR, pslA, pelA and fliC»).
 
 ## 7. Ouroboros v0
 
@@ -442,8 +492,10 @@ flowchart LR
 ```
 
 - **Qué es:** un anotador automático que contesta las mismas hojas que el
-  experto, con las etiquetas de la rúbrica. No es un paso de `flujo.py` ni toca
-  la red.
+  experto, con las etiquetas de la rúbrica.
+- **En el flujo:** desde el 4-nov es el paso `juez`. Juzga cada oración de
+  evidencia de la red y deja su veredicto en `red_juez.tsv`. **Marca, no
+  filtra**: `red.tsv` no cambia y sus cifras no dependen del agente.
 - **Entorno:** `.venv-ouroboros` (Python 3.12.11; strands-agents 1.62.0,
   evals 1.7.0, tools 0.8.10, ollama 0.6.3); Ollama 0.40.9 en el servidor
   (RTX 3070, 8 GB); `qwen3:8b` Q4_K_M, digest `500a1f067a9f`. El juez nunca
@@ -465,9 +517,19 @@ en VRAM). Con q8_0 y flash attention entra completo (5.24 GiB).
 | `buscar_locus` | 63.6 % (0.329) | 73.2 % (0.571) | 61.1 % (0.463) | 88.1 % (74/84) | 70.5 % | 11 | 4.1 |
 | con think | 62.1 % (0.353) | 72.2 % (0.585) | 63.6 % (0.507) | 96.0 % (72/75) | 68.6 % | 6 | 16.9 |
 
-**Tanda 2:** corrida el 27-oct, antes de que empezara la anotación. Válidas:
-187, 186 y 193 de 200. La concordancia se calcula cuando llegue la exportación
-del experto.
+**Tanda 2, corte de 100** (corrida el 27-oct, antes de que empezara la
+anotación; abstención = error):
+
+| Configuración | Relación (κ) | Dirección (κ) | Signo (κ) | Filtro: precisión | Retiene | Abst. |
+|---|---|---|---|---|---|---|
+| principal | 62.0 % (0.358) | 61.0 % (0.408) | 38.0 % (0.156) | 71.7 % (33/46) | 84.6 % | 5 |
+| `buscar_locus` | 64.0 % (0.378) | 61.0 % (0.402) | 39.0 % (0.170) | 69.4 % (34/49) | 87.2 % | 3 |
+| con think | 62.0 % (0.374) | 63.0 % (0.447) | 46.0 % (0.250) | 77.1 % (27/35) | 69.2 % | 3 |
+
+Como filtro, en la tanda 2 el agente supera a la red sobre los mismos ítems:
+71.7 % contra 47.8 % de precisión, con retención parecida (84.6 % contra
+82.0 %). El acuerdo campo por campo es moderado en relación y bajo en signo y
+tipo.
 
 ## 8. Decisiones
 
@@ -481,7 +543,7 @@ Formato: se decidió X; la alternativa Y se activa con el parámetro Z.
 | Operón como nodo | expandir a sus genes | `operones=expandir` | conserva lo que dice el texto |
 | Reglas de signo de respaldo apagadas | prenderlas | `--signo-lexico`, `--voto-articulo` | se miden en la tanda 2 |
 | Denominador del contraste: 2,077 | otra regla de exigibles | regla versionada | fija la cifra entre corridas |
-| Ouroboros fuera del flujo | integrarlo como paso | — | exploratorio; el flujo es determinista |
+| Ouroboros en el flujo como paso `juez`, que marca y no filtra | filtrar la red con su veredicto | — | la red medida no cambia; el filtro se decide con la tanda 2 completa |
 | Principal de Ouroboros sin think | con think | `--config con_think` | pre-registrada antes de medir |
 | Todo local | modelo grande en la nube | permiso del asesor | sin servicios externos ni datos fuera |
 
@@ -489,7 +551,7 @@ Detalle de cada decisión: `docs/decisiones.md`.
 
 ## 9. Reproducción
 
-*La receta se verifica en un clon limpio en la v0.3.*
+*La receta se verifica en un clon limpio en una versión posterior.*
 
 | Requisito | Para qué |
 |---|---|
@@ -505,13 +567,17 @@ python cli.py run pa_regulacion
 python cli.py fulltext --tipo xml
 python flujo.py --corrida 4
 python -m unittest discover
+python visor_red.py --carpeta salidas/flujo/corrida4_run22 --salida visor.html
 ```
+
+El paso `juez` necesita correr Ouroboros en el servidor entre dos pasadas;
+los comandos están en `docs/ouroboros-v0.md`, «Integrado al flujo».
 
 | Verificación | Valor esperado |
 |---|---|
 | Oraciones candidatas, corrida 4 | 29,659 |
 | Aristas en `red.tsv` | 8,827 |
-| Pruebas de la raíz | 1,794 OK |
+| Pruebas de la raíz | 1,804 OK |
 | Recall dirigido (servidor) | 642/1,560 |
 
 Contraste y muestra ciega en el servidor: `docs/servidor-cierre.md`.
@@ -522,11 +588,13 @@ Ouroboros: `docs/ouroboros-v0.md`.
 - **Recall limitado por el corpus:** el techo es 46.2 %. Lo que falta está en
   material suplementario o en artículos sin texto completo.
 - **Dirección:** 27 % de inversiones en el bronce.
-- **Signo:** abstención alta.
+- **Signo:** en la tanda 2 no supera a «siempre activa», ni cuando lo da.
+- **Tanda 2 a la mitad:** faltan 100 ítems; la cifra de prueba es la de 200.
+- **Artículos nuevos sin cifra de calidad:** falta anotar los 109 pares.
+- **El agente** confirma por error coocurrencias en listas de genes
+  regulados juntos.
 - **Un solo anotador experto;** acuerdo entre anotadores en curso (50 ítems,
   segunda anotadora).
-- **Corpus congelado** en agosto de 2026; la prueba con artículos nuevos tiene
-  protocolo (`docs/protocolo-prueba-nuevos.md`).
 - **Tesis:** LLM sobre el residuo, material suplementario, herramientas del
   juez, otros organismos.
 
@@ -546,12 +614,16 @@ Ouroboros: `docs/ouroboros-v0.md`.
 | Pre-registro | escribir qué se mide y cómo antes de ver los datos |
 | Tanda | lote de oraciones sorteadas para anotación ciega |
 
-## Anexo B. Desviaciones del protocolo
+## Anexo B. Enmiendas posteriores y desviaciones del protocolo
 
 - **Desviación 1 (30-oct-2026).** Una sesión de Claude vio un respaldo parcial
   de la tanda 2: 50 ítems, solo identificadores y juicios. Redes, prompt y
   corridas de Ouroboros estaban congelados antes de que empezara la anotación.
   Registro: `docs/protocolo-tanda2.md`.
+- **Enmienda 4 de la tanda 2 (4-nov-2026).** Corte intermedio de 100 ítems,
+  registrado antes de medir. La cifra de prueba sigue siendo la de los 200.
+- **Enmienda 2 de la prueba con artículos nuevos (4-nov-2026).** Ouroboros
+  entra a la prueba; registrada antes de descargar.
 
 ## Anexo C. Documentos de referencia
 

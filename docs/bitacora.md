@@ -8,6 +8,74 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 4 de noviembre de 2026 — la tanda 2 a la mitad, los artículos nuevos y el agente en el flujo
+
+El asesor pidió ver el sistema integrado y probado antes del 6-nov. El
+experto lleva 100 de 200 ítems de la tanda 2 y no puede anotar más esta
+semana. Todo lo de hoy lo corrió Hermes.
+
+**Tanda 2, corte intermedio de 100 (enmienda 4, `bc3564f`).** Antes de medir
+se comprobó que las seis redes y las evidencias de la recomendada tienen las
+huellas de la enmienda 1. Los 100 son las filas 1 a 100 de la hoja, en el
+orden fijado en el sorteo.
+
+| | bronce | red oficial | Ouroboros principal | con think |
+|---|---|---|---|---|
+| precisión con dirección | 39/100 = 39.0 % [30.0, 48.8] | 32/67 = 47.8 % [36.2, 59.5] | 33/46 = 71.7 % [57.5, 82.7] | 27/35 = 77.1 % [61.0, 87.9] |
+| retención de las verdaderas | — | 32/39 = 82.0 % | 33/39 = 84.6 % | 27/39 = 69.2 % |
+| diferencia contra el bronce (bootstrap pareado) | — | [+2.3, +15.5] | [+22.7, +43.6] | [+26.2, +51.0] |
+
+- `buscar_locus`: 34/49 = 69.4 %, retiene 87.2 %, [+21.0, +40.7].
+- Acuerdo de Ouroboros con el experto en `relacion`: principal 62.0 %
+  (κ 0.358), `buscar_locus` 64.0 % (κ 0.378), con think 62.0 % (κ 0.374). En
+  signo y tipo, κ entre 0.16 y 0.25. Abstenciones: 5, 3 y 3.
+- Las otras redes dan la misma precisión que la oficial (las de signo solo
+  cambian el signo); la recomendada, 32/69 = 46.4 %.
+- **Signo.** Con la abstención como error, la oficial da 11/24 contra 18/24
+  de «siempre +»; `signo`, 13/24; `signo_conservador` y `signo_articulo`,
+  14/24. Cuando la red da signo, 11/18 contra 14/18. En la tanda 1 ganaba
+  cuando lo daba (42/48 contra 35/48): en la tanda 2 no se sostiene. La
+  diferencia pareada entre `signo` y la oficial queda para los 200:
+  `precision-ciega` no guarda el resultado por ítem.
+- **Tiempo del experto:** 201 min en 98 ítems, mediana de 89.5 s por ítem.
+- Lectura: la precisión baja unos 13 puntos contra la tanda 1, en el bronce y
+  en la red; la mejora de la red se mantiene. En la tanda 2 hay menos `si`
+  (57 % contra 73 %), y después de la tanda 1 la guía incorporó sus fallas
+  (negación, mutantes que invierten el signo, otro organismo).
+
+**Prueba con artículos nuevos (`protocolo-prueba-nuevos.md`, enmienda 2,
+`2149bd8`).**
+- Congelamiento comprobado: los 10 recursos, la red y los 5 archivos del
+  modelo coinciden; del código, desde la etiqueta solo cambió la evaluación.
+- Descarga con alta en PubMed del 2026/08/19 al 2026/11/04: 26
+  (`nuevos_pa_regulacion`), 22 (`nuevos_pa_reguladores`) y 2
+  (`nuevos_pa_evidencia_union`); 40 distintos.
+- Contaminación: 0 cruces en la laptop (corpus, reservas, tandas 1 y 2,
+  juzgadas) y en el servidor (base curada, particiones v1 y v2).
+- Corpus `nuevos-20261104` (40, huella `56abe0d6dd8c6f01`), bronce corrida 16:
+  425 oraciones, 36 candidatas, 7 con regulador y blanco.
+- Flujo: 109 pares en 32 oraciones de 19 artículos, 95 pasan el umbral, red
+  de 61 aristas y 36 nodos. Contra la red de la corrida 4: 11 en la misma
+  dirección y signo, 23 en la misma dirección con otro signo, 27 nuevas.
+- **El diseño no alcanza:** la muestra se sortea entre las oraciones con el
+  par del bronce, y son 7. El experto no puede anotar esta semana, así que
+  la prueba con artículos nuevos queda sin cifra de calidad. Propuesta para
+  después: el censo de los 109 pares, con una enmienda antes de anotar.
+
+**Ouroboros entra al flujo como el paso `juez`** (`decisiones.md`). Sobre la
+red de los artículos nuevos (93 oraciones, unos 3 min de GPU, 3
+abstenciones): 13 aristas confirmadas, 6 invertidas, 5 dudosas, 34 rechazadas
+y 3 sin juicio. Rechaza las aristas de «Gp53 represses ftsZ, fleQ, pslA and
+amrZ» (Gp53, de fago, no está en el diccionario) y las de listas como «LuxR
+homologs: LasR, RhlR and QscR». Confirma, mal, aristas de listas de genes
+regulados juntos («co-treatment downregulated lasR, rhlR, pslA, pelA and
+fliC»): es su error conocido. Es descriptivo, sin cifra de calidad.
+
+**Visor de la red** (`visor_red.py`): un HTML autocontenido para buscar un gen
+y ver sus aristas, oraciones, PubMed y el veredicto del agente.
+
+---
+
 ## 27 de octubre de 2026 — Ouroboros en la calibración y la tanda 1, y el prompt congelado
 
 Hermes corrió los pasos 1 y 2 de `servidor-cierre.md` §7, con `main` en
