@@ -323,3 +323,24 @@ sí, y es la región de la cuenta. El modelo, el prompt, la decodificación y
 todo lo demás de la enmienda siguen igual. La única llamada hecha antes de
 esta corrección fue una prueba de acceso con un texto trivial, que no es de
 ninguna hoja. La región por omisión del código pasa a us-west-2.
+
+## Desviación 2 (5-nov-2026): la tanda 2 se queda en 100 ítems
+
+- **Qué cambia.** El experto no anotará los ítems 101 a 200: lo decidió el
+  responsable del proyecto, que lo financia, por costo. **La cifra de prueba
+  de la tanda 2 es la del corte de 100** (enmienda 4), no la de 200. Las
+  predicciones fijadas para los ítems 101 a 200 (enmiendas 3 y 5) quedan sin
+  evaluar.
+- **Cómo se miden desde ahora las mejoras del filtro** (el jurado de agentes,
+  las reglas, los textos completos):
+  - se diseñan y se ajustan **solo con la tanda 1** (desarrollo) y la
+    calibración;
+  - se congelan en una enmienda, con huellas, **antes** de correrlas sobre el
+    corte de 100;
+  - se miden **una vez** sobre el corte de 100, y se reporta lo que salga;
+  - ninguna sesión de Claude abre la hoja de la tanda 2 ni las respuestas de
+    los agentes sobre ella: solo las cifras de `concordancia`.
+- **La salvedad.** Las cifras del corte de 100 ya se conocen (enmienda 4,
+  desviación 1), aunque sus oraciones y juicios no se usan para diseñar: la
+  prueba es menos limpia que la de unos ítems nunca medidos, y con 100 ítems
+  solo se distinguen diferencias grandes (de unos 15 puntos).
