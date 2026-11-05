@@ -8,6 +8,41 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 5 de noviembre de 2026 — Ouroboros con Qwen3-235B en Bedrock: más estricto, no cumple la regla
+
+Registrado antes de correr: enmienda 5 de `protocolo-tanda2.md` (`0699393`) y
+su fe de erratas (`141e7ec`, la región es us-west-2), las dos en origin antes
+de la primera hoja. Antes solo hubo una prueba de acceso con un texto trivial.
+Modelo `qwen.qwen3-235b-a22b-2507-v1:0`, prompt v0 sin cambios (huella
+`2f80f09a…`), principal y sin herramientas, 8 a la vez. Costo total de las
+tres hojas: ~US$0.30.
+
+- **Calibración** (27, desarrollo): 25/27 idénticos a la llave (la principal
+  local, 11/27); relación 93 %; 0 abstenciones; 22 s.
+- **Tanda 1** (198 anotadas, desarrollo): relación 57.6 % (κ 0.308), dirección
+  67.7 %, signo 61.6 %, tipo 34.8 %; 4 abstenciones. Como filtro: 72/74 =
+  97.3 % [90.7, 99.3], retiene 72/105 = 68.6 %, diferencia contra el bronce
+  [0.371, 0.516]. 44 s en total (la principal local, ~14 min).
+- **Tanda 2, corte de 100** (exploratorio: esos juicios ya se conocían):
+  relación 59.0 % (κ 0.353), dirección 65.0 %, signo 54.0 % (κ 0.373), tipo
+  42.0 %; 2 abstenciones. Como filtro: 26/33 = 78.8 % [62.3, 89.3], retiene
+  26/39 = 66.7 % [51.0, 79.4], diferencia contra el bronce [0.273, 0.525].
+- **Regla de la enmienda 5: no se cumple.** La precisión no baja de la
+  principal (78.8 % contra 71.7 %), pero retiene menos del 80 % (66.7 %). Por
+  eso no juzga la red de agosto.
+- **Lectura:** el modelo grande es más estricto, como la principal con think
+  (77.1 %, retiene 69.2 %): de las 144 que el experto marcó `si` en la tanda
+  1, dijo `no` en 50. Mejora el signo (κ 0.37 contra 0.16) y es unas 20 veces
+  más rápido. El tamaño del modelo no sube el acuerdo en relación: el
+  límite parece estar en la rúbrica o en la ambigüedad de las oraciones, no
+  en el modelo.
+- **Predicciones fijas para los ítems 101 a 200**, antes de que el experto los
+  anote: `salidas/ouroboros/tanda2_bedrock_qwen235b/anotaciones.csv`, sha256
+  `c5a811910dd4da337f2dfcb2142e6d75438301c6753041c8e543106a98f4e8d2`. Nadie
+  las abrió; la medición está en `medicion_corte100/ouroboros_bedrock_qwen235b.json`.
+
+---
+
 ## 4 de noviembre de 2026 — la tanda 2 a la mitad, los artículos nuevos y el agente en el flujo
 
 El asesor pidió ver el sistema integrado y probado antes del 6-nov. El
