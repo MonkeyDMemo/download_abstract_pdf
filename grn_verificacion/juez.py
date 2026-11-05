@@ -73,8 +73,10 @@ CARPETA_OUROBOROS = "ouroboros"
 ANOTACIONES = "anotaciones.csv"
 PARAMETROS = "parametros.json"
 
+# `fuente_texto` y `num_oracion` son la posición de la oración en el bronce:
+# con ellas `grn_ouroboros.cli contexto` encuentra la anterior y la siguiente.
 COLUMNAS_LLAVE = ["id_item", "tf", "blanco", "id_par", "pmid", "fuente",
-                  "direccion_red"]
+                  "direccion_red", "fuente_texto", "num_oracion"]
 COLUMNAS_ARISTA = ["n_juzgadas", "n_confirma", "n_invierte", "n_dudosa",
                    "n_rechaza", "n_abstiene", "veredicto_agente",
                    "signo_agente"]
@@ -146,6 +148,19 @@ def _menciones_por_par(ruta_capa):
     return pares
 
 
+def _posiciones_por_par(ruta_capa):
+    """{id_par: (fuente_texto, num_oracion)} de la capa."""
+    if not os.path.isfile(ruta_capa):
+        return {}
+    posiciones = {}
+    with io.open(ruta_capa, encoding="utf-8-sig", newline="") as f:
+        for fila in csv.DictReader(f):
+            posiciones.setdefault(fila.get("id_par") or "", (
+                (fila.get("fuente_texto") or "").strip(),
+                (fila.get("num_oracion") or "").strip()))
+    return posiciones
+
+
 def _menciones(evidencia, pares):
     """Cómo están escritos en la oración el regulador y el blanco."""
     tf, blanco = evidencia["tf"], evidencia["blanco"]
@@ -214,6 +229,7 @@ def armar_hoja(carpeta, red="red", max_por_arista=None):
     _, evidencias = _leer_tsv(r["evidencias"])
     evidencias = recortar(evidencias, max_por_arista)
     pares = _menciones_por_par(r["capa"])
+    posiciones = _posiciones_por_par(r["capa"])
     evidencias.sort(key=lambda e: (e["tf"], e["blanco"], e.get("pmid") or "",
                                    e.get("id_par") or ""))
     ancho = max(5, len(str(len(evidencias))))
@@ -227,10 +243,14 @@ def armar_hoja(carpeta, red="red", max_por_arista=None):
         hoja.append(_muestra.fila_hoja({
             "id_item": id_item, "oracion": ev.get("oracion") or "",
             "entidad_1": e1, "entidad_2": e2}))
+        fuente_texto, num_oracion = posiciones.get(ev.get("id_par") or "",
+                                                   ("", ""))
         llave.append({"id_item": id_item, "tf": ev["tf"],
                       "blanco": ev["blanco"], "id_par": ev.get("id_par", ""),
                       "pmid": ev.get("pmid", ""), "fuente": ev.get("fuente", ""),
-                      "direccion_red": direccion})
+                      "direccion_red": direccion,
+                      "fuente_texto": fuente_texto,
+                      "num_oracion": num_oracion})
     _escribir(r["hoja"], _muestra.COLUMNAS_HOJA, hoja)
     _escribir(r["llave"], COLUMNAS_LLAVE, llave)
     return len(hoja)
