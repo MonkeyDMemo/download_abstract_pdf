@@ -881,6 +881,30 @@ def cmd_concordancia(args):
     return 0
 
 
+def _sub_juez(sub):
+    ju = sub.add_parser(
+        "juez",
+        help="El agente integrado al flujo: arma la hoja con las evidencias "
+             "de la red para Ouroboros y, si ya está su juicio "
+             "(juez/ouroboros/anotaciones.csv), escribe red_juez.tsv. Marca, "
+             "no filtra: red.tsv no cambia.")
+    ju.add_argument("--carpeta", required=True, help="Carpeta del flujo.")
+    ju.add_argument("--red", default="red",
+                    help="Qué red: red (por omisión) o el NOMBRE de "
+                         "red_NOMBRE.tsv.")
+    ju.set_defaults(func=cmd_juez)
+
+
+def cmd_juez(args):
+    from grn_verificacion import juez
+    try:
+        juez.ejecutar(args.carpeta, red=args.red, log=log)
+    except juez.ErrorJuez as e:
+        log("ERROR: %s" % e)
+        return 1
+    return 0
+
+
 def _sub_concordancia(sub):
     co = sub.add_parser(
         "concordancia",
@@ -1010,6 +1034,7 @@ def main(argv=None):
     _sub_precision_ciega(sub)
     _sub_verificar_contaminacion(sub)
     _sub_concordancia(sub)
+    _sub_juez(sub)
 
     args = ap.parse_args(argv)
     return args.func(args)

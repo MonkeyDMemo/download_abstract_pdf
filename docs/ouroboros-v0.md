@@ -242,3 +242,33 @@ del bronce.
   sabiendo ya en qué se había desviado el experto en ella (la calibración 2).
   Que no se haya ajustado con sus cifras no la vuelve de prueba. La cifra que
   cuenta es la de la tanda 2.
+
+## Integrado al flujo: el paso `juez` (4-nov-2026)
+
+El agente juzga las evidencias de una red del flujo (`docs/decisiones.md`,
+«Ouroboros entra al flujo como el paso `juez`»). Para una carpeta `C` del flujo:
+
+```bash
+# 1. En la laptop: la hoja con las evidencias de la red
+python flujo.py --corrida N --pasos juez        # escribe C/juez/hoja.csv
+
+# 2. En el servidor: subir C/juez/hoja.csv (es pública: oraciones del corpus)
+#    y correr la principal, revisando antes la GPU
+~/grn-guillermo/ollama.sh start
+.venv-ouroboros/bin/python -m grn_ouroboros.cli anotar \
+    --hoja C/juez/hoja.csv --salida C/juez/ouroboros --config principal
+~/grn-guillermo/ollama.sh stop
+
+# 3. En la laptop: bajar C/juez/ouroboros/ y volver a correr el paso
+python flujo.py --corrida N --pasos juez        # escribe red_juez.tsv
+
+# 4. Opcional: el visor, con el veredicto del agente
+python visor_red.py --carpeta C --salida visor.html
+```
+
+- La red de los artículos nuevos (corrida 16, 61 aristas y 93 oraciones)
+  tomó unos 3 minutos de GPU. La red de la corrida 4 tiene 45,910 oraciones:
+  a ~4 s cada una, más de dos días. Para ella conviene juzgar solo las
+  aristas que se van a revisar.
+- El paso comprueba que el juicio sea de esa hoja (mismos ítems, oraciones y
+  entidades); si no, no une nada.

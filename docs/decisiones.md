@@ -1756,3 +1756,34 @@ Decidido el 23-oct-2026, con el usuario, antes de anotar la tanda 2.
   - **Por qué 15 minutos:** es el tope que Hermes eligió para la página. No
     sale de ningún dato: se fija y se declara antes de anotar, que es lo que
     lo hace válido para la tanda 2.
+
+## Ouroboros entra al flujo como el paso `juez`: marca, no filtra (4-nov-2026)
+
+**Qué cambia.** La decisión «Ouroboros v0: un CLI aparte» lo dejaba fuera del
+flujo. El asesor pidió ver el sistema integrado, y lo medido en la tanda 2
+(corte de 100, enmienda 4) lo justifica: como filtro, el agente supera a la
+red sobre los mismos ítems. Ahora el flujo tiene un último paso, `juez`.
+
+**Cómo funciona.**
+- El paso arma `juez/hoja.csv`: una fila por evidencia de la red, con la hoja
+  de la rúbrica, la misma que anota el experto.
+- Ouroboros corre en el servidor, donde está la GPU, con el prompt congelado
+  (enmienda 3 de `protocolo-tanda2.md`) y la configuración principal. Deja su
+  juicio en `juez/ouroboros/`.
+- Al volver a correr el paso, `grn_verificacion/juez.py` escribe
+  `red_juez.tsv` y `red_evidencias_juez.tsv`: la red con el veredicto del
+  agente por arista (`confirmada`, `invertida`, `dudosa`, `rechazada`,
+  `sin_juicio`) y por oración.
+
+**Lo que no cambia.**
+- `red.tsv` no se toca: es la red que miden el contraste y la muestra ciega.
+  El agente **marca, no filtra**.
+- El paso es solo biblioteca estándar. Ouroboros, con sus dependencias, sigue
+  en su propio entorno del servidor.
+- Las cifras de calidad del agente siguen siendo las de `concordancia` en las
+  tandas. Sobre la red completa su veredicto es descriptivo.
+
+**Alternativa.** Usar el veredicto para filtrar la red (por ejemplo, quitar
+las `rechazada`). Se descarta por ahora: su retención frente al experto se
+mide con la tanda 2 completa, y sus errores conocidos (listas de genes
+regulados juntos) confirmarían relaciones falsas.

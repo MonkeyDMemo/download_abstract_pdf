@@ -455,14 +455,27 @@ class PruebasPlanReal(unittest.TestCase):
         capa = flujo._plan(self.ctx(), "capa")
         self.assertEqual(set(capa["borrar_antes"]), set(capa["salidas"]))
 
-    def test_el_paquete_va_al_final(self):
-        """Solo lee la red, pero va al final: si falla, no corta la sintaxis,
-        la capa ni la evaluación. Y une por `id_par`: con unos pares rehechos
-        y la red vieja, sus nodos saldrían de otro texto."""
-        self.assertEqual(flujo.PASOS[-1], "paquete")
-        self.assertLess(flujo.PASOS.index("red"), flujo.PASOS.index("paquete"))
+    def test_el_paquete_va_despues_de_lo_que_no_debe_cortar(self):
+        """Solo lee la red, pero va después de la sintaxis, la capa y la
+        evaluación: si falla, no corta ninguna. Y une por `id_par`: con unos
+        pares rehechos y la red vieja, sus nodos saldrían de otro texto."""
+        for paso in ("red", "sintaxis", "capa", "evaluar"):
+            self.assertLess(flujo.PASOS.index(paso),
+                            flujo.PASOS.index("paquete"))
         self.assertEqual(flujo.NOMBRES["paquete"], "Paquete de la red")
         self.assertIn("paquete", flujo.LEEN_PREDICCIONES)
+
+    def test_el_juez_va_al_final_y_no_toca_la_red(self):
+        """El agente marca, no filtra: lee la red y la capa y solo escribe
+        archivos *_juez. Sin el juicio de Ouroboros, solo arma la hoja."""
+        self.assertEqual(flujo.PASOS[-1], "juez")
+        plan = flujo._plan(self.ctx(), "juez")
+        salidas = [os.path.basename(s) for s in plan["salidas"]]
+        self.assertEqual(salidas, ["hoja.csv", "llave.csv"])
+        self.assertNotIn("borrar_antes", plan)
+        for s in plan["salidas"]:
+            self.assertNotIn(os.path.basename(s),
+                             ("red.tsv", "red_evidencias.tsv"))
 
     def test_la_red_es_consolidar_con_la_configuracion_por_omision(self):
         """La misma red de `etapa2/red.py`, ahora por `grn_red.cli

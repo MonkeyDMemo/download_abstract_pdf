@@ -51,10 +51,11 @@ if RAIZ not in sys.path:
 from grn_comun import procedencia, proceso   # noqa: E402
 from grn_comun.archivos import borrar, reemplazar     # noqa: E402
 
-# El paquete va al final y no justo después de la red, que es lo único que
-# lee: si falla, no corta la sintaxis, la capa ni la evaluación.
+# El paquete va después de la red, la sintaxis, la capa y la evaluación, que
+# es lo único que lee: si falla, no corta ninguno de ellos. El juez va al
+# final: lee la red y la capa, y solo agrega archivos `*_juez`.
 PASOS = ("operones", "bronce", "pares", "biobert", "red", "red_recomendada",
-         "sintaxis", "capa", "evaluar", "paquete")
+         "sintaxis", "capa", "evaluar", "paquete", "juez")
 
 NOMBRES = {
     "operones": "Operones (base de pertenencia)",
@@ -67,6 +68,7 @@ NOMBRES = {
     "capa": "Capa: oración, funciones, operones y BioBERT",
     "evaluar": "Evaluación (44 % recalculado, oro)",
     "paquete": "Paquete de la red",
+    "juez": "Juicio del agente (Ouroboros) sobre la red",
 }
 
 RAIZ_FLUJO = os.path.join(RAIZ, "salidas", "flujo")
@@ -396,6 +398,29 @@ def _plan(ctx, paso):
                 # Si falla, que no quede a la vista la red de antes junto a
                 # una red.tsv nueva.
                 "borrar_antes": list(salidas),
+                "salidas": salidas}
+
+    if paso == "juez":
+        # Ouroboros corre en el servidor, entre dos pasadas de este paso: la
+        # primera arma juez/hoja.csv; la segunda, ya con su juicio en
+        # juez/ouroboros/, escribe red_juez.tsv. La red no cambia.
+        argv = [py, "-m", "grn_verificacion.cli", "juez",
+                "--carpeta", ctx.carpeta]
+        anotaciones = ctx.ruta(os.path.join("juez", "ouroboros",
+                                            "anotaciones.csv"))
+        entradas = [ctx.ruta("red.tsv"), ctx.ruta("red_evidencias.tsv"),
+                    ctx.ruta("capa_pares.csv")] + _codigo(
+                        "grn_verificacion/juez.py", "grn_verificacion/cli.py",
+                        "grn_verificacion/muestra.py")
+        salidas = [ctx.ruta(os.path.join("juez", "hoja.csv")),
+                   ctx.ruta(os.path.join("juez", "llave.csv"))]
+        if os.path.isfile(anotaciones):
+            entradas.append(anotaciones)
+            salidas += [ctx.ruta("red_juez.tsv"),
+                        ctx.ruta("red_evidencias_juez.tsv"),
+                        ctx.ruta("juez_resumen.json")]
+        return {"comandos": [(argv, (0,), False)],
+                "entradas": entradas, "parametros": {},
                 "salidas": salidas}
 
     if paso == "paquete":
