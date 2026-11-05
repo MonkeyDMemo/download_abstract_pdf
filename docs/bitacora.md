@@ -41,6 +41,18 @@ costo: 422 aristas de la base quedan rechazadas por su mejor oración.
 PDF, alta (los 3 jueces) 2,090, media 968, sin respaldo 6,996. El visor los
 filtra.
 
+**Segunda oración** (`juez --max-por-arista 2`, solo para las 1,848 aristas
+sin respaldo con 2 o más artículos; el juicio de tope 1 se reubicó a la hoja
+nueva sin volver a pagarlo): 1,844 oraciones, US$2.96 (120b US$1.10, 20b
+US$0.65, Qwen US$1.21; ~30 % salió de la caché). La red con PDF queda en
+alta 2,258, media 1,129, sin respaldo 6,667. Contra la base curada (aristas
+de agosto): 327 aristas recuperadas, el 31.5 % en la base, igual que las de
+confianza alta; las aristas de la base sin respaldo bajan de 453 a 350 de
+1,246, y el nivel alto se mantiene (32.3 % en la base). Sin respaldo baja a
+6.1 %. Respaldo: `juez/ouroboros_tope1`, `red_juez_tope1.tsv`. `juez` ahora
+trata una oración sin fila en la anotación como no juzgada, no como
+abstención. Total en la nube: ~US$23.
+
 ---
 
 ## 5 de noviembre de 2026 (madrugada) — el jurado de agentes, los PDF y la tanda 2 en 100

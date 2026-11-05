@@ -353,7 +353,15 @@ def unir(carpeta, red="red", max_por_arista=None):
     votos_arista = {}
     jueces = None
     for fila in llave:
-        anot = anotaciones.get(fila["id_item"], {})
+        if fila["id_item"] not in anotaciones:
+            # Sin fila en la anotación: no se juzgó (por ejemplo, una
+            # segunda oración que solo se pidió para algunas aristas). No es
+            # una abstención y no cuenta en la arista.
+            por_par[(fila["tf"], fila["blanco"], fila["id_par"])] = (
+                fila["id_item"], "", "", "")
+            por_oracion["no_juzgada"] += 1
+            continue
+        anot = anotaciones[fila["id_item"]]
         v = veredicto_oracion(anot, fila["direccion_red"])
         signo = (anot.get("signo") or "").strip()
         n_j, n_si = votos_de(anot)

@@ -295,5 +295,37 @@ class PruebasNivel(unittest.TestCase):
                          {"alta": 1, "media": 0, "sin_respaldo": 1})
 
 
+class PruebasNoJuzgadas(unittest.TestCase):
+
+    def test_una_oracion_sin_fila_no_es_abstencion(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        c = tmp.name
+        _tsv(os.path.join(c, "red.tsv"), ["tf", "blanco", "signo"],
+             [{"tf": "LasR", "blanco": "lasB", "signo": "activates"}])
+        _tsv(os.path.join(c, "red_evidencias.tsv"),
+             ["tf", "blanco", "id_par", "pmid", "fuente", "oracion"],
+             [{"tf": "LasR", "blanco": "lasB", "id_par": "p1", "pmid": "1",
+               "fuente": "abstract", "oracion": ORACION_1},
+              {"tf": "LasR", "blanco": "lasB", "id_par": "p2", "pmid": "2",
+               "fuente": "abstract", "oracion": ORACION_2}])
+        juez.ejecutar(c, log=lambda m: None)
+        hoja = _leer(os.path.join(c, "juez", "hoja.csv"))
+        f = dict(hoja[0])
+        f.update({"relacion": "no", "direccion": "", "signo": ""})
+        os.makedirs(os.path.join(c, "juez", "ouroboros"))
+        _csv(os.path.join(c, "juez", "ouroboros", "anotaciones.csv"),
+             list(f), [f])
+        resumen = juez.ejecutar(c, log=lambda m: None)
+        red = _leer(os.path.join(c, "red_juez.tsv"), "\t")[0]
+        self.assertEqual((red["veredicto_agente"], red["n_abstiene"],
+                          red["n_juzgadas"]), ("rechazada", "0", "1"))
+        self.assertEqual(resumen["oraciones_por_veredicto"].get("no_juzgada"),
+                         1)
+        ev = _leer(os.path.join(c, "red_evidencias_juez.tsv"), "\t")
+        self.assertEqual(sorted(e["veredicto_agente"] for e in ev),
+                         ["", "rechaza"])
+
+
 if __name__ == "__main__":
     unittest.main()
