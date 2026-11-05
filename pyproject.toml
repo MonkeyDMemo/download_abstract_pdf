@@ -9,6 +9,7 @@
 #   pip install -e ".[bronce]"     # dentro del venv del proyecto
 #   pip install -e ".[operones]"
 #   pip install -e ".[ouroboros]"  # solo en .venv-ouroboros, en el servidor
+#   uv pip install --python .venv-pdf/Scripts/python.exe -r grn_pdf/requisitos.txt
 #
 # `etapa2/clasificar.py` (torch, transformers) no está aquí a propósito: se
 # invoca por subprocess y su entorno se arma aparte (ver etapa2/README.md).
@@ -29,8 +30,14 @@ dependencies = []
 
 [project.optional-dependencies]
 # grn_bronce/: el .xlsx de la exportación (openpyxl) y el texto de los PDF
-# (PyMuPDF, aprobado y todavía sin uso: el bronce no procesa PDF).
+# (PyMuPDF). El bronce no importa PyMuPDF: lee los .txt que deja grn_pdf.
 bronce = ["openpyxl>=3.1", "PyMuPDF>=1.23"]
+# grn_pdf/: la conversión de los PDF a texto, en su propio entorno
+# (.venv-pdf) y con versión fija, porque el texto que sale depende del
+# extractor. La 1.28.2 no trae dependencias; la 2.x arrastra onnxruntime y
+# numpy. Es la misma de grn_pdf/requisitos.txt, y una prueba vigila que no se
+# separen.
+pdf = ["pymupdf==1.28.2"]
 # grn_operones/: solo el .xlsx opcional del catálogo maestro.
 operones = ["openpyxl>=3.1"]
 # grn_bronce/sintaxis.py (aprobado el 8-oct-2026): spaCy con el modelo
@@ -58,7 +65,7 @@ ouroboros = ["strands-agents[ollama]==1.62.0; python_version >= '3.10'",
 
 [tool.setuptools]
 packages = ["grn_etl", "grn_bronce", "grn_comun", "grn_operones",
-            "grn_verificacion", "grn_red", "grn_ouroboros"]
+            "grn_verificacion", "grn_red", "grn_ouroboros", "grn_pdf"]
 
 [tool.setuptools.package-data]
 grn_bronce = ["secciones.tsv", "recursos/*.tsv", "recursos/*.csv",
@@ -66,6 +73,7 @@ grn_bronce = ["secciones.tsv", "recursos/*.tsv", "recursos/*.csv",
 # El prompt se lee junto al módulo (agente.RUTA_PROMPT): sin él, un paquete
 # instalado no tendría con qué anotar.
 grn_ouroboros = ["prompts/*.md", "requisitos-servidor.txt"]
+grn_pdf = ["requisitos.txt"]
 
 # `operones_base.tsv` se genera en cada máquina y lleva datos de BioCyc, cuya
 # licencia restringe redistribuirlos (ver .gitignore). El comodín `*.tsv` mira

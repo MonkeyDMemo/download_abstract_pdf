@@ -2,6 +2,7 @@
 """grn-bronce: la linea de comandos del paso 1.
 
     python -m grn_bronce.cli exportar [--corpus v0-agosto] [--datos RUTA]
+    python -m grn_bronce.cli exportar --con-pdf [--pdf-txt DIR]   # PDF sin XML
     python -m grn_bronce.cli exportar --corrida N   # volcar sin identificar
     python -m grn_bronce.cli pares    [--corrida N]
     python -m grn_bronce.cli operones [--corrida N] [--solo-faltantes]
@@ -91,12 +92,24 @@ def _exportar(con, args, t0):
                      % args.corpus)
 
     huellas = identificar.huellas_de_recursos()
-    previa = db.corrida_previa(con, identificar.METODO, identificar.VERSION,
-                               corpus_id)
+    # Con `--con-pdf` la corrida es otro método: su idempotencia y su
+    # `--rehacer` no tocan las corridas de solo XML (ver METODO_CON_PDF).
+    con_pdf = bool(getattr(args, "con_pdf", False))
+    metodo = identificar.METODO_CON_PDF if con_pdf else identificar.METODO
+    textos_pdf = None
+    if con_pdf:
+        carpeta_pdf = getattr(args, "pdf_txt", None) or os.path.join(
+            rutas.raiz_datos(getattr(args, "datos", None)),
+            identificar.CARPETA_PDF_TXT)
+        textos_pdf = identificar.textos_de_pdf(
+            db.fulltext_disponible(con, "pdf"), carpeta_pdf,
+            db.fulltext_disponible(con, "xml"))
+        sello_pdf = identificar.sello_textos_pdf(textos_pdf)
+    previa = db.corrida_previa(con, metodo, identificar.VERSION, corpus_id)
     if previa is not None and not args.rehacer:
         log("")
         log("Ya hay una corrida terminada con metodo=%s version=%s sobre este "
-            "corpus (id %d, %s)." % (identificar.METODO, identificar.VERSION,
+            "corpus (id %d, %s)." % (metodo, identificar.VERSION,
                                      previa["id"], previa["iniciada_en"]))
         log("Es idempotente por (metodo, version, corpus). Usa --rehacer para "
             "forzar, o --corrida %d para volver a volcarla sin identificar."
@@ -114,6 +127,12 @@ def _exportar(con, args, t0):
             log("AVISO: desde la corrida %d cambiaron %s. Esa corrida no "
                 "refleja los recursos de hoy: sube VERSION en identificar.py, "
                 "o usa --rehacer." % (previa["id"], ", ".join(cambiados)))
+        if con_pdf:
+            antes = json.loads(previa["parametros"] or "{}").get("pdf_txt")
+            if antes != sello_pdf:
+                log("AVISO: los textos de PDF cambiaron desde la corrida %d "
+                    "(%s, hoy %s): reconvertidos o nuevos. Usa --rehacer para "
+                    "leerlos." % (previa["id"], antes, sello_pdf))
         return 0
     # Rehacer borra la corrida anterior solo cuando la nueva terminó bien.
     # Borrarla antes dejaba, si la nueva se cortaba, una corrida 'ok' vacía
@@ -140,6 +159,9 @@ def _exportar(con, args, t0):
     documentos = db.documentos_del_corpus(con, corpus_id)
     fulltext = db.fulltext_disponible(con, "xml")
     log("  documentos  : %d   con xml ok: %d" % (len(documentos), len(fulltext)))
+    if con_pdf:
+        log("  texto de PDF: %d documentos sin XML con pdf ok y .txt "
+            "convertido (huella %s)" % (len(textos_pdf), sello_pdf["huella"]))
 
     parametros = {"corpus": corpus_nombre,
                   "min_oracion": identificar.MIN_ORACION,
@@ -152,14 +174,20 @@ def _exportar(con, args, t0):
                   "recursos": huellas,
                   "secciones_fuera": sorted(identificar.SECCIONES_FUERA),
                   "etiquetas_excluidas": identificar.etiquetas_excluidas()}
-    corrida_id = db.abrir_corrida(con, "1", identificar.METODO,
+    if con_pdf:
+        # Solo con --con-pdf: la corrida de siempre sella exactamente los
+        # mismos parámetros que antes de que existiera el PDF.
+        parametros.update(fuentes="abstract+xml+pdf", pdf=True,
+                          pdf_txt=sello_pdf)
+    corrida_id = db.abrir_corrida(con, "1", metodo,
                                   identificar.VERSION, parametros, corpus_id)
     log("")
     log("Corrida %d registrada. Procesando..." % corrida_id)
 
     try:
         cuenta = identificar.identificar(con, corrida_id, documentos, fulltext,
-                                         lex, vocab, locus, log)
+                                         lex, vocab, locus, log,
+                                         pdf_txt=textos_pdf)
     except Exception as e:                            # noqa: BLE001
         db.cerrar_corrida(con, corrida_id, "error", str(e))
         raise
@@ -180,14 +208,19 @@ def _exportar(con, args, t0):
     elif previa is not None:
         # Todas las anteriores con la misma clave, no solo la previa: las que
         # se conservaron por documentos fallidos también quedan superadas.
-        for vieja in db.corridas_superadas(con, identificar.METODO,
+        for vieja in db.corridas_superadas(con, metodo,
                                            identificar.VERSION, corpus_id,
                                            corrida_id):
             db.borrar_corrida(con, vieja)
             log("Corrida %d rehecha por la %d: se borraron sus filas."
                 % (vieja, corrida_id))
-    _mostrar(resumen, candidatas, cuenta, conteos, hubo_xlsx, faltan)
+    _mostrar(resumen, candidatas, cuenta, conteos, hubo_xlsx, faltan, con_pdf)
     return 0
+
+
+def _con_pdf(fila_corrida):
+    """La corrida leyó texto de PDF, según sus propios parámetros."""
+    return bool(json.loads(fila_corrida["parametros"] or "{}").get("pdf"))
 
 
 def _carpeta_salida(args):
@@ -241,7 +274,7 @@ def _reexportar(con, args, carpeta="salidas"):
     log("--corpus se ignora: el corpus es el de la corrida.")
     resumen, candidatas, conteos, hubo_xlsx = _volcar(
         con, fila, corpus_nombre, None, _segundos_de(fila), [], carpeta)
-    _mostrar(resumen, candidatas, None, conteos, hubo_xlsx, [])
+    _mostrar(resumen, candidatas, None, conteos, hubo_xlsx, [], _con_pdf(fila))
     return 0
 
 
@@ -313,6 +346,11 @@ def _armar_resumen(c, cuenta, corpus, fila_corrida, segundos, faltan,
         return cuenta[clave] if cuenta is not None else ND
 
     t = c["por_tipo"]
+    # Las filas del PDF salen solo en una corrida que lo leyó: la hoja de una
+    # corrida de solo XML no cambia ni en una fila.
+    con_pdf = _con_pdf(fila_corrida)
+    sello_pdf = json.loads(fila_corrida["parametros"] or "{}").get("pdf_txt")
+    con_texto_pdf = c.get("documentos_con_pdf", 0) if con_pdf else 0
     filas = [
         ("Corpus", corpus),
         ("Corrida", fila_corrida["id"]),
@@ -321,8 +359,12 @@ def _armar_resumen(c, cuenta, corpus, fila_corrida, segundos, faltan,
         ("Documentos procesados", c["documentos"]),
         ("Documentos con texto completo (xml estatus ok)",
          c["documentos_con_fulltext"]),
+    ] + ([
+        ("Documentos con texto del PDF (sin XML; fuente_texto pdf)",
+         con_texto_pdf),
+    ] if con_pdf else []) + [
         ("Documentos solo con resumen",
-         c["documentos"] - c["documentos_con_fulltext"]),
+         c["documentos"] - c["documentos_con_fulltext"] - con_texto_pdf),
         ("Oraciones totales (todas, se guardan aunque no sean candidatas)",
          c["unidades"]),
         ("  que cruzan un encabezado borrado (span no contiguo)",
@@ -422,8 +464,15 @@ def _armar_resumen(c, cuenta, corpus, fila_corrida, segundos, faltan,
          "cambia lo que se detectó. Pendiente de la decisión 3: no usarla "
          "como rasgo del paso 2 hasta saber si la base curada del laboratorio "
          "usó esas fuentes"),
-        ("Fuentes de texto", "resumen y XML de PMC con estatus ok"),
-        ("PDF", "fuera de esta corrida; queda para despues, con PyMuPDF"),
+        ("Fuentes de texto",
+         "resumen, XML de PMC con estatus ok y, sin XML, el texto del PDF "
+         "con estatus ok convertido por grn_pdf" if con_pdf else
+         "resumen y XML de PMC con estatus ok"),
+        ("PDF",
+         "texto de %s documentos sin XML (huella %s); nunca junto con su XML"
+         % ((sello_pdf or {}).get("documentos", "?"),
+            (sello_pdf or {}).get("huella", "?")) if con_pdf else
+         "fuera de esta corrida; queda para despues, con PyMuPDF"),
         ("OCR", "no implementado"),
     ]
     if faltan:
@@ -431,7 +480,8 @@ def _armar_resumen(c, cuenta, corpus, fila_corrida, segundos, faltan,
     return filas
 
 
-def _mostrar(resumen, candidatas, cuenta, conteos, hubo_xlsx, faltan):
+def _mostrar(resumen, candidatas, cuenta, conteos, hubo_xlsx, faltan,
+             con_pdf=False):
     log("")
     log("=" * 74)
     log("HOJA RESUMEN")
@@ -490,8 +540,11 @@ def _mostrar(resumen, candidatas, cuenta, conteos, hubo_xlsx, faltan):
                  "el titulo que se quito. Van marcadas contiguo=0."
                  % conteos["unidades_no_contiguas"])
     p += [
-        "PDF: los documentos con pdf estatus ok no se procesaron. Queda para "
-        "despues, con PyMuPDF.",
+        "PDF: el texto de grn_pdf entra solo en los documentos sin XML; su "
+        "orden de lectura y sus secciones son heuristicos (ver "
+        "salidas/pdf_validacion.json)." if con_pdf else
+        "PDF: los documentos con pdf estatus ok no se procesaron. Se piden "
+        "con --con-pdf, despues de `python -m grn_pdf.cli convertir`.",
         "El score no esta calibrado. Ordena, pero no debe usarse como umbral "
         "hasta medir si mejora la precision.",
         "signo_sugerido es lexico y NO VERIFICADO: la redaccion desde el "
@@ -718,6 +771,14 @@ def main():
                          "ni la modifica.")
     ex.add_argument("--salida", default=None,
                     help="Carpeta de los archivos (por omisión, salidas/).")
+    ex.add_argument("--con-pdf", action="store_true", dest="con_pdf",
+                    help="Leer también el texto convertido de los PDF "
+                         "(grn_pdf) de los documentos sin XML. Es otra "
+                         "corrida (método %s): no empata ni borra las de solo "
+                         "XML." % identificar.METODO_CON_PDF)
+    ex.add_argument("--pdf-txt", default=None, dest="pdf_txt",
+                    help="Carpeta de los .txt de los PDF (por omisión, "
+                         "<datos>/fulltext/pdf_txt).")
     ex.set_defaults(func=cmd_exportar)
 
     pa = sub.add_parser("pares", help="Pares dirigidos de una corrida, a CSV.")

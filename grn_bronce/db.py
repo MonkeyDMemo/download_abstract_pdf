@@ -559,6 +559,11 @@ def conteos_de(con, corrida_id):
         "documentos_con_fulltext": uno(
             """SELECT COUNT(DISTINCT pmid) FROM texto_unidades
                 WHERE corrida_id=? AND fuente_texto='xml'""", (corrida_id,)),
+        # Los que se leyeron del PDF convertido (`exportar --con-pdf`). Una
+        # corrida sin PDF da cero, y su hoja resumen no muestra la fila.
+        "documentos_con_pdf": uno(
+            """SELECT COUNT(DISTINCT pmid) FROM texto_unidades
+                WHERE corrida_id=? AND fuente_texto='pdf'""", (corrida_id,)),
         "candidatas": uno(
             "SELECT COUNT(*) FROM oraciones_candidatas WHERE corrida_id=?",
             (corrida_id,)),

@@ -21,6 +21,8 @@ venv/
 # El de Ouroboros también: Strands pide Python 3.10 o más y vive en el servidor.
 # Se arma con grn_ouroboros/requisitos-servidor.txt (docs/ouroboros-v0.md).
 .venv-ouroboros/
+# El de grn_pdf, con PyMuPDF en versión fija (grn_pdf/requisitos.txt).
+.venv-pdf/
 # Lo que deja `pip install -e ".[bronce]"` al leer pyproject.toml
 *.egg-info/
 build/

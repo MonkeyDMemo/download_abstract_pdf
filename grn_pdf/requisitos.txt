@@ -1,0 +1,5 @@
+# El entorno de grn_pdf (.venv-pdf). Versión fija: el texto que sale de un PDF
+# depende del extractor, y el registro de la conversión guarda esta versión.
+# La 2.x de PyMuPDF arrastra onnxruntime, numpy y pymupdf-layout; la 1.28.2 no
+# trae ninguna dependencia, y es la aprobada en CLAUDE.md («PyMuPDF»).
+pymupdf==1.28.2

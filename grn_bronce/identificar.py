@@ -24,8 +24,10 @@ Solo biblioteca estandar.
 """
 
 import collections
+import hashlib
 import io
 import os
+import re
 import sys
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
@@ -59,6 +61,19 @@ from grn_comun import procedencia as _procedencia # noqa: E402
 #           texto, asi que las dos corridas no son comparables por categoria.
 VERSION = "4"
 METODO = "baseline-deterministico"
+
+# El mismo método con el texto de los PDF para los documentos sin XML
+# (`exportar --con-pdf`). Es otra clave de idempotencia a propósito: una
+# corrida con PDF nunca empata con una sin PDF, y su `--rehacer` no puede
+# borrar las corridas de solo XML, que son las publicadas. Las filas de un
+# documento con XML son idénticas en las dos: el PDF solo entra donde no hay
+# XML, y entonces su `fuente_texto` es 'pdf'.
+METODO_CON_PDF = METODO + "+pdf"
+
+# Dónde deja `grn_pdf` sus `.txt`, bajo la raíz de datos.
+CARPETA_PDF_TXT = os.path.join("fulltext", "pdf_txt")
+
+_PMID = re.compile(r"^\d{1,12}$")
 
 # Una oracion mas corta que esto casi nunca es prosa; mas larga suele ser una
 # tabla que el extractor de JATS aplano. Los mismos topes que ya usaba la
@@ -116,6 +131,42 @@ def etiquetas_excluidas():
     """Cuántas etiquetas de `secciones.tsv` caen en `SECCIONES_FUERA`."""
     return sum(1 for clase in _texto.cargar_clases().values()
                if clase in SECCIONES_FUERA)
+
+
+def textos_de_pdf(pdf_ok, carpeta, con_xml):
+    """{pmid: ruta del `.txt`} de los PDF que el bronce puede leer.
+
+    `pdf_ok` es {pmid: ruta del PDF} de `descargas` con estatus 'ok'
+    (`db.fulltext_disponible(con, "pdf")`), y `con_xml` lo mismo para el XML.
+    Entra un PMID si su PDF está `ok`, no tiene XML `ok` y su
+    `<carpeta>/<pmid>.txt` existe. La ruta se arma con el PMID validado y la
+    convención de nombres, nunca con `descargas.ruta`, por la misma regla que
+    el tablero (CLAUDE.md, «Arquitectura»). El directorio solo dice qué se
+    convirtió; qué se bajó de verdad lo dice `descargas`.
+    """
+    salida = {}
+    for pmid in sorted(pdf_ok):
+        if pmid in con_xml or not _PMID.match(str(pmid)):
+            continue
+        ruta = os.path.join(carpeta, "%s.txt" % pmid)
+        if os.path.isfile(ruta):
+            salida[str(pmid)] = ruta
+    return salida
+
+
+def sello_textos_pdf(textos):
+    """{documentos, huella} de los `.txt` de PDF que lee una corrida.
+
+    La huella es la de la lista ordenada de `pmid:huella_texto`: cambia si
+    entra o sale un documento o si se reconvierte uno con otro texto. Va en
+    los `parametros` de la corrida, como las huellas de los recursos, para que
+    una corrida con PDF diga con qué texto se hizo.
+    """
+    h = hashlib.sha256()
+    for pmid in sorted(textos):
+        h.update(("%s:%s\n" % (pmid, _procedencia.huella_texto(textos[pmid])))
+                 .encode("utf-8"))
+    return {"documentos": len(textos), "huella": h.hexdigest()[:16]}
 
 
 def cargar_lexico():
@@ -214,13 +265,17 @@ def calcular_score(hay_disparador, disparador_entre, n_tf, n_evidencia,
     return round(min(s, 1.0), 3)
 
 
-def piezas_de_documento(fila, ruta_txt, clases):
+def piezas_de_documento(fila, ruta_txt, clases, fuente="xml"):
     """[(fuente_texto, seccion, cuerpo, tramos)] en el orden del contrato.
 
     Abstract siempre; texto completo despues, y solo si `descargas` lo da por
     bueno. Si el documento tiene `.txt`, su resumen sale de ahi y no de la
     base: los dos son el mismo texto y contarlo dos veces inflaria la
     evidencia de cada arista.
+
+    `fuente` es la del `.txt`: 'xml' (el de PMC) o 'pdf' (el que `grn_pdf`
+    convirtió, para un documento sin XML). Los dos tienen el mismo formato y
+    se leen igual; solo cambia la etiqueta de las filas.
     """
     piezas = []
     if ruta_txt and os.path.exists(ruta_txt):
@@ -232,7 +287,7 @@ def piezas_de_documento(fila, ruta_txt, clases):
                      if etiqueta else _texto.CLASE_DESCONOCIDA)
             if clase == "abstract":
                 tiene_resumen = True
-            piezas.append(("xml", clase, cuerpo, tramos))
+            piezas.append((fuente, clase, cuerpo, tramos))
         if not tiene_resumen and (fila["abstract"] or "").strip():
             piezas.insert(0, ("abstract", "abstract", fila["abstract"], None))
         return piezas
@@ -280,13 +335,16 @@ def _menciones_de_oracion(oracion, lex, vocab, locus):
 
 
 def procesar_documento(con, corrida_id, fila, ruta_txt, lex, vocab, locus,
-                       clases, cuenta):
-    """Persiste las unidades, menciones y candidatas de un documento."""
+                       clases, cuenta, fuente_txt="xml"):
+    """Persiste las unidades, menciones y candidatas de un documento.
+
+    `fuente_txt` es la del `.txt` ('xml' o 'pdf'); ver `piezas_de_documento`.
+    """
     n_oracion = 0
     hubo_mencion = False
 
     for fuente, seccion, cuerpo, tramos in piezas_de_documento(
-            fila, ruta_txt, clases):
+            fila, ruta_txt, clases, fuente_txt):
         for ini, fin, oracion in _texto.oraciones_con_offset(cuerpo):
             if tramos is not None:
                 a, b, contiguo = _texto.traducir_span(tramos, ini, fin)
@@ -371,8 +429,14 @@ def procesar_documento(con, corrida_id, fila, ruta_txt, lex, vocab, locus,
 
 
 def identificar(con, corrida_id, documentos, fulltext, lex, vocab, locus,
-                log=lambda m: None):
-    """Recorre el corpus y lo escribe en las tablas. Devuelve los contadores."""
+                log=lambda m: None, pdf_txt=None):
+    """Recorre el corpus y lo escribe en las tablas. Devuelve los contadores.
+
+    `pdf_txt` es {pmid: ruta del `.txt` del PDF} (`textos_de_pdf`), o None
+    para no leer ningún PDF, que es lo de siempre. Un documento con XML
+    `ok` en `descargas` se lee del XML aunque su PMID esté en `pdf_txt`:
+    nunca los dos, porque el mismo artículo dos veces inflaría la evidencia.
+    """
     clases = _texto.cargar_clases()
     cuenta = collections.Counter()
 
@@ -380,14 +444,18 @@ def identificar(con, corrida_id, documentos, fulltext, lex, vocab, locus,
         if i % 200 == 0:
             log("  %d de %d documentos" % (i, len(documentos)))
         ruta = fulltext.get(fila["pmid"])
+        fuente = "xml"
         cuenta["documentos"] += 1
-        if ruta and os.path.exists(ruta):
+        if not ruta and pdf_txt and fila["pmid"] in pdf_txt:
+            ruta, fuente = pdf_txt[fila["pmid"]], "pdf"
+            cuenta["documentos_con_texto_pdf"] += 1
+        elif ruta and os.path.exists(ruta):
             cuenta["documentos_con_fulltext"] += 1
         elif ruta:
             cuenta["ruta_de_fulltext_no_existe"] += 1
         try:
             hubo = procesar_documento(con, corrida_id, fila, ruta, lex, vocab,
-                                      locus, clases, cuenta)
+                                      locus, clases, cuenta, fuente)
             con.commit()
         except Exception as e:                       # noqa: BLE001
             con.rollback()
