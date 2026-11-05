@@ -344,3 +344,43 @@ ninguna hoja. La región por omisión del código pasa a us-west-2.
   desviación 1), aunque sus oraciones y juicios no se usan para diseñar: la
   prueba es menos limpia que la de unos ítems nunca medidos, y con 100 ítems
   solo se distinguen diferencias grandes (de unos 15 puntos).
+
+## Enmienda 6 (5-nov-2026): el jurado de agentes, congelado antes de la tanda 2
+
+Es anterior a correr el prompt v1 o cualquier juez del jurado sobre la tanda 2.
+Todo se diseñó con la tanda 1 y la calibración (desviación 2).
+
+- **El jurado.** Tres jueces en Amazon Bedrock (us-west-2), cada uno con el
+  prompt v1 (`grn_ouroboros/prompts/anotador_v1.md`, sha256
+  `e1885012b1e1b1bec04919208c6ee1599046be537933e9f308b7db11001c7f5f`) y con la
+  oración anterior y la siguiente como contexto (`grn_ouroboros.cli contexto`,
+  de la corrida 4 del bronce):
+  - `openai.gpt-oss-120b-1:0`, configuración `razonador`, razonamiento medium
+    (T 1.0, top_p 1.0, max_tokens 4096);
+  - `openai.gpt-oss-20b-1:0`, la misma configuración;
+  - `qwen.qwen3-235b-a22b-2507-v1:0`, configuración `principal` (T 0,
+    max_tokens 512).
+  Ninguno es Claude. El código es el de `fc95798`.
+- **La regla de agregación** (`grn_verificacion.cli jurado`): relación `si`
+  con **al menos 1 voto de 3**; la dirección es la mayoritaria entre los que
+  dijeron `si` (puede voltear la del bronce; empate, `dudoso`). El umbral lo
+  eligió en la tanda 1 una regla fijada antes de ver resultados: la mayor
+  precisión que retenga al menos el 80 % de las verdaderas, con la dirección
+  del bronce.
+- **Lo que dio en la tanda 1 (desarrollo, optimista):** como filtro con la
+  dirección del bronce, 88/94 = 93.6 % [86.8, 97.0], retiene 88/105 = 83.8 %;
+  con reorientación, 113/120 = 94.2 %, retiene 113/144 = 78.5 %; relación
+  73.2 % (κ 0.463). La principal local con el v0 dio 94.3 % y 62.9 %.
+- **Lo que se mide en el corte de 100, una sola vez:**
+  - **principal:** el jurado como filtro con la dirección del bronce,
+    precisión y retención, contra la red oficial (47.8 %, 82.0 %) y la
+    principal local con v0 (71.7 %, 84.6 %);
+  - **secundarias:** el filtro con reorientación, el acuerdo por campo y
+    cada juez por separado.
+- **Regla de adopción:** el jurado reemplaza a la principal como juez del
+  paso `juez` si en el corte de 100 su precisión no es menor que 71.7 % y
+  retiene al menos el 80 %. Si no la cumple, se reporta igual y la principal
+  sigue.
+- **A temperatura 1 los gpt-oss no repiten la misma respuesta:** vale la
+  primera corrida de cada juez sobre la tanda 2; no se repite para escoger.
+- **Costo de referencia:** la tanda 1 completa costó US$0.47 con los tres.
