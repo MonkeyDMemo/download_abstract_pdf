@@ -89,6 +89,14 @@ confiable (como en el diagnóstico de la tanda 1), así que «al revés» se lee
 «revisar la dirección», no «falsa». Una arista fuera de la base no es falsa:
 puede ser nueva.
 
+**Pendiente: `n_articulos` sale corto en las aristas con el tope de 200
+oraciones** (`max_por_par`). Los artículos se cuentan entre las 200 que se
+guardan, y con texto completo esas 200 se concentran en menos artículos:
+LasR → lasI baja de 86 a 66 y LasR → rhlR de 55 a 43, aunque no se perdió
+evidencia. Son 25 aristas; de las 18 con menos artículos que en agosto, 16
+tienen el tope. Arreglo: contar los artículos antes del tope, en una corrida
+nueva (la 4 sigue congelada).
+
 ---
 
 ## 5 de noviembre de 2026 (madrugada) — el jurado de agentes, los PDF y la tanda 2 en 100
