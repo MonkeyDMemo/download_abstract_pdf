@@ -8,6 +8,47 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 5 de noviembre de 2026 (madrugada) — el jurado de agentes, los PDF y la tanda 2 en 100
+
+**Tanda 2 en 100** (desviación 2, `cba4b5f`): el experto no anota más; las
+mejoras se diseñan con la tanda 1 y se miden una vez en el corte de 100.
+
+**Diagnóstico en la tanda 1** (desarrollo, solo conteos): de las 93
+oraciones falsas del bronce, 39 son relaciones reales con la flecha al revés,
+31 no tienen relación y 23 son dudosas. El Qwen3-235B decía «no hay
+relación» en 27 de esas 39, sobre todo en las indirectas. La regla de
+enumeraciones solo atrapa 2 falsas. Contra la base curada, tener el texto
+completo del artículo citado casi no cambia la cobertura (37.2 % con XML,
+35.8 % solo resumen): ~60 % de las relaciones curadas no aparecen juntas en
+ninguna oración.
+
+**Jurado v1** (`fc95798`; enmienda 6, `a616fe9`): gpt-oss-120b, gpt-oss-20b y
+Qwen3-235B en Bedrock, con el prompt v1 (`e1885012…`, la guía del experto:
+la relación indirecta cuenta, la dirección es quién afecta a quién) y la
+oración anterior y la siguiente como contexto; `si` con al menos 1 de 3 votos,
+dirección mayoritaria.
+- Tanda 1 (desarrollo): filtro 93.6 %, retiene 83.8 %, κ 0.463.
+- **Tanda 2, corte de 100 (prueba):** filtro 35/48 = 72.9 % [59.0, 83.4],
+  retiene 35/39 = 89.7 % [76.4, 95.9], diferencia contra el bronce [0.242,
+  0.444]; relación 70.0 % (κ 0.451), dirección 72.0 %, signo 53.0 % (κ 0.367);
+  0 abstenciones. Con reorientación: 44/60 = 73.3 %, retiene 44/57 = 77.2 %.
+- **Cumple la regla de adopción** (≥ 71.7 % y ≥ 80 %): el jurado reemplaza a
+  la principal en el paso `juez`. La precisión casi no sube (71.7 → 72.9 %);
+  mejoran la retención (+5), el acuerdo (κ +0.09), la dirección (+11) y el
+  signo (κ 0.16 → 0.37).
+- Exploratorio, elegido después de ver la prueba y por eso no vale como
+  resultado: con 2 de 3, 76.7 % y 84.6 %; con 3 de 3, 82.3 % y 71.8 %.
+- Costo: US$0.47 por tanda con los tres jueces.
+
+**PDF** (`44b8c68`): 157 PDF abiertos nuevos (Unpaywall/Europe PMC; 667 sin
+copia abierta, 455 con el servicio OA de PMC caído), 341 en total. El
+conversor `grn_pdf` recupera el 97.6 % de las oraciones candidatas de los 96
+artículos que también tienen XML. Bronce `--con-pdf`, corrida 20: 245
+documentos ganan texto completo; 37,405 candidatas (8,278 de PDF) contra
+29,659 de la corrida 4; las del XML, idénticas.
+
+---
+
 ## 5 de noviembre de 2026 — Ouroboros con Qwen3-235B en Bedrock: más estricto, no cumple la regla
 
 Registrado antes de correr: enmienda 5 de `protocolo-tanda2.md` (`0699393`) y
