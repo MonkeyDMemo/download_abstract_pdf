@@ -152,7 +152,7 @@ mark.b { background:rgba(125,219,164,.22); }
 .mas-res { text-align:center; margin:14px 0; }
 .mas-res button { padding:8px 16px; border-radius:var(--radio); border:1px solid var(--borde);
   background:var(--panel2); color:var(--texto); cursor:pointer; }
-.chip.nivel-alta{background:#DDF3E6;color:#1E6B3A;font-weight:600}.chip.nivel-media{background:#FFF1CC;color:#7A5B00}.chip.nivel-sin_respaldo{background:#EEE;color:#666}
+.chip.nivel-alta{background:#DDF3E6;color:#1E6B3A;font-weight:600}.chip.nivel-media{background:#FFF1CC;color:#7A5B00}.chip.nivel-sin_respaldo{background:#EEE;color:#666}.chip.nivel-al_reves{background:#FDE2E1;color:#8A1C1C}
 </style></head>
 <body>
 <header>
@@ -175,7 +175,7 @@ mark.b { background:rgba(125,219,164,.22); }
       <option value="sin_juicio">Sin juicio</option></select>
     <select id="f-nivel"><option value="">Toda confianza</option>
       <option value="alta">Alta (todo el jurado)</option><option value="media">Media</option>
-      <option value="sin_respaldo">Sin respaldo</option></select>
+      <option value="al_reves">Flecha al revés</option><option value="sin_respaldo">Sin respaldo</option></select>
   </div>
   <div class="top" id="top"></div>
   <div id="lista"></div>
@@ -252,7 +252,7 @@ function pintar() {
     const sig = `<span class="chip ${a[2] === "+" ? "mas" : a[2] === "-" ? "menos" : ""}">${NOMBRE_SIGNO[a[2]]}</span>`;
     const conf = a[5] ? `<span class="chip conf">votos en conflicto</span>` : "";
     const ag = a[6] ? `<span class="chip ag-${a[6]}">agente: ${a[6].replace("_", " ")}</span>` : "";
-    const NIVEL = {"alta": "confianza alta", "media": "confianza media", "sin_respaldo": "sin respaldo"};
+    const NIVEL = {"alta": "confianza alta", "media": "confianza media", "al_reves": "jurado: flecha al revés", "sin_respaldo": "sin respaldo"};
     const niv = a[8] ? `<span class="chip nivel-${a[8]}">${NIVEL[a[8]]}</span>` : "";
     const sag = a[9] && a[9] !== a[2] && (a[6] === "confirmada" || a[6] === "invertida") ?
       `<span class="chip">jurado: ${NOMBRE_SIGNO[a[9]]}</span>` : "";

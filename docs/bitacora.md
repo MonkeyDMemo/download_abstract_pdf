@@ -53,6 +53,42 @@ confianza alta; las aristas de la base sin respaldo bajan de 453 a 350 de
 trata una oración sin fila en la anotación como no juzgada, no como
 abstención. Total en la nube: ~US$23.
 
+**Corrección de los niveles.** El nivel contaba las invertidas como alta o
+media, y la arista RhlR → lasR salía «confianza alta» aunque el jurado dice
+que la flecha va al revés. El nivel ahora dice si el jurado respalda la
+arista tal como está escrita: las invertidas van a `al_reves`, y los votos de
+una confirmada salen solo de las oraciones que la confirman. Red con PDF:
+alta 1,829, media 823, al revés 735, sin respaldo 6,667. Las cifras de arriba
+contra la base («El jurado contra la base curada», «Segunda oración»)
+contaban como «en la base» las aristas sin locus de PAO1, que nunca salen en
+`candidatas_nuevas.tsv`; las de abajo las excluyen.
+
+**Contraste de la red con PDF** (`cli contraste` en el servidor, 11 s; la
+base coincide con PLAN.md 2.4 en los 14 conteos; informe en
+`salidas/contraste/CONTRASTE_corrida20.md`, solo conteos):
+
+| | Corrida 4 (agosto) | Corrida 20 (con PDF) |
+|---|---|---|
+| Dirigido, sin BioBERT | 642/1,560 (41.2 %) | **689/1,560 (44.2 %)** [41.7, 46.6] |
+| Cualquier dirección | 674/1,560 | 721/1,560 (46.2 %) |
+| Techo: regla a) con expansión | 720/1,560 (46.2 %) | **764/1,560 (49.0 %)** |
+| Signo cuando la red lo da | 319/366 (87.2 %); siempre +, 76.5 % | 88.2 %; siempre +, 78.6 % |
+
+El texto de los PDF sí sube la cobertura: +47 filas dirigidas y +2.8 puntos
+de techo. Corrige la lectura del diagnóstico (37.2 % con XML contra 35.8 %
+solo con resumen): comparar grupos de artículos distintos no mide lo que
+agrega el texto completo a los mismos artículos. El contraste sigue contando
+los artículos con PDF como «solo abstract» (por eso ese grupo sube a 49.8 %).
+
+**Niveles contra la base, por arista** (red con PDF, 9,927 aristas con locus;
+12.9 % están en la base): alta 1,799 → 31.1 %; media 797 → 23.2 %; al revés
+731 → 23.9 %; sin respaldo 6,600 → 5.5 %. La confianza alta es el 18 % de las
+aristas y reúne el 44 % de las que están en la base. Al revés sigue en la base
+el 24 % de las veces en la dirección escrita: la inversión del jurado no es
+confiable (como en el diagnóstico de la tanda 1), así que «al revés» se lee
+«revisar la dirección», no «falsa». Una arista fuera de la base no es falsa:
+puede ser nueva.
+
 ---
 
 ## 5 de noviembre de 2026 (madrugada) — el jurado de agentes, los PDF y la tanda 2 en 100

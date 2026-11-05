@@ -243,7 +243,8 @@ class PruebasNivel(unittest.TestCase):
 
     def test_nivel(self):
         self.assertEqual(juez.nivel("confirmada", 3, 3), "alta")
-        self.assertEqual(juez.nivel("invertida", 3, 3), "alta")
+        # Volteada: el jurado respalda la flecha contraria, no esta.
+        self.assertEqual(juez.nivel("invertida", 3, 3), "al_reves")
         self.assertEqual(juez.nivel("confirmada", 2, 3), "media")
         self.assertEqual(juez.nivel("rechazada", 0, 3), "sin_respaldo")
         self.assertEqual(juez.nivel("dudosa", 1, 3), "sin_respaldo")
@@ -292,7 +293,8 @@ class PruebasNivel(unittest.TestCase):
                          ("3", "alta"))
         self.assertEqual(red["RhlR"]["nivel"], "sin_respaldo")
         self.assertEqual(resumen["aristas_por_nivel"],
-                         {"alta": 1, "media": 0, "sin_respaldo": 1})
+                         {"alta": 1, "media": 0, "al_reves": 0,
+                          "sin_respaldo": 1})
 
 
 class PruebasNoJuzgadas(unittest.TestCase):

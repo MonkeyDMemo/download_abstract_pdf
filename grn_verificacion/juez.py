@@ -49,9 +49,11 @@ NIVEL DE CONFIANZA (cuando juzga un jurado)
 Si las anotaciones son de un jurado (`grn_verificacion.cli jurado`), el
 comentario de cada oración trae los votos («jurado 1 de 3: si 2, …»). Cada
 arista lleva entonces `votos_si` (el máximo entre las oraciones que la
-respaldan) y `nivel`:
-- `alta`: confirmada o invertida con todos los jueces a favor;
-- `media`: confirmada o invertida con menos votos;
+la confirman) y `nivel`, que dice si el jurado respalda la arista tal como
+está escrita:
+- `alta`: confirmada, con todos los jueces a favor en alguna oración;
+- `media`: confirmada con menos votos;
+- `al_reves`: invertida (el jurado respalda la flecha contraria, no esta);
 - `sin_respaldo`: dudosa, rechazada o sin juicio.
 Contra la base curada (corrida 4, 5-nov-2026), las aristas con 3 de 3 votos
 están en ella 4 veces más que las de 0. Sin jurado, `nivel` va vacío.
@@ -95,7 +97,7 @@ COLUMNAS_ARISTA = ["n_juzgadas", "n_confirma", "n_invierte", "n_dudosa",
                    "signo_agente", "votos_si", "n_jueces", "nivel"]
 COLUMNAS_EVIDENCIA = ["id_item", "veredicto_agente", "signo_agente",
                       "votos_si"]
-NIVELES = ("alta", "media", "sin_respaldo")
+NIVELES = ("alta", "media", "al_reves", "sin_respaldo")
 _VOTOS = re.compile(r"jurado \d+ de (\d+): si (\d+)")
 VEREDICTOS_ARISTA = ("confirmada", "invertida", "dudosa", "rechazada",
                      "sin_juicio")
@@ -314,10 +316,13 @@ def votos_de(anotacion):
 
 
 def nivel(veredicto, votos_si, n_jueces):
-    """alta, media o sin_respaldo; vacío si no juzgó un jurado."""
+    """alta, media, al_reves o sin_respaldo; vacío si no juzgó un jurado.
+    `votos_si` son los de las oraciones que confirman la arista."""
     if not n_jueces:
         return ""
-    if veredicto not in ("confirmada", "invertida"):
+    if veredicto == "invertida":
+        return "al_reves"
+    if veredicto != "confirmada":
         return "sin_respaldo"
     return "alta" if n_jueces >= 2 and votos_si == n_jueces else "media"
 
@@ -373,8 +378,9 @@ def unir(carpeta, red="red", max_por_arista=None):
         por_oracion[v] += 1
         if v == "confirma":
             signos[arista].append(signo)
-        if v in ("confirma", "invierte") and n_si is not None:
-            votos_arista[arista] = max(votos_arista.get(arista, 0), n_si)
+        if n_si is not None and v in ("confirma", "invierte"):
+            clave_v = (arista, v)
+            votos_arista[clave_v] = max(votos_arista.get(clave_v, 0), n_si)
 
     cols_ev, evidencias = _leer_tsv(r["evidencias"])
     for ev in evidencias:
@@ -393,7 +399,9 @@ def unir(carpeta, red="red", max_por_arista=None):
         c = por_arista.get(clave, collections.Counter())
         v = veredicto_arista(c)
         por_veredicto[v] += 1
-        n_si = votos_arista.get(clave, 0 if jueces else "")
+        n_si = votos_arista.get(
+            (clave, "invierte" if v == "invertida" else "confirma"),
+            0 if jueces else "")
         nv = nivel(v, n_si, jueces)
         por_nivel[nv] += 1
         a.update({"votos_si": n_si, "n_jueces": jueces or "", "nivel": nv})
