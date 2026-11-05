@@ -8,6 +8,29 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 5 de noviembre de 2026 (mañana) — el jurado juzga la red con PDF
+
+Corrida 20 (`--con-pdf`): 10,054 aristas, 2,004 nodos, 56,890 oraciones de
+evidencia (la corrida 4: 8,827 y 45,909). El jurado v1 (enmienda 6) juzgó la
+oración de mayor probabilidad de cada arista (`juez --max-por-arista 1`), con
+contexto; 2,084 ítems repetidos (aristas que comparten oración y menciones,
+como los genes de un operón) se pidieron una vez. Sin errores ni throttling.
+
+- **Costo:** gpt-oss-120b US$6.95, gpt-oss-20b US$4.00, Qwen3-235B US$7.42:
+  **US$18.37** (tope US$25). Total del proyecto en la nube: ~US$20.
+- **Aristas:** confirmada 2,426; invertida 632; dudosa 204; rechazada 6,790;
+  sin juicio 2. Respaldo del jurado (confirmada o invertida) por número de
+  artículos: 1 artículo 27 %, 2 a 4 36 %, 5 o más 46 %.
+- **Signo**, en las confirmadas con signo: el del jurado coincide con el de la
+  red en 900, difiere en 413, y en 216 la red no daba signo.
+- **Cómo se lee:** «rechazada» quiere decir que su mejor oración no sostiene
+  la relación, no que la relación sea falsa: con una oración por arista,
+  una arista con muchos artículos puede tener otra oración que sí la diga.
+  La calidad del jurado es la de la tanda 2 (72.9 % y 89.7 %).
+- Visor: `salidas/visor/visor_red_con_pdf.html`.
+
+---
+
 ## 5 de noviembre de 2026 (madrugada) — el jurado de agentes, los PDF y la tanda 2 en 100
 
 **Tanda 2 en 100** (desviación 2, `cba4b5f`): el experto no anota más; las
