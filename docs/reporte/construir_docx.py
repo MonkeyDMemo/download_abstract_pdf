@@ -30,6 +30,7 @@ from pathlib import Path
 
 from docx import Document
 from docx.enum.section import WD_ORIENT
+from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from docx.oxml import OxmlElement
@@ -78,6 +79,24 @@ def preparar_estilos(doc):
     cita.font.color.rgb = RGBColor(0x33, 0x35, 0x48)
     cita.paragraph_format.left_indent = Cm(1)
     cita.paragraph_format.right_indent = Cm(1)
+
+    # El índice, compacto: con el espaciado de Normal ya no cabe en una página.
+    # Word usa estos estilos (TOC1, TOC2) al llenar el campo TOC.
+    for nivel in (1, 2):
+        nombre = "toc %d" % nivel
+        try:
+            estilo = doc.styles[nombre]
+        except KeyError:
+            estilo = doc.styles.add_style(nombre, WD_STYLE_TYPE.PARAGRAPH)
+            estilo.element.set(qn("w:styleId"), "TOC%d" % nivel)
+            # Sin customStyle: así Word lo reconoce como su estilo del índice.
+            estilo.element.attrib.pop(qn("w:customStyle"), None)
+        estilo.base_style = normal
+        formato = estilo.paragraph_format
+        formato.space_before = Pt(0)
+        formato.space_after = Pt(1.5)
+        formato.line_spacing = 1.0
+        formato.left_indent = Cm(0.6 * (nivel - 1))
 
 
 def configurar_pagina(doc):
