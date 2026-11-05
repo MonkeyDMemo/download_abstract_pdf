@@ -643,7 +643,7 @@ class PruebasLlaveBedrock(unittest.TestCase):
         e = self.entradas()
         self.assertEqual(e["proveedor"], "bedrock")
         self.assertEqual(e["modelo"], {"model_id": agente.MODELO_BEDROCK,
-                                       "region": "us-east-1"})
+                                       "region": "us-west-2"})
         self.assertIsNone(e["ollama"])
         self.assertEqual(e["decodificacion"]["format"], "en_el_prompt")
         self.assertEqual(e["prompt"], HUELLA_PRINCIPAL)
@@ -655,7 +655,7 @@ class PruebasLlaveBedrock(unittest.TestCase):
         llaves = [anotar.llave_cache(item, e) for e in (
             self.entradas(),
             self.entradas(modelo="us.qwen.qwen3-32b-v1:0"),
-            self.entradas(region="us-west-2"))]
+            self.entradas(region="us-east-2"))]
         self.assertNotIn(LLAVE_PRINCIPAL, llaves)
         self.assertEqual(len(set(llaves)), 3)
 
@@ -671,7 +671,7 @@ class PruebasLlaveBedrock(unittest.TestCase):
         self.assertEqual((entradas["proveedor"],
                           entradas["modelo"]["model_id"],
                           entradas["modelo"]["region"]),
-                         ("bedrock", agente.MODELO_BEDROCK, "us-east-1"))
+                         ("bedrock", agente.MODELO_BEDROCK, "us-west-2"))
         # La misma carpeta no la reusa una corrida de Ollama.
         with self.assertRaises(anotar.CarpetaOcupada):
             anotar.ejecutar(hoja, salida, falso, ENTRADAS_PRINCIPAL)

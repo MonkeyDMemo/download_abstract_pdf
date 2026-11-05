@@ -654,7 +654,7 @@ python3 revision_portatil.py desde-respaldo --respaldo R.json --carpeta C --sali
 # o desde la laptop contra Bedrock (solo principal y sin herramientas)
 .venv-ouroboros/Scripts/python -m grn_ouroboros.cli anotar --hoja H --salida salidas/ouroboros/X \
     --config principal --proveedor bedrock --modelo qwen.qwen3-235b-a22b-2507-v1:0 \
-    --region us-east-1 --perfil-aws P --paralelo 8
+    --region us-west-2 --perfil-aws P --paralelo 8
 .venv-ouroboros/bin/python -m grn_ouroboros.cli calibracion --anotacion A | evals --salida D
 
 # en el servidor, con el python de pseudoRE; ver docs/entrenamiento-curada.md

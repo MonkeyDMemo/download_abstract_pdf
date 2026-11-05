@@ -158,7 +158,7 @@ PROVEEDORES = ("ollama", "bedrock")
 # El juez de Bedrock por omisión: el Qwen3 grande, instruct y sin modo de
 # pensamiento. Va siempre explícito.
 MODELO_BEDROCK = "qwen.qwen3-235b-a22b-2507-v1:0"
-REGION_BEDROCK = "us-east-1"
+REGION_BEDROCK = "us-west-2"
 # La lista blanca: un Qwen de Bedrock, directo o por un perfil de inferencia
 # `us.` o `global.`. Un ARN, `meta.…` o `us.anthropic.…` no casan.
 _QWEN_BEDROCK = re.compile(r"^(?:us\.|global\.)?qwen\.[a-z0-9][a-z0-9.:-]*$")

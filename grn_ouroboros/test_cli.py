@@ -349,13 +349,13 @@ class PruebasBedrock(Base):
         self.assertEqual(codigo, cli.BIEN, texto)
         self.assertEqual(self.ollama.peticiones, [])
         self.assertIn("Listo: 3 ítems, 3 válidos y 0 abstenciones.", texto)
-        self.assertIn("Bedrock en us-east-1: modelo %s"
+        self.assertIn("Bedrock en us-west-2: modelo %s"
                       % agente.MODELO_BEDROCK, texto)
         self.assertIn("4 a la vez", texto)
         f = self.fabricados[0]
         self.assertEqual((f["proveedor"], f["modelo"], f["region"],
                           f["perfil_aws"], f["herramientas"]),
-                         ("bedrock", agente.MODELO_BEDROCK, "us-east-1", None,
+                         ("bedrock", agente.MODELO_BEDROCK, "us-west-2", None,
                           "ninguna"))
         self.assertEqual(len(self.anotador.llamadas), 3)
         self.sin_oraciones(texto)

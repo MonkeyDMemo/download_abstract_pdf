@@ -314,3 +314,12 @@ Es anterior a correr cualquier modelo de Bedrock sobre cualquier hoja.
 - **Ceguera:** sigue la regla de `CLAUDE.md`: ninguna sesión de Claude abre la
   hoja de la tanda 2 ni lo que este modelo diga de ella; las sesiones solo ven
   las cifras de `concordancia`.
+
+## Fe de erratas de la enmienda 5 (5-nov-2026)
+
+Antes de correr cualquier hoja: **la región es us-west-2, no us-east-1.** En
+us-east-1 Bedrock no ofrece `qwen.qwen3-235b-a22b-2507-v1:0`; en us-west-2
+sí, y es la región de la cuenta. El modelo, el prompt, la decodificación y
+todo lo demás de la enmienda siguen igual. La única llamada hecha antes de
+esta corrección fue una prueba de acceso con un texto trivial, que no es de
+ninguna hoja. La región por omisión del código pasa a us-west-2.

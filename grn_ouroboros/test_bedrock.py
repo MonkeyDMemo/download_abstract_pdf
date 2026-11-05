@@ -66,7 +66,7 @@ class PruebasCandado(unittest.TestCase):
     def test_el_de_omision_pasa_y_no_es_el_de_strands(self):
         self.assertEqual(agente.validar_modelo_bedrock(agente.MODELO_BEDROCK),
                          "qwen.qwen3-235b-a22b-2507-v1:0")
-        self.assertEqual(agente.REGION_BEDROCK, "us-east-1")
+        self.assertEqual(agente.REGION_BEDROCK, "us-west-2")
 
     def test_la_region(self):
         for region in ("us-east-1", "us-west-2", "us-gov-west-1",
@@ -234,7 +234,7 @@ class PruebasModeloBedrock(unittest.TestCase):
         modelo = agente.crear_modelo(agente.PRINCIPAL, proveedor="bedrock")
         self.assertIsInstance(modelo, BedrockModel)
         self.assertEqual(modelo.config["model_id"], agente.MODELO_BEDROCK)
-        self.assertEqual(modelo.client.meta.region_name, "us-east-1")
+        self.assertEqual(modelo.client.meta.region_name, "us-west-2")
         otro = agente.crear_modelo(agente.PRINCIPAL, proveedor="bedrock",
                                    modelo="us.qwen.qwen3-32b-v1:0",
                                    region="us-west-2")
@@ -367,7 +367,7 @@ class PruebasAnotadorBedrock(unittest.TestCase):
                          {"maxTokens": 512, "temperature": 0.0})
         self.assertNotIn("additionalModelRequestFields", peticion)
         self.assertNotIn("toolConfig", peticion)
-        self.assertEqual(falso.meta.region_name, "us-east-1")
+        self.assertEqual(falso.meta.region_name, "us-west-2")
         self.assertEqual(falso.meta.config.retries,
                          {"max_attempts": 10, "mode": "adaptive"})
 

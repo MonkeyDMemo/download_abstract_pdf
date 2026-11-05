@@ -289,7 +289,7 @@ uv pip install --python .venv-ouroboros/Scripts/python.exe \
     --hoja docs/calibracion-hoja.csv \
     --salida salidas/ouroboros/calibracion_bedrock_qwen235b \
     --config principal --proveedor bedrock \
-    --modelo qwen.qwen3-235b-a22b-2507-v1:0 --region us-east-1 \
+    --modelo qwen.qwen3-235b-a22b-2507-v1:0 --region us-west-2 \
     --perfil-aws P --paralelo 8
 ```
 
