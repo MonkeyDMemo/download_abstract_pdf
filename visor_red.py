@@ -75,6 +75,9 @@ def datos_de_carpeta(carpeta, max_oraciones=MAX_ORACIONES):
               round(_flotante(e.get("probabilidad")), 3),
               e.get("veredicto_agente", "") if juez else ""]
              for e in evs[:max_oraciones]],
+            a.get("nivel", "") if juez else "",
+            SIGNOS.get({"+": "activates", "-": "represses"}.get(
+                a.get("signo_agente") or "", ""), "") if juez else "",
         ])
     aristas.sort(key=lambda x: (-x[3], -x[4], x[0], x[1]))
     nombre = os.path.basename(os.path.normpath(carpeta))
@@ -149,6 +152,7 @@ mark.b { background:rgba(125,219,164,.22); }
 .mas-res { text-align:center; margin:14px 0; }
 .mas-res button { padding:8px 16px; border-radius:var(--radio); border:1px solid var(--borde);
   background:var(--panel2); color:var(--texto); cursor:pointer; }
+.chip.nivel-alta{background:#DDF3E6;color:#1E6B3A;font-weight:600}.chip.nivel-media{background:#FFF1CC;color:#7A5B00}.chip.nivel-sin_respaldo{background:#EEE;color:#666}
 </style></head>
 <body>
 <header>
@@ -169,6 +173,9 @@ mark.b { background:rgba(125,219,164,.22); }
       <option value="confirmada">Confirmada</option><option value="invertida">Invertida</option>
       <option value="dudosa">Dudosa</option><option value="rechazada">Rechazada</option>
       <option value="sin_juicio">Sin juicio</option></select>
+    <select id="f-nivel"><option value="">Toda confianza</option>
+      <option value="alta">Alta (todo el jurado)</option><option value="media">Media</option>
+      <option value="sin_respaldo">Sin respaldo</option></select>
   </div>
   <div class="top" id="top"></div>
   <div id="lista"></div>
@@ -187,7 +194,9 @@ let PAGINA = 100, mostrar = PAGINA;
 
 $("nombre").textContent = D.carpeta;
 document.title = "Visor de la red · " + D.carpeta;
+const hayNivel = D.aristas.some(a => a[8]);
 if (!D.juez) { $("f-agente").style.display = "none"; }
+if (!hayNivel) { $("f-nivel").style.display = "none"; }
 
 const genes = new Set();
 D.aristas.forEach(a => { genes.add(a[0]); genes.add(a[1]); });
@@ -198,6 +207,10 @@ const cifras = [[D.aristas.length.toLocaleString("es-MX"), "aristas"],
 if (D.juez) {
   cifras.push([D.aristas.filter(a => a[6] === "confirmada").length.toLocaleString("es-MX"),
                "confirmadas por el agente"]);
+}
+if (hayNivel) {
+  cifras.push([D.aristas.filter(a => a[8] === "alta").length.toLocaleString("es-MX"),
+               "de confianza alta (todo el jurado)"]);
 }
 $("cifras").innerHTML = cifras.map(c => `<div class="cifra"><b>${c[0]}</b><span>${c[1]}</span></div>`).join("");
 
@@ -231,13 +244,18 @@ function coincide(a, q) {
 function pintar() {
   const q = $("q").value.trim().toLowerCase();
   const soporte = +$("f-soporte").value, signo = $("f-signo").value, agente = $("f-agente").value;
+  const nv = $("f-nivel").value;
   const res = D.aristas.filter(a => coincide(a, q) && a[3] >= soporte &&
-    (!signo || a[2] === signo) && (!agente || a[6] === agente));
+    (!signo || a[2] === signo) && (!agente || a[6] === agente) && (!nv || a[8] === nv));
   const vista = res.slice(0, mostrar);
   $("lista").innerHTML = vista.map((a, i) => {
     const sig = `<span class="chip ${a[2] === "+" ? "mas" : a[2] === "-" ? "menos" : ""}">${NOMBRE_SIGNO[a[2]]}</span>`;
     const conf = a[5] ? `<span class="chip conf">votos en conflicto</span>` : "";
     const ag = a[6] ? `<span class="chip ag-${a[6]}">agente: ${a[6].replace("_", " ")}</span>` : "";
+    const NIVEL = {"alta": "confianza alta", "media": "confianza media", "sin_respaldo": "sin respaldo"};
+    const niv = a[8] ? `<span class="chip nivel-${a[8]}">${NIVEL[a[8]]}</span>` : "";
+    const sag = a[9] && a[9] !== a[2] && (a[6] === "confirmada" || a[6] === "invertida") ?
+      `<span class="chip">jurado: ${NOMBRE_SIGNO[a[9]]}</span>` : "";
     const evs = a[7].map(e => `<div class="ev"><div class="meta">
         <a href="https://pubmed.ncbi.nlm.nih.gov/${esc(e[0])}/" target="_blank" rel="noopener">PMID ${esc(e[0])}</a>
         <span>${esc(e[1] || "")}</span><span>BioBERT ${e[3]}</span>
@@ -246,7 +264,7 @@ function pintar() {
     const resto = a[4] > a[7].length ? `<div class="ev meta">… y ${a[4] - a[7].length} oraciones más.</div>` : "";
     return `<div class="arista"><div class="cab" data-i="${i}">
       <span class="par">${esc(a[0])}<span class="flecha">→</span>${esc(a[1])}</span>
-      ${sig}<span class="chip">${a[3]} artículo${a[3] === 1 ? "" : "s"}</span>${conf}${ag}</div>
+      ${sig}<span class="chip">${a[3]} artículo${a[3] === 1 ? "" : "s"}</span>${conf}${ag}${niv}${sag}</div>
       <div class="evs">${evs}${resto}</div></div>`;
   }).join("") || "<p class='sub'>Ninguna arista con esos filtros.</p>";
   $("mas").innerHTML = res.length > mostrar ?
@@ -262,7 +280,7 @@ $("lista").addEventListener("click", (e) => {
 $("mas").addEventListener("click", (e) => {
   if (e.target.id === "btn-mas") { mostrar += PAGINA; pintar(); }
 });
-["q", "f-soporte", "f-signo", "f-agente"].forEach(id =>
+["q", "f-soporte", "f-signo", "f-agente", "f-nivel"].forEach(id =>
   $(id).addEventListener("input", () => { mostrar = PAGINA; pintar(); }));
 pintar();
 })();

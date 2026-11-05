@@ -44,6 +44,18 @@ Veredicto por arista: `confirmada` si alguna oración la confirma; si no,
 `invertida` si alguna la invierte; si no, `dudosa`; si no, `rechazada`; y
 `sin_juicio` si todas se abstuvieron.
 
+NIVEL DE CONFIANZA (cuando juzga un jurado)
+===========================================
+Si las anotaciones son de un jurado (`grn_verificacion.cli jurado`), el
+comentario de cada oración trae los votos («jurado 1 de 3: si 2, …»). Cada
+arista lleva entonces `votos_si` (el máximo entre las oraciones que la
+respaldan) y `nivel`:
+- `alta`: confirmada o invertida con todos los jueces a favor;
+- `media`: confirmada o invertida con menos votos;
+- `sin_respaldo`: dudosa, rechazada o sin juicio.
+Contra la base curada (corrida 4, 5-nov-2026), las aristas con 3 de 3 votos
+están en ella 4 veces más que las de 0. Sin jurado, `nivel` va vacío.
+
 TOPE POR ARISTA
 ===============
 Una arista llega a tener 200 oraciones y la mitad de las aristas tiene una
@@ -63,6 +75,7 @@ import hashlib
 import io
 import json
 import os
+import re
 
 from grn_verificacion import muestra as _muestra
 
@@ -79,8 +92,11 @@ COLUMNAS_LLAVE = ["id_item", "tf", "blanco", "id_par", "pmid", "fuente",
                   "direccion_red", "fuente_texto", "num_oracion"]
 COLUMNAS_ARISTA = ["n_juzgadas", "n_confirma", "n_invierte", "n_dudosa",
                    "n_rechaza", "n_abstiene", "veredicto_agente",
-                   "signo_agente"]
-COLUMNAS_EVIDENCIA = ["id_item", "veredicto_agente", "signo_agente"]
+                   "signo_agente", "votos_si", "n_jueces", "nivel"]
+COLUMNAS_EVIDENCIA = ["id_item", "veredicto_agente", "signo_agente",
+                      "votos_si"]
+NIVELES = ("alta", "media", "sin_respaldo")
+_VOTOS = re.compile(r"jurado \d+ de (\d+): si (\d+)")
 VEREDICTOS_ARISTA = ("confirmada", "invertida", "dudosa", "rechazada",
                      "sin_juicio")
 
@@ -291,6 +307,21 @@ def _signo(signos):
     return "+" if c["+"] > c["-"] else "-"
 
 
+def votos_de(anotacion):
+    """(n_jueces, votos_si) del comentario de un jurado, o (None, None)."""
+    m = _VOTOS.search(anotacion.get("comentario") or "")
+    return (int(m.group(1)), int(m.group(2))) if m else (None, None)
+
+
+def nivel(veredicto, votos_si, n_jueces):
+    """alta, media o sin_respaldo; vacío si no juzgó un jurado."""
+    if not n_jueces:
+        return ""
+    if veredicto not in ("confirmada", "invertida"):
+        return "sin_respaldo"
+    return "alta" if n_jueces >= 2 and votos_si == n_jueces else "media"
+
+
 def _leer_anotaciones(r):
     """{id_item: fila} de Ouroboros, comprobando que sea de esta hoja."""
     with io.open(r["hoja"], encoding="utf-8-sig", newline="") as f:
@@ -319,34 +350,45 @@ def unir(carpeta, red="red", max_por_arista=None):
     por_arista = collections.defaultdict(collections.Counter)
     signos = collections.defaultdict(list)
     por_oracion = collections.Counter()
+    votos_arista = {}
+    jueces = None
     for fila in llave:
         anot = anotaciones.get(fila["id_item"], {})
         v = veredicto_oracion(anot, fila["direccion_red"])
         signo = (anot.get("signo") or "").strip()
+        n_j, n_si = votos_de(anot)
+        jueces = jueces or n_j
         por_par[(fila["tf"], fila["blanco"], fila["id_par"])] = (
-            fila["id_item"], v, signo)
+            fila["id_item"], v, signo, "" if n_si is None else str(n_si))
         arista = (fila["tf"], fila["blanco"])
         por_arista[arista][v] += 1
         por_oracion[v] += 1
         if v == "confirma":
             signos[arista].append(signo)
+        if v in ("confirma", "invierte") and n_si is not None:
+            votos_arista[arista] = max(votos_arista.get(arista, 0), n_si)
 
     cols_ev, evidencias = _leer_tsv(r["evidencias"])
     for ev in evidencias:
-        id_item, v, signo = por_par.get(
-            (ev["tf"], ev["blanco"], ev.get("id_par", "")), ("", "", ""))
+        id_item, v, signo, n_si = por_par.get(
+            (ev["tf"], ev["blanco"], ev.get("id_par", "")), ("", "", "", ""))
         ev.update({"id_item": id_item, "veredicto_agente": v,
-                   "signo_agente": signo})
+                   "signo_agente": signo, "votos_si": n_si})
     _escribir(r["evidencias_juez"], cols_ev + COLUMNAS_EVIDENCIA, evidencias,
               "\t")
 
     cols_red, aristas = _leer_tsv(r["red"])
     por_veredicto = collections.Counter()
+    por_nivel = collections.Counter()
     for a in aristas:
         clave = (a["tf"], a["blanco"])
         c = por_arista.get(clave, collections.Counter())
         v = veredicto_arista(c)
         por_veredicto[v] += 1
+        n_si = votos_arista.get(clave, 0 if jueces else "")
+        nv = nivel(v, n_si, jueces)
+        por_nivel[nv] += 1
+        a.update({"votos_si": n_si, "n_jueces": jueces or "", "nivel": nv})
         a.update({"n_juzgadas": sum(c[k] for k in c if k != "abstiene"),
                   "n_confirma": c["confirma"], "n_invierte": c["invierte"],
                   "n_dudosa": c["dudosa"], "n_rechaza": c["rechaza"],
@@ -360,6 +402,9 @@ def unir(carpeta, red="red", max_por_arista=None):
         "aristas": len(aristas),
         "aristas_por_veredicto": {k: por_veredicto[k]
                                   for k in VEREDICTOS_ARISTA},
+        "aristas_por_nivel": ({k: por_nivel[k] for k in NIVELES}
+                              if jueces else None),
+        "jueces": jueces,
         "oraciones": len(llave),
         "oraciones_en_la_red": len(evidencias),
         "max_por_arista": max_por_arista,
@@ -401,6 +446,10 @@ def ejecutar(carpeta, red="red", log=print, max_por_arista=None):
     log("Aristas: %d. Según el agente: %s."
         % (resumen["aristas"], ", ".join("%s %d" % (k, a[k])
                                           for k in VEREDICTOS_ARISTA)))
+    if resumen.get("aristas_por_nivel"):
+        n = resumen["aristas_por_nivel"]
+        log("Confianza (jurado de %d): %s." % (resumen["jueces"], ", ".join(
+            "%s %d" % (k, n[k]) for k in NIVELES)))
     log("Escrito %s, %s y juez_resumen.json; red.tsv no cambia."
         % (os.path.basename(r["red_juez"]),
            os.path.basename(r["evidencias_juez"])))

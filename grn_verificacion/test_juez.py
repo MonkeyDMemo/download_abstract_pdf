@@ -231,5 +231,69 @@ class PruebasTope(unittest.TestCase):
             juez.ejecutar(self.c, log=lambda m: None, max_por_arista=0)
 
 
+class PruebasNivel(unittest.TestCase):
+    """El nivel de confianza sale de los votos del jurado."""
+
+    def test_votos_del_comentario(self):
+        self.assertEqual(juez.votos_de(
+            {"comentario": "jurado 1 de 3: si 2, no 1, dudoso 0, "
+                           "abstenciones 0"}), (3, 2))
+        self.assertEqual(juez.votos_de({"comentario": ""}), (None, None))
+        self.assertEqual(juez.votos_de({}), (None, None))
+
+    def test_nivel(self):
+        self.assertEqual(juez.nivel("confirmada", 3, 3), "alta")
+        self.assertEqual(juez.nivel("invertida", 3, 3), "alta")
+        self.assertEqual(juez.nivel("confirmada", 2, 3), "media")
+        self.assertEqual(juez.nivel("rechazada", 0, 3), "sin_respaldo")
+        self.assertEqual(juez.nivel("dudosa", 1, 3), "sin_respaldo")
+        # Un solo agente no es un jurado: sin nivel.
+        self.assertEqual(juez.nivel("confirmada", None, None), "")
+        self.assertEqual(juez.nivel("confirmada", 1, 1), "media")
+
+    def test_la_arista_toma_el_maximo_de_sus_oraciones_que_la_respaldan(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        c = tmp.name
+        _tsv(os.path.join(c, "red.tsv"), ["tf", "blanco", "signo"],
+             [{"tf": "LasR", "blanco": "lasB", "signo": "activates"},
+              {"tf": "RhlR", "blanco": "phzA1", "signo": "represses"}])
+        _tsv(os.path.join(c, "red_evidencias.tsv"),
+             ["tf", "blanco", "id_par", "pmid", "fuente", "oracion"],
+             [{"tf": "LasR", "blanco": "lasB", "id_par": "p1", "pmid": "1",
+               "fuente": "abstract", "oracion": ORACION_1},
+              {"tf": "LasR", "blanco": "lasB", "id_par": "p2", "pmid": "2",
+               "fuente": "abstract", "oracion": ORACION_2},
+              {"tf": "RhlR", "blanco": "phzA1", "id_par": "p3", "pmid": "3",
+               "fuente": "abstract", "oracion": ORACION_3}])
+        juez.ejecutar(c, log=lambda m: None)
+        hoja = _leer(os.path.join(c, "juez", "hoja.csv"))
+        llave = {f["id_item"]: f for f in _leer(os.path.join(c, "juez",
+                                                             "llave.csv"))}
+        votos = {"p1": 1, "p2": 3, "p3": 0}
+        anot = []
+        for f in hoja:
+            f = dict(f)
+            l = llave[f["id_item"]]
+            n = votos[l["id_par"]]
+            f.update({"relacion": "si" if n else "no",
+                      "direccion": l["direccion_red"] if n else "",
+                      "signo": "+" if n else "",
+                      "comentario": "jurado 1 de 3: si %d, no %d, dudoso 0, "
+                                    "abstenciones 0" % (n, 3 - n)})
+            anot.append(f)
+        os.makedirs(os.path.join(c, "juez", "ouroboros"))
+        _csv(os.path.join(c, "juez", "ouroboros", "anotaciones.csv"),
+             list(anot[0]), anot)
+        resumen = juez.ejecutar(c, log=lambda m: None)
+        red = {a["tf"]: a for a in _leer(os.path.join(c, "red_juez.tsv"),
+                                         "\t")}
+        self.assertEqual((red["LasR"]["votos_si"], red["LasR"]["nivel"]),
+                         ("3", "alta"))
+        self.assertEqual(red["RhlR"]["nivel"], "sin_respaldo")
+        self.assertEqual(resumen["aristas_por_nivel"],
+                         {"alta": 1, "media": 0, "sin_respaldo": 1})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -29,6 +29,18 @@ como los genes de un operón) se pidieron una vez. Sin errores ni throttling.
   La calidad del jurado es la de la tanda 2 (72.9 % y 89.7 %).
 - Visor: `salidas/visor/visor_red_con_pdf.html`.
 
+**El jurado contra la base curada, por arista** (red de agosto, 8,827
+aristas; 1,248 están en la base; solo conteos en el servidor): están en la
+base el 30.1 % de las confirmadas, 24.5 % de las invertidas, 16.5 % de las
+dudosas y 7.2 % de las rechazadas; por votos de `si`, 31.9 % con 3 de 3,
+23.5 % con 2, 20.1 % con 1 y 7.4 % con 0. La base no se usó para diseñar el
+jurado: es una señal independiente de que sube la precisión por arista. Su
+costo: 422 aristas de la base quedan rechazadas por su mejor oración.
+
+**Niveles de confianza** (`juez`, desde los votos del jurado): en la red con
+PDF, alta (los 3 jueces) 2,090, media 968, sin respaldo 6,996. El visor los
+filtra.
+
 ---
 
 ## 5 de noviembre de 2026 (madrugada) — el jurado de agentes, los PDF y la tanda 2 en 100
