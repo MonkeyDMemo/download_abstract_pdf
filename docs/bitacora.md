@@ -8,6 +8,42 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 5 de noviembre de 2026 (noche) — cierre del día: nada corriendo en la nube
+
+**Comprobado al cerrar** (perfil `default` de la laptop, us-west-2):
+- **Bedrock:** 0 capacidades reservadas (`list-provisioned-model-throughputs`)
+  y 0 trabajos por lotes en curso (`list-model-invocation-jobs --status-equals
+  InProgress`). Bedrock cobra por llamada y no queda ninguna en curso.
+- **Servidores:** nunca se crearon. El usuario de IAM del proyecto no tiene
+  permisos de EC2 (ni para listar instancias) ni de Cost Explorer.
+- **Laptop:** ningún proceso de `grn_ouroboros`, `flujo.py` ni de descarga.
+
+**Gasto en la nube**, según el `corrida.json` de cada corrida (tokens por
+precio de lista; la factura de AWS puede diferir un poco):
+
+| Qué | US$ |
+|---|---|
+| Qwen3-235B solo: calibración y tandas 1 y 2 (enmienda 5; anterior al registro de costo) | ~0.30 |
+| Calibración del jurado (prompt v1) | 0.07 |
+| Jurado, tanda 1 | 0.47 |
+| Jurado, tanda 2 | 0.47 |
+| Jurado, corrida 16 (artículos nuevos) | 0.15 |
+| Jurado, corrida 20: una oración por arista | 18.37 |
+| Jurado, corrida 20: segunda oración | 2.96 |
+| **Total** | **~22.8** |
+
+Tope del proyecto: US$30. Lo facturado se ve en la consola de AWS (Billing)
+con la cuenta dueña: el usuario del proyecto no tiene acceso a Cost Explorer.
+
+Para comprobarlo otra vez, desde la laptop:
+
+```
+aws bedrock list-provisioned-model-throughputs --region us-west-2
+aws bedrock list-model-invocation-jobs --region us-west-2 --status-equals InProgress
+```
+
+---
+
 ## 5 de noviembre de 2026 (mañana) — el jurado juzga la red con PDF
 
 Corrida 20 (`--con-pdf`): 10,054 aristas, 2,004 nodos, 56,890 oraciones de
