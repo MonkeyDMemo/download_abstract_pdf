@@ -1,8 +1,8 @@
 """La frontera de grn_ouroboros, por AST y por texto.
 
-- Nadie fuera del paquete importa Strands, Strands Evals, `ollama`, pydantic
-  ni el paquete mismo. Dentro, esas cuatro solo se importan dentro de una
-  función: el paquete tiene que importarse sin ellas.
+- Nadie fuera del paquete importa Strands, Strands Evals, `ollama`, pydantic,
+  boto3 ni el paquete mismo. Dentro, esos terceros solo se importan dentro de
+  una función: el paquete tiene que importarse sin ellos.
 - Todo el paquete se lee con la gramática de Python 3.8, y ninguna anotación
   usa lo que el 3.8 evalúa y no entiende (`list[str]`, `str | None`).
 - `print` solo en `cli.py`.
@@ -34,7 +34,10 @@ PAQUETE = os.path.dirname(os.path.abspath(__file__))
 RAIZ = os.path.dirname(PAQUETE)
 NOMBRE = os.path.basename(PAQUETE)
 
-TERCEROS = ("strands", "strands_evals", "ollama", "pydantic")
+# boto3 y botocore llegan con Strands; desde el proveedor Bedrock el paquete
+# los importa, y con la misma regla.
+TERCEROS = ("strands", "strands_evals", "ollama", "pydantic", "boto3",
+            "botocore")
 
 # Lo que el recorrido no mira: las carpetas ocultas (los .venv*, .claude con
 # sus worktrees, .git), lo que dejan pip y Python, y las salidas y los datos,

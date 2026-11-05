@@ -119,14 +119,22 @@ cualquier particion en la que detecte esa contaminacion. El panorama esta en
   excepcion explicita del usuario (23-oct-2026; `docs/decisiones.md`, entrada
   de Ouroboros v0), y queda aislada en ese paquete.
   - **Paquetes aprobados:** `strands-agents[ollama]`, `strands-agents-evals`,
-    el cliente `ollama` y pydantic, con versiones fijas.
-  - **Donde corre:** en `.venv-ouroboros`, con Python 3.10 o mas, en el
-    servidor, porque Ollama vive ahi. El extra es `[ouroboros]`.
+    el cliente `ollama` y pydantic, con versiones fijas; boto3 y botocore
+    llegan con strands-agents y solo los usa `--proveedor bedrock`.
+  - **Donde corre:** en `.venv-ouroboros`, con Python 3.10 o mas. Con Ollama,
+    en el servidor, porque Ollama vive ahi. Con `--proveedor bedrock` (Qwen en
+    Amazon Bedrock; enmienda 5 de `docs/protocolo-tanda2.md`), desde la laptop:
+    solo salen las columnas de la hoja, y las credenciales de AWS viven solo en
+    la laptop, nunca en el servidor compartido ni en el repositorio. El extra
+    es `[ouroboros]`.
   - **Que no se cruza:** el nucleo no importa `grn_ouroboros`, y el paquete
     importa sus terceros dentro de las funciones. Asi las pruebas del
     repositorio pasan sin ellos.
-  - **El juez nunca es Claude:** el modelo va siempre explicito, y una prueba
-    falla si se construye uno de Bedrock.
+  - **El juez nunca es Claude:** el modelo va siempre explicito: el
+    `OllamaModel` local o un Qwen de Bedrock que pasa la lista blanca de
+    `agente.validar_modelo_bedrock`, que rechaza todo id con `anthropic` o
+    `claude`. `exigir_juez` lo comprueba en cada item, y una prueba falla si
+    `evals` construye un modelo de Bedrock.
 
 La excepcion no es una puerta abierta: lo que se apoya en un tercero deja de
 correr donde no se puede instalar. Los CSV son el producto canonico de toda
@@ -306,9 +314,10 @@ grn_verificacion/      paso 2, en construccion
   concordancia.py        el acuerdo de Ouroboros con el experto sobre la misma
                          hoja: por campo, kappa, matrices y el modelo como
                          filtro; la abstencion cuenta como error
-grn_ouroboros/         Ouroboros v0, el juez LLM exploratorio: CLI aparte,
-                       fuera del flujo y de la red, con Strands y Ollama en el
-                       servidor (.venv-ouroboros); docs/ouroboros-v0.md
+grn_ouroboros/         Ouroboros v0, el juez LLM exploratorio: CLI aparte (el
+                       paso juez del flujo arma su hoja y une su juicio), con
+                       Strands y Ollama en el servidor o Qwen en Bedrock desde
+                       la laptop (.venv-ouroboros); docs/ouroboros-v0.md
 grn_red/               paso 3; solo estandar y compatible con 3.8
   consolidar.py          las reglas de consolidacion como parametros
                          (autorregulacion, nivel de soporte, operones, mayoria,
@@ -642,6 +651,10 @@ python3 revision_portatil.py desde-respaldo --respaldo R.json --carpeta C --sali
 .venv-ouroboros/bin/python -m grn_ouroboros.cli humo
 .venv-ouroboros/bin/python -m grn_ouroboros.cli anotar --hoja H --salida salidas/ouroboros/X \
     --config principal|con_think [--semilla S] [--herramientas ninguna|buscar_locus|todas]
+# o desde la laptop contra Bedrock (solo principal y sin herramientas)
+.venv-ouroboros/Scripts/python -m grn_ouroboros.cli anotar --hoja H --salida salidas/ouroboros/X \
+    --config principal --proveedor bedrock --modelo qwen.qwen3-235b-a22b-2507-v1:0 \
+    --region us-east-1 --perfil-aws P --paralelo 8
 .venv-ouroboros/bin/python -m grn_ouroboros.cli calibracion --anotacion A | evals --salida D
 
 # en el servidor, con el python de pseudoRE; ver docs/entrenamiento-curada.md

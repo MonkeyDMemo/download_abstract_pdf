@@ -5,13 +5,17 @@ llamadas. Las oraciones son inventadas.
     python -m unittest grn_ouroboros.test_anotar
 """
 
+import collections
 import csv
 import io
 import json
 import os
 import shutil
 import tempfile
+import threading
+import time
 import unittest
+from unittest import mock
 
 from grn_ouroboros import agente, anotar, herramientas, rubrica
 
@@ -539,6 +543,319 @@ class PruebasLeerCorrida(Base):
     def test_sin_corrida(self):
         with self.assertRaises(ValueError):
             anotar.leer_corrida(self.tmp)
+
+
+# ------------------------------------------------- Ollama no se movió
+
+# Lo que daba el código de antes de Bedrock y de `paralelo` (e828c8e), con la
+# descripción falsa de arriba. Las corridas registradas en los protocolos
+# (`identidad.entradas.prompt` 2f80f09a… y c90cf9f2…) se reusan y se comparan
+# por estas llaves: si una cambia, sus veredictos dejan de encontrarse.
+HUELLA_PRINCIPAL = ("2f80f09a5850fbf7860d8cb305dbf5fd47703b3aa97df86ab9cc72ace"
+                    "9d7ddcc")
+HUELLA_BUSCAR_LOCUS = ("c90cf9f2317ad4ea0a254a931c7ca60b455f9adcf5412a8cf1a57d"
+                       "06b412647c")
+ENTRADAS_PRINCIPAL = {
+    "decodificacion": {"format": "esquema", "kv_cache": "f16",
+                       "max_turnos": None, "nombre": "principal",
+                       "num_ctx": 4096, "num_predict": 512, "seed": 42,
+                       "temperature": 0.0, "think": False, "top_k": None,
+                       "top_p": None},
+    "esquema": {"huella": "c0fd5626f9bee00bfcc7d10b38b31560c8ebbce55e9b8ace19"
+                          "09deefb516e88c",
+                "version": 1},
+    "herramientas": "ninguna",
+    "modelo": {"cuantizacion": "Q4_K_M",
+               "digest": "500a1f067a9f" + "0" * 52,
+               "huella_template": "t" * 64, "nombre": "qwen3:8b"},
+    "ollama": "0.12.6",
+    "prompt": HUELLA_PRINCIPAL,
+    "recursos": {},
+}
+LLAVE_PRINCIPAL = ("a59e1998ccc469853050b5e090edb570b0ae266245f991d13407ca539"
+                   "0a2d667")
+LLAVE_CON_THINK = ("34989a5a616519e00e9fc3aa75aeaf6d8793541f362fef817a85ca242"
+                   "b1e378b")
+
+
+class PruebasOllamaNoSeMovio(Base):
+    """Con proveedor ollama todo da lo mismo que antes: la decodificación,
+    las entradas, la llave y lo que `corrida.json` lleva."""
+
+    def entradas(self, nombre="principal", herr="ninguna", **k):
+        config = agente.configuracion(nombre)
+        return anotar.armar_entradas(
+            DESCRIPCION, agente.decodificacion(config, herr, **k),
+            agente.huella_prompt(agente.leer_prompt(), herr), herr,
+            herramientas.Recursos().huellas(herr))
+
+    def test_las_huellas_registradas(self):
+        prompt = agente.leer_prompt()
+        self.assertEqual(agente.huella_prompt(prompt), HUELLA_PRINCIPAL)
+        self.assertEqual(agente.huella_prompt(prompt, "buscar_locus"),
+                         HUELLA_BUSCAR_LOCUS)
+
+    def test_las_entradas_y_la_llave_de_la_principal(self):
+        for e in (self.entradas(), self.entradas(proveedor="ollama")):
+            self.assertEqual(e, ENTRADAS_PRINCIPAL)
+            # Y en el mismo orden, sin una clave más.
+            self.assertEqual(list(e), list(anotar.CLAVES_ENTRADAS))
+            self.assertEqual(anotar.llave_cache(PruebasLlave.item, e),
+                             LLAVE_PRINCIPAL)
+        self.assertEqual(anotar.llave_cache(PruebasLlave.item,
+                                            self.entradas("con_think")),
+                         LLAVE_CON_THINK)
+
+    def test_la_decodificacion_con_buscar_locus(self):
+        d = agente.decodificacion(agente.configuracion("principal"),
+                                  "buscar_locus")
+        self.assertEqual(d, dict(ENTRADAS_PRINCIPAL["decodificacion"],
+                                 format="en_el_prompt", max_turnos=10))
+
+    def test_corrida_json_no_gana_campos(self):
+        r, _ = self.correr(entradas=self.entradas())
+        corrida = json.loads(self.leer(anotar.CORRIDA).decode("utf-8"))
+        self.assertEqual(corrida["identidad"]["entradas"], ENTRADAS_PRINCIPAL)
+        self.assertEqual(set(corrida), {
+            "metodo", "version", "estatus", "iniciada_en", "identidad",
+            "configuracion", "modelo", "versiones", "n_items", "terminada_en",
+            "conteos", "reutilizadas", "nuevas", "segundos_esta_corrida",
+            "salidas"})
+        self.assertEqual(set(corrida["versiones"]),
+                         {"python"} | set(anotar.PAQUETES))
+        self.assertEqual(r["resumen"]["identidad"]["entradas"],
+                         ENTRADAS_PRINCIPAL)
+
+
+class PruebasLlaveBedrock(unittest.TestCase):
+    """Con Bedrock la llave lleva el proveedor, el id y la región, y nunca
+    coincide con la de Ollama aunque el prompt sea el mismo."""
+
+    def entradas(self, modelo=agente.MODELO_BEDROCK,
+                 region=agente.REGION_BEDROCK):
+        config = agente.configuracion("principal")
+        return anotar.armar_entradas(
+            agente.describir_bedrock(modelo, region),
+            agente.decodificacion(config, "ninguna", "bedrock"),
+            agente.huella_prompt(agente.leer_prompt()), "ninguna", {})
+
+    def test_lleva_proveedor_modelo_y_region(self):
+        e = self.entradas()
+        self.assertEqual(e["proveedor"], "bedrock")
+        self.assertEqual(e["modelo"], {"model_id": agente.MODELO_BEDROCK,
+                                       "region": "us-east-1"})
+        self.assertIsNone(e["ollama"])
+        self.assertEqual(e["decodificacion"]["format"], "en_el_prompt")
+        self.assertEqual(e["prompt"], HUELLA_PRINCIPAL)
+        for clave in anotar.CLAVES_ENTRADAS:
+            self.assertIn(clave, e)
+
+    def test_otra_llave_que_ollama_y_entre_ellas(self):
+        item = PruebasLlave.item
+        llaves = [anotar.llave_cache(item, e) for e in (
+            self.entradas(),
+            self.entradas(modelo="us.qwen.qwen3-32b-v1:0"),
+            self.entradas(region="us-west-2"))]
+        self.assertNotIn(LLAVE_PRINCIPAL, llaves)
+        self.assertEqual(len(set(llaves)), 3)
+
+    def test_la_identidad_de_la_corrida_difiere(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        hoja = os.path.join(tmp, "hoja.csv")
+        _escribir_hoja(hoja, ORACIONES)
+        falso = AnotadorFalso(dict((i, _json("x")) for i in ORACIONES))
+        salida = os.path.join(tmp, "salida")
+        r = anotar.ejecutar(hoja, salida, falso, self.entradas())
+        entradas = r["resumen"]["identidad"]["entradas"]
+        self.assertEqual((entradas["proveedor"],
+                          entradas["modelo"]["model_id"],
+                          entradas["modelo"]["region"]),
+                         ("bedrock", agente.MODELO_BEDROCK, "us-east-1"))
+        # La misma carpeta no la reusa una corrida de Ollama.
+        with self.assertRaises(anotar.CarpetaOcupada):
+            anotar.ejecutar(hoja, salida, falso, ENTRADAS_PRINCIPAL)
+
+
+# --------------------------------------------------------------- paralelo
+
+def _escribir_hoja(ruta, oraciones):
+    with io.open(ruta, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=rubrica.COLUMNAS_HOJA)
+        w.writeheader()
+        for id_item, (oracion, e1, e2) in oraciones.items():
+            w.writerow({"id_item": id_item, "oracion": oracion,
+                        "entidad_1": e1, "entidad_2": e2})
+
+
+class AnotadorLento(AnotadorFalso):
+    """El falso, con una espera distinta por ítem y la cuenta de cuántos van
+    a la vez. Sus respuestas pueden ser también un BaseException."""
+
+    def __init__(self, respuestas, esperas):
+        AnotadorFalso.__init__(self, respuestas)
+        self.esperas = esperas
+        self.avance = []
+        self._candado = threading.Lock()
+        self.en_vuelo = self.max_en_vuelo = 0
+
+    def __call__(self, item):
+        with self._candado:
+            self.en_vuelo += 1
+            self.max_en_vuelo = max(self.max_en_vuelo, self.en_vuelo)
+        try:
+            time.sleep(self.esperas.get(item["id_item"], 0))
+            r = self.respuestas[item["id_item"]]
+            if isinstance(r, BaseException) and not isinstance(r, Exception):
+                self.llamadas.append(dict(item))
+                raise r
+            return AnotadorFalso.__call__(self, item)
+        finally:
+            with self._candado:
+                self.en_vuelo -= 1
+
+
+class PruebasParalelo(unittest.TestCase):
+    """Con N hilos, las salidas son las de la corrida en serie, byte por
+    byte: el mismo orden, el mismo contenido y el mismo avance. El falso
+    tarda más en los primeros ítems, así que en paralelo terminan al revés
+    de como se pidieron."""
+
+    N = 12
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.oraciones = collections.OrderedDict()
+        for i in range(1, self.N + 1):
+            self.oraciones["m-%d" % (1100 + i)] = (
+                "Gen%d activates gen%d in an invented sentence." % (i, i + 50),
+                "Gen%d" % i, "gen%d" % (i + 50))
+        # El último repite la oración y las entidades del tercero: la misma
+        # llave, que se pide una sola vez.
+        self.oraciones["m-%d" % (1100 + self.N)] = self.oraciones["m-1103"]
+        self.hoja = os.path.join(self.tmp, "hoja.csv")
+        _escribir_hoja(self.hoja, self.oraciones)
+        self.respuestas = {}
+        for i, (id_item, (oracion, e1, e2)) in enumerate(
+                self.oraciones.items(), 1):
+            self.respuestas[id_item] = _json(oracion.split(" in ")[0],
+                                             signo="-" if i % 2 else "+")
+        self.respuestas["m-1104"] = "Sin JSON."
+        self.respuestas["m-1105"] = {"texto": _json("x"),
+                                     "done_reason": "length",
+                                     "truncado": True}
+        self.respuestas["m-1107"] = _json("NO ESTA LITERAL")
+        self.esperas = dict((id_item, 0.01 * (self.N - i))
+                            for i, id_item in enumerate(self.oraciones))
+        # La hora y el reloj fijos: lo único que cambiaría entre dos
+        # corridas iguales.
+        parche = mock.patch.object(anotar, "ahora",
+                                   lambda: "2026-11-04T00:00:00+00:00")
+        parche.start()
+        self.addCleanup(parche.stop)
+
+    def correr(self, nombre, paralelo, respuestas=None):
+        falso = AnotadorLento(respuestas or self.respuestas, self.esperas)
+        avance = []
+        salida = os.path.join(self.tmp, nombre)
+        try:
+            anotar.ejecutar(self.hoja, salida, falso, _entradas(),
+                            configuracion={"nombre": "principal"},
+                            descripcion=DESCRIPCION, log=avance.append,
+                            reloj=lambda: 0.0, paralelo=paralelo)
+        finally:
+            falso.avance = avance
+        return falso
+
+    def bytes_de(self, nombre):
+        salida = {}
+        for archivo in (anotar.ANOTACIONES, anotar.VEREDICTOS, anotar.CORRIDA):
+            ruta = os.path.join(self.tmp, nombre, archivo)
+            if os.path.exists(ruta):
+                with open(ruta, "rb") as f:
+                    salida[archivo] = f.read()
+        return salida
+
+    def test_las_salidas_no_dependen_de_n(self):
+        serie = self.correr("serie", 1)
+        paralelo = self.correr("paralelo", 4)
+        self.assertGreater(paralelo.max_en_vuelo, 1)
+        self.assertEqual(serie.max_en_vuelo, 1)
+        self.assertEqual(self.bytes_de("serie"), self.bytes_de("paralelo"))
+        self.assertEqual(len(self.bytes_de("serie")), 3)
+        self.assertEqual(paralelo.avance, serie.avance)
+        # El repetido se pidió una sola vez en las dos.
+        for falso in (serie, paralelo):
+            ids = sorted(it["id_item"] for it in falso.llamadas)
+            self.assertEqual(ids, sorted(list(self.oraciones)[:-1]))
+        corrida = json.loads(self.bytes_de("paralelo")[anotar.CORRIDA]
+                             .decode("utf-8"))
+        self.assertEqual((corrida["nuevas"], corrida["reutilizadas"]),
+                         (self.N - 1, 1))
+        self.assertEqual(corrida["conteos"]["abstenciones_por_motivo"],
+                         {"json_invalido": 1, "truncado": 1})
+
+    def test_y_tampoco_con_otro_n(self):
+        self.correr("dos", 2)
+        self.correr("ocho", 8)
+        self.assertEqual(self.bytes_de("dos"), self.bytes_de("ocho"))
+
+    def test_un_error_deja_lo_mismo_que_en_serie(self):
+        """Se guarda lo anterior al ítem que falló, y nada después, aunque ya
+        hubiera terminado; volver a correr retoma igual."""
+        cortada = dict(self.respuestas, **{"m-1106": RuntimeError("caído")})
+        self.esperas["m-1106"] = 0
+        for nombre, n in (("serie", 1), ("paralelo", 4)):
+            with self.assertRaises(RuntimeError):
+                self.correr(nombre, n, cortada)
+        self.assertEqual(self.bytes_de("serie"), self.bytes_de("paralelo"))
+        lineas = self.bytes_de("paralelo")[anotar.VEREDICTOS].splitlines()
+        self.assertEqual([json.loads(l)["id_item"] for l in lineas],
+                         ["m-1101", "m-1102", "m-1103", "m-1104", "m-1105"])
+        corrida = json.loads(self.bytes_de("paralelo")[anotar.CORRIDA]
+                             .decode("utf-8"))
+        self.assertEqual((corrida["estatus"], corrida["error"]),
+                         ("error", "RuntimeError"))
+        retomadas = [self.correr(nombre, n)
+                     for nombre, n in (("serie", 1), ("paralelo", 4))]
+        self.assertEqual(self.bytes_de("serie"), self.bytes_de("paralelo"))
+        for falso in retomadas:
+            self.assertEqual(sorted(it["id_item"] for it in falso.llamadas),
+                             ["m-%d" % i for i in range(1106, 1100 + self.N)])
+        # Y los veredictos quedan como los de una corrida sin cortes.
+        self.correr("limpia", 1)
+        self.assertEqual(self.bytes_de("limpia")[anotar.VEREDICTOS],
+                         self.bytes_de("paralelo")[anotar.VEREDICTOS])
+
+    def test_lo_que_no_habia_empezado_se_cancela(self):
+        cortada = dict(self.respuestas, **{"m-1102": RuntimeError("caído")})
+        self.esperas = dict((id_item, 0.05) for id_item in self.oraciones)
+        self.esperas["m-1102"] = 0
+        falso = AnotadorLento(cortada, self.esperas)
+        with self.assertRaises(RuntimeError):
+            anotar.ejecutar(self.hoja, os.path.join(self.tmp, "x"), falso,
+                            _entradas(), reloj=lambda: 0.0, paralelo=2)
+        self.assertLess(len(falso.llamadas), self.N - 1)
+        # Al volver, ninguno sigue en vuelo.
+        self.assertEqual(falso.en_vuelo, 0)
+
+    def test_interrumpida_en_paralelo(self):
+        interrumpe = dict(self.respuestas, **{"m-1104": KeyboardInterrupt()})
+        with self.assertRaises(KeyboardInterrupt):
+            self.correr("paralelo", 3, interrumpe)
+        corrida = json.loads(self.bytes_de("paralelo")[anotar.CORRIDA]
+                             .decode("utf-8"))
+        self.assertEqual(corrida["error"], "KeyboardInterrupt")
+        self.assertEqual(corrida["nuevas"], 3)
+
+    def test_paralelo_invalido_no_escribe_nada(self):
+        for malo in (0, -2, True, "4", 1.5):
+            with self.assertRaises(ValueError, msg=repr(malo)):
+                anotar.ejecutar(self.hoja, os.path.join(self.tmp, "y"),
+                                AnotadorFalso({}), _entradas(),
+                                paralelo=malo)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "y")))
 
 
 if __name__ == "__main__":

@@ -66,10 +66,10 @@ class Base(unittest.TestCase):
         self.fabricados = []
 
         def fabrica(config, prompt, host=None, herramientas=None,
-                    recursos=None):
-            self.fabricados.append({"config": config, "host": host,
-                                    "herramientas": herramientas,
-                                    "recursos": recursos})
+                    recursos=None, **otros):
+            self.fabricados.append(dict(otros, config=config, host=host,
+                                        herramientas=herramientas,
+                                        recursos=recursos))
             return self.anotador
 
         parche = mock.patch.object(agente, "crear_anotador", fabrica)
@@ -292,6 +292,160 @@ class PruebasAnotar(Base):
         self.assertEqual(self.anotar()[0], cli.BIEN)
         self.assertEqual([it["id_item"] for it in falso.llamadas],
                          ["m-2002", "m-2003"])
+
+
+class PruebasOllamaComoAntes(Base):
+    """Sin --proveedor, la corrida es la de antes: el mismo anotador, la
+    misma configuración en corrida.json y ni una opción de AWS."""
+
+    def test_el_anotador_se_pide_igual(self):
+        codigo, texto = self.anotar()
+        self.assertEqual(codigo, cli.BIEN, texto)
+        self.assertEqual(set(self.fabricados[0]),
+                         {"config", "host", "herramientas", "recursos"})
+        self.assertEqual(self.fabricados[0]["host"], motor.HOST)
+        with io.open(os.path.join(self.salida, anotar.CORRIDA),
+                     encoding="utf-8") as f:
+            corrida = json.load(f)
+        self.assertEqual(set(corrida["configuracion"]),
+                         set(agente.PRINCIPAL) | {"herramientas", "prompt"})
+        self.assertEqual(list(corrida["identidad"]["entradas"]),
+                         sorted(anotar.CLAVES_ENTRADAS))
+        self.assertEqual(set(corrida["versiones"]),
+                         {"python"} | set(anotar.PAQUETES))
+        self.assertNotIn("Bedrock", texto)
+
+    def test_paralelo_con_ollama_no(self):
+        codigo, texto = self.anotar("--paralelo", "2")
+        self.assertEqual(codigo, cli.ENTRADA)
+        self.assertIn("una sola GPU", texto)
+        self.assertEqual(self.ollama.peticiones, [])
+        self.assertFalse(os.path.exists(self.salida))
+
+    def test_las_opciones_de_aws_con_ollama_no(self):
+        for extra in (("--modelo", "qwen3:14b"), ("--region", "us-east-1"),
+                      ("--perfil-aws", "lab")):
+            codigo, texto = self.anotar(*extra)
+            self.assertEqual(codigo, cli.ENTRADA, extra)
+            self.assertIn("--proveedor bedrock", texto)
+        self.assertEqual(self.ollama.peticiones, [])
+        self.assertEqual(self.fabricados, [])
+
+
+class PruebasBedrock(Base):
+    """`--proveedor bedrock`: no toca Ollama, pasa el candado antes de crear
+    nada y deja en la corrida el proveedor, el modelo y la región."""
+
+    def bedrock(self, *extra):
+        return self.anotar("--proveedor", "bedrock", *extra)
+
+    def corrida(self):
+        with io.open(os.path.join(self.salida, anotar.CORRIDA),
+                     encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_anota_sin_tocar_ollama(self):
+        codigo, texto = self.bedrock("--paralelo", "4")
+        self.assertEqual(codigo, cli.BIEN, texto)
+        self.assertEqual(self.ollama.peticiones, [])
+        self.assertIn("Listo: 3 ítems, 3 válidos y 0 abstenciones.", texto)
+        self.assertIn("Bedrock en us-east-1: modelo %s"
+                      % agente.MODELO_BEDROCK, texto)
+        self.assertIn("4 a la vez", texto)
+        f = self.fabricados[0]
+        self.assertEqual((f["proveedor"], f["modelo"], f["region"],
+                          f["perfil_aws"], f["herramientas"]),
+                         ("bedrock", agente.MODELO_BEDROCK, "us-east-1", None,
+                          "ninguna"))
+        self.assertEqual(len(self.anotador.llamadas), 3)
+        self.sin_oraciones(texto)
+
+    def test_la_corrida_dice_proveedor_modelo_y_region(self):
+        codigo, texto = self.bedrock("--modelo", "us.qwen.qwen3-32b-v1:0",
+                                     "--region", "us-west-2", "--perfil-aws",
+                                     "lab", "--paralelo", "8")
+        self.assertEqual(codigo, cli.BIEN, texto)
+        corrida = self.corrida()
+        entradas = corrida["identidad"]["entradas"]
+        self.assertEqual(entradas["proveedor"], "bedrock")
+        self.assertEqual(entradas["modelo"], {"model_id":
+                                              "us.qwen.qwen3-32b-v1:0",
+                                              "region": "us-west-2"})
+        self.assertIsNone(entradas["ollama"])
+        self.assertEqual(entradas["decodificacion"]["format"], "en_el_prompt")
+        self.assertEqual(entradas["decodificacion"]["max_tokens"], 512)
+        self.assertIsNone(entradas["decodificacion"]["seed"])
+        # La misma huella del prompt que la principal de Ollama.
+        self.assertEqual(entradas["prompt"], agente.huella_prompt(
+            agente.leer_prompt()))
+        c = corrida["configuracion"]
+        self.assertEqual((c["proveedor"], c["model_id"], c["region"],
+                          c["paralelo"]),
+                         ("bedrock", "us.qwen.qwen3-32b-v1:0", "us-west-2", 8))
+        self.assertIn("boto3", corrida["versiones"])
+        self.assertEqual(corrida["modelo"]["proveedor"], "bedrock")
+        # El perfil es de quien corre: no entra a la corrida.
+        self.assertNotIn("lab", json.dumps(corrida))
+        self.assertEqual(self.fabricados[0]["perfil_aws"], "lab")
+
+    def test_el_paralelo_no_cambia_la_identidad(self):
+        self.assertEqual(self.bedrock("--paralelo", "1")[0], cli.BIEN)
+        self.anotador.llamadas = []
+        codigo, texto = self.bedrock("--paralelo", "6")
+        self.assertEqual(codigo, cli.BIEN, texto)
+        self.assertIn("nuevos: 0, de la caché: 3", texto)
+        self.assertEqual(self.anotador.llamadas, [])
+
+    def test_no_se_mezcla_con_ollama(self):
+        self.assertEqual(self.anotar()[0], cli.BIEN)
+        codigo, texto = self.bedrock()
+        self.assertEqual(codigo, cli.ENTRADA)
+        self.assertIn("usa otra carpeta", texto)
+
+    def test_claude_no(self):
+        for modelo in ("us.anthropic.claude-sonnet-4",
+                       "anthropic.claude-3-5-sonnet", "claude",
+                       "meta.llama3-70b", ""):
+            codigo, texto = self.bedrock("--modelo", modelo)
+            self.assertEqual(codigo, cli.ENTRADA, modelo)
+        self.assertIn("nunca es Claude", self.bedrock(
+            "--modelo", "us.anthropic.claude-sonnet-4")[1])
+        self.assertEqual(self.fabricados, [])
+        self.assertFalse(os.path.exists(self.salida))
+
+    def test_lo_que_no_va_con_bedrock(self):
+        for extra in (("--herramientas", "buscar_locus"),
+                      ("--semilla", "7"), ("--num-ctx", "8192"),
+                      ("--region", "us-east-1.evil.example"),
+                      ("--paralelo", "0"), ("--paralelo", "99")):
+            codigo, _texto = self.bedrock(*extra)
+            self.assertEqual(codigo, cli.ENTRADA, extra)
+        codigo, _texto = self.correr("anotar", "--hoja", self.hoja,
+                                     "--salida", self.salida, "--config",
+                                     "con_think", "--proveedor", "bedrock")
+        self.assertEqual(codigo, cli.ENTRADA)
+        self.assertEqual(self.fabricados, [])
+        self.assertFalse(os.path.exists(self.salida))
+
+    def test_un_perfil_que_no_existe(self):
+        def sin_perfil(*_a, **_k):
+            raise ValueError("El perfil de AWS 'x' no existe.")
+
+        with mock.patch.object(agente, "crear_anotador", sin_perfil):
+            codigo, texto = self.bedrock("--perfil-aws", "x")
+        self.assertEqual(codigo, cli.ENTRADA)
+        self.assertIn("no existe", texto)
+        self.assertFalse(os.path.exists(self.salida))
+
+    def test_un_error_de_bedrock_detiene_sin_imprimir_la_oracion(self):
+        oracion = ORACIONES["m-2003"][0]
+        self.anotador.respuestas["m-2003"] = RuntimeError(
+            "ThrottlingException con: %s" % oracion)
+        codigo, texto = self.bedrock("--paralelo", "3")
+        self.assertEqual(codigo, cli.FALLA)
+        self.assertIn("RuntimeError", texto)
+        self.sin_oraciones(texto)
+        self.assertEqual(self.corrida()["estatus"], "error")
 
 
 class PruebasCalibracion(Base):

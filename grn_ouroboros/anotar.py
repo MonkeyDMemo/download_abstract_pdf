@@ -17,7 +17,9 @@ La respuesta del anotador es un dict:
 Si el anotador lanza una excepción, la corrida se detiene: «no pude
 preguntar» no es un veredicto, y guardarlo como abstención haría que la caché
 lo repitiera para siempre. Lo ya hecho queda en `veredictos.jsonl`, y volver a
-correr retoma desde ahí.
+correr retoma desde ahí. Vale igual para Ollama que para Bedrock, y en serie
+que con `paralelo` (ver `ejecutar`): con N hilos, las salidas son las mismas
+que en serie, byte por byte.
 
 La caché
 ========
@@ -25,7 +27,9 @@ La llave de cada ítem es el sha256 de sus **entradas**, no del ítem ni de la
 hora: la oración y sus dos entidades, la huella del prompt, el digest y la
 cuantización del modelo, la huella de su template, la versión de Ollama, la
 configuración de decodificación completa, la versión y la huella del esquema,
-las herramientas, la huella de su código y la de sus recursos. Con `contexto`
+las herramientas, la huella de su código y la de sus recursos. Con Bedrock,
+en lugar del digest, el template y la versión de Ollama entran el proveedor,
+el id del modelo y la región. Con `contexto`
 encendida entra también el `id_item`, porque lo que esa herramienta devuelve
 depende de dónde está la oración y no solo de su texto. Lo mismo dos veces no
 vuelve a llamar al modelo; cualquier cambio en lo que decide el veredicto, sí.
@@ -71,6 +75,7 @@ Biblioteca estándar y Python 3.8. No imprime: reporta por `log`.
 """
 
 import collections
+import concurrent.futures
 import csv
 import hashlib
 import io
@@ -151,20 +156,38 @@ def ahora():
 def armar_entradas(descripcion, decodificacion, huella_prompt, herramientas,
                    huellas_recursos):
     """El dict de entradas que entra a la llave de la caché, a partir de lo
-    que describe `motor.describir` y de lo que decide la corrida."""
-    return {
+    que describe `motor.describir` (o `agente.describir_bedrock`) y de lo que
+    decide la corrida.
+
+    Con Ollama son las de siempre, sin una clave más: las corridas ya hechas
+    conservan su llave. Con otro proveedor el modelo es su id y su región, la
+    versión de Ollama vale None y `proveedor` lo dice, para que sus veredictos
+    nunca se mezclen con los de Ollama.
+    """
+    proveedor = descripcion.get("proveedor", "ollama")
+    if proveedor == "ollama":
+        modelo = {"nombre": descripcion["modelo"],
+                  "digest": descripcion["digest"],
+                  "cuantizacion": descripcion["cuantizacion"],
+                  "huella_template": descripcion["huella_template"]}
+        ollama = descripcion["ollama"]
+    else:
+        modelo = {"model_id": descripcion["modelo"],
+                  "region": descripcion["region"]}
+        ollama = None
+    entradas = {
         "prompt": huella_prompt,
-        "modelo": {"nombre": descripcion["modelo"],
-                   "digest": descripcion["digest"],
-                   "cuantizacion": descripcion["cuantizacion"],
-                   "huella_template": descripcion["huella_template"]},
-        "ollama": descripcion["ollama"],
+        "modelo": modelo,
+        "ollama": ollama,
         "decodificacion": decodificacion,
         "esquema": {"version": rubrica.VERSION_ESQUEMA,
                     "huella": rubrica.huella_esquema()},
         "herramientas": herramientas,
         "recursos": huellas_recursos,
     }
+    if proveedor != "ollama":
+        entradas["proveedor"] = proveedor
+    return entradas
 
 
 def _exigir_entradas(entradas):
@@ -338,11 +361,11 @@ def _escribir_json(ruta, objeto):
     archivos.reemplazar(tmp, ruta)
 
 
-def versiones():
+def versiones(paquetes=PAQUETES):
     """Las versiones instaladas de lo que decide la corrida."""
     import importlib.metadata as metadatos
     salida = {"python": platform.python_version()}
-    for paquete in PAQUETES:
+    for paquete in paquetes:
         try:
             salida[paquete] = metadatos.version(paquete)
         except metadatos.PackageNotFoundError:
@@ -399,15 +422,50 @@ def conteos(resultados):
 
 # ------------------------------------------------------------------ corrida
 
+def _llamar(anotador, item, reloj):
+    """(respuesta, segundos) de un ítem. Corre en el hilo que toque: no
+    escribe nada ni toca la caché."""
+    t0 = reloj()
+    respuesta = anotador(item)
+    return respuesta, reloj() - t0
+
+
+def _esperar(futuro):
+    """El resultado del futuro, o la excepción del anotador. Se espera en
+    vueltas cortas porque en Windows una espera sin tope no la corta Ctrl-C;
+    y se mira `done()`, no `TimeoutError`, porque un anotador también puede
+    lanzar `TimeoutError` (el de un socket, desde 3.10)."""
+    while not futuro.done():
+        concurrent.futures.wait([futuro], timeout=0.5)
+    return futuro.result()
+
+
 def ejecutar(ruta_hoja, salida, anotador, entradas, configuracion=None,
-             descripcion=None, log=_nada, reloj=time.monotonic):
+             descripcion=None, log=_nada, reloj=time.monotonic, paralelo=1,
+             paquetes=PAQUETES):
     """Anota la hoja con `anotador` y escribe las salidas en `salida`.
 
     Devuelve {"items", "resultados" ({id_item: veredicto}), "resumen"}. Los
     `segundos_totales` suman lo que tardó el modelo en cada ítem, también los
     que salieron de la caché; `segundos_esta_corrida` es el reloj de esta.
+
+    Con `paralelo` N > 1, N hilos llaman al anotador a la vez, y nada más: el
+    hilo principal recorre la hoja en orden, espera a cada ítem y es el único
+    que juzga, escribe `veredictos.jsonl`, toca la caché y reporta el avance.
+    Así las salidas salen en el mismo orden y con el mismo contenido que en
+    serie, y no dependen de N. Un ítem repetido (la misma llave) se pide una
+    sola vez y el segundo sale de la caché, como en serie. Si un ítem lanza,
+    la corrida se detiene igual que en serie: se guarda lo anterior a él, los
+    que no habían empezado se cancelan, y lo que ya estaba en vuelo (a lo
+    más N - 1 ítems) se espera y se descarta, para que `veredictos.jsonl`
+    quede como lo habría dejado la corrida en serie; volver a correr lo pide
+    otra vez. `segundos` de cada ítem es lo que tardó su llamada, así que en
+    paralelo `segundos_totales` pasa del reloj de la corrida.
     """
     _exigir_entradas(entradas)
+    if (isinstance(paralelo, bool) or not isinstance(paralelo, int)
+            or paralelo < 1):
+        raise ValueError("paralelo es un entero de 1 en adelante.")
     validar_salida(salida)
     items = calibracion.leer_hoja(ruta_hoja)
     os.makedirs(salida, exist_ok=True)
@@ -422,23 +480,33 @@ def ejecutar(ruta_hoja, salida, anotador, entradas, configuracion=None,
         "metodo": METODO, "version": VERSION, "estatus": "corriendo",
         "iniciada_en": ahora(), "identidad": identidad,
         "configuracion": configuracion, "modelo": descripcion,
-        "versiones": versiones(), "n_items": len(items),
+        "versiones": versiones(paquetes), "n_items": len(items),
     }
     _escribir_json(ruta_corrida, resumen)
     cache = leer_veredictos(ruta_veredictos)
     resultados = {}
     reutilizadas = nuevas = 0
     t_corrida = reloj()
+    hilos, futuros = None, {}
     try:
+        if paralelo > 1:
+            hilos = concurrent.futures.ThreadPoolExecutor(
+                max_workers=paralelo, thread_name_prefix="ouroboros")
+            for item in items:
+                llave = llave_cache(item, entradas)
+                if llave not in cache and llave not in futuros:
+                    futuros[llave] = hilos.submit(_llamar, anotador, item,
+                                                  reloj)
         for i, item in enumerate(items, 1):
             llave = llave_cache(item, entradas)
             valor = cache.get(llave)
             if valor is not None:
                 reutilizadas += 1
             else:
-                t0 = reloj()
-                respuesta = anotador(item)
-                segundos = reloj() - t0
+                if hilos is None:
+                    respuesta, segundos = _llamar(anotador, item, reloj)
+                else:
+                    respuesta, segundos = _esperar(futuros[llave])
                 valor = juzgar(item, respuesta)
                 valor["segundos"] = round(segundos, 3)
                 anexar(ruta_veredictos, {"llave": llave,
@@ -451,6 +519,8 @@ def ejecutar(ruta_hoja, salida, anotador, entradas, configuracion=None,
                 log("%d de %d ítems (%d de la caché)"
                     % (i, len(items), reutilizadas))
     except BaseException as e:
+        for futuro in futuros.values():
+            futuro.cancel()
         # Solo el tipo: el mensaje de una excepción puede traer el texto de
         # la petición, y corrida.json no lleva oraciones.
         resumen.update(estatus="error", error=type(e).__name__,
@@ -458,6 +528,9 @@ def ejecutar(ruta_hoja, salida, anotador, entradas, configuracion=None,
                        reutilizadas=reutilizadas, nuevas=nuevas)
         _escribir_json(ruta_corrida, resumen)
         raise
+    finally:
+        if hilos is not None:
+            hilos.shutdown(wait=True)
     escribir_anotaciones(ruta_anotaciones, items, resultados)
     resumen.update(
         estatus="ok", terminada_en=ahora(), conteos=conteos(resultados),

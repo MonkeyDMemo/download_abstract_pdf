@@ -264,3 +264,53 @@ Es anterior a medir cualquier cifra de la tanda 2: nadie ha corrido
     sin reemplazarla, y si difieren se reportan las dos;
   - el respaldo se convierte con `revision_portatil.py desde-respaldo` a
     `anotacion_experto_tanda2_corte100.csv`, que no se abre.
+
+## Enmienda 5 (5-nov-2026): una configuración exploratoria de Ouroboros en Amazon Bedrock
+
+Es anterior a correr cualquier modelo de Bedrock sobre cualquier hoja.
+
+- **Qué.** Ouroboros con el prompt congelado de la enmienda 3
+  (`anotador_v0.md`, sha256 `0871a839…`), sin herramientas y con la
+  decodificación de la principal, pero con otro modelo: **Qwen3-235B-A22B-2507
+  en Amazon Bedrock** (`qwen.qwen3-235b-a22b-2507-v1:0`, us-east-1). Es la
+  misma familia que la principal (Qwen3-8B), unas 30 veces más grande. Un solo
+  modelo: no se prueba otro ni se toca el prompt según lo que salga.
+- **Por qué.** La principal tarda ~4 s por oración en la GPU del servidor, y la
+  red completa no cabe en el tiempo del cierre. Además, la pregunta de si un
+  modelo mayor de la misma familia juzga mejor.
+- **Diferencias con la principal, declaradas:** el modelo y el proveedor; el
+  formato de la respuesta va solo en el prompt, porque Bedrock no tiene el
+  `format` de Ollama; se corre en paralelo, lo que no cambia el resultado (lo
+  fija una prueba). Para Bedrock no aplican `think`,
+  `format`, la semilla, `num_ctx`, `top_k` ni la caché KV; quedan la
+  temperatura 0 y `max_tokens` = 512, el `num_predict` de la principal. A
+  temperatura 0 Bedrock no garantiza la misma respuesta dos veces: **vale la
+  primera corrida, y no se repite para escoger**.
+- **Sobre qué corre:** la calibración (`6286017b…`), la tanda 1
+  (`378168b0…`), **los 200 ítems de la tanda 2** (`dcb55475…`) y las hojas del
+  paso `juez`: la red de agosto con tope de 3 oraciones por arista
+  (`e60e7b37…`, 15,410 oraciones) y la de artículos nuevos.
+- **Estatus: exploratorio.**
+  - En los 100 ítems del corte (enmienda 4) la medición es exploratoria: sus
+    juicios ya se conocen, aunque el modelo no los ve.
+  - **Los ítems 101 a 200 son la prueba limpia:** sus predicciones quedan
+    fijas antes de que el experto los anote.
+  - La principal pre-registrada sigue siendo Qwen3-8B; esta no la reemplaza.
+- **Lo que sale del laboratorio:** solo las columnas de la hoja (`id_item`,
+  oración y entidades), oraciones de artículos públicos. Nunca la llave, los
+  juicios del experto ni la base curada. Las credenciales de AWS viven solo en
+  la laptop; nunca en el servidor compartido ni en el repositorio.
+- **Regla para juzgar la red completa con este modelo:** en el corte de 100 de
+  la tanda 2, su precisión como filtro no es menor que la de la principal
+  (71.7 %) y retiene al menos el 80 % de las verdaderas. Si no la cumple, no
+  juzga la red y se reporta igual.
+- **Costo:** ~US$1 las tandas y ~US$12 la red de agosto con el tope, a precio
+  de lista (US$0.22 y US$0.88 por millón de tokens de entrada y de salida).
+- **Huellas:** el sistema y el mensaje son idénticos a los de la principal,
+  así que la huella del prompt es la misma, `2f80f09a…`; la corrida se
+  distingue por `proveedor`, `model_id` y `region` en `identidad.entradas`
+  de su `corrida.json`. El código es el de este mismo commit, que es anterior
+  a cualquier llamada a Bedrock.
+- **Ceguera:** sigue la regla de `CLAUDE.md`: ninguna sesión de Claude abre la
+  hoja de la tanda 2 ni lo que este modelo diga de ella; las sesiones solo ven
+  las cifras de `concordancia`.

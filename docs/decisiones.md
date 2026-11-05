@@ -1787,3 +1787,23 @@ red sobre los mismos ítems. Ahora el flujo tiene un último paso, `juez`.
 las `rechazada`). Se descarta por ahora: su retención frente al experto se
 mide con la tanda 2 completa, y sus errores conocidos (listas de genes
 regulados juntos) confirmarían relaciones falsas.
+
+## Ouroboros también corre con Qwen en Amazon Bedrock (5-nov-2026)
+
+**Qué.** `grn_ouroboros.cli anotar --proveedor bedrock` usa un Qwen de Amazon
+Bedrock en lugar del Ollama local. Lo pidió el usuario para el cierre: la
+GPU del servidor tarda ~4 s por oración y la red de agosto no cabía.
+
+**Reglas.**
+- El juez sigue sin ser Claude: el id del modelo va explícito y pasa por una
+  lista blanca de Qwen que rechaza todo lo que diga `anthropic` o `claude`.
+- Solo la configuración principal y sin herramientas, con el mismo prompt
+  congelado: la huella del prompt no cambia.
+- Corre desde la laptop. Solo salen las columnas de la hoja; las credenciales
+  de AWS no van al servidor ni al repositorio.
+- En paralelo, con la salida idéntica a la de una corrida en serie.
+- Con Ollama nada cambia: las huellas y la caché de las corridas registradas
+  son las mismas (lo fijan pruebas).
+
+**Estatus.** Exploratorio, registrado antes de correr en la enmienda 5 de
+`protocolo-tanda2.md`.

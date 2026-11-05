@@ -1,4 +1,5 @@
-"""Ouroboros v0: un juez LLM local que anota las mismas hojas que el experto.
+"""Ouroboros v0: un juez LLM que anota las mismas hojas que el experto; local
+por omisión, o un Qwen en Bedrock.
 
 Qué es
 ======
@@ -19,17 +20,24 @@ Dónde corre
 En el servidor del asesor, contra el Ollama que vive ahí
 (`http://127.0.0.1:11500`, `qwen3:8b` en Q4_K_M), con el entorno
 `.venv-ouroboros` (Python 3.10 o más) y el extra `[ouroboros]`. Cómo se arma
-y se corre está en `docs/ouroboros-v0.md`.
+y se corre está en `docs/ouroboros-v0.md`. Con `--proveedor bedrock`, el
+juez es un Qwen en Amazon Bedrock (por omisión Qwen3-235B-A22B-2507) y la
+hoja se puede anotar con varios ítems a la vez (`--paralelo`); ver el
+docstring de `agente`.
 
 Lo que no se cruza
 ==================
-- Este paquete es el único que importa Strands, Strands Evals, `ollama` o
-  pydantic, y lo hace **dentro de las funciones**: todo él se lee con la
-  gramática de Python 3.8 y se importa sin esas dependencias, porque la suite
-  de la raíz lo recoge con el Python del sistema. Nada fuera de él lo importa.
-- El juez nunca es Claude: el modelo va siempre explícito (un `OllamaModel`),
-  porque Strands sin modelo cae en Bedrock sin avisar, y una prueba falla si
-  se construye uno de Bedrock.
+- Este paquete es el único que importa Strands, Strands Evals, `ollama`,
+  pydantic o boto3, y lo hace **dentro de las funciones**: todo él se lee con
+  la gramática de Python 3.8 y se importa sin esas dependencias, porque la
+  suite de la raíz lo recoge con el Python del sistema. Nada fuera de él lo
+  importa.
+- El juez nunca es Claude: el modelo va siempre explícito, un `OllamaModel`
+  local o un Qwen en Bedrock con id explícito, que pasa el candado de
+  `agente.validar_modelo_bedrock` (rechaza todo lo que diga `anthropic` o
+  `claude`). Strands sin modelo cae en Bedrock con Claude sin avisar: una
+  prueba falla si la ruta de Ollama o la de Strands Evals construyen un
+  `BedrockModel`, y otra si el candado deja pasar uno que no es Qwen.
 - Nunca lee los juicios del experto: su única referencia es la llave de la
   calibración, que es sintética y pública. El acuerdo con el experto se
   calcula fuera, en `grn_verificacion/concordancia.py`.

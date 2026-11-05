@@ -5,11 +5,14 @@ Las reglas de los jueces y la guarda de que ninguno traiga modelo corren sin
 Strands Evals: miran las clases de biblioteca estándar que el experimento
 envuelve. Lo que arma el experimento de verdad se salta donde no está. La
 guarda de Bedrock parcha `BedrockModel.__init__` para que construir uno falle:
-si el anotador o el experimento cayeran en Bedrock, la prueba lo dice.
+si el anotador de Ollama o el experimento cayeran en Bedrock, la prueba lo
+dice. El proveedor Bedrock del anotador, que sí construye uno (un Qwen que
+pasa el candado), se prueba en `test_bedrock`; evals no llega a él.
 
     python -m unittest grn_ouroboros.test_evals
 """
 
+import ast
 import importlib.util
 import inspect
 import json
@@ -155,6 +158,29 @@ class PruebasNingunJuezTraeModelo(unittest.TestCase):
         codigo = texto.split('"""', 2)[2]   # sin el docstring, que los nombra
         for prohibido in ("OutputEvaluator", "BedrockModel", "model_id",
                           "model="):
+            self.assertNotIn(prohibido, codigo)
+
+    def test_evals_no_llega_al_proveedor_bedrock(self):
+        """El anotador ya puede ser un Qwen de Bedrock; evals no: no importa
+        `agente` (donde vive ese proveedor), ni boto3, ni los modelos de
+        Strands, y su código no nombra Bedrock ni a Claude."""
+        with open(evals.__file__, encoding="utf-8") as f:
+            texto = f.read()
+        importados = set()
+        for nodo in ast.walk(ast.parse(texto)):
+            if isinstance(nodo, ast.Import):
+                importados.update(a.name for a in nodo.names)
+            elif isinstance(nodo, ast.ImportFrom):
+                importados.add(nodo.module or "")
+                importados.update("%s.%s" % (nodo.module, a.name)
+                                  for a in nodo.names)
+        self.assertIn("grn_ouroboros.anotar", importados)
+        for prohibido in importados:
+            self.assertFalse(prohibido.startswith((
+                "grn_ouroboros.agente", "boto3", "botocore",
+                "strands.models")), prohibido)
+        codigo = texto.split('"""', 2)[2].lower()
+        for prohibido in ("bedrock", "claude", "anthropic", "crear_modelo"):
             self.assertNotIn(prohibido, codigo)
 
 

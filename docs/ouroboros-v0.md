@@ -272,3 +272,31 @@ python visor_red.py --carpeta C --salida visor.html
   aristas que se van a revisar.
 - El paso comprueba que el juicio sea de esa hoja (mismos ítems, oraciones y
   entidades); si no, no une nada.
+
+## Con Qwen en Amazon Bedrock, desde la laptop (5-nov-2026)
+
+Para juzgar más rápido o con un modelo mayor (`docs/decisiones.md`; enmienda 5
+de `protocolo-tanda2.md`). Requisitos: una cuenta de AWS con el modelo
+activado en Bedrock y un perfil en `~/.aws` (nunca en el servidor ni en el
+repositorio).
+
+```bash
+uv venv .venv-ouroboros --python 3.12
+uv pip install --python .venv-ouroboros/Scripts/python.exe \
+    -r grn_ouroboros/requisitos-servidor.txt
+
+.venv-ouroboros/Scripts/python -m grn_ouroboros.cli anotar \
+    --hoja docs/calibracion-hoja.csv \
+    --salida salidas/ouroboros/calibracion_bedrock_qwen235b \
+    --config principal --proveedor bedrock \
+    --modelo qwen.qwen3-235b-a22b-2507-v1:0 --region us-east-1 \
+    --perfil-aws P --paralelo 8
+```
+
+- Solo `--config principal` y sin herramientas; se rechazan `--semilla`,
+  `--num-ctx` y `con_think`.
+- El candado (`agente.validar_modelo_bedrock`) acepta solo ids de Qwen y
+  rechaza cualquiera con `anthropic` o `claude`.
+- `--paralelo N` no cambia la salida. Si una llamada falla después de los
+  reintentos, la corrida se detiene y volver a lanzarla la retoma.
+- Costo de referencia (precio de lista): ~US$0.75 por cada mil oraciones.

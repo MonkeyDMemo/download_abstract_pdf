@@ -6,6 +6,9 @@
         [--kv-cache {f16,q8_0,q4_0}]
         [--herramientas {ninguna,buscar_locus,todas}]
         [--llave L --corrida-bronce N [--db DB]] [--prompt RUTA] [--host URL]
+    python -m grn_ouroboros.cli anotar --hoja H --salida D --config principal
+        --proveedor bedrock [--modelo ID] [--region R] [--perfil-aws P]
+        [--paralelo N]
     python -m grn_ouroboros.cli calibracion --anotacion A
     python -m grn_ouroboros.cli evals --salida D
 
@@ -18,7 +21,10 @@ formatea: la lógica vive en los módulos.
   razonamiento.
 - `anotar`: anota una hoja de la rúbrica. Antes llama a `motor.exigir`: un
   digest o una cuantización distintos detienen la corrida con código 1, sin
-  anotar nada.
+  anotar nada. Con `--proveedor bedrock` no se toca Ollama: el juez es un
+  Qwen de Bedrock que pasa el candado de `agente.validar_modelo_bedrock`,
+  solo con la configuración principal y sin herramientas, y `--paralelo N`
+  anota N ítems a la vez con las mismas salidas que en serie.
 - `calibracion`: el acuerdo de una anotación con la llave de la calibración,
   por campo y por ítem.
 - `evals`: Strands Evals sobre una corrida ya hecha, sin volver a llamar al
@@ -34,8 +40,9 @@ sintéticos y públicos.
 salidas de Ouroboros van a salidas/ouroboros/ (`anotar.validar_salida`).
 
 Códigos de salida: 0 bien; 1 el modelo no es el pre-registrado, Ollama no
-contesta o la corrida se detuvo; 2 argumentos o entradas que no sirven; 3
-interrumpida (lo hecho queda en la caché, y volver a correr lo retoma).
+contesta o la corrida se detuvo (con Bedrock, también un error que sobrevivió
+a los reintentos); 2 argumentos o entradas que no sirven; 3 interrumpida (lo
+hecho queda en la caché, y volver a correr lo retoma).
 """
 
 import argparse
@@ -150,48 +157,115 @@ def _mostrar_conteos(resumen):
                           resumen["segundos_esta_corrida"]))
 
 
+def _mostrar_bedrock(d, perfil_aws):
+    log("Bedrock en %s: modelo %s, perfil de AWS %s"
+        % (d["region"], d["modelo"], perfil_aws or "(el del entorno)"))
+
+
+def _opciones_del_proveedor(args):
+    """(modelo, región) de Bedrock, o (None, None) con Ollama; ValueError
+    con la opción que no va con el proveedor pedido."""
+    if args.proveedor == "ollama":
+        sobran = [nombre for nombre, valor in (("--modelo", args.modelo),
+                                               ("--region", args.region),
+                                               ("--perfil-aws",
+                                                args.perfil_aws))
+                  if valor is not None]
+        if sobran:
+            raise ValueError("%s son de --proveedor bedrock; con ollama el "
+                             "modelo es el pre-registrado (%s)."
+                             % (", ".join(sobran), motor.MODELO))
+        motor.validar_host(args.host)
+        return None, None
+    sobran = [nombre for nombre, valor in (("--semilla", args.semilla),
+                                           ("--num-ctx", args.num_ctx))
+              if valor is not None]
+    if sobran:
+        raise ValueError("%s no van con bedrock: Converse no los recibe."
+                         % ", ".join(sobran))
+    modelo = agente.validar_modelo_bedrock(
+        agente.MODELO_BEDROCK if args.modelo is None else args.modelo)
+    region = agente.validar_region(
+        agente.REGION_BEDROCK if args.region is None else args.region)
+    return modelo, region
+
+
 def cmd_anotar(args):
     herr = args.herramientas
+    bedrock = args.proveedor == "bedrock"
     try:
         anotar.validar_salida(args.salida)
-        motor.validar_host(args.host)
+        # Con bedrock no se toca Ollama: ni el host ni el digest.
+        modelo, region = _opciones_del_proveedor(args)
+        agente.validar_paralelo(args.paralelo, args.proveedor)
         items = calibracion.leer_hoja(args.hoja)
         config = agente.configuracion(args.config, semilla=args.semilla,
                                       num_ctx=args.num_ctx,
                                       kv_cache=args.kv_cache)
+        agente.validar_bedrock(config, herr, args.proveedor)
         prompt = agente.leer_prompt(args.prompt)
         recursos = _recursos(args, items)
     except (ValueError, OSError, bdb.ErrorBase, motor.ErrorMotor) as e:
         log("ERROR: %s" % e)
         return ENTRADA
+    if bedrock:
+        descripcion = agente.describir_bedrock(modelo, region)
+        _mostrar_bedrock(descripcion, args.perfil_aws)
+    else:
+        try:
+            descripcion = motor.exigir(motor.describir(args.host))
+        except motor.ErrorMotor as e:
+            log("ERROR: %s" % e)
+            return FALLA
+        _mostrar_modelo(descripcion)
     try:
-        descripcion = motor.exigir(motor.describir(args.host))
-    except motor.ErrorMotor as e:
-        log("ERROR: %s" % e)
-        return FALLA
-    _mostrar_modelo(descripcion)
-    try:
-        anotador = agente.crear_anotador(config, prompt, host=args.host,
-                                         herramientas=herr, recursos=recursos)
+        if bedrock:
+            anotador = agente.crear_anotador(
+                config, prompt, herramientas=herr, recursos=recursos,
+                modelo=modelo, proveedor="bedrock", region=region,
+                perfil_aws=args.perfil_aws)
+        else:
+            anotador = agente.crear_anotador(config, prompt, host=args.host,
+                                             herramientas=herr,
+                                             recursos=recursos)
     except ImportError:
         log("ERROR: %s" % SIN_STRANDS)
         return ENTRADA
+    except ValueError as e:
+        # Un perfil de AWS que no existe o sin credenciales.
+        log("ERROR: %s" % e)
+        return ENTRADA
+    decodificacion = agente.decodificacion(config, herr, args.proveedor)
     entradas = anotar.armar_entradas(
-        descripcion, agente.decodificacion(config, herr),
-        agente.huella_prompt(prompt, herr), herr,
+        descripcion, decodificacion, agente.huella_prompt(prompt, herr), herr,
         recursos.huellas(herr) if recursos else {})
-    log("Anotando %d ítems: %s (%s, T %s, semilla %d, num_ctx %d, num_predict "
-        "%d, caché KV %s), herramientas: %s."
-        % (len(items), config["nombre"],
-           "con think" if config["think"] else "sin think",
-           config["temperature"], config["seed"], config["num_ctx"],
-           config["num_predict"], config["kv_cache"], herr))
+    configuracion = dict(config, herramientas=herr,
+                         prompt=os.path.basename(args.prompt))
+    paquetes = anotar.PAQUETES
+    if bedrock:
+        # Lo que se mandó, no lo que la configuración de Ollama decía: la
+        # semilla, num_ctx y la caché KV no llegan a Converse.
+        configuracion = dict(decodificacion, herramientas=herr,
+                             prompt=os.path.basename(args.prompt),
+                             proveedor="bedrock", model_id=modelo,
+                             region=region, paralelo=args.paralelo)
+        paquetes = anotar.PAQUETES + agente.PAQUETES_BEDROCK
+        log("Anotando %d ítems con Bedrock: %s (sin think, T %s, max_tokens "
+            "%d, formato en el prompt), herramientas: %s, %d a la vez."
+            % (len(items), config["nombre"], config["temperature"],
+               decodificacion["max_tokens"], herr, args.paralelo))
+    else:
+        log("Anotando %d ítems: %s (%s, T %s, semilla %d, num_ctx %d, "
+            "num_predict %d, caché KV %s), herramientas: %s."
+            % (len(items), config["nombre"],
+               "con think" if config["think"] else "sin think",
+               config["temperature"], config["seed"], config["num_ctx"],
+               config["num_predict"], config["kv_cache"], herr))
     try:
         r = anotar.ejecutar(
             args.hoja, args.salida, anotador, entradas,
-            configuracion=dict(config, herramientas=herr,
-                               prompt=os.path.basename(args.prompt)),
-            descripcion=descripcion, log=log)
+            configuracion=configuracion, descripcion=descripcion, log=log,
+            paralelo=args.paralelo, paquetes=paquetes)
     except anotar.CarpetaOcupada as e:
         log("ERROR: %s" % e)
         return ENTRADA
@@ -324,6 +398,27 @@ def main(argv=None):
                     help="El prompt del sistema; por omisión el v0.")
     an.add_argument("--host", default=motor.HOST,
                     help="Ollama local; por omisión %(default)s.")
+    an.add_argument("--proveedor", choices=agente.PROVEEDORES,
+                    default="ollama",
+                    help="Dónde corre el juez: ollama, el local del servidor "
+                         "(por omisión), o bedrock, un Qwen en Amazon "
+                         "Bedrock con id explícito. Nunca Claude.")
+    an.add_argument("--modelo", default=None,
+                    help="Con bedrock, el id del modelo; por omisión %s. "
+                         "Solo se aceptan los Qwen (qwen.…, us.qwen.… o "
+                         "global.qwen.…). Con ollama no va: el modelo es el "
+                         "pre-registrado." % agente.MODELO_BEDROCK)
+    an.add_argument("--region", default=None,
+                    help="Con bedrock, la región de AWS; por omisión %s."
+                         % agente.REGION_BEDROCK)
+    an.add_argument("--perfil-aws", dest="perfil_aws", default=None,
+                    help="Con bedrock, el perfil de la configuración de AWS "
+                         "con las credenciales; por omisión, las del "
+                         "entorno.")
+    an.add_argument("--paralelo", type=int, default=1,
+                    help="Cuántos ítems se anotan a la vez; por omisión 1. "
+                         "Con ollama, solo 1: hay una sola GPU. Las salidas "
+                         "no dependen de este número.")
     an.set_defaults(func=cmd_anotar)
 
     ca = sub.add_parser("calibracion",
