@@ -455,6 +455,27 @@ class PruebasPlanReal(unittest.TestCase):
         capa = flujo._plan(self.ctx(), "capa")
         self.assertEqual(set(capa["borrar_antes"]), set(capa["salidas"]))
 
+    def _candidatas(self, pmids):
+        ruta = os.path.join(self.tmp.name, "c.csv")
+        with io.open(ruta, "w", encoding="utf-8", newline="") as f:
+            f.write("pmid,oracion\n")
+            for p in pmids:
+                f.write("%s,x\n" % p)
+
+    def test_evaluar_se_omite_en_un_corpus_sin_los_juicios(self):
+        """Los juicios del 44 % son del corpus de agosto. Sobre el de
+        artículos nuevos no se une ninguno: se omite con motivo, no falla."""
+        juicios = os.path.join(self.tmp.name, "juicios.csv")
+        with io.open(juicios, "w", encoding="utf-8", newline="") as f:
+            f.write("pmid,oracion\n111,x\n222,y\n")
+        with mock.patch.object(flujo, "JUICIOS", [juicios]):
+            self._candidatas(["333", "444"])
+            plan = flujo._plan(self.ctx(), "evaluar")
+            self.assertIn("omitir", plan)
+            self.assertIn("44 %", plan["omitir"])
+            self._candidatas(["333", "222"])
+            self.assertNotIn("omitir", flujo._plan(self.ctx(), "evaluar"))
+
     def test_el_paquete_va_despues_de_lo_que_no_debe_cortar(self):
         """Solo lee la red, pero va después de la sintaxis, la capa y la
         evaluación: si falla, no corta ninguna. Y une por `id_par`: con unos

@@ -263,6 +263,29 @@ def _vocabularios():
             for nombre, _ in vocabulario.VOCABULARIOS]
 
 
+def _pmids(ruta):
+    """Los PMID de la columna `pmid` de un CSV, o un conjunto vacío."""
+    if not ruta or not os.path.isfile(ruta):
+        return set()
+    import csv
+    with io.open(ruta, encoding="utf-8-sig", newline="") as f:
+        return set((fila.get("pmid") or "").strip()
+                   for fila in csv.DictReader(f)) - {""}
+
+
+def _corpus_con_juicios(candidatas):
+    """¿El bronce trae algún artículo de los juicios del 44 %?
+
+    Los juicios son de oraciones del corpus de agosto. Sobre otro corpus (el
+    de artículos nuevos) no se une ninguno y la evaluación fallaba, cuando lo
+    que toca es omitirla. Sin el CSV de candidatas o sin los juicios no se
+    decide aquí: el paso sigue y falla o avisa como antes."""
+    if not (candidatas and os.path.isfile(candidatas)
+            and os.path.isfile(JUICIOS[0])):
+        return True
+    return bool(_pmids(JUICIOS[0]) & _pmids(candidatas))
+
+
 def _plan(ctx, paso):
     """Lo que corre cada paso: argv(s), entradas, parámetros y salidas.
 
@@ -500,6 +523,10 @@ def _plan(ctx, paso):
             return {"omitir": "con --limite no está la muestra completa: la "
                               "evaluación solo tiene sentido sobre la corrida "
                               "entera"}
+        if not _corpus_con_juicios(candidatas):
+            return {"omitir": "ningún artículo de los juicios del 44 % está en "
+                              "este corpus (por ejemplo, el de artículos "
+                              "nuevos): no hay con qué medir"}
         propia = [py, "-m", "grn_verificacion.cli", "evaluar",
                   "--carpeta", ctx.carpeta, "--bronce", candidatas]
         oro = [py, os.path.join(RAIZ, "etapa2", "evaluar_oro.py"),
