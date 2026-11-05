@@ -33,11 +33,12 @@ Lo que no se cruza
   suite de la raíz lo recoge con el Python del sistema. Nada fuera de él lo
   importa.
 - El juez nunca es Claude: el modelo va siempre explícito, un `OllamaModel`
-  local o un Qwen en Bedrock con id explícito, que pasa el candado de
-  `agente.validar_modelo_bedrock` (rechaza todo lo que diga `anthropic` o
-  `claude`). Strands sin modelo cae en Bedrock con Claude sin avisar: una
-  prueba falla si la ruta de Ollama o la de Strands Evals construyen un
-  `BedrockModel`, y otra si el candado deja pasar uno que no es Qwen.
+  local o un Qwen o un gpt-oss en Bedrock con id explícito, que pasa el
+  candado de `agente.validar_modelo_bedrock` (rechaza todo lo que diga
+  `anthropic` o `claude`). Strands sin modelo cae en Bedrock con Claude sin
+  avisar: una prueba falla si la ruta de Ollama o la de Strands Evals
+  construyen un `BedrockModel`, y otra si el candado deja pasar uno que no
+  es de la lista.
 - Nunca lee los juicios del experto: su única referencia es la llave de la
   calibración, que es sintética y pública. El acuerdo con el experto se
   calcula fuera, en `grn_verificacion/concordancia.py`.
@@ -45,5 +46,15 @@ Lo que no se cruza
 Módulos: `rubrica` (columnas, opciones y el esquema de la respuesta),
 `calibracion` (la hoja y la llave), `motor` (Ollama por HTTP), `herramientas`
 (cinco consultas a recursos del proyecto), `agente` (Strands), `anotar`
-(caché, abstención y salidas), `evals` (Strands Evals) y `cli`.
+(caché, abstención y salidas), `contexto` (las oraciones vecinas de cada
+ítem, en un archivo), `gasto` (el costo en Bedrock y el tope de gasto),
+`evals` (Strands Evals) y `cli`.
+
+El jurado
+=========
+Para el jurado (`grn_verificacion/jurado.py`, que vota con las anotaciones de
+varias corridas) el candado acepta también gpt-oss en Bedrock, con su
+configuración `razonador`, y hay un segundo prompt, `prompts/anotador_v1.md`,
+con la guía del experto. El v0 sigue congelado y es el de omisión; ver
+`docs/ouroboros-v0.md`, «El jurado (v1)».
 """

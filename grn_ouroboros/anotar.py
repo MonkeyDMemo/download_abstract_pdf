@@ -31,8 +31,11 @@ las herramientas, la huella de su código y la de sus recursos. Con Bedrock,
 en lugar del digest, el template y la versión de Ollama entran el proveedor,
 el id del modelo y la región. Con `contexto`
 encendida entra también el `id_item`, porque lo que esa herramienta devuelve
-depende de dónde está la oración y no solo de su texto. Lo mismo dos veces no
-vuelve a llamar al modelo; cualquier cambio en lo que decide el veredicto, sí.
+depende de dónde está la oración y no solo de su texto. Con el contexto en
+archivo (`ejecutar(..., contexto=...)`, `contexto.py`) entra el texto de las
+dos vecinas del ítem, y las entradas llevan la huella del archivo. Lo mismo
+dos veces no vuelve a llamar al modelo; cualquier cambio en lo que decide el
+veredicto, sí.
 La reproducibilidad no depende de T = 0: la da esta caché
 (`docs/decisiones.md`, «El LLM sobre la oración es trabajo de tesis»).
 
@@ -59,7 +62,9 @@ Las salidas
   para leerla con `precision_ciega.leer_anotacion` como la del experto.
 - `corrida.json`: versiones, configuración, huellas y conteos. Se escribe al
   empezar (`corriendo`) y al terminar (`ok` o `error`), como una fila de
-  `corridas`. No lleva oraciones.
+  `corridas`. No lleva oraciones. Con Bedrock, los conteos suman además los
+  tokens de entrada y de salida, y con un precio (`gasto.py`) lleva `costo`:
+  el de toda la carpeta y el de esta corrida. Con Ollama no gana campos.
 
 Una carpeta que ya tiene una corrida con otra hoja, otro prompt, otro modelo u
 otra configuración no se reutiliza: esa corrida pudo estar pre-registrada.
@@ -87,7 +92,7 @@ import time
 from datetime import datetime, timezone
 
 from grn_comun import archivos, procedencia
-from grn_ouroboros import calibracion, rubrica
+from grn_ouroboros import calibracion, gasto, rubrica
 
 VERSION = 1
 METODO = "ouroboros-v0"
@@ -203,6 +208,8 @@ def llave_cache(item, entradas):
     propio = dict((c, item[c]) for c in ("oracion", "entidad_1", "entidad_2"))
     if entradas["herramientas"] == "todas":
         propio["id_item"] = item["id_item"]
+    if "contexto" in item:
+        propio["contexto"] = item["contexto"]
     texto = json.dumps({"item": propio, "entradas": entradas},
                        sort_keys=True, ensure_ascii=False,
                        separators=(",", ":"))
@@ -264,6 +271,9 @@ def juzgar(item, respuesta):
         "truncado": bool(respuesta.get("truncado")),
         "texto": texto,
     }
+    # Solo Bedrock trae `uso`: un veredicto de Ollama queda como antes.
+    if respuesta.get("uso") is not None:
+        valor["uso"] = respuesta["uso"]
     if respuesta.get("motivo_abstencion"):
         valor["motivo_abstencion"] = respuesta["motivo_abstencion"]
         return valor
@@ -400,10 +410,11 @@ def _exigir_misma_corrida(ruta, identidad):
 
 
 def conteos(resultados):
-    """Los conteos de `corrida.json`: solo números."""
+    """Los conteos de `corrida.json`: solo números. Los tokens, solo si algún
+    veredicto trae `uso` (Bedrock): con Ollama, los de antes."""
     valores = list(resultados.values())
     abstenciones = [v for v in valores if v["abstencion"]]
-    return {
+    salida = {
         "items": len(valores),
         "validas": len(valores) - len(abstenciones),
         "abstenciones": len(abstenciones),
@@ -418,6 +429,11 @@ def conteos(resultados):
         "segundos_totales": round(sum(v.get("segundos") or 0
                                       for v in valores), 1),
     }
+    uso = gasto.sumar_uso(valores)
+    if uso["con_uso"]:
+        salida["tokens_entrada"] = uso["entrada"]
+        salida["tokens_salida"] = uso["salida"]
+    return salida
 
 
 # ------------------------------------------------------------------ corrida
@@ -440,9 +456,33 @@ def _esperar(futuro):
     return futuro.result()
 
 
+def _costo(precio, resultados, nuevos):
+    """El costo de la hoja (todos sus veredictos, también los de la caché) y
+    el de esta corrida (los nuevos), con el precio usado."""
+    def usd(valores):
+        return round(sum(gasto.costo(v.get("uso"), precio) for v in valores),
+                     6)
+    return {"precio_usd_por_millon": list(precio),
+            "usd_total": usd(resultados.values()),
+            "usd_esta_corrida": usd(nuevos)}
+
+
+def _con_contexto(items, contexto):
+    """Los ítems con sus vecinas (`contexto.para_hoja`); ValueError si a
+    alguno le falta."""
+    faltan = sum(1 for item in items if item["id_item"] not in contexto)
+    if faltan:
+        raise ValueError("%d ítems de la hoja no tienen contexto." % faltan)
+    for item in items:
+        vecinas = contexto[item["id_item"]]
+        item["contexto"] = {"anterior": vecinas.get("anterior") or "",
+                            "siguiente": vecinas.get("siguiente") or ""}
+    return items
+
+
 def ejecutar(ruta_hoja, salida, anotador, entradas, configuracion=None,
              descripcion=None, log=_nada, reloj=time.monotonic, paralelo=1,
-             paquetes=PAQUETES):
+             paquetes=PAQUETES, contexto=None, precio=None):
     """Anota la hoja con `anotador` y escribe las salidas en `salida`.
 
     Devuelve {"items", "resultados" ({id_item: veredicto}), "resumen"}. Los
@@ -461,6 +501,11 @@ def ejecutar(ruta_hoja, salida, anotador, entradas, configuracion=None,
     quede como lo habría dejado la corrida en serie; volver a correr lo pide
     otra vez. `segundos` de cada ítem es lo que tardó su llamada, así que en
     paralelo `segundos_totales` pasa del reloj de la corrida.
+
+    `contexto` ({id_item: {anterior, siguiente}}, de `contexto.para_hoja`)
+    agrega las vecinas a cada ítem: el anotador las recibe y entran a la
+    llave. `precio` ((entrada, salida) en USD por millón, de `gasto.precio`)
+    agrega `costo` a `corrida.json`. Sin los dos, todo es como antes.
     """
     _exigir_entradas(entradas)
     if (isinstance(paralelo, bool) or not isinstance(paralelo, int)
@@ -468,6 +513,8 @@ def ejecutar(ruta_hoja, salida, anotador, entradas, configuracion=None,
         raise ValueError("paralelo es un entero de 1 en adelante.")
     validar_salida(salida)
     items = calibracion.leer_hoja(ruta_hoja)
+    if contexto is not None:
+        _con_contexto(items, contexto)
     os.makedirs(salida, exist_ok=True)
     ruta_veredictos = os.path.join(salida, VEREDICTOS)
     ruta_anotaciones = os.path.join(salida, ANOTACIONES)
@@ -485,6 +532,7 @@ def ejecutar(ruta_hoja, salida, anotador, entradas, configuracion=None,
     _escribir_json(ruta_corrida, resumen)
     cache = leer_veredictos(ruta_veredictos)
     resultados = {}
+    nuevos = []
     reutilizadas = nuevas = 0
     t_corrida = reloj()
     hilos, futuros = None, {}
@@ -513,6 +561,7 @@ def ejecutar(ruta_hoja, salida, anotador, entradas, configuracion=None,
                                          "id_item": item["id_item"],
                                          "hora": ahora(), "valor": valor})
                 cache[llave] = valor
+                nuevos.append(valor)
                 nuevas += 1
             resultados[item["id_item"]] = valor
             if i % 10 == 0 or i == len(items):
@@ -526,6 +575,8 @@ def ejecutar(ruta_hoja, salida, anotador, entradas, configuracion=None,
         resumen.update(estatus="error", error=type(e).__name__,
                        terminada_en=ahora(), conteos=conteos(resultados),
                        reutilizadas=reutilizadas, nuevas=nuevas)
+        if precio is not None:
+            resumen["costo"] = _costo(precio, resultados, nuevos)
         _escribir_json(ruta_corrida, resumen)
         raise
     finally:
@@ -538,6 +589,8 @@ def ejecutar(ruta_hoja, salida, anotador, entradas, configuracion=None,
         segundos_esta_corrida=round(reloj() - t_corrida, 1),
         salidas={ANOTACIONES: procedencia.huella(ruta_anotaciones),
                  VEREDICTOS: procedencia.huella(ruta_veredictos)})
+    if precio is not None:
+        resumen["costo"] = _costo(precio, resultados, nuevos)
     _escribir_json(ruta_corrida, resumen)
     return {"items": items, "resultados": resultados, "resumen": resumen}
 
@@ -556,7 +609,7 @@ def _items_de(ruta_anotaciones):
                 for fila in lector]
 
 
-def leer_corrida(salida):
+def leer_corrida(salida, ruta_contexto=None):
     """{"items", "resultados", "resumen"} de una corrida terminada, como los
     devuelve `ejecutar`, sin llamar al modelo.
 
@@ -565,7 +618,9 @@ def leer_corrida(salida):
     `corrida.json`): si cambiaron después, ya no describen esa corrida. Cada
     veredicto se busca por la llave que dan las entradas de la corrida, no
     por el `id_item` del JSONL: dos ítems con la misma oración y las mismas
-    entidades comparten llave, y el segundo nunca llegó a escribirse.
+    entidades comparten llave, y el segundo nunca llegó a escribirse. Una
+    corrida con contexto pide el mismo archivo de contexto (`contexto.py`):
+    las vecinas son parte de la llave.
     """
     ruta_corrida = os.path.join(salida, CORRIDA)
     if not os.path.isfile(ruta_corrida):
@@ -588,6 +643,14 @@ def leer_corrida(salida):
     entradas = (resumen.get("identidad") or {}).get("entradas") or {}
     _exigir_entradas(entradas)
     items = _items_de(os.path.join(salida, ANOTACIONES))
+    if "contexto" in entradas:
+        if ruta_contexto is None:
+            raise ValueError("La corrida se hizo con contexto: pásalo con "
+                             "--contexto, el mismo archivo.")
+        from grn_ouroboros import contexto
+        _con_contexto(items, contexto.para_hoja(items, ruta_contexto))
+    elif ruta_contexto is not None:
+        raise ValueError("La corrida se hizo sin contexto.")
     cache = leer_veredictos(os.path.join(salida, VEREDICTOS))
     resultados, faltan = {}, 0
     for item in items:

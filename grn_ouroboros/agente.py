@@ -92,8 +92,9 @@ las entradas de la caché y `corrida.json` son los de antes, byte por byte.
   código no agrega marcas como `/no_think`: el texto queda idéntico y solo se
   omite lo que Converse no acepta (`think`, `format`, la semilla, `num_ctx`,
   `top_k`, la caché KV, que en la decodificación de Bedrock valen None). Por
-  eso Bedrock corre solo la configuración sin think, sin herramientas, y sin
-  `--semilla` ni `--num-ctx`. El límite de generación es el mismo:
+  eso un Qwen de Bedrock corre solo la configuración sin think, sin
+  herramientas, y sin `--semilla` ni `--num-ctx`; gpt-oss, que razona
+  siempre, tiene la suya (abajo). El límite de generación es el mismo:
   `num_predict` pasa como `max_tokens`.
 - **Los errores.** El cliente reintenta el throttling con el modo `adaptive`
   de botocore (`REINTENTOS_BEDROCK`), y lo que sobrevive lo reintenta Strands
@@ -108,6 +109,40 @@ las entradas de la caché y `corrida.json` son los de antes, byte por byte.
   escribe se tocan con herramientas o con el razonamiento de Claude, y aquí
   no hay ni uno ni otro. El `Agent` es uno por ítem, así que la conversación
   no se comparte.
+- **Los tokens.** Con Bedrock, cada respuesta lleva `uso` (los tokens de
+  entrada y de salida que Bedrock reporta, los del razonamiento incluidos):
+  de ahí salen el costo y el tope de gasto (`gasto.py`). Con Ollama no se
+  agrega: su respuesta y sus veredictos son los de antes.
+
+gpt-oss, el segundo modelo de la lista blanca
+=============================================
+Para el jurado (`grn_verificacion/jurado.py`) hace falta un juez que no sea
+de la familia Qwen: votos de la misma familia se equivocan juntos. El candado
+acepta además `openai.gpt-oss-120b-1:0` y `openai.gpt-oss-20b-1:0` (y sus
+perfiles `us.` y `global.`), y nada más de OpenAI.
+
+- **Razona siempre.** gpt-oss no tiene modo sin razonamiento: el nivel va en
+  `additionalModelRequestFields` como `reasoning_effort` (`low`, `medium` o
+  `high`; verificado con una llamada real a us-west-2, que devuelve el
+  razonamiento en bloques `reasoningContent` aparte del texto). Strands deja
+  esos bloques fuera de `str(resultado)`, así que el JSON se lee igual.
+- **Su configuración es `razonador`**, y solo esa: T = 1.0 y top_p = 1.0, lo
+  que recomienda OpenAI (con T = 0 y razonamiento se degrada, como Qwen con
+  think), `max_tokens` 4096 porque el razonamiento cuenta como salida (con 512
+  casi todo saldría truncado) y razonamiento `medium` por omisión. gpt-oss
+  con `principal` y un Qwen con `razonador` se rechazan
+  (`validar_modelo_y_config`).
+- **Lo que no cambia:** el candado rechaza primero todo lo que diga
+  `anthropic` o `claude`; la configuración `razonador` no existe para Ollama;
+  y `PRINCIPAL` no gana la clave `razonamiento`, así que la llave de las
+  corridas de Qwen ya hechas es la misma.
+
+El contexto
+===========
+Con `contexto`, el ítem trae además la oración anterior y la siguiente
+(`grn_ouroboros/contexto.py`), y el mensaje usa `PLANTILLA_CON_CONTEXTO`: la
+oración entre sus vecinas, en el orden de lectura y cada una con su etiqueta.
+Sin contexto, el mensaje es el de siempre, byte por byte.
 """
 
 import hashlib
@@ -121,6 +156,9 @@ from grn_ouroboros import motor, rubrica
 
 _AQUI = os.path.dirname(os.path.abspath(__file__))
 RUTA_PROMPT = os.path.join(_AQUI, "prompts", "anotador_v0.md")
+# El del jurado: la guía del experto y los errores conocidos de v0, con
+# ejemplos inventados. v0 sigue congelado (enmienda 3) y es el de omisión.
+RUTA_PROMPT_V1 = os.path.join(_AQUI, "prompts", "anotador_v1.md")
 
 PRINCIPAL = {"nombre": "principal", "think": False, "temperature": 0.0,
              "top_p": None, "top_k": None, "seed": 42, "num_ctx": 4096,
@@ -128,7 +166,14 @@ PRINCIPAL = {"nombre": "principal", "think": False, "temperature": 0.0,
 CON_THINK = {"nombre": "con_think", "think": True, "temperature": 0.6,
              "top_p": 0.95, "top_k": 20, "seed": 42, "num_ctx": 8192,
              "num_predict": 4096, "kv_cache": "f16"}
-CONFIGURACIONES = {"principal": PRINCIPAL, "con_think": CON_THINK}
+# Solo gpt-oss en Bedrock (ver el docstring del módulo). Lo de Ollama vale
+# None: Converse no lo recibe.
+RAZONADOR = {"nombre": "razonador", "think": False, "temperature": 1.0,
+             "top_p": 1.0, "top_k": None, "seed": None, "num_ctx": None,
+             "num_predict": 4096, "kv_cache": None, "razonamiento": "medium"}
+CONFIGURACIONES = {"principal": PRINCIPAL, "con_think": CON_THINK,
+                   "razonador": RAZONADOR}
+NIVELES_RAZONAMIENTO = ("low", "medium", "high")
 
 # Los que acepta `OLLAMA_KV_CACHE_TYPE`; q8_0 y q4_0 piden flash attention.
 TIPOS_KV = ("f16", "q8_0", "q4_0")
@@ -146,6 +191,19 @@ PLANTILLA_MENSAJE = ("Oración:\n{oracion}\n\n"
                      "entidad_1: {entidad_1}\n"
                      "entidad_2: {entidad_2}")
 
+# Con contexto: la oración entre sus vecinas, en el orden de lectura, y cada
+# una con su etiqueta, para que el modelo sepa cuál juzga. Las entidades van
+# al final, como sin contexto.
+PLANTILLA_CON_CONTEXTO = ("Oración anterior (contexto; no se anota):\n"
+                          "{anterior}\n\n"
+                          "Oración:\n{oracion}\n\n"
+                          "Oración siguiente (contexto; no se anota):\n"
+                          "{siguiente}\n\n"
+                          "entidad_1: {entidad_1}\n"
+                          "entidad_2: {entidad_2}")
+# Al principio o al final de su sección no hay vecina.
+SIN_VECINA = "(no hay)"
+
 APENDICE_HERRAMIENTAS = (
     "\n\n## Herramientas\n\n"
     "Tienes herramientas que consultan el diccionario de *P. aeruginosa* "
@@ -162,6 +220,10 @@ REGION_BEDROCK = "us-west-2"
 # La lista blanca: un Qwen de Bedrock, directo o por un perfil de inferencia
 # `us.` o `global.`. Un ARN, `meta.…` o `us.anthropic.…` no casan.
 _QWEN_BEDROCK = re.compile(r"^(?:us\.|global\.)?qwen\.[a-z0-9][a-z0-9.:-]*$")
+# gpt-oss, solo los dos tamaños y con versión: ni `openai.gpt-…` (otros
+# modelos de OpenAI) ni el clasificador `gpt-oss-safeguard`.
+_GPT_OSS_BEDROCK = re.compile(
+    r"^(?:us\.|global\.)?openai\.gpt-oss-(?:20b|120b)-[0-9]+:[0-9]+$")
 # Se rechazan aunque casen con la lista blanca (`qwen.claude-x` casaría).
 _NUNCA = ("anthropic", "claude")
 _REGION = re.compile(r"^[a-z]{2}(?:-gov)?-[a-z]+-[0-9]{1,2}$")
@@ -179,13 +241,24 @@ PAQUETES_BEDROCK = ("boto3", "botocore")
 PARALELO_MAXIMO = 32
 
 
-def configuracion(nombre, semilla=None, num_ctx=None, kv_cache=None):
+def configuracion(nombre, semilla=None, num_ctx=None, kv_cache=None,
+                  razonamiento=None):
     """Una copia de la configuración pre-registrada, con otra semilla, otro
-    `num_ctx` u otro tipo de caché KV si se piden. Copia: nadie modifica las
-    constantes por accidente."""
+    `num_ctx`, otro tipo de caché KV u otro nivel de razonamiento (solo
+    `razonador`) si se piden. Copia: nadie modifica las constantes por
+    accidente."""
     if nombre not in CONFIGURACIONES:
-        raise ValueError("La configuración es principal o con_think.")
+        raise ValueError("La configuración es %s."
+                         % ", ".join(sorted(CONFIGURACIONES)))
     config = dict(CONFIGURACIONES[nombre])
+    if razonamiento is not None:
+        if "razonamiento" not in config:
+            raise ValueError("--razonamiento es de la configuración "
+                             "razonador (gpt-oss en Bedrock).")
+        if razonamiento not in NIVELES_RAZONAMIENTO:
+            raise ValueError("El razonamiento es %s."
+                             % ", ".join(NIVELES_RAZONAMIENTO))
+        config["razonamiento"] = razonamiento
     if semilla is not None:
         config["seed"] = int(semilla)
     if num_ctx is not None:
@@ -217,20 +290,33 @@ def sistema(prompt, herramientas="ninguna"):
     return prompt.rstrip("\n") + APENDICE_HERRAMIENTAS
 
 
-def huella_prompt(prompt, herramientas="ninguna"):
+def huella_prompt(prompt, herramientas="ninguna", con_contexto=False):
     """sha256 de todo lo que el modelo lee además del ítem: el sistema y la
-    plantilla del mensaje."""
+    plantilla del mensaje. Sin contexto, la de siempre."""
     texto = json.dumps({"sistema": sistema(prompt, herramientas),
-                        "plantilla": PLANTILLA_MENSAJE}, ensure_ascii=False)
+                        "plantilla": plantilla(con_contexto)},
+                       ensure_ascii=False)
     return hashlib.sha256(texto.encode("utf-8")).hexdigest()
 
 
+def plantilla(con_contexto=False):
+    return PLANTILLA_CON_CONTEXTO if con_contexto else PLANTILLA_MENSAJE
+
+
 def mensaje(item):
-    """El mensaje del usuario para un ítem: la oración y las dos entidades.
-    El `id_item` no va: es un código opaco y el modelo no lo necesita."""
-    return PLANTILLA_MENSAJE.format(oracion=item["oracion"],
-                                    entidad_1=item["entidad_1"],
-                                    entidad_2=item["entidad_2"])
+    """El mensaje del usuario para un ítem: la oración y las dos entidades y,
+    si el ítem trae `contexto`, sus dos vecinas. El `id_item` no va: es un
+    código opaco y el modelo no lo necesita."""
+    if "contexto" not in item:
+        return PLANTILLA_MENSAJE.format(oracion=item["oracion"],
+                                        entidad_1=item["entidad_1"],
+                                        entidad_2=item["entidad_2"])
+    vecinas = item["contexto"]
+    return PLANTILLA_CON_CONTEXTO.format(
+        anterior=vecinas.get("anterior") or SIN_VECINA,
+        oracion=item["oracion"],
+        siguiente=vecinas.get("siguiente") or SIN_VECINA,
+        entidad_1=item["entidad_1"], entidad_2=item["entidad_2"])
 
 
 def opciones(config):
@@ -283,7 +369,8 @@ def decodificacion(config, herramientas="ninguna", proveedor="ollama"):
 # ------------------------------------------------------------ el candado
 
 def validar_modelo_bedrock(model_id):
-    """El id si es un Qwen de la lista blanca; si no, ValueError.
+    """El id si es de la lista blanca, un Qwen o un gpt-oss; si no,
+    ValueError.
 
     Exige el id explícito: vacío o None es Strands eligiendo, y Strands elige
     Claude. Lo que diga `anthropic` o `claude` se rechaza antes de mirar la
@@ -295,10 +382,32 @@ def validar_modelo_bedrock(model_id):
     if any(prohibido in model_id.lower() for prohibido in _NUNCA):
         raise ValueError("El juez nunca es Claude: el modelo %r no se acepta."
                          % model_id)
-    if not _QWEN_BEDROCK.fullmatch(model_id):
+    if not (_QWEN_BEDROCK.fullmatch(model_id)
+            or _GPT_OSS_BEDROCK.fullmatch(model_id)):
         raise ValueError("Con bedrock solo se acepta un Qwen (qwen.…, "
-                         "us.qwen.… o global.qwen.…), sin ARN; %r no lo es."
-                         % model_id)
+                         "us.qwen.… o global.qwen.…) o un gpt-oss "
+                         "(openai.gpt-oss-120b-1:0, openai.gpt-oss-20b-1:0), "
+                         "sin ARN; %r no lo es." % model_id)
+    return model_id
+
+
+def es_gpt_oss(model_id):
+    """Si el id es de gpt-oss. No valida: eso es `validar_modelo_bedrock`."""
+    return bool(isinstance(model_id, str)
+                and _GPT_OSS_BEDROCK.fullmatch(model_id))
+
+
+def validar_modelo_y_config(model_id, config):
+    """ValueError si el modelo no va con la configuración: gpt-oss razona
+    siempre y va solo con `razonador`; un Qwen no recibe `razonamiento`."""
+    if es_gpt_oss(model_id):
+        if not config.get("razonamiento"):
+            raise ValueError("gpt-oss razona siempre: va con --config "
+                             "razonador (con principal, el razonamiento se "
+                             "comería los 512 tokens).")
+    elif config.get("razonamiento"):
+        raise ValueError("La configuración razonador es de gpt-oss; con un "
+                         "Qwen, --config principal.")
     return model_id
 
 
@@ -312,11 +421,15 @@ def validar_region(region):
 
 
 def validar_bedrock(config, herramientas="ninguna", proveedor="bedrock"):
-    """ValueError si la corrida no se puede hacer en Bedrock: solo sin
-    herramientas y sin think (ver el docstring del módulo)."""
+    """ValueError si la corrida no se puede hacer en ese proveedor: en
+    Bedrock solo sin herramientas y sin think, y `razonador` (gpt-oss) solo
+    en Bedrock (ver el docstring del módulo)."""
     if proveedor not in PROVEEDORES:
         raise ValueError("El proveedor es ollama o bedrock.")
     if proveedor != "bedrock":
+        if config.get("razonamiento"):
+            raise ValueError("La configuración razonador es de gpt-oss en "
+                             "Bedrock (--proveedor bedrock).")
         return
     if herramientas != "ninguna":
         raise ValueError("Con bedrock solo se corre sin herramientas "
@@ -363,7 +476,8 @@ def exigir_juez(modelo):
         except ValueError:
             pass
     raise RuntimeError("El juez tiene que ser el OllamaModel local o un Qwen "
-                       "de Bedrock con id explícito; nunca Claude.")
+                       "o un gpt-oss de Bedrock con id explícito; nunca "
+                       "Claude.")
 
 
 # ---------------------------------------------------------------- modelos
@@ -410,6 +524,7 @@ def _crear_bedrock(config, herramientas, modelo, region, perfil_aws):
     validar_bedrock(config, herramientas)
     modelo = validar_modelo_bedrock(MODELO_BEDROCK if modelo is None
                                     else modelo)
+    validar_modelo_y_config(modelo, config)
     region = validar_region(REGION_BEDROCK if region is None else region)
     import boto3
     from botocore.config import Config
@@ -432,6 +547,11 @@ def _crear_bedrock(config, herramientas, modelo, region, perfil_aws):
     }
     if config.get("top_p") is not None:
         argumentos["top_p"] = config["top_p"]
+    if config.get("razonamiento"):
+        # gpt-oss lo lee plano en additionalModelRequestFields; los modelos
+        # GPT-5 de Bedrock lo piden anidado, pero no están en la lista.
+        argumentos["additional_request_fields"] = {
+            "reasoning_effort": config["razonamiento"]}
     reintentos = Config(retries=dict(REINTENTOS_BEDROCK),
                         read_timeout=ESPERA_LECTURA_BEDROCK,
                         connect_timeout=ESPERA_CONEXION_BEDROCK)
@@ -449,6 +569,19 @@ def _texto_del_ultimo(agente):
     return "".join(b.get("text", "") for b in bloques if isinstance(b, dict))
 
 
+def _uso(agente):
+    """{entrada, salida}: los tokens que Bedrock reportó en esta llamada, los
+    del razonamiento incluidos en la salida, o None si no llegaron. Strands
+    los suma en el agente antes de lanzar `MaxTokensReachedException`, así que
+    una respuesta truncada también los trae."""
+    try:
+        u = agente.event_loop_metrics.accumulated_usage
+        return {"entrada": int(u.get("inputTokens") or 0),
+                "salida": int(u.get("outputTokens") or 0)}
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
 def crear_anotador(config, prompt, host=motor.HOST, herramientas="ninguna",
                    recursos=None, modelo=None, proveedor="ollama",
                    region=None, perfil_aws=None):
@@ -456,7 +589,8 @@ def crear_anotador(config, prompt, host=motor.HOST, herramientas="ninguna",
 
     Con Bedrock se puede llamar desde varios hilos a la vez: cada llamada
     arma su propio `Agent`, y el modelo, que se comparte, solo se lee (ver el
-    docstring del módulo). Con Ollama va de uno en uno, como siempre."""
+    docstring del módulo), y la respuesta lleva `uso`. Con Ollama va de uno
+    en uno, como siempre, y su respuesta no cambia."""
     from strands import Agent
     from strands.types.exceptions import (ContextWindowOverflowException,
                                           MaxTokensReachedException)
@@ -470,6 +604,12 @@ def crear_anotador(config, prompt, host=motor.HOST, herramientas="ninguna",
     texto_sistema = sistema(prompt, herramientas)
 
     def anotador(item):
+        respuesta, agente = _anotar_uno(item)
+        if proveedor == "bedrock":
+            respuesta["uso"] = _uso(agente)
+        return respuesta
+
+    def _anotar_uno(item):
         registro = []
         tools = _herramientas.para_strands(recursos, herramientas, item,
                                            registro)
@@ -487,11 +627,11 @@ def crear_anotador(config, prompt, host=motor.HOST, herramientas="ninguna",
         except MaxTokensReachedException:
             return {"texto": _texto_del_ultimo(agente),
                     "done_reason": "length", "truncado": True,
-                    "trayectoria": registro}
+                    "trayectoria": registro}, agente
         except ContextWindowOverflowException:
             return {"texto": "", "done_reason": None, "truncado": False,
                     "trayectoria": registro,
-                    "motivo_abstencion": "contexto_excedido"}
+                    "motivo_abstencion": "contexto_excedido"}, agente
         razon = getattr(resultado, "stop_reason", None)
         respuesta = {"texto": str(resultado),
                      "done_reason": {"end_turn": "stop",
@@ -500,6 +640,6 @@ def crear_anotador(config, prompt, host=motor.HOST, herramientas="ninguna",
                      "trayectoria": registro}
         if razon == "limit_turns":
             respuesta["motivo_abstencion"] = "limite_turnos"
-        return respuesta
+        return respuesta, agente
 
     return anotador

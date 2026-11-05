@@ -122,8 +122,9 @@ cualquier particion en la que detecte esa contaminacion. El panorama esta en
     el cliente `ollama` y pydantic, con versiones fijas; boto3 y botocore
     llegan con strands-agents y solo los usa `--proveedor bedrock`.
   - **Donde corre:** en `.venv-ouroboros`, con Python 3.10 o mas. Con Ollama,
-    en el servidor, porque Ollama vive ahi. Con `--proveedor bedrock` (Qwen en
-    Amazon Bedrock; enmienda 5 de `docs/protocolo-tanda2.md`), desde la laptop:
+    en el servidor, porque Ollama vive ahi. Con `--proveedor bedrock` (Qwen o
+    gpt-oss en Amazon Bedrock; enmienda 5 de `docs/protocolo-tanda2.md`, y el
+    jurado de la desviacion 2), desde la laptop:
     solo salen las columnas de la hoja, y las credenciales de AWS viven solo en
     la laptop, nunca en el servidor compartido ni en el repositorio. El extra
     es `[ouroboros]`.
@@ -131,9 +132,10 @@ cualquier particion en la que detecte esa contaminacion. El panorama esta en
     importa sus terceros dentro de las funciones. Asi las pruebas del
     repositorio pasan sin ellos.
   - **El juez nunca es Claude:** el modelo va siempre explicito: el
-    `OllamaModel` local o un Qwen de Bedrock que pasa la lista blanca de
-    `agente.validar_modelo_bedrock`, que rechaza todo id con `anthropic` o
-    `claude`. `exigir_juez` lo comprueba en cada item, y una prueba falla si
+    `OllamaModel` local o un Qwen o gpt-oss de Bedrock que pasa la lista
+    blanca de `agente.validar_modelo_bedrock`, que rechaza todo id con
+    `anthropic` o `claude` antes de mirarla. El gasto en la nube lleva tope
+    (`--tope-usd`). `exigir_juez` lo comprueba en cada item, y una prueba falla si
     `evals` construye un modelo de Bedrock.
 
 La excepcion no es una puerta abierta: lo que se apoya en un tercero deja de

@@ -6,11 +6,11 @@
 - Todo el paquete se lee con la gramática de Python 3.8, y ninguna anotación
   usa lo que el 3.8 evalúa y no entiende (`list[str]`, `str | None`).
 - `print` solo en `cli.py`.
-- El prompt no comparte 40 caracteres seguidos con las oraciones candidatas
-  del corpus, con la hoja de la calibración ni con los ejemplos entre
-  comillas de la rúbrica. Un prompt con oraciones de la hoja infla el acuerdo
-  que se mide con ella, y uno con oraciones del corpus puede llevar una de
-  las tandas.
+- El prompt (cada uno de `prompts/`) no comparte 40 caracteres seguidos con
+  las oraciones candidatas del corpus, con la hoja de la calibración ni con
+  los ejemplos entre comillas de la rúbrica. Un prompt con oraciones de la
+  hoja infla el acuerdo que se mide con ella, y uno con oraciones del corpus
+  puede llevar una de las tandas. El v0 sigue byte por byte el congelado.
 - Los requisitos del servidor y el extra `[ouroboros]` de `pyproject.toml`
   fijan las mismas versiones.
 
@@ -306,10 +306,31 @@ class PruebasPython38(unittest.TestCase):
 
 
 class PruebasPrompt(unittest.TestCase):
+    """Cada prompt de `prompts/`: el v0 congelado y el v1 del jurado."""
 
     @classmethod
     def setUpClass(cls):
-        cls.ventanas = Ventanas(agente.leer_prompt())
+        cls.prompts = dict(
+            (os.path.basename(ruta), Ventanas(agente.leer_prompt(ruta)))
+            for ruta in sorted(glob.glob(os.path.join(PAQUETE, "prompts",
+                                                      "*.md"))))
+        cls.ventanas = cls.prompts["anotador_v0.md"]
+
+    def test_estan_los_dos(self):
+        self.assertEqual(sorted(self.prompts),
+                         ["anotador_v0.md", "anotador_v1.md"])
+
+    def test_el_v0_sigue_congelado(self):
+        """El sha256 del archivo de la enmienda 3 de protocolo-tanda2.md, con
+        los saltos de línea de git: un clon de Windows con autocrlf trae
+        CRLF, y el prompt que lee el modelo es el mismo."""
+        import hashlib
+        with open(agente.RUTA_PROMPT, "rb") as f:
+            contenido = f.read().replace(b"\r\n", b"\n")
+        self.assertEqual(
+            hashlib.sha256(contenido).hexdigest(),
+            "0871a83924ca8bfe936434f9630a459b318d534aa0c7ef757c3282221ed7"
+            "7796")
 
     def test_la_busqueda_encuentra_lo_que_comparte(self):
         prompt = agente.leer_prompt()
@@ -330,31 +351,34 @@ class PruebasPrompt(unittest.TestCase):
             self.skipTest("no está %s en salidas/flujo/corrida4_run22/: el "
                           "corpus del bronce no vive en esta copia del "
                           "repositorio" % PATRON_CANDIDATAS)
-        vistas, comparten = set(), 0
+        vistas, comparten = set(), dict.fromkeys(self.prompts, 0)
         for ruta in rutas:
             for oracion in _oraciones_csv(ruta):
                 if oracion in vistas:
                     continue
                 vistas.add(oracion)
-                if self.ventanas.comparte(oracion):
-                    comparten += 1
+                for nombre, ventanas in self.prompts.items():
+                    if ventanas.comparte(oracion):
+                        comparten[nombre] += 1
         self.assertGreater(len(vistas), 1000)
         # Solo el conteo: el mensaje no puede llevar la oración.
-        self.assertEqual(comparten, 0, "%d oraciones candidatas comparten %d "
-                                       "caracteres con el prompt"
-                         % (comparten, LARGO))
+        self.assertEqual(comparten, dict.fromkeys(self.prompts, 0),
+                         "oraciones candidatas que comparten %d caracteres "
+                         "con el prompt" % LARGO)
 
     def test_ni_la_hoja_de_la_calibracion(self):
         oraciones = list(_oraciones_csv(RUTA_HOJA_CALIBRACION))
         self.assertEqual(len(oraciones), 27)
-        self.assertEqual([i for i, o in enumerate(oraciones, 1)
-                          if self.ventanas.comparte(o)], [])
+        for nombre, ventanas in self.prompts.items():
+            self.assertEqual([i for i, o in enumerate(oraciones, 1)
+                              if ventanas.comparte(o)], [], nombre)
 
     def test_ni_los_ejemplos_de_la_rubrica(self):
         ejemplos = ejemplos_de_la_rubrica()
         self.assertGreater(len(ejemplos), 10)
-        self.assertEqual([i for i, e in enumerate(ejemplos, 1)
-                          if self.ventanas.comparte(e)], [])
+        for nombre, ventanas in self.prompts.items():
+            self.assertEqual([i for i, e in enumerate(ejemplos, 1)
+                              if ventanas.comparte(e)], [], nombre)
 
 
 class PruebasRequisitos(unittest.TestCase):

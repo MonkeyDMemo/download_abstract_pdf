@@ -13,6 +13,8 @@
     python -m grn_verificacion.cli precision-ciega --anotacion CSV --llave CSV --carpeta DIR [--json J] [--red NOMBRE] [--capa CSV] [--excluir-pmids TSV ...] [--particion DIR] [--etiqueta T]
     python -m grn_verificacion.cli verificar-contaminacion (--lista ARCHIVO | --consulta NOMBRE) [--corpus NOMBRE | --sin-corpus] [--reservas TSV ...] [--muestra DIR ...] [--juzgadas CSV] [--particion DIR ...] [--base XLSX] [--json J]
     python -m grn_verificacion.cli concordancia --experto CSV --modelo CSV [--llave CSV] [--json J]
+    python -m grn_verificacion.cli jurado --modelo CSV --modelo CSV [...] --umbral K --salida DIR
+    python -m grn_verificacion.cli jurado-barrido --modelo CSV --modelo CSV [...] --experto CSV --llave CSV [--retencion-minima 0.80] [--json J]
 
 Lo normal es no llamarlo a mano: `python flujo.py` corre los pasos en orden y
 se salta lo que ya está hecho.
@@ -938,6 +940,77 @@ def _sub_concordancia(sub):
     co.set_defaults(func=cmd_concordancia)
 
 
+def _sub_jurado(sub):
+    ju = sub.add_parser(
+        "jurado",
+        help="El jurado de Ouroboros: varias anotaciones de la misma hoja "
+             "votan cada ítem; si con al menos --umbral votos, y la dirección "
+             "la de la mayoría de los si. Escribe anotaciones.csv y "
+             "jurado.json en --salida.")
+    ju.add_argument("--modelo", action="append", required=True,
+                    help="anotaciones.csv de un jurado; se repite, una vez "
+                         "por jurado (al menos dos). El orden desempata.")
+    ju.add_argument("--umbral", type=int, required=True,
+                    help="Cuántos jurados tienen que decir si. Se elige con "
+                         "jurado-barrido en la tanda 1.")
+    ju.add_argument("--salida", required=True,
+                    help="Carpeta, bajo salidas/ouroboros/; nunca dentro de "
+                         "salidas/revision.")
+    ju.set_defaults(func=cmd_jurado)
+
+    jb = sub.add_parser(
+        "jurado-barrido",
+        help="Cada jurado solo y el jurado con cada umbral contra el experto: "
+             "el filtro con la dirección del bronce y el filtro con "
+             "reorientación. Solo conteos.")
+    jb.add_argument("--modelo", action="append", required=True,
+                    help="anotaciones.csv de un jurado; se repite.")
+    jb.add_argument("--experto", required=True,
+                    help="La hoja anotada por el experto.")
+    jb.add_argument("--llave", required=True,
+                    help="llave.csv del sorteo: de ella se lee solo la "
+                         "dirección del bronce.")
+    jb.add_argument("--retencion-minima", dest="retencion_minima",
+                    type=float, default=0.80,
+                    help="Se marca el umbral de mayor precisión entre los "
+                         "que retienen al menos esto; por omisión 0.80.")
+    jb.add_argument("--json", default=None,
+                    help="Escribe ahí el resultado completo.")
+    jb.set_defaults(func=cmd_jurado_barrido)
+
+
+def cmd_jurado(args):
+    from grn_verificacion import jurado
+    try:
+        jurado.ejecutar(args.modelo, args.umbral, args.salida, log=log)
+    except KeyboardInterrupt:
+        log("Interrumpido.")
+        return 3
+    except Exception as e:
+        log("ERROR: %s" % _error_publicable(e, list(args.modelo)
+                                            + [args.salida]))
+        return 1
+    return 0
+
+
+def cmd_jurado_barrido(args):
+    """Solo conteos: ni oraciones, ni ids, ni juicios pasan por `log`."""
+    from grn_verificacion import jurado
+    try:
+        jurado.ejecutar_barrido(args.modelo, args.experto, args.llave,
+                                ruta_json=args.json,
+                                retencion_minima=args.retencion_minima,
+                                log=log)
+    except KeyboardInterrupt:
+        log("Interrumpido.")
+        return 3
+    except Exception as e:
+        log("ERROR: %s" % _error_publicable(
+            e, list(args.modelo) + [args.experto, args.llave, args.json]))
+        return 1
+    return 0
+
+
 def consola_tolerante():
     """La consola de Windows imprime cp1252: los acentos caben, pero la barra
     de progreso de transformers («█») o una sigma no, y un `print` con ellos
@@ -1041,6 +1114,7 @@ def main(argv=None):
     _sub_verificar_contaminacion(sub)
     _sub_concordancia(sub)
     _sub_juez(sub)
+    _sub_jurado(sub)
 
     args = ap.parse_args(argv)
     return args.func(args)

@@ -8,9 +8,14 @@
         [--llave L --corrida-bronce N [--db DB]] [--prompt RUTA] [--host URL]
     python -m grn_ouroboros.cli anotar --hoja H --salida D --config principal
         --proveedor bedrock [--modelo ID] [--region R] [--perfil-aws P]
-        [--paralelo N]
+        [--paralelo N] [--contexto C] [--tope-usd X] [--precios E,S]
+    python -m grn_ouroboros.cli anotar --hoja H --salida D --config razonador
+        --proveedor bedrock --modelo openai.gpt-oss-120b-1:0
+        [--razonamiento {low,medium,high}] [...lo mismo]
+    python -m grn_ouroboros.cli contexto --hoja H --llave L
+        --corrida-bronce N [--db DB] --salida C.csv
     python -m grn_ouroboros.cli calibracion --anotacion A
-    python -m grn_ouroboros.cli evals --salida D
+    python -m grn_ouroboros.cli evals --salida D [--contexto C]
 
 Corre en el servidor, con el Python de `.venv-ouroboros`; los pasos, en el
 orden en que se corren, están en `docs/ouroboros-v0.md`. Parsea, llama y
@@ -22,9 +27,14 @@ formatea: la lógica vive en los módulos.
 - `anotar`: anota una hoja de la rúbrica. Antes llama a `motor.exigir`: un
   digest o una cuantización distintos detienen la corrida con código 1, sin
   anotar nada. Con `--proveedor bedrock` no se toca Ollama: el juez es un
-  Qwen de Bedrock que pasa el candado de `agente.validar_modelo_bedrock`,
-  solo con la configuración principal y sin herramientas, y `--paralelo N`
-  anota N ítems a la vez con las mismas salidas que en serie.
+  Qwen o un gpt-oss de Bedrock que pasa el candado de
+  `agente.validar_modelo_bedrock`, sin herramientas; un Qwen con la
+  configuración principal y gpt-oss con `razonador`. `--paralelo N` anota N
+  ítems a la vez con las mismas salidas que en serie, `--contexto` agrega a
+  cada ítem sus dos oraciones vecinas (`contexto.py`) y `--tope-usd` detiene
+  la corrida antes de pasar de ese gasto (`gasto.py`).
+- `contexto`: escribe las vecinas de cada ítem de una hoja, desde la llave
+  del sorteo y la base, para `anotar --contexto`.
 - `calibracion`: el acuerdo de una anotación con la llave de la calibración,
   por campo y por ítem.
 - `evals`: Strands Evals sobre una corrida ya hecha, sin volver a llamar al
@@ -41,8 +51,8 @@ salidas de Ouroboros van a salidas/ouroboros/ (`anotar.validar_salida`).
 
 Códigos de salida: 0 bien; 1 el modelo no es el pre-registrado, Ollama no
 contesta o la corrida se detuvo (con Bedrock, también un error que sobrevivió
-a los reintentos); 2 argumentos o entradas que no sirven; 3 interrumpida (lo
-hecho queda en la caché, y volver a correr lo retoma).
+a los reintentos o el tope de gasto); 2 argumentos o entradas que no sirven;
+3 interrumpida (lo hecho queda en la caché, y volver a correr lo retoma).
 """
 
 import argparse
@@ -54,9 +64,9 @@ if _RAIZ not in sys.path:
     sys.path.insert(0, _RAIZ)
 
 from grn_bronce import db as bdb  # noqa: E402
-from grn_comun import rutas  # noqa: E402
-from grn_ouroboros import (agente, anotar, calibracion, evals,  # noqa: E402
-                           herramientas, motor, rubrica)
+from grn_comun import procedencia, rutas  # noqa: E402
+from grn_ouroboros import (agente, anotar, calibracion, contexto,  # noqa: E402
+                           evals, gasto, herramientas, motor, rubrica)
 
 BIEN, FALLA, ENTRADA, INTERRUMPIDA = 0, 1, 2, 3
 
@@ -169,7 +179,9 @@ def _opciones_del_proveedor(args):
         sobran = [nombre for nombre, valor in (("--modelo", args.modelo),
                                                ("--region", args.region),
                                                ("--perfil-aws",
-                                                args.perfil_aws))
+                                                args.perfil_aws),
+                                               ("--tope-usd", args.tope_usd),
+                                               ("--precios", args.precios))
                   if valor is not None]
         if sobran:
             raise ValueError("%s son de --proveedor bedrock; con ollama el "
@@ -190,6 +202,45 @@ def _opciones_del_proveedor(args):
     return modelo, region
 
 
+def _contexto(args, items):
+    """{id_item: vecinas} de `--contexto`, o None. Con `--herramientas
+    todas` no va: ahí el contexto lo pide el modelo con su herramienta."""
+    if args.contexto is None:
+        return None
+    if args.herramientas == "todas":
+        raise ValueError("--contexto no va con --herramientas todas, que ya "
+                         "tiene la herramienta contexto.")
+    return contexto.para_hoja(items, args.contexto)
+
+
+def _gasto(args, modelo):
+    """(precio, tope) de Bedrock: el precio por millón (de la tabla de
+    `gasto.py` o de --precios) y el `gasto.Tope` de --tope-usd, o None."""
+    if args.proveedor != "bedrock":
+        return None, None
+    precio = gasto.precio(modelo, args.precios)
+    if args.tope_usd is None:
+        return precio, None
+    if precio is None:
+        raise ValueError("No hay precio de lista para %s en gasto.py: para "
+                         "el tope, dalo con --precios ENTRADA,SALIDA (USD "
+                         "por millón de tokens)." % modelo)
+    return precio, gasto.Tope(args.tope_usd, precio)
+
+
+def _mostrar_costo(resumen, tope):
+    costo = resumen.get("costo")
+    if costo:
+        log("costo: US$%.4f esta corrida, US$%.4f la hoja entera (US$%s y "
+            "US$%s por millón de tokens de entrada y de salida)"
+            % (costo["usd_esta_corrida"], costo["usd_total"],
+               costo["precio_usd_por_millon"][0],
+               costo["precio_usd_por_millon"][1]))
+    if tope is not None:
+        log("tope de gasto: US$%.4f de US$%.2f en %d llamadas"
+            % (tope.gastado, tope.usd, tope.llamadas))
+
+
 def cmd_anotar(args):
     herr = args.herramientas
     bedrock = args.proveedor == "bedrock"
@@ -201,10 +252,15 @@ def cmd_anotar(args):
         items = calibracion.leer_hoja(args.hoja)
         config = agente.configuracion(args.config, semilla=args.semilla,
                                       num_ctx=args.num_ctx,
-                                      kv_cache=args.kv_cache)
+                                      kv_cache=args.kv_cache,
+                                      razonamiento=args.razonamiento)
         agente.validar_bedrock(config, herr, args.proveedor)
+        if bedrock:
+            agente.validar_modelo_y_config(modelo, config)
         prompt = agente.leer_prompt(args.prompt)
         recursos = _recursos(args, items)
+        vecinas = _contexto(args, items)
+        precio, tope = _gasto(args, modelo)
     except (ValueError, OSError, bdb.ErrorBase, motor.ErrorMotor) as e:
         log("ERROR: %s" % e)
         return ENTRADA
@@ -235,12 +291,20 @@ def cmd_anotar(args):
         # Un perfil de AWS que no existe o sin credenciales.
         log("ERROR: %s" % e)
         return ENTRADA
+    con_contexto = vecinas is not None
     decodificacion = agente.decodificacion(config, herr, args.proveedor)
     entradas = anotar.armar_entradas(
-        descripcion, decodificacion, agente.huella_prompt(prompt, herr), herr,
+        descripcion, decodificacion,
+        agente.huella_prompt(prompt, herr, con_contexto), herr,
         recursos.huellas(herr) if recursos else {})
     configuracion = dict(config, herramientas=herr,
                          prompt=os.path.basename(args.prompt))
+    if con_contexto:
+        # Las vecinas de cada ítem entran a su llave; el archivo, a las
+        # entradas, para que otra carpeta de contexto no se mezcle.
+        entradas["contexto"] = {"plantilla": "vecinas",
+                                "archivo": procedencia.huella(args.contexto)}
+        configuracion["contexto"] = os.path.basename(args.contexto)
     paquetes = anotar.PAQUETES
     if bedrock:
         # Lo que se mandó, no lo que la configuración de Ollama decía: la
@@ -249,23 +313,47 @@ def cmd_anotar(args):
                              prompt=os.path.basename(args.prompt),
                              proveedor="bedrock", model_id=modelo,
                              region=region, paralelo=args.paralelo)
+        if con_contexto:
+            configuracion["contexto"] = os.path.basename(args.contexto)
+        if tope is not None:
+            configuracion["tope_usd"] = tope.usd
         paquetes = anotar.PAQUETES + agente.PAQUETES_BEDROCK
-        log("Anotando %d ítems con Bedrock: %s (sin think, T %s, max_tokens "
-            "%d, formato en el prompt), herramientas: %s, %d a la vez."
-            % (len(items), config["nombre"], config["temperature"],
-               decodificacion["max_tokens"], herr, args.paralelo))
+        modo = ("razonamiento %s" % config["razonamiento"]
+                if config.get("razonamiento") else "sin think")
+        log("Anotando %d ítems con Bedrock: %s (%s, T %s, max_tokens %d, "
+            "formato en el prompt), herramientas: %s, %d a la vez%s."
+            % (len(items), config["nombre"], modo, config["temperature"],
+               decodificacion["max_tokens"], herr, args.paralelo,
+               ", con contexto" if con_contexto else ""))
+        if precio is not None:
+            texto_sistema = agente.sistema(prompt, herr)
+
+            def medir(item):
+                return len(texto_sistema) + len(agente.mensaje(item))
+
+            medibles = [dict(it, contexto=vecinas[it["id_item"]])
+                        if con_contexto else it for it in items]
+            log("costo máximo si nada saliera de la caché: US$%.2f"
+                % gasto.cota_de_la_corrida(medibles, medir,
+                                           decodificacion["max_tokens"],
+                                           precio))
+            if tope is not None:
+                anotador = gasto.con_tope(anotador, tope, medir,
+                                          decodificacion["max_tokens"])
     else:
         log("Anotando %d ítems: %s (%s, T %s, semilla %d, num_ctx %d, "
-            "num_predict %d, caché KV %s), herramientas: %s."
+            "num_predict %d, caché KV %s), herramientas: %s%s."
             % (len(items), config["nombre"],
                "con think" if config["think"] else "sin think",
                config["temperature"], config["seed"], config["num_ctx"],
-               config["num_predict"], config["kv_cache"], herr))
+               config["num_predict"], config["kv_cache"], herr,
+               ", con contexto" if con_contexto else ""))
     try:
         r = anotar.ejecutar(
             args.hoja, args.salida, anotador, entradas,
             configuracion=configuracion, descripcion=descripcion, log=log,
-            paralelo=args.paralelo, paquetes=paquetes)
+            paralelo=args.paralelo, paquetes=paquetes, contexto=vecinas,
+            precio=precio)
     except anotar.CarpetaOcupada as e:
         log("ERROR: %s" % e)
         return ENTRADA
@@ -273,6 +361,11 @@ def cmd_anotar(args):
         log("Interrumpida. Lo hecho queda en %s, y volver a correr lo retoma."
             % anotar.VEREDICTOS)
         return INTERRUMPIDA
+    except gasto.TopeAlcanzado as e:
+        log("ALTO: %s Lo hecho queda en %s, y volver a correr con un tope "
+            "mayor lo retoma sin pagarlo otra vez." % (e, anotar.VEREDICTOS))
+        _mostrar_costo({}, tope)
+        return FALLA
     except Exception as e:
         # Solo el tipo: el mensaje de una excepción del cliente o de Strands
         # puede traer el texto de la petición, que lleva la oración.
@@ -280,6 +373,7 @@ def cmd_anotar(args):
             "a correr lo retoma." % (type(e).__name__, anotar.VEREDICTOS))
         return FALLA
     _mostrar_conteos(r["resumen"])
+    _mostrar_costo(r["resumen"], tope)
     return BIEN
 
 
@@ -316,7 +410,8 @@ def cmd_calibracion(args):
 def cmd_evals(args):
     try:
         anotar.validar_salida(args.salida)
-        corrida = anotar.leer_corrida(args.salida)
+        corrida = anotar.leer_corrida(args.salida,
+                                      ruta_contexto=args.contexto)
     except (ValueError, OSError) as e:
         log("ERROR: %s" % e)
         return ENTRADA
@@ -336,6 +431,28 @@ def cmd_evals(args):
         return FALLA
     log("Escritos %s.json y %s.json en la carpeta de la corrida."
         % (evals.NOMBRE_EXPERIMENTO, evals.NOMBRE_INFORME))
+    return BIEN
+
+
+# ------------------------------------------------------------ contexto
+
+def cmd_contexto(args):
+    """Las vecinas de cada ítem, desde la llave y la base. Imprime conteos y
+    la huella del archivo, nunca una oración."""
+    try:
+        anotar.validar_salida(args.salida)
+        items = calibracion.leer_hoja(args.hoja)
+        recursos = herramientas.Recursos(
+            ruta_llave=args.llave, ruta_db=args.db or rutas.ruta("grn.db"),
+            corrida_bronce=args.corrida_bronce)
+        carpeta = os.path.dirname(os.path.abspath(args.salida))
+        os.makedirs(carpeta, exist_ok=True)
+        contexto.ejecutar(items, recursos, args.salida, log=log)
+    except (ValueError, OSError, bdb.ErrorBase) as e:
+        log("ERROR: %s" % e)
+        return ENTRADA
+    log("Escrito %s (huella %s)." % (os.path.basename(args.salida),
+                                     procedencia.huella(args.salida)))
     return BIEN
 
 
@@ -395,19 +512,23 @@ def main(argv=None):
                     help="Con todas: la base; por omisión <datos>/grn.db, "
                          "con datos de GRN_DATOS o ./datos.")
     an.add_argument("--prompt", default=agente.RUTA_PROMPT,
-                    help="El prompt del sistema; por omisión el v0.")
+                    help="El prompt del sistema; por omisión el v0, "
+                         "congelado. El del jurado es "
+                         "grn_ouroboros/prompts/anotador_v1.md.")
     an.add_argument("--host", default=motor.HOST,
                     help="Ollama local; por omisión %(default)s.")
     an.add_argument("--proveedor", choices=agente.PROVEEDORES,
                     default="ollama",
                     help="Dónde corre el juez: ollama, el local del servidor "
-                         "(por omisión), o bedrock, un Qwen en Amazon "
-                         "Bedrock con id explícito. Nunca Claude.")
+                         "(por omisión), o bedrock, un Qwen o un gpt-oss en "
+                         "Amazon Bedrock con id explícito. Nunca Claude.")
     an.add_argument("--modelo", default=None,
                     help="Con bedrock, el id del modelo; por omisión %s. "
                          "Solo se aceptan los Qwen (qwen.…, us.qwen.… o "
-                         "global.qwen.…). Con ollama no va: el modelo es el "
-                         "pre-registrado." % agente.MODELO_BEDROCK)
+                         "global.qwen.…) y gpt-oss (openai.gpt-oss-120b-1:0, "
+                         "openai.gpt-oss-20b-1:0, con --config razonador). "
+                         "Con ollama no va: el modelo es el pre-registrado."
+                         % agente.MODELO_BEDROCK)
     an.add_argument("--region", default=None,
                     help="Con bedrock, la región de AWS; por omisión %s."
                          % agente.REGION_BEDROCK)
@@ -419,7 +540,41 @@ def main(argv=None):
                     help="Cuántos ítems se anotan a la vez; por omisión 1. "
                          "Con ollama, solo 1: hay una sola GPU. Las salidas "
                          "no dependen de este número.")
+    an.add_argument("--razonamiento", choices=agente.NIVELES_RAZONAMIENTO,
+                    default=None,
+                    help="Con --config razonador (gpt-oss), el nivel de "
+                         "razonamiento; por omisión %s."
+                         % agente.RAZONADOR["razonamiento"])
+    an.add_argument("--contexto", default=None,
+                    help="El CSV de `contexto` para esta hoja: cada ítem va "
+                         "con su oración anterior y la siguiente.")
+    an.add_argument("--tope-usd", dest="tope_usd", type=float, default=None,
+                    help="Con bedrock, lo más que puede gastar esta "
+                         "invocación, en USD; al llegar se detiene, y volver "
+                         "a correr lo retoma.")
+    an.add_argument("--precios", default=None,
+                    help="Con bedrock, ENTRADA,SALIDA en USD por millón de "
+                         "tokens, para un modelo sin precio en gasto.py.")
     an.set_defaults(func=cmd_anotar)
+
+    cx = sub.add_parser("contexto",
+                        help="Las oraciones vecinas de cada ítem de una "
+                             "hoja, para anotar --contexto.")
+    cx.add_argument("--hoja", required=True, help="La hoja sin anotar.")
+    cx.add_argument("--llave", required=True,
+                    help="La llave.csv del sorteo de esa hoja: de ella se "
+                         "lee solo la posición de cada ítem.")
+    cx.add_argument("--corrida-bronce", dest="corrida_bronce", type=int,
+                    required=True,
+                    help="La corrida del bronce de la que salió la muestra "
+                         "(la 4 para las tandas de corrida4_run22).")
+    cx.add_argument("--db", default=None,
+                    help="La base; por omisión <datos>/grn.db, con datos de "
+                         "GRN_DATOS o ./datos.")
+    cx.add_argument("--salida", required=True,
+                    help="El CSV que se escribe, bajo salidas/ouroboros/; "
+                         "nunca dentro de salidas/revision.")
+    cx.set_defaults(func=cmd_contexto)
 
     ca = sub.add_parser("calibracion",
                         help="El acuerdo con la llave de la calibración, por "
@@ -434,6 +589,9 @@ def main(argv=None):
     ev.add_argument("--salida", required=True,
                     help="La carpeta de la corrida; ahí quedan "
                          "experimento.json e informe_evals.json.")
+    ev.add_argument("--contexto", default=None,
+                    help="Si la corrida se hizo con --contexto, el mismo "
+                         "archivo.")
     ev.set_defaults(func=cmd_evals)
 
     args = ap.parse_args(argv)

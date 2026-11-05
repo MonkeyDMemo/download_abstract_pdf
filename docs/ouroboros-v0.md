@@ -300,3 +300,85 @@ uv pip install --python .venv-ouroboros/Scripts/python.exe \
 - `--paralelo N` no cambia la salida. Si una llamada falla después de los
   reintentos, la corrida se detiene y volver a lanzarla la retoma.
 - Costo de referencia (precio de lista): ~US$0.75 por cada mil oraciones.
+
+## El jurado (v1): gpt-oss, el prompt v1, el contexto y los votos
+
+Para subir la precisión del filtro sin bajar la retención de ~80 %: varios
+anotadores que se equivocan distinto votan cada ítem. Es exploratorio, como
+todo Ouroboros, y nada de esto toca el v0 ni la principal pre-registrada.
+
+- **gpt-oss en la lista blanca** (`agente.validar_modelo_bedrock`): además de
+  los Qwen, `openai.gpt-oss-120b-1:0` y `openai.gpt-oss-20b-1:0` (y sus
+  perfiles `us.`/`global.`). Nada más de OpenAI, y lo que diga `anthropic` o
+  `claude` se rechaza antes de mirar la lista.
+- **Su configuración es `razonador`**: gpt-oss razona siempre, así que va con
+  T = 1.0 y top_p = 1.0 (lo que recomienda OpenAI), `max_tokens` 4096 (el
+  razonamiento cuenta como salida) y `--razonamiento low|medium|high`
+  (`medium` por omisión), que viaja como `reasoning_effort`. El razonamiento
+  llega en bloques aparte y no entra al texto que se lee. gpt-oss con
+  `principal`, un Qwen con `razonador` y `razonador` con Ollama se rechazan.
+- **El prompt v1** (`grn_ouroboros/prompts/anotador_v1.md`) lleva la guía del
+  experto y los errores conocidos del v0, con ejemplos inventados: la
+  relación indirecta es `si` con tipo `indirecta`; el mutante, la deleción y
+  la sobreexpresión que cambian la expresión de otro gen son relación, con
+  el signo invertido en la pérdida de función; la dirección sale de quién
+  afecta a quién, no del orden; dos miembros de una lista de genes que
+  cambian juntos no se regulan entre sí, pero el que causa el cambio sí
+  regula a cada uno. Misma respuesta JSON que el v0. `test_frontera` le
+  aplica la misma regla de los 40 caracteres y fija el sha256 del v0.
+- **El contexto** (`contexto.py`): la oración anterior y la siguiente de cada
+  ítem, escritas una vez desde la llave del sorteo (solo la posición) y la
+  base, en un CSV que todos los jurados leen igual. El mensaje pone la oración
+  entre sus vecinas, cada una etiquetada; el prompt v1 dice que el contexto
+  solo sirve para entender la oración y que la relación y el fragmento salen
+  de ella. Las vecinas entran a la llave de la caché.
+- **El tope de gasto** (`gasto.py`, `--tope-usd X`): antes de cada llamada se
+  reserva lo más que puede costar, y la llamada que no cabe no sale. La
+  corrida se detiene con código 1, y volver a correr con un tope mayor la
+  retoma sin pagar lo hecho. `corrida.json` lleva los tokens y el costo.
+- **Los votos** (`grn_verificacion.cli jurado`): `si` con al menos k votos de
+  `si`; la dirección, la mayoritaria entre los `si` (así puede reorientar la
+  arista del bronce; un empate es `dudoso`); bajo el umbral, `no` (o `dudoso`
+  si entre los demás hubo más `dudoso` que `no`). La regla completa está en
+  el docstring de `grn_verificacion/jurado.py`.
+- **El barrido** (`jurado-barrido`): cada jurado solo y el jurado con cada k,
+  con dos métricas: el filtro con la dirección del bronce (la de
+  `concordancia`) y el filtro con reorientación (acepta el `si` con la
+  dirección que diga el jurado; correcto si el experto dijo `si` con esa
+  misma; retención sobre todos los `si` del experto). **El umbral se elige
+  en la tanda 1 y se fija con una enmienda antes de medir la tanda 2.**
+
+```bash
+OPY=.venv-ouroboros/Scripts/python
+# 1. El contexto de la hoja (una vez por hoja; la base vive en la laptop)
+$OPY -m grn_ouroboros.cli contexto --hoja <muestra_t1>/hoja_tanda1.csv \
+    --llave <muestra_t1>/llave.csv --corrida-bronce 4 \
+    --salida salidas/ouroboros/contexto_t1.csv
+
+# 2. Los jurados, con el prompt v1 y el contexto, cada uno con su tope
+V1=grn_ouroboros/prompts/anotador_v1.md
+$OPY -m grn_ouroboros.cli anotar --hoja <muestra_t1>/hoja_tanda1.csv \
+    --salida salidas/ouroboros/tanda1_v1_gptoss120b --config razonador \
+    --proveedor bedrock --modelo openai.gpt-oss-120b-1:0 \
+    --perfil-aws default --prompt $V1 --contexto salidas/ouroboros/contexto_t1.csv \
+    --paralelo 8 --tope-usd 1
+#    lo mismo con --modelo openai.gpt-oss-20b-1:0 (razonador) y con
+#    --config principal --modelo qwen.qwen3-235b-a22b-2507-v1:0
+
+# 3. El barrido del umbral, en la tanda 1 (solo conteos)
+python -m grn_verificacion.cli jurado-barrido \
+    --modelo salidas/ouroboros/tanda1_v1_gptoss120b/anotaciones.csv \
+    --modelo salidas/ouroboros/tanda1_v1_gptoss20b/anotaciones.csv \
+    --modelo salidas/ouroboros/tanda1_v1_qwen235b/anotaciones.csv \
+    --experto <hoja_normalizada_t1> --llave <muestra_t1>/llave.csv \
+    --retencion-minima 0.80 --json salidas/ouroboros/jurado_t1_barrido.json
+
+# 4. El jurado con el umbral elegido (y fijado antes de la tanda 2)
+python -m grn_verificacion.cli jurado --modelo ... --modelo ... --modelo ... \
+    --umbral K --salida salidas/ouroboros/jurado_t1
+```
+
+En la calibración (27 ítems sintéticos; solo para comprobar el camino de
+punta a punta, sin ajustar nada con ella), gpt-oss-120b con el v1
+dejó 25/27 idénticos a la llave con razonamiento `medium` (US$0.021, ~490
+tokens de salida por ítem) y 24/27 con `low` (US$0.016), sin abstenciones.
