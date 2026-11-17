@@ -384,3 +384,25 @@ Todo se diseñó con la tanda 1 y la calibración (desviación 2).
 - **A temperatura 1 los gpt-oss no repiten la misma respuesta:** vale la
   primera corrida de cada juez sobre la tanda 2; no se repite para escoger.
 - **Costo de referencia:** la tanda 1 completa costó US$0.47 con los tres.
+
+## Enmienda 7 (16-nov-2026): desglose descriptivo por origen del texto
+
+Es anterior a calcular cualquier cifra por origen sobre la tanda 2.
+
+- **Qué.** A petición del asesor, `precision-ciega` reporta además las cifras
+  del bronce y de la red oficial separadas por el origen de la oración de cada
+  ítem: `resumen` (la sección `abstract`, de un artículo con o sin texto
+  completo) o `cuerpo_xml` (cualquier otra sección de un artículo con XML de
+  PMC). La definición es `grn_verificacion/fuentes.py`, fijada en este mismo
+  commit. Las tandas se sortearon de la corrida 4, que no lee PDF: no tienen
+  ítems de `cuerpo_pdf`.
+- **Estatus: descriptivo y exploratorio.** No cambia ningún filtro ni ninguna
+  cifra registrada, no es una regla de adopción y nada se ajusta con lo que
+  salga. Los subgrupos de 100 ítems son chicos: se reportan con su intervalo y
+  no se comparan como resultado confirmatorio.
+- **Sobre qué.** La tanda 1 (198 ítems) y el corte de 100 de la tanda 2, con el
+  bronce y la red oficial. La huella de `red.tsv` de la corrida 4 se
+  re-verificó antes de medir y coincide con la registrada (`5f9dc6d4…`). El
+  jurado no se desglosa: sus respuestas sobre la tanda 2 siguen sin abrirse.
+- **Ceguera.** Como siempre: las sesiones solo ven los conteos que imprime la
+  herramienta.

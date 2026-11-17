@@ -8,6 +8,7 @@
     python -m grn_verificacion.cli datos-entrenamiento --pares JSONL --base XLSX ...
     python -m grn_verificacion.cli reentrenar correr|estado|detener --raiz DIR ...
     python -m grn_verificacion.cli contraste --base XLSX --carpeta DIR --informe MD --confidencial DIR ...
+    python -m grn_verificacion.cli fuentes --carpeta DIR [--red NOMBRE] [--json J]
     python -m grn_verificacion.cli tablas --base XLSX --carpeta DIR --xml DIR --informe MD --confidencial DIR [--cuantos N] ...
     python -m grn_verificacion.cli muestra --carpeta DIR --reservas TSV --n N --salida DIR [--semilla S] [--fraccion-doble F] [--tandas 1|2] [--excluir-muestra DIR ...]
     python -m grn_verificacion.cli precision-ciega --anotacion CSV --llave CSV --carpeta DIR [--json J] [--red NOMBRE] [--capa CSV] [--excluir-pmids TSV ...] [--particion DIR] [--etiqueta T]
@@ -913,6 +914,32 @@ def cmd_juez(args):
     return 0
 
 
+def _sub_fuentes(sub):
+    fu = sub.add_parser(
+        "fuentes",
+        help="Qué aporta el texto completo frente al resumen, con conteos: "
+             "embudo por origen de la oración, aristas por el origen de su "
+             "evidencia y el veredicto del jurado por origen.")
+    fu.add_argument("--carpeta", required=True, help="Carpeta del flujo.")
+    fu.add_argument("--red", default=None,
+                    help="El NOMBRE de red_NOMBRE.tsv; por omisión, red.tsv "
+                         "(la única con el juicio del jurado).")
+    fu.add_argument("--json", default=None,
+                    help="Dónde guardar el resultado.")
+    fu.set_defaults(func=cmd_fuentes)
+
+
+def cmd_fuentes(args):
+    from grn_verificacion import fuentes
+    try:
+        fuentes.ejecutar(args.carpeta, red=args.red, ruta_json=args.json,
+                         log=log)
+    except ValueError as e:
+        log("ERROR: %s" % e)
+        return 1
+    return 0
+
+
 def _sub_concordancia(sub):
     co = sub.add_parser(
         "concordancia",
@@ -1115,6 +1142,7 @@ def main(argv=None):
     _sub_concordancia(sub)
     _sub_juez(sub)
     _sub_jurado(sub)
+    _sub_fuentes(sub)
 
     args = ap.parse_args(argv)
     return args.func(args)

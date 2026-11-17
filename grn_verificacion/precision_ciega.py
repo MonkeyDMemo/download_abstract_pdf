@@ -57,6 +57,12 @@ pares canónicos cuyas aristas no dicen lo mismo se cuentan
 capa no tiene (`evidencias_sin_par_en_capa`), que dicen que la capa y la red
 no son de la misma corrida.
 
+**Por origen del texto** (`por_origen`). Las mismas cifras de bronce y red
+para los ítems cuya oración está en el resumen y para los del cuerpo del
+artículo (`fuentes.origen_del_texto`, con `fuente_texto` y `seccion` de la
+capa). Es descriptivo: no cambia ninguna otra cifra, y los subgrupos son
+chicos.
+
 **La capa** (`capa`, por omisión `<carpeta>/capa_pares.csv`) es la que tiene
 los `id_par` de la llave, los ids canónicos y el signo léxico del bronce. Con
 ella se mide la carpeta de otro modelo: la red es de esa carpeta y la capa, la
@@ -100,7 +106,7 @@ import statistics
 
 from grn_bronce.texto import normalizar_espacios
 from grn_comun import redes
-from grn_verificacion import entrenamiento, evaluar, reentrenar
+from grn_verificacion import entrenamiento, evaluar, fuentes, reentrenar
 
 RELACIONES = ("si", "no", "dudoso")
 DIRECCIONES = ("1>2", "2>1", "ninguna")
@@ -229,6 +235,37 @@ def _pares_canonicos(ruta_capa):
                               f.get("signo_sugerido") or "",
                               normalizar_espacios(f.get("oracion") or ""))
     return pares
+
+
+def _origenes_de_pares(ruta_capa):
+    """{id_par: origen del texto} (`fuentes.origen_del_texto`): el resumen o
+    el cuerpo del artículo. Una capa sin `fuente_texto` ni `seccion` deja
+    todos en `sin_dato`."""
+    return dict((f["id_par"], fuentes.origen_del_texto(
+        f.get("fuente_texto"), f.get("seccion"))) for f in _leer_csv(ruta_capa))
+
+
+def _por_origen(anotados):
+    """Las mismas cifras, por el origen de la oración de cada ítem. Es un
+    desglose descriptivo: los subgrupos son chicos y sus intervalos, anchos.
+    None si la capa no dice de dónde sale ninguna oración."""
+    grupos = collections.OrderedDict()
+    for origen in fuentes.ORIGENES + (fuentes.SIN_DATO,):
+        items = [it for it in anotados if it["origen"] == origen]
+        if not items:
+            continue
+        retenidos = [it for it in items if it["retenido"]]
+        verdaderos = [it for it in items
+                      if it["relacion"] == "si" and it["dir_ok"]]
+        grupos[origen] = {
+            "n": len(items),
+            "bronce": _precisiones(items)["con_direccion"],
+            "red": _precisiones(retenidos)["con_direccion"],
+            "retencion_de_los_verdaderos": evaluar.proporcion(
+                sum(1 for it in verdaderos if it["retenido"]),
+                len(verdaderos)),
+        }
+    return grupos if set(grupos) - {fuentes.SIN_DATO} else None
 
 
 def aristas_de_la_red(carpeta, pares, red=None):
@@ -497,6 +534,7 @@ def calcular(ruta_anotacion, ruta_llave, carpeta, red=None, excluir=(),
                                                                    CAPA)
     nombre_red, nombre_evidencias, _ = redes.archivos_de_red(red)
     pares = _pares_canonicos(ruta_capa)
+    origenes = _origenes_de_pares(ruta_capa)
     leida = aristas_de_la_red(carpeta, pares, red)
     evidencias = leida["signo_de_evidencia"]
 
@@ -527,6 +565,7 @@ def calcular(ruta_anotacion, ruta_llave, carpeta, red=None, excluir=(),
             "par_en_la_red": canon in leida["pares"],
             "signo_bronce": _signo_bronce(par[2]),
             "signo_red": SIGNOS_RED.get(signo_red or "", ""),
+            "origen": origenes.get(clave["id_par"], fuentes.SIN_DATO),
         })
     if sin_par:
         raise ValueError("%d ítems con un id_par que la capa no tiene (%s): "
@@ -577,6 +616,7 @@ def calcular(ruta_anotacion, ruta_llave, carpeta, red=None, excluir=(),
                 anotados) if anotados else None,
         },
         "sensibilidad_negadas_como_no": _sensibilidad_negadas(anotados),
+        "por_origen": _por_origen(anotados),
         "avisos_rubrica": dict((k, avisos[k]) for k in AVISOS_RUBRICA),
         "pares_con_signo_mixto": leida["pares_con_signo_mixto"],
         "evidencias_sin_par_en_capa": leida["evidencias_sin_par_en_capa"],
@@ -648,6 +688,15 @@ def lineas(r):
     else:
         salida.append("sensibilidad: ningún «si» lleva negada = si; las "
                       "cifras no cambian")
+    if r.get("por_origen"):
+        salida.append("por origen de la oración (desglose descriptivo, "
+                      "subgrupos chicos):")
+        for origen, g in r["por_origen"].items():
+            salida.append("  %s (%d ítems): bronce %s; red %s; la red "
+                          "retiene de los verdaderos %s" % (
+                              origen, g["n"], _fmt(g["bronce"]),
+                              _fmt(g["red"]),
+                              _fmt(g["retencion_de_los_verdaderos"])))
     avisos = r["avisos_rubrica"]
     if any(avisos.values()):
         salida.append("avisos de la rúbrica (§4): " + "; ".join(

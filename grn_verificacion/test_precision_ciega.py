@@ -258,6 +258,51 @@ class PruebasCifras(Base):
         self.assertEqual(s["red"], r["red"]["con_direccion"])
 
 
+class PruebasOrigen(Base):
+    """El desglose por origen del texto (`por_origen`)."""
+
+    def escribir_capa_con_origen(self):
+        # p1 y p2 en el resumen; p3 y p4 en el cuerpo de un XML.
+        origen = {"p1": ("abstract", "abstract"), "p2": ("xml", "abstract"),
+                  "p3": ("xml", "results"), "p4": ("xml", "discussion"),
+                  "p5": ("pdf", "results")}
+        _escribir(os.path.join(self.carpeta, "capa_pares.csv"),
+                  COLUMNAS_CAPA + ["fuente_texto", "seccion"],
+                  [{"id_par": p, "tf_id": a, "target_id": b,
+                    "signo_sugerido": s, "oracion": "Oración %s." % p,
+                    "fuente_texto": origen[p][0], "seccion": origen[p][1]}
+                   for _, p, a, b, s, _ in ITEMS])
+
+    def test_sin_fuente_en_la_capa_no_hay_desglose(self):
+        self.assertIsNone(self.calcular()["por_origen"])
+
+    def test_las_cifras_por_origen_suman_las_del_total(self):
+        self.escribir_capa_con_origen()
+        r = self.calcular()
+        g = r["por_origen"]
+
+        self.assertEqual(list(g), ["resumen", "cuerpo_xml"])
+        # Resumen: m-1001 (si, bien, en la red) y m-1002 (no, en la red).
+        self.assertEqual((g["resumen"]["n"], _kn(g["resumen"]["bronce"]),
+                          _kn(g["resumen"]["red"])), (2, (1, 2), (1, 2)))
+        self.assertEqual(_kn(g["resumen"]["retencion_de_los_verdaderos"]),
+                         (1, 1))
+        # Cuerpo: m-1003 (si, al revés) y m-1004 (dudoso), fuera de la red.
+        self.assertEqual((g["cuerpo_xml"]["n"], _kn(g["cuerpo_xml"]["bronce"]),
+                          _kn(g["cuerpo_xml"]["red"])), (2, (0, 2), (0, 0)))
+        self.assertEqual(sum(x["n"] for x in g.values()), r["n_anotados"])
+        self.assertEqual(sum(x["bronce"]["k"] for x in g.values()),
+                         r["bronce"]["con_direccion"]["k"])
+
+    def test_el_desglose_sale_en_las_lineas(self):
+        self.escribir_capa_con_origen()
+
+        dicho = pc.lineas(self.calcular())
+
+        self.assertTrue(any(l.strip().startswith("resumen (2 ítems)")
+                            for l in dicho))
+
+
 class PruebasRed(Base):
 
     def test_la_red_con_nombre_no_lee_las_expandidas(self):
