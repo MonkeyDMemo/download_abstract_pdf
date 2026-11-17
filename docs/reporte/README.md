@@ -8,6 +8,7 @@ genera a partir de él: **se edita el Markdown, nunca el Word**.
 | `reporte.md` | el texto, con las figuras como bloques mermaid (GitHub las dibuja) |
 | `figuras/*.png` | las mismas figuras exportadas, que el Word inserta |
 | `construir_docx.py` | genera `salidas/reporte/Memoria_tecnica_servicio_social.docx` |
+| `graficas_fuentes.py` | las gráficas de «resumen contra texto completo», desde los conteos de `salidas/fuentes/` |
 
 ## Generar el Word
 
@@ -19,6 +20,20 @@ python -m venv .venv-reporte
 .venv-reporte/Scripts/python -m pip install python-docx     # Linux: .venv-reporte/bin/python
 .venv-reporte/Scripts/python docs/reporte/construir_docx.py
 ```
+
+## Las gráficas de resumen contra texto completo
+
+Necesitan `matplotlib` en el mismo entorno. Los conteos salen del núcleo; las
+gráficas solo los dibujan.
+
+```bash
+.venv-reporte/Scripts/python -m pip install matplotlib
+python -m grn_verificacion.cli fuentes --carpeta salidas/flujo/corrida20_run22 --json salidas/fuentes/fuentes_corrida20.json
+.venv-reporte/Scripts/python docs/reporte/graficas_fuentes.py
+```
+
+El docstring de `graficas_fuentes.py` lista los archivos que lee de
+`salidas/fuentes/`; la figura que no tiene el suyo se salta.
 
 Al abrir el Word, acepta «actualizar los campos»: así se llenan el índice y
 los números de página.

@@ -8,6 +8,101 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 16 de noviembre de 2026 — resumen contra texto completo, embudos y OpenAlex
+
+Peticiones del asesor tras la reunión de avance: comparar lo que da el resumen
+contra el texto completo (cuántas buenas y cuántas malas), el embudo de
+artículos (también para los nuevos), con gráficas, y probar OpenAlex para
+bajar más PDF. No se llegó a presentar la sección de artículos nuevos.
+
+**Código** (`3c5c2fe`): `grn_verificacion/fuentes.py` y `cli fuentes`;
+`precision-ciega` reporta `por_origen`. Origen de una oración: `resumen` si
+está en la sección abstract (de un artículo con o sin texto completo);
+`cuerpo_xml` o `cuerpo_pdf` en cualquier otra. Enmienda 7 de
+`protocolo-tanda2.md`, anterior a calcularlo sobre la tanda 2: es un desglose
+descriptivo. La huella de `red.tsv` de la corrida 4 coincide con la registrada
+y las cifras totales de las dos tandas se reproducen.
+
+**Embudo de artículos** (`corpus cobertura`): v0-agosto, 2,361 descargados;
+2,354 con resumen; 918 con XML; 341 con PDF, 245 de ellos sin XML; 1,163 con
+texto completo y 1,198 solo con resumen. 1,638 dan alguna oración candidata
+(646 solo resumen, 761 XML, 231 PDF). Nuevos: 40, todos solo con resumen (así
+lo fija su protocolo); 21 con alguna candidata, 61 aristas, 4 de confianza
+alta.
+
+**Embudo de la evidencia, corrida 20:**
+
+| Origen | Artículos | Oraciones candidatas | Pares | Sobre el umbral |
+|---|---|---|---|---|
+| Resumen | 1,241 | 4,149 | 10,546 | 8,384 (79.5 %) |
+| Cuerpo, XML | 756 | 25,807 | 63,208 | 47,923 (75.8 %) |
+| Cuerpo, PDF | 230 | 7,449 | 17,555 | 13,735 (78.2 %) |
+
+Por artículo: 3.3 candidatas en el resumen, 34.1 en el cuerpo en XML y 32.4 en
+el cuerpo en PDF. En los artículos con texto completo, su resumen sostiene
+1,465 aristas y su cuerpo 9,533; 8,228 solo están en el cuerpo y 160 solo en
+el resumen.
+
+**Buenas y malas:**
+
+- **Jurado, por oración juzgada:** confirma 311/1,181 (26.3 %) en resumen,
+  1,863/8,612 (21.6 %) en cuerpo XML y 478/2,105 (22.7 %) en cuerpo PDF. Juzgó
+  la oración de mayor probabilidad de cada arista, no una muestra al azar.
+- **Por arista, según dónde está su evidencia** (nivel del jurado; en la base
+  curada, sobre las 9,927 aristas con locus, 1,280 en la base; solo conteos
+  del servidor):
+
+| Evidencia | Aristas | Alta | Media | Al revés | Sin respaldo | En la base |
+|---|---|---|---|---|---|---|
+| Solo resúmenes | 521 | 92 | 37 | 26 | 366 | 75/515 (14.6 %) |
+| Resumen y cuerpo | 1,813 | 495 | 199 | 305 | 814 | 547/1,794 (30.5 %) |
+| Solo cuerpo | 7,720 | 1,242 | 587 | 404 | 5,487 | 658/7,618 (8.6 %) |
+
+  Con evidencia en el cuerpo en PDF: 560/2,650 en la base; solo gracias al PDF
+  (sin resumen ni XML), 110/1,146.
+- **Experto, por oración** (enmienda 7; subgrupos chicos):
+
+| | Resumen: bronce | Resumen: red | Cuerpo XML: bronce | Cuerpo XML: red |
+|---|---|---|---|---|
+| Tanda 1 | 15/36 (41.7 %) | 10/25 (40.0 %) | 90/162 (55.6 %) | 77/117 (65.8 %) |
+| Tanda 2, corte de 100 | 14/29 (48.3 %) | 11/21 (52.4 %) | 25/71 (35.2 %) | 21/46 (45.6 %) |
+
+  Las tandas no coinciden en cuál origen es mejor y los intervalos se enciman.
+  No hay ítems de PDF: las tandas se sortearon de la corrida 4.
+
+**Lectura.** El texto completo no da oraciones mejores que el resumen; da diez
+veces más por artículo. El 77 % de las aristas solo tiene evidencia en el
+cuerpo, y ahí están 658 de las 1,280 que coinciden con la base y 1,242 de las
+1,829 de confianza alta. PDF y XML se comportan igual.
+
+**OpenAlex** (prueba, sin llave; nada se registró en la base ni en `datos/`):
+
+| | Corpus de agosto | Nuevos |
+|---|---|---|
+| Sin texto completo | 1,198 | 40 |
+| En OpenAlex | 1,187 | 40 |
+| Acceso abierto | 636 | 31 |
+| Con liga de PDF abierto | 262 | 27 |
+| PDF bajado y verificado (`%PDF`) | 14 | 16 |
+| Con copia del PDF en OpenAlex | 266 | 27 |
+
+- Las ligas son casi todas del editor y contestan 403 a un script (Wiley 74,
+  revistas de ASM 58, OUP 14, JBC 14, Elsevier 14, Cell 11, PNAS 8); las de
+  PMC entregan HTML. Lo que baja es bioRxiv, PLOS, Frontiers, Springer y
+  Nature de acceso abierto. De los 16 nuevos, 9 son la versión preliminar.
+- La copia propia de OpenAlex (`content.openalex.org`) exige una llave de API;
+  sin llave la API da US$0.10 al día por IP, y la consulta de los 1,238
+  artículos costó 32 créditos de 1,000.
+- El OA Service de PMC sigue sin responder (0 de 3): los 464 en «error» no se
+  resuelven reintentando.
+
+**Archivos** (`salidas/fuentes/`, fuera de git): los JSON de conteos, las
+figuras (`docs/reporte/graficas_fuentes.py`, con matplotlib en
+`.venv-reporte`), `openalex_prueba.py` e `informe_fuentes.py`, que arma el
+informe de 3 páginas para el asesor.
+
+---
+
 ## 5 de noviembre de 2026 (noche) — cierre del día: nada corriendo en la nube
 
 **Comprobado al cerrar** (perfil `default` de la laptop, us-west-2):
