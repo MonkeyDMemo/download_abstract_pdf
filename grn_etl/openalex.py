@@ -43,6 +43,7 @@ CAMPOS = "id,ids,has_content,open_access,best_oa_location"
 LOTE = 50
 AGENTE = "grn-etl/0.1"
 COSTO_PDF = 0.01
+ESPERA_MAXIMA = 330
 # Cuándo un PDF convertido es el artículo que dice su PMID (enmienda 3 de
 # docs/protocolo-prueba-nuevos.md). OpenAlex a veces guarda otra cosa: una
 # carátula, un resumen de congreso o el archivo de otro trabajo.
@@ -206,8 +207,10 @@ def bajar_corpus(con, nombre, destino, llave, tope, limite_s, inicio, log):
                 estado, cab, cuerpo = pedir(CONTENIDO % id_obra, llave)
                 if estado != 429:
                     break
+                # Una cuenta nueva gasta su primer dólar a US$0.10 cada 5
+                # minutos: el 429 trae cuánto esperar, y esperar no cuesta.
                 espera = int(cab.get("Retry-After") or 0)
-                if not 0 < espera <= 90:
+                if not 0 < espera <= ESPERA_MAXIMA:
                     break
                 time.sleep(espera + 1)
             if cab.get("X-RateLimit-Remaining-USD") is not None:

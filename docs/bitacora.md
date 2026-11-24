@@ -22,15 +22,18 @@ US$1 al día, que se renueva a las 0:00 UTC: unos 99 PDF diarios.
 |---|---|---|
 | Sin texto completo | 1,198 | 40 |
 | Con copia del PDF en OpenAlex | 275 | 27 |
-| Bajados hoy | 71 | 27 |
-| Son el artículo (`es_el_articulo`) | 70 | 27 |
+| Bajados hoy | 170 | 27 |
+| Son el artículo (`es_el_articulo`) | 169 | 27 |
 | Descartados | 1 (2,734 caracteres, sin el título) | 0 |
 | Sin contenido (404) | 1 | 0 |
-| Pendientes | 203 | 0 |
-| Versión publicada / enviada | 66 / 5 | 22 / 5 |
+| Pendientes | 104 | 0 |
+| Versión publicada / enviada | 161 / 9 | 22 / 5 |
 
+- Fueron dos tandas: 98 con la primera llave (71 del corpus y los 27 nuevos)
+  y 99 del corpus con una segunda llave del usuario; cada llave alcanza para
+  unos 99 PDF al día.
 - La regla de aceptación (≥ 5,000 caracteres y el título de PubMed presente)
-  se fijó después de ver solo la coincidencia de títulos de estos 98.
+  se fijó después de ver solo la coincidencia de títulos de los primeros 98.
 - Los 27 de los nuevos se registraron en `descargas` (fuente `OpenAlex`), con
   respaldo previo en `datos/grn_respaldo_antes_openalex_20261124.db`. Los de
   agosto esperan en `datos/fulltext/pdf_openalex/` hasta tenerlos todos: no
@@ -73,7 +76,7 @@ nuevos_resumen_vs_pdf, fuentes_corrida22}.json`, las figuras 1, 5 y 6
 regeneradas, `Resumen_vs_texto_completo_24nov.{docx,pdf}` y
 `salidas/visor/visor_red_nuevos_con_pdf.html`.
 
-**Pendiente:** bajar los 203 que faltan (dos o tres días de cuota), convertir,
+**Pendiente:** bajar los 104 que faltan (uno o dos días de cuota), convertir,
 `openalex registrar --corpus v0-agosto` y una corrida nueva con ellos. Gasto
 en Bedrock: ~US$23.5 de 30.
 
