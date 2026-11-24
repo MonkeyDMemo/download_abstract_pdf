@@ -12,8 +12,9 @@ lo que permite correr una vez con otra cuenta sin tocar nada.
 
 Los archivos van en la raiz del proyecto y los cubre el .gitignore:
 
-    .key      la API key, una linea. Ya existia con esa forma.
-    .correo   el correo de contacto, una linea.
+    .key          la API key de NCBI, una linea. Ya existia con esa forma.
+    .correo       el correo de contacto, una linea.
+    openalex.key  la API key de OpenAlex, una linea (la cubre `*.key`).
 
 El correo no es un secreto pero si es un dato personal, y NCBI lo recibe
 en cada peticion: no tiene por que acabar en un repositorio publico.
@@ -25,6 +26,7 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 ARCHIVO_LLAVE = RAIZ / ".key"
 ARCHIVO_CORREO = RAIZ / ".correo"
+ARCHIVO_LLAVE_OPENALEX = RAIZ / "openalex.key"
 
 # Lo que NCBI acepta como llave: 36 caracteres alfanumericos. Se valida
 # antes de guardar para que un pegado a medias no se descubra hasta la
@@ -52,6 +54,17 @@ def llave():
     en el historial del shell y en la lista de procesos de la maquina.
     """
     return (os.environ.get("NCBI_API_KEY") or _leer(ARCHIVO_LLAVE)) or None
+
+
+def llave_openalex():
+    """La API key de OpenAlex: entorno (`OPENALEX_API_KEY`) o archivo.
+
+    Como la de NCBI, nunca se pasa por argumento, y va en la cabecera
+    `Authorization` y no en la URL: la URL se guarda en `descargas` y sale
+    en los logs.
+    """
+    return (os.environ.get("OPENALEX_API_KEY")
+            or _leer(ARCHIVO_LLAVE_OPENALEX)) or None
 
 
 def origen_llave():
