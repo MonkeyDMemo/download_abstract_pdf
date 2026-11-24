@@ -127,3 +127,39 @@ Es anterior a descargar nada.
 - **Calendario.** El experto anota la muestra del corpus nuevo después de
   terminar la tanda 2, y su cifra va al informe. A la revisión del 6-nov van
   solo conteos descriptivos y la contaminación.
+
+## Enmienda 3 (24-nov-2026): los artículos nuevos, también con texto completo
+
+Es anterior a procesar ningún PDF de los artículos nuevos. Los PDF ya estaban
+bajados y de ellos solo se había mirado si son el artículo correcto.
+
+- **Por qué.** El asesor pidió (16-nov) el embudo y la comparación de resumen
+  contra texto completo también para los artículos nuevos. La limitación «sin
+  texto completo» de este protocolo era práctica: lo nuevo casi no tiene XML
+  de PMC. Con una llave de OpenAlex hay copia en PDF de 27 de los 40.
+- **Qué no cambia.** La corrida 16 (solo resúmenes) sigue siendo la prueba de
+  este protocolo y sus cifras no se tocan. El corpus `nuevos-20261104` es el
+  mismo (40 artículos, misma huella). No se ajusta ninguna regla, umbral ni
+  prompt.
+- **Qué se agrega.** Una corrida aparte del bronce con `--con-pdf` sobre el
+  mismo corpus, el flujo con el modelo congelado (`modelo_limpio_run22`) y el
+  jurado v1 (enmienda 6 de `protocolo-tanda2.md`) con una oración por arista.
+- **Qué PDF entran.** La regla se fijó antes de procesar y después de ver solo
+  la coincidencia de títulos: firma `%PDF`; al menos 5,000 caracteres de texto
+  convertido; y el título del registro de PubMed presente (≥ 60 % de sus
+  palabras en los primeros 6,000 caracteres, o ≥ 80 % en todo el texto). La
+  cumplen los 27. De ellos, 22 son la versión publicada y 5 la versión enviada
+  a la revista (preprint): entran, y se reporta cuántas aristas dependen solo
+  de esos 5.
+- **Qué se reporta.** Es descriptivo y no da ninguna cifra de calidad, porque
+  no hay juicio del experto sobre este corpus:
+  - el embudo de artículos (descargados, con resumen, con PDF);
+  - el embudo de la evidencia por origen de la oración (`cli fuentes`);
+  - las aristas por dónde está su evidencia y el nivel del jurado por clase;
+  - sobre los mismos 40 artículos, la red de solo resúmenes contra la red con
+    PDF.
+- **La muestra del experto no cambia.** Si llega a anotarse, se sortea de la
+  corrida 16 como estaba escrito: mezclar fuentes ahí sí cambiaría la
+  población.
+- **Costo.** El jurado sobre las aristas de esta corrida, con tope de US$2 en
+  Bedrock.
