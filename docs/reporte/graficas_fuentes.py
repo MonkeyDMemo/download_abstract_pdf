@@ -7,12 +7,15 @@ No es parte del núcleo: necesita matplotlib, en el entorno del reporte.
         [--datos salidas/fuentes] [--salida salidas/fuentes/figuras]
 
 Lee de `--datos` (todo conteos):
-- `fuentes_corrida20.json` y `fuentes_corrida16.json`: `cli fuentes`;
+- `fuentes_corrida20.json`, `fuentes_corrida16.json` y
+  `fuentes_corrida22.json` (los nuevos con PDF): `cli fuentes`;
 - `precision_t1_por_origen.json` y `precision_t2_por_origen.json`:
   `cli precision-ciega`;
 - `cobertura.json`: `db.cobertura_corpus` de cada corpus;
 - `base_curada_por_origen.json`: conteos del servidor;
-- `openalex_prueba.json`: la prueba de descarga con OpenAlex.
+- `openalex_prueba.json`: la prueba de descarga con OpenAlex, sin llave;
+- `openalex_con_llave.json`: la descarga de las copias de OpenAlex;
+- `nuevos_resumen_vs_pdf.json`: los nuevos, solo resúmenes contra con PDF.
 Las figuras que no tienen su archivo se saltan.
 """
 import argparse
@@ -96,19 +99,39 @@ def embudo_articulos(datos, salida):
     leyenda(ejes[0], [(0, MORADO, "Solo resumen"), (0, VERDE, "XML de PMC"),
                       (0, AMBAR, "PDF (sin XML)")], loc="center right")
     c = cob["nuevos-20261104"]
+    f22 = leer(datos, "fuentes_corrida22.json")
     filas = [
         ("Descargados de PubMed", [(c["documentos"], GRIS, "")]),
         ("Con resumen", [(c["con_abstract"], "#8E8FA3", "")]),
-        ("Con texto completo\n(en la corrida)", [
-            (c["xml_ok"] + c["pdf_ok_sin_xml"], VERDE, "")]),
     ]
-    if "nuevos-20261104" in oa:
+    if c.get("pdf_ok_sin_xml"):
+        filas.append(("Con texto completo\n(PDF de OpenAlex)", [
+            (c.get("pdf_version_publicada", c["pdf_ok_sin_xml"]), AMBAR,
+             "PDF, versión publicada"),
+            (c.get("pdf_version_enviada", 0), "#E6C98A",
+             "PDF, versión enviada (preprint)")]))
+        filas.append(("Solo con resumen",
+                      [(c["sin_texto_completo"], MORADO, "")]))
+    elif "nuevos-20261104" in oa:
         filas.append(("PDF abierto bajado en la\nprueba de OpenAlex", [
             (oa["nuevos-20261104"]["descargas"].get("ok", 0), AMBAR, "")]))
-    if f16:
+    if f22:
+        af = f22["embudo"]["articulos_por_fuente"]
+        filas.append(("Con alguna oración\ncandidata", [
+            (af.get("abstract", 0), MORADO, ""), (af.get("pdf", 0), AMBAR, "")]))
+    elif f16:
         filas.append(("Con alguna oración\ncandidata", [
             (f16["embudo"]["articulos_con_candidatas"], MORADO, "")]))
-    barras_apiladas(ejes[1], filas, "Artículos nuevos (19-ago a 4-nov)")
+    barras_apiladas(ejes[1], filas, "Artículos nuevos (19-ago a 4-nov)",
+                    total=False)
+    for i, (etiqueta, partes) in enumerate(reversed(filas)):
+        total = sum(v for v, _c, _n in partes)
+        texto = n(total)
+        if etiqueta.startswith("Con texto completo") and len(partes) == 2:
+            texto += " (%d versión publicada,\n      %d preprint)" % (
+                partes[0][0], partes[1][0])
+        ejes[1].text(total, i, "  " + texto, va="center")
+    ejes[1].margins(x=0.3)
     fig.tight_layout()
     fig.savefig(os.path.join(salida, "fig1_embudo_articulos.png"))
     plt.close(fig)
@@ -250,7 +273,92 @@ def experto(datos, salida):
     plt.close(fig)
 
 
+def openalex_con_llave(datos, salida):
+    """Las copias que guarda OpenAlex: bajadas, pendientes y descartadas."""
+    d = leer(datos, "openalex_con_llave.json")
+    if not d:
+        return False
+    previa = {r["corpus"]: r for r in leer(datos, "openalex_prueba.json") or []}
+    filas_de = d["corpus"]
+    fig, ejes = plt.subplots(1, len(filas_de), figsize=(6 * len(filas_de), 3.4))
+    ejes = [ejes] if len(filas_de) == 1 else list(ejes)
+    titulos = {"v0-agosto": "Corpus de agosto: artículos sin texto completo",
+               "nuevos-20261104": "Artículos nuevos"}
+    VERDE_OSCURO, CLARO = "#2E7D4F", "#F0DDB0"
+    for ax, r in zip(ejes, filas_de):
+        filas = [("Sin texto completo", [(r["sin_texto_completo"], GRIS, "")])]
+        if r["corpus"] in previa:
+            filas.append(("Bajados sin llave\n(ligas abiertas, 16-nov)", [
+                (previa[r["corpus"]]["descargas"].get("ok", 0), VERDE, "")]))
+        filas.append(("Con copia del PDF\nen OpenAlex", [
+            (r["con_copia_en_openalex"], AMBAR, "")]))
+        filas.append(("Bajados con la llave\n(24-nov)", [
+            (r["son_el_articulo"], VERDE_OSCURO, "Bajado y es el artículo"),
+            (r["no_son_el_articulo"] + r.get("sin_contenido", 0), ROJO,
+             "Descartado"),
+            (r["pendientes"], CLARO, "Pendiente (100 al día)")]))
+        barras_apiladas(ax, filas, titulos.get(r["corpus"], r["corpus"]),
+                        total=False)
+        for i, (_e, partes) in enumerate(reversed(filas)):
+            texto = " + ".join(n(v) for v, _c, _n in partes if v) or "0"
+            ax.text(sum(v for v, _c, _n in partes), i, "  " + texto,
+                    va="center")
+        ax.tick_params(axis="y", labelsize=9)
+    leyenda(ejes[0], [(0, VERDE_OSCURO, "Bajado y es el artículo"),
+                      (0, ROJO, "Descartado"),
+                      (0, CLARO, "Pendiente (100 al día)")],
+            loc="lower right", fontsize=8.5)
+    fig.tight_layout()
+    fig.savefig(os.path.join(salida, "fig5_openalex.png"))
+    plt.close(fig)
+    return True
+
+
+def nuevos_con_pdf(datos, salida):
+    """Los artículos nuevos: solo resúmenes contra con PDF."""
+    d, f22 = (leer(datos, "nuevos_resumen_vs_pdf.json"),
+              leer(datos, "fuentes_corrida22.json"))
+    if not (d and f22):
+        return
+    fig, ejes = plt.subplots(1, 2, figsize=(12, 3.3),
+                             gridspec_kw={"width_ratios": [1, 1.1]})
+
+    def por_nivel(cuenta):
+        return [(cuenta.get(k, 0), color, nombre) for k, nombre, color in NIVEL]
+
+    def rotular(ax, filas):
+        for i, (_e, partes) in enumerate(reversed(filas)):
+            total = sum(v for v, _c, _n in partes)
+            buenas = partes[0][0] + partes[1][0]
+            ax.text(total, i, "  %s (confirma %d)" % (n(total), buenas),
+                    va="center")
+
+    filas = [("Solo resúmenes\n(40 artículos)",
+              por_nivel(d["solo_resumenes_corrida16"]["nivel"])),
+             ("Con los 27 PDF\n(mismos 40 artículos)",
+              por_nivel(d["con_pdf_corrida22"]["nivel"]))]
+    barras_apiladas(ejes[0], filas, "a) Relaciones de los artículos nuevos",
+                    total=False)
+    rotular(ejes[0], filas)
+    ejes[0].margins(x=0.32)
+    clases = f22["aristas"]["por_clase"]
+    filas = [(nombre, por_nivel(clases[c]["nivel"])) for c, nombre in (
+        ("solo_resumen", "Solo en resúmenes"),
+        ("resumen_y_cuerpo", "En resumen\ny en cuerpo"),
+        ("solo_cuerpo", "Solo en el cuerpo\n(PDF)"))]
+    barras_apiladas(ejes[1], filas, "b) Con PDF: dónde está la evidencia",
+                    total=False)
+    rotular(ejes[1], filas)
+    ejes[1].margins(x=0.32)
+    leyenda(ejes[1], por_nivel({}), loc="upper right", fontsize=8.5)
+    fig.tight_layout()
+    fig.savefig(os.path.join(salida, "fig6_nuevos_con_pdf.png"))
+    plt.close(fig)
+
+
 def openalex(datos, salida):
+    if openalex_con_llave(datos, salida):
+        return
     oa = leer(datos, "openalex_prueba.json")
     if not oa:
         return
@@ -287,7 +395,7 @@ def main():
     salida = args.salida or os.path.join(args.datos, "figuras")
     os.makedirs(salida, exist_ok=True)
     for figura in (embudo_articulos, embudo_evidencia, buenas_y_malas,
-                   experto, openalex):
+                   experto, openalex, nuevos_con_pdf):
         figura(args.datos, salida)
     for nombre in sorted(os.listdir(salida)):
         print(os.path.join(salida, nombre))

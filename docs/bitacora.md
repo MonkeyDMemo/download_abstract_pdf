@@ -8,6 +8,77 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 24 de noviembre de 2026 — OpenAlex con llave, y los artículos nuevos con PDF
+
+El usuario sacó la llave gratuita de OpenAlex. Vive en `openalex.key` (la
+cubre `*.key`) o en `OPENALEX_API_KEY`; la lee `credenciales.llave_openalex`
+(`c42b194`) y viaja solo en la cabecera `Authorization`.
+
+**Descarga** (`python -m grn_etl.openalex bajar`): la copia propia de OpenAlex
+(`content.openalex.org/works/<id>.pdf`) cuesta US$0.01 y la cuenta gratuita da
+US$1 al día, que se renueva a las 0:00 UTC: unos 99 PDF diarios.
+
+| | Corpus de agosto | Nuevos |
+|---|---|---|
+| Sin texto completo | 1,198 | 40 |
+| Con copia del PDF en OpenAlex | 275 | 27 |
+| Bajados hoy | 71 | 27 |
+| Son el artículo (`es_el_articulo`) | 70 | 27 |
+| Descartados | 1 (2,734 caracteres, sin el título) | 0 |
+| Sin contenido (404) | 1 | 0 |
+| Pendientes | 203 | 0 |
+| Versión publicada / enviada | 66 / 5 | 22 / 5 |
+
+- La regla de aceptación (≥ 5,000 caracteres y el título de PubMed presente)
+  se fijó después de ver solo la coincidencia de títulos de estos 98.
+- Los 27 de los nuevos se registraron en `descargas` (fuente `OpenAlex`), con
+  respaldo previo en `datos/grn_respaldo_antes_openalex_20261124.db`. Los de
+  agosto esperan en `datos/fulltext/pdf_openalex/` hasta tenerlos todos: no
+  se registran a medias para no mover las cifras de la corrida 20.
+- Los 923 del corpus y los 13 nuevos sin copia siguen fuera: piden el acceso
+  institucional.
+
+**Los artículos nuevos con PDF** (enmienda 3 de `protocolo-prueba-nuevos.md`,
+`a7396b1`, anterior a procesarlos; descriptivo, sin cifra de calidad). Bronce
+`--con-pdf`, corrida 22; flujo en `salidas/flujo/corrida22_run22`; jurado v1
+con una oración por arista (242 ítems, US$0.45; 1 abstención).
+
+| | Solo resúmenes (corrida 16) | Con los 27 PDF (corrida 22) |
+|---|---|---|
+| Artículos con alguna candidata | 21 | 28 (6 solo resumen, 22 con PDF) |
+| Oraciones candidatas | 36 | 541 (49 de resumen, 492 de cuerpo) |
+| Aristas | 61 | 242 (128 nodos, 744 evidencias) |
+| Confianza alta / media | 4 / 0 | 20 / 3 |
+| Al revés | 3 | 23 |
+| Sin respaldo | 54 | 196 |
+
+- Por dónde está la evidencia (corrida 22): solo resúmenes 16 aristas (0
+  confirmadas), resumen y cuerpo 47 (5), solo cuerpo 179 (18).
+- Por oración juzgada: confirma 1 de 35 de resumen y 22 de 207 de cuerpo.
+- Las 61 de la corrida 16 siguen en la 22 (3 alta, 1 media, 4 al revés, 53 sin
+  respaldo); las 181 nuevas: 17 alta, 2 media, 19 al revés, 143 sin respaldo.
+- De los 5 PDF en versión enviada (preprint) dependen solas 67 aristas: 10
+  alta, 1 media, 9 al revés, 47 sin respaldo. Es la mitad de las de confianza
+  alta: hay que decirlo al presentarlo.
+- Se confirma menos que en el corpus de agosto (9.5 % de las aristas contra
+  26.4 %). Con 40 artículos no se puede decir por qué.
+- En la corrida 16 el jurado leyó todas las oraciones (93); en la 22, una por
+  arista. Sobre las mismas 61 aristas da lo mismo: 4 confirmadas.
+
+**Verificación de las cifras del informe:** 14 conteos recalculados desde los
+archivos de las corridas 16, 20 y 22, la base y las tandas; coinciden todos.
+
+**Archivos** (fuera de git): `salidas/fuentes/{openalex_con_llave,
+nuevos_resumen_vs_pdf, fuentes_corrida22}.json`, las figuras 1, 5 y 6
+regeneradas, `Resumen_vs_texto_completo_24nov.{docx,pdf}` y
+`salidas/visor/visor_red_nuevos_con_pdf.html`.
+
+**Pendiente:** bajar los 203 que faltan (dos o tres días de cuota), convertir,
+`openalex registrar --corpus v0-agosto` y una corrida nueva con ellos. Gasto
+en Bedrock: ~US$23.5 de 30.
+
+---
+
 ## 16 de noviembre de 2026 — resumen contra texto completo, embudos y OpenAlex
 
 Peticiones del asesor tras la reunión de avance: comparar lo que da el resumen
