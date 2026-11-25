@@ -8,6 +8,43 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 25 de noviembre de 2026 (madrugada) — opción A: la red con los PDF de OpenAlex
+
+Corrida 25 (`salidas/flujo/corrida25_run22`): bronce con 545 textos de PDF,
+45,494 oraciones candidatas; BioBERT clasificó 20,615 pares y reutilizó
+90,864 de la corrida 20; todos los pasos ok. Contraste en el servidor con
+`origin/main` (`bdf144d`), estrato «sin BioBERT», 1,560 filas; solo conteos.
+
+| Medida | Corrida 20 | Corrida 25 |
+|---|---|---|
+| Aristas | 10,054 | 11,214 |
+| Nodos | 2,004 | 2,145 |
+| Evidencias | 56,890 | 68,416 |
+| Recall dirigido | 689 (44.2 %) | 732 (46.9 %) |
+| Cualquier dirección | 721 (46.2 %) | 765 (49.0 %) |
+| Orientación | 95.6 % | 95.7 % |
+| Techo (regla a con expansión) | 764 (49.0 %) | 812 (52.1 %) |
+| Signo, con abstención | 321/649 (49.5 %) | 335/686 (48.8 %) |
+| «Siempre activa» | 486/649 (74.9 %) | 506/686 (73.8 %) |
+| Pares que la base no registra | 8,948 | 10,005 |
+
+- **A mejora, como se esperaba:** +43 filas de la base (+2.7 puntos) y el
+  techo sube 3.1 puntos. Los 273 PDF de OpenAlex rinden lo mismo que los 245
+  anteriores (+3.0).
+- Pendiente del protocolo: cuánto del aumento depende solo de los 14 PDF en
+  versión enviada.
+
+**El jurado de la corrida 25 no se lanzó.** La caché de `anotar` es por
+carpeta y su llave lleva el contexto: sembrar los `veredictos.jsonl` de la
+corrida 20 no sirvió (7 aciertos en los primeros 210 ítems de una sonda de
+US$0.10 con gpt-oss-20b). Juzgar las 11,214 aristas de nuevo costaría unos
+US$20, fuera del tope. Alternativa por decidir: juzgar solo las 1,687
+oraciones que no estaban en la hoja de la corrida 20 (unos US$4) y heredar
+los veredictos de las demás por oración y par, registrado como desviación
+antes de hacerlo. Gasto en Bedrock: ~US$24 de 30.
+
+---
+
 ## 24 de noviembre de 2026 (noche) — mejoras contra la base: cortes por nivel, dirección y signo
 
 El usuario aprobó las opciones A a D del plan; la E espera al asesor. Las
