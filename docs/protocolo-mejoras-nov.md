@@ -79,3 +79,26 @@ Cada opción lleva una sola regla, fijada aquí. No se elige entre variantes
 mirando la base, así que no hay selección que proteger. Si después se quiere
 barrer un umbral contra la base, antes se parte por artículo con semilla fija
 y se registra aquí como enmienda.
+
+## Desviación 1 (25-nov-2026): el jurado de la corrida 25, por herencia
+
+Es anterior a lanzar el jurado sobre la corrida 25.
+
+- **Qué decía la opción A:** el jurado v1 como en la corrida 20, una oración
+  por arista y una segunda para las aristas sin respaldo con 2 o más
+  artículos.
+- **Qué se hace:** una oración de la hoja de la corrida 25 hereda el veredicto
+  que el jurado le dio en la corrida 20 si es la misma oración, del mismo
+  artículo y con el mismo par: 9,523 de las 11,214 primeras oraciones. El
+  jurado lee solo las 1,691 que no estaban. Las segundas oraciones valen
+  donde la corrida 20 ya las juzgó; no se juzgan segundas oraciones nuevas.
+- **Por qué:** la caché de `anotar` es por carpeta y su llave lleva el
+  contexto; sembrarla con los veredictos de la corrida 20 no reutilizó nada
+  (sonda de US$0.10). Juzgar todo de nuevo cuesta unos US$20 y el tope es de
+  US$30, con unos US$24 gastados.
+- **Qué no cambia:** los tres modelos, el prompt v1, el contexto y el umbral.
+  Un veredicto heredado es el que esos jueces dieron a esa oración.
+- **Qué sí:** las aristas nuevas sin respaldo no tienen segunda oportunidad,
+  así que sus niveles pueden quedar algo más bajos que con el procedimiento
+  completo. Se reporta cuántas oraciones heredan y cuántas se juzgaron.
+- **Tope:** US$4.4 entre los tres jueces.
