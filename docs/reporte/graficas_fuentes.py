@@ -79,6 +79,8 @@ def embudo_articulos(datos, salida):
                      leer(datos, "fuentes_corrida16.json"))
     if not (cob and f20):
         return
+    # La barra de «con alguna candidata» sale de la corrida más reciente.
+    f20 = leer(datos, "fuentes_corrida25.json") or f20
     oa = {r["corpus"]: r for r in leer(datos, "openalex_prueba.json") or []}
     fig, ejes = plt.subplots(1, 2, figsize=(12, 3.9),
                              gridspec_kw={"width_ratios": [1.25, 1]})
