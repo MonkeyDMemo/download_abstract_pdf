@@ -8,6 +8,52 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 25 de noviembre de 2026 — el jurado de la corrida 25 y sus niveles contra la base
+
+Regla: desviación 1 de `docs/protocolo-mejoras-nov.md`, escrita antes de
+lanzarlo (`db93753`).
+
+- **Qué leyó el jurado.** De las 11,214 primeras oraciones, 9,523 heredan el
+  veredicto de la corrida 20 (misma oración, mismo artículo, mismo par) y
+  1,691 eran nuevas. Los tres jueces del jurado v1 las leyeron con el prompt
+  v1 y contexto: 1,336 llamadas por juez, porque la caché es por contenido.
+  Resultado sobre las nuevas: 457 sí, 1,192 no y 42 dudosas.
+- **Gasto:** US$3.07 (gpt-oss-120b 1.16, gpt-oss-20b 0.67, Qwen3-235B 1.24),
+  bajo el tope de US$4.4.
+- **La hoja vigente** quedó a 2 oraciones por arista, como en la corrida 20:
+  16,354 oraciones; 1,709 con veredicto nuevo, 11,399 heredadas y 3,246 no
+  juzgadas (segundas oraciones nuevas, que la desviación no juzga). La hoja
+  que leyó el jurado se guarda como `juez/hoja_tope1.csv`.
+- **Niveles de la corrida 25** (`flujo.py --corrida 25 --pasos juez`):
+
+| Nivel | Corrida 20 | Corrida 25 |
+|---|---|---|
+| Alta | 1,829 | 1,971 |
+| Media | 823 | 879 |
+| Al revés | 735 | 759 |
+| Sin respaldo | 6,667 | 7,605 |
+| Aristas | 10,054 | 11,214 |
+
+- **Contra la base** (servidor, `origin/main` en `24f949d`, 1,560 filas «sin
+  BioBERT»; redes derivadas con `grn_verificacion.derivar`):
+
+| Red de la corrida 25 | Aristas | Dirigido | Orientación | Signo cuando lo da |
+|---|---|---|---|---|
+| Solo alta | 1,971 | 470 (30.1 %) | 470/477 = 98.5 % | 267/303 = 88.1 % |
+| Alta y media | 2,850 | 567 (36.3 %) | 567/582 = 97.4 % | 292/337 = 86.6 % |
+| Toda | 11,214 | 732 (46.9 %) | 732/765 = 95.7 % | 335/386 = 86.8 % |
+
+  La confianza alta es el 17.6 % de la red y recupera el 64 % de lo que
+  recupera toda (470 de 732). En la corrida 20 eran 451, 544 y 689.
+- **Por origen de la evidencia** (`cli fuentes`,
+  `salidas/fuentes/fuentes_corrida25.json`): solo resumen 433 aristas (71 de
+  confianza alta), resumen y cuerpo 1,952 (515), solo cuerpo 8,829 (1,385). El
+  jurado confirma 25.5 % de las oraciones de resumen que juzgó, 21.8 % de las
+  de XML y 22.3 % de las de PDF.
+- Conteos en `salidas/fuentes/mejoras_c20.json`, clave `corrida25_jurado`.
+
+---
+
 ## 25 de noviembre de 2026 — opción E como conteo: la base en el artículo que cita
 
 El usuario pidió la E sin sacar de la base la lista de artículos:
