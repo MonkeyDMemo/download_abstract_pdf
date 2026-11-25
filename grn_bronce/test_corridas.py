@@ -179,6 +179,23 @@ class PruebasRehacer(unittest.TestCase):
         self.assertEqual(bdb.corrida(self.con, self.previa)["estatus"], "ok")
         self.assertEqual(_unidades(self.con, self.previa), 1)
 
+    def test_conservar_anteriores_no_borra_la_previa(self):
+        """Una corrida con resultados publicados convive con la nueva."""
+        args = argparse.Namespace(corrida=None, corpus="", rehacer=True,
+                                  datos=None, conservar=True)
+        with mock.patch.object(I, "identificar",
+                               return_value=collections.Counter()), \
+                mock.patch.object(cli, "_volcar",
+                                  return_value=(None, [], {}, False)), \
+                mock.patch.object(cli, "_mostrar"):
+            self.assertEqual(cli._exportar(self.con, args, 0), 0)
+
+        self.assertNotEqual(self._nueva(), self.previa)
+        self.assertEqual(bdb.corrida(self.con, self._nueva())["estatus"],
+                         "ok")
+        self.assertEqual(bdb.corrida(self.con, self.previa)["estatus"], "ok")
+        self.assertEqual(_unidades(self.con, self.previa), 1)
+
     def test_la_primera_limpia_borra_todas_las_conservadas(self):
         """Un documento que falla en cada `--rehacer` conserva una copia
         entera del corpus por intento. La primera que termina limpia las

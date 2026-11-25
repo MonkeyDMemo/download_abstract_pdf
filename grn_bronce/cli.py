@@ -205,6 +205,11 @@ def _exportar(con, args, t0):
         log("AVISO: %d documentos fallaron en la corrida %d; la corrida %d se "
             "conserva entera para compararlas."
             % (cuenta["documentos_con_error"], corrida_id, previa["id"]))
+    elif previa is not None and getattr(args, "conservar", False):
+        # Una corrida ya publicada (su red, su jurado, su contraste) no se
+        # borra por leer más texto: las dos conviven y se leen por corrida_id.
+        log("La corrida %d se conserva (--conservar-anteriores); la %d no la "
+            "reemplaza." % (previa["id"], corrida_id))
     elif previa is not None:
         # Todas las anteriores con la misma clave, no solo la previa: las que
         # se conservaron por documentos fallidos también quedan superadas.
@@ -764,6 +769,11 @@ def main():
                          "anteriores del mismo corpus se borran solo si la "
                          "nueva termina bien y sin documentos con error; si "
                          "no, se conservan todas.")
+    ex.add_argument("--conservar-anteriores", dest="conservar",
+                    action="store_true",
+                    help="Con --rehacer: no borrar las corridas anteriores "
+                         "del mismo corpus. Para cuando la anterior ya tiene "
+                         "resultados publicados (p. ej. con más PDF).")
     ex.add_argument("--corrida", type=int, default=None,
                     help="Volcar esa corrida sin volver a identificar: sirve "
                          "para anotarla con recursos nuevos (la pertenencia "
