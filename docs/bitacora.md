@@ -8,6 +8,39 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 25 de noviembre de 2026 — opción E como conteo: la base en el artículo que cita
+
+El usuario pidió la E sin sacar de la base la lista de artículos:
+`grn_verificacion/cobertura_articulo.py` (`3cf7182`), corrido en el servidor
+con `origin/main`. Filas exigibles «sin BioBERT» (1,560), sobre la corrida 25;
+solo conteos.
+
+| Artículo citado | Filas | Misma oración | Mismo artículo, otra oración | Solo el regulador | Solo el blanco | Ninguno | Autorregulación |
+|---|---|---|---|---|---|---|---|
+| Con texto completo | 956 | 300 (31.4 %) | 85 (8.9 %) | 346 (36.2 %) | 41 | 166 | 15 |
+| Solo resumen | 242 | 37 (15.3 %) | 9 | 141 | 10 | 41 | 4 |
+| Fuera del corpus | 362 | — | — | — | — | — | — |
+
+En 3 filas con texto completo los dos locus están en artículos citados
+distintos. Con la corrida 20 (689 filas con texto completo): 227, 65, 263, 11
+y 111.
+
+- **Juntar oraciones da poco.** Con el artículo completo a la mano, un lector
+  que una oraciones distintas ganaría a lo más 85 filas (94 con las de solo
+  resumen): 6 puntos de las 1,560, y parte ya sale de otros artículos.
+- **Lo que falta es el blanco.** Con el artículo completo, en 512 de las 956
+  filas (54 %) el gen blanco no aparece en el texto: en 346 está el regulador
+  y en 166 ninguno de los dos. Lo esperable es que esté en tablas y material
+  suplementario (listas de regulones) o con un nombre que el diccionario no
+  reconoce; el conteo no distingue cuál. En los de solo resumen pasa en 182
+  de 242, pero ahí puede estar en el cuerpo que no tenemos.
+- **Para un agente curador** la palanca no es leer mejor la prosa sino leer
+  tablas. El bronce no las lee (ni las del XML de PMC), el conversor de PDF
+  tampoco, y los suplementos no se bajan.
+- Siguen fuera 362 filas que citan artículos que no están en el corpus.
+
+---
+
 ## 25 de noviembre de 2026 (madrugada) — opción A: la red con los PDF de OpenAlex
 
 Corrida 25 (`salidas/flujo/corrida25_run22`): bronce con 545 textos de PDF,
