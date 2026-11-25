@@ -8,6 +8,55 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 24 de noviembre de 2026 (noche) — mejoras contra la base: cortes por nivel, dirección y signo
+
+El usuario aprobó las opciones A a D del plan; la E espera al asesor. Las
+reglas quedaron en `docs/protocolo-mejoras-nov.md` (`e73001d`) antes de
+registrar los PDF y de medir. Una regla por opción, sin variantes: por eso no
+se partió la base.
+
+**OpenAlex, completo.** Con las dos llaves salieron los 104 que faltaban: 276
+PDF del corpus de agosto, 273 son el artículo (3 descartados; 261 en versión
+publicada, 14 enviada y 1 aceptada). Registrados con respaldo previo
+(`datos/grn_respaldo_antes_openalex_agosto_20261124.db`). `v0-agosto` queda
+con 918 XML, 614 PDF y 925 artículos sin texto completo (antes 1,198).
+
+**A, en marcha.** Bronce `--con-pdf --rehacer --conservar-anteriores`
+(la bandera es nueva: sin ella `--rehacer` borraba la corrida 20): corrida 25,
+45,494 oraciones candidatas (la 20 tenía 37,405), 0 documentos con error. El
+flujo clasifica 20,615 pares nuevos; los demás salen de la corrida 20.
+
+**D, B1 y B2 sobre la corrida 20** (`grn_verificacion/derivar.py`, `8f9af77`;
+contraste en el servidor con `origin/main`, estrato «sin BioBERT», 1,560
+filas; solo conteos). La línea base se reprodujo igual: 689, 32, 721.
+
+| Red | Aristas | Recall dirigido | Solo al revés | Signo, con abstención | «Siempre activa» | Pares que la base no registra |
+|---|---|---|---|---|---|---|
+| Solo alta | 1,829 | 451 (28.9 %) | 6 | 274/433 (63.3 %) | 321/433 (74.1 %) | 1,435 |
+| Alta y media | 2,652 | 544 (34.9 %) | 14 | 296/520 (56.9 %) | 381/520 (73.3 %) | 2,059 |
+| Alta, media y volteadas | 3,247 | 564 (36.2 %) | 25 | 305/538 (56.7 %) | 389/538 (72.3 %) | 2,251 |
+| Toda, con B1 | 10,046 | 691 (44.3 %) | 30 | 325/654 (49.7 %) | 483/654 (73.9 %) | 8,719 |
+| Toda, con B1 y B2 | 10,046 | 691 (44.3 %) | 30 | 363/654 (55.5 %) | 483/654 (73.9 %) | 8,719 |
+| Toda (línea base) | 10,054 | 689 (44.2 %) | 32 | 321/649 (49.5 %) | 486/649 (74.9 %) | 8,948 |
+
+- **Los niveles concentran lo bueno.** Las 1,829 de confianza alta son el
+  18 % de la red y recuperan el 65 % de lo que recupera toda (451 de 689);
+  alta y media, el 26 % de la red y el 79 %. Las 6,667 sin respaldo aportan
+  unas 125 filas de la base y 6,468 de los pares que la base no registra.
+- **B1 no mejora.** Voltear 595 aristas (8 ya estaban) gana 2 filas de 1,560
+  y la orientación pasa de 95.6 a 95.8 %. La mayoría de las que el jurado ve
+  al revés no están al revés según la base, o no están en la base.
+- **B2 mejora poco y no le gana a la línea base.** El jurado pone signo a 255
+  aristas: el acuerdo con abstención sube de 49.7 a 55.5 %, contra 73.9 % de
+  decir siempre «activa». Cuando la red da signo acierta 88.1 % (363/412)
+  contra 76.9 % de «siempre activa» en esas filas: el problema sigue siendo
+  la abstención (142 `regulates` y 100 mixtas de 654).
+
+**Pendiente:** el jurado y el contraste de la corrida 25 (A), sus cortes, y
+la opción C con su registro previo.
+
+---
+
 ## 24 de noviembre de 2026 — OpenAlex con llave, y los artículos nuevos con PDF
 
 El usuario sacó la llave gratuita de OpenAlex. Vive en `openalex.key` (la
