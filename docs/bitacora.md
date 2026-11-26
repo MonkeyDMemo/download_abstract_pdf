@@ -8,6 +8,46 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 25 de noviembre de 2026 (noche) — el agente curador: fases 1 y 2
+
+Detalle y cifras en `docs/agente-curador.md`. Es trabajo de la tesis y
+exploratorio: ninguna cifra del servicio social depende de él.
+
+**Fase 1, el lector** (`42a83e0`): `agente.crear_lector` (Strands con
+Bedrock, el mismo candado de modelo que el juez), `curador.ejecutar` (caché
+por entradas, tope de gasto, tres salidas) y `python -m grn_ouroboros.cli
+curar`. Humo con 8 artículos y dos modelos: US$0.03, todas las respuestas
+con la forma pedida y ninguna cita inexistente.
+
+**Fase 2, desarrollo con el patrón de oro propio** (`6e76777`, `6f70cba`):
+los 312 artículos que cita el patrón, con gpt-oss-120b y Qwen3-235B y dos
+prompts. Medido con `etapa2/evaluar_curador.py`, que entra a la lista blanca
+de `test_contaminacion.py` como evaluador.
+
+| | Recupera de 176 | Signo correcto | Sin signo |
+|---|---|---|---|
+| Red del paso 2 (corrida 27, 2 356 artículos) | 140 | 102 | 32 |
+| gpt-oss-120b, v0 (312 artículos) | 113 | 107 | 5 |
+| Qwen3-235B, v0 (312 artículos) | 119 | 112 | 6 |
+| Red ∪ los dos lectores | 145 | 131 | 8 |
+
+- El lector aporta sobre todo el signo. El prompt v1 no mejoró y se queda
+  el v0. Dos lecturas distintas comparten entre 48 % y 69 % de sus pares.
+- Es cifra de desarrollo, no medición: el prompt se ajustó mirándola, y el
+  patrón no mide precisión.
+- Cambios deterministas que salieron de mirar las lecturas: el blanco puede
+  ser un operón del catálogo; guiones normalizados; el nombre sin «operon» o
+  «gene»; la forma se valida por relación; se guarda el texto del modelo y
+  se reinterpreta.
+- Gasto del curador: US$3.37 (humo 0.03; primera vuelta 1.67; segunda 1.67).
+  Había estimado de 1 a 1.5 para el desarrollo. Total de la nube: unos
+  US$32 de US$45.
+
+Falta, y necesita aprobación: con qué lectores se lee todo el corpus y la
+regla de la prueba contra la base curada.
+
+---
+
 ## 25 de noviembre de 2026 (noche) — el reintento de descargas, la corrida 27 y el agente curador
 
 **El reintento** (`python cli.py fulltext`, solo las consultas de
@@ -63,7 +103,7 @@ modelo. Sobre la corrida 27: 2,356 artículos, 57.8 millones de caracteres
 sin las secciones excluidas y 2,446 llamadas.
 
 **El tope de la nube.** El usuario lo subió en US$15 para el agente curador
-(de US$30 a US$45). Gastado hasta aquí: unos US$28.
+(de US$30 a US$45). Gastado hasta aquí: unos US$29.
 
 ---
 
