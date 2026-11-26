@@ -149,6 +149,12 @@ class PruebasUnidades(unittest.TestCase):
     def test_un_articulo_que_no_esta_da_lista_vacia(self):
         self.assertEqual(bdb.unidades_de(self.con, self.corrida, "99"), [])
 
+    def test_los_pmid_de_una_corrida(self):
+        self.assertEqual(bdb.pmids_con_texto(self.con, self.corrida),
+                         ["1", "2"])
+        self.assertEqual(bdb.pmids_con_texto(self.con, self.otra), ["1"])
+        self.assertEqual(bdb.pmids_con_texto(self.con, 999), [])
+
 
 if __name__ == "__main__":
     unittest.main()

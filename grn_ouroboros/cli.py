@@ -56,6 +56,8 @@ a los reintentos o el tope de gasto); 2 argumentos o entradas que no sirven;
 """
 
 import argparse
+import hashlib
+import io
 import os
 import sys
 
@@ -66,7 +68,8 @@ if _RAIZ not in sys.path:
 from grn_bronce import db as bdb  # noqa: E402
 from grn_comun import procedencia, rutas  # noqa: E402
 from grn_ouroboros import (agente, anotar, calibracion, contexto,  # noqa: E402
-                           evals, gasto, herramientas, motor, rubrica)
+                           curador, evals, gasto, herramientas, motor,
+                           rubrica)
 
 BIEN, FALLA, ENTRADA, INTERRUMPIDA = 0, 1, 2, 3
 
@@ -377,6 +380,165 @@ def cmd_anotar(args):
     return BIEN
 
 
+# --------------------------------------------------------------- curar
+
+def _pmids_de(ruta):
+    """Los PMID de un archivo: uno por renglón (o la primera columna de un
+    TSV o un CSV), sin repetir y en su orden. Los renglones vacíos, los que
+    empiezan con # y un encabezado `pmid` no cuentan."""
+    salida, vistos = [], set()
+    with io.open(ruta, encoding="utf-8-sig") as f:
+        for linea in f:
+            valor = linea.replace(",", "\t").split("\t")[0].strip()
+            if (not valor or valor.startswith("#") or valor.lower() == "pmid"
+                    or valor in vistos):
+                continue
+            if not valor.isdigit():
+                raise ValueError("%s: un PMID es un número."
+                                 % os.path.basename(ruta))
+            vistos.add(valor)
+            salida.append(valor)
+    return salida
+
+
+def _articulos_a_leer(args):
+    """([(pmid, oraciones)], cuántos PMID pedidos no están en la corrida).
+
+    Sin `--pmids`, todos los artículos de la corrida del bronce. Con
+    `--limite N`, los N primeros de un orden fijo que sale del PMID y de la
+    semilla: la misma muestra cada vez, y la de N está dentro de la de N+1.
+    """
+    if args.limite is not None and args.limite < 1:
+        raise ValueError("--limite es un entero positivo.")
+    con = bdb.conectar_lectura(args.db or rutas.ruta("grn.db"))
+    try:
+        en_corrida = bdb.pmids_con_texto(con, args.corrida_bronce)
+        if not en_corrida:
+            raise ValueError("La corrida %d del bronce no tiene texto."
+                             % args.corrida_bronce)
+        pmids, fuera = en_corrida, 0
+        if args.pmids is not None:
+            pedidos = _pmids_de(args.pmids)
+            presentes = set(en_corrida)
+            pmids = [p for p in pedidos if p in presentes]
+            fuera = len(pedidos) - len(pmids)
+        if args.limite is not None:
+            pmids = sorted(pmids, key=lambda p: hashlib.sha256(
+                ("%d:%s" % (args.semilla, p)).encode("utf-8")).hexdigest())
+            pmids = pmids[:args.limite]
+        return [(p, curador.leer_articulo(con, args.corrida_bronce, p))
+                for p in pmids], fuera
+    finally:
+        con.close()
+
+
+def _mostrar_curador(resumen):
+    log("lecturas: %s" % ", ".join(
+        "%s %d" % (k, v) for k, v in resumen["lecturas"].items() if v))
+    log("relaciones: %d (%s)" % (resumen["relaciones"], ", ".join(
+        "%s %d" % (k, v) for k, v in resumen["relaciones_por_estado"].items())))
+    log("artículos con alguna relación válida: %s; pares de locus distintos: "
+        "%d" % (_porcentaje(resumen["articulos_con_relacion_valida"],
+                            resumen["articulos"] -
+                            resumen["articulos_sin_texto"]),
+                resumen["pares_de_locus_validos"]))
+
+
+def cmd_curar(args):
+    """El lector por artículo sobre una corrida del bronce. Imprime conteos,
+    nunca una oración ni un PMID."""
+    try:
+        anotar.validar_salida(args.salida)
+        modelo = agente.validar_modelo_bedrock(args.modelo)
+        region = agente.validar_region(
+            agente.REGION_BEDROCK if args.region is None else args.region)
+        agente.validar_paralelo(args.paralelo, "bedrock")
+        config = curador.configuracion(args.config, args.razonamiento)
+        agente.validar_bedrock(config, "ninguna", "bedrock")
+        agente.validar_modelo_y_config(modelo, config)
+        prompt = agente.leer_prompt(args.prompt)
+        articulos, fuera = _articulos_a_leer(args)
+        precio = gasto.precio(modelo, args.precios)
+        if precio is None:
+            raise ValueError("No hay precio de lista para %s en gasto.py: "
+                             "dalo con --precios ENTRADA,SALIDA (USD por "
+                             "millón de tokens)." % modelo)
+        tope = gasto.Tope(args.tope_usd, precio)
+        recursos = herramientas.Recursos()
+    except (ValueError, OSError, bdb.ErrorBase) as e:
+        log("ERROR: %s" % e)
+        return ENTRADA
+    descripcion = agente.describir_bedrock(modelo, region)
+    _mostrar_bedrock(descripcion, args.perfil_aws)
+    decodificacion = agente.decodificacion(config, "ninguna", "bedrock")
+    entradas = curador.armar_entradas(descripcion, decodificacion,
+                                      curador.huella_prompt(prompt))
+    try:
+        lector = agente.crear_lector(config, prompt, modelo=modelo,
+                                     region=region,
+                                     perfil_aws=args.perfil_aws)
+    except ImportError:
+        log("ERROR: %s" % SIN_STRANDS)
+        return ENTRADA
+    except ValueError as e:
+        log("ERROR: %s" % e)
+        return ENTRADA
+
+    def medir(texto):
+        return len(prompt) + len(texto)
+
+    por_leer = curador.tareas(articulos, entradas)
+    if fuera:
+        log("%d de los PMID pedidos no están en la corrida %d del bronce."
+            % (fuera, args.corrida_bronce))
+    log("Leyendo %d artículos (%d llamadas, %.1f millones de caracteres) "
+        "con %s (%s, T %s, max_tokens %d), %d a la vez."
+        % (len(articulos), len(por_leer),
+           sum(len(t["mensaje"]) for t in por_leer) / 1e6, config["nombre"],
+           "razonamiento %s" % config["razonamiento"]
+           if config.get("razonamiento") else "sin razonamiento",
+           config["temperature"], decodificacion["max_tokens"],
+           args.paralelo))
+    log("costo máximo si nada saliera de la caché: US$%.2f"
+        % gasto.cota_de_la_corrida([t["mensaje"] for t in por_leer], medir,
+                                   decodificacion["max_tokens"], precio))
+    lector = gasto.con_tope(lector, tope, medir, decodificacion["max_tokens"])
+    configuracion = dict(
+        decodificacion, prompt=os.path.basename(args.prompt),
+        proveedor="bedrock", model_id=modelo, region=region,
+        paralelo=args.paralelo, tope_usd=tope.usd,
+        corrida_bronce=args.corrida_bronce, limite=args.limite,
+        semilla=args.semilla,
+        pmids=procedencia.huella(args.pmids) if args.pmids else None)
+    try:
+        resumen = curador.ejecutar(
+            articulos, args.salida, lector, entradas, recursos,
+            paralelo=args.paralelo, precio=precio,
+            configuracion=configuracion, log=log,
+            paquetes=anotar.PAQUETES + agente.PAQUETES_BEDROCK)
+    except curador.CarpetaOcupada as e:
+        log("ERROR: %s" % e)
+        return ENTRADA
+    except KeyboardInterrupt:
+        log("Interrumpida. Lo leído queda en %s, y volver a correr lo retoma."
+            % curador.LECTURAS)
+        return INTERRUMPIDA
+    except gasto.TopeAlcanzado as e:
+        log("ALTO: %s Lo leído queda en %s, y volver a correr con un tope "
+            "mayor lo retoma sin pagarlo otra vez." % (e, curador.LECTURAS))
+        _mostrar_costo({}, tope)
+        return FALLA
+    except Exception as e:
+        # Solo el tipo: el mensaje puede traer el texto de la petición.
+        log("ERROR: la corrida se detuvo (%s). Lo leído queda en %s, y "
+            "volver a correr lo retoma." % (type(e).__name__,
+                                            curador.LECTURAS))
+        return FALLA
+    _mostrar_curador(resumen)
+    _mostrar_costo(resumen, tope)
+    return BIEN
+
+
 # --------------------------------------------------------- calibracion
 
 def cmd_calibracion(args):
@@ -575,6 +737,54 @@ def main(argv=None):
                     help="El CSV que se escribe, bajo salidas/ouroboros/; "
                          "nunca dentro de salidas/revision.")
     cx.set_defaults(func=cmd_contexto)
+
+    cu = sub.add_parser("curar",
+                        help="El lector por artículo (docs/agente-curador."
+                             "md): lee los artículos de una corrida del "
+                             "bronce y devuelve las relaciones que cada uno "
+                             "afirma, con sus oraciones citadas y "
+                             "comprobadas.")
+    cu.add_argument("--corrida-bronce", dest="corrida_bronce", type=int,
+                    required=True,
+                    help="La corrida del bronce cuyos artículos se leen.")
+    cu.add_argument("--salida", required=True,
+                    help="La carpeta de la corrida, bajo salidas/ouroboros/: "
+                         "lecturas.jsonl, relaciones.tsv y corrida.json.")
+    cu.add_argument("--modelo", required=True,
+                    help="El id del modelo en Bedrock: un Qwen (--config "
+                         "lector) o un gpt-oss (--config lector_razonador). "
+                         "Nunca Claude.")
+    cu.add_argument("--config", choices=sorted(curador.CONFIGURACIONES),
+                    default="lector")
+    cu.add_argument("--razonamiento", choices=curador.NIVELES_RAZONAMIENTO,
+                    default=None,
+                    help="Con lector_razonador, el nivel; por omisión %s."
+                         % curador.LECTOR_RAZONADOR["razonamiento"])
+    cu.add_argument("--prompt", default=os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "prompts",
+        "curador_v0.md"), help="El prompt del lector.")
+    cu.add_argument("--tope-usd", dest="tope_usd", type=float, required=True,
+                    help="Lo más que puede gastar esta invocación, en USD.")
+    cu.add_argument("--pmids", default=None,
+                    help="Un archivo con los PMID a leer, uno por renglón; "
+                         "por omisión, todos los de la corrida.")
+    cu.add_argument("--limite", type=int, default=None,
+                    help="Leer solo N artículos: una muestra fija que sale "
+                         "del PMID y de --semilla.")
+    cu.add_argument("--semilla", type=int, default=20261125)
+    cu.add_argument("--db", default=None,
+                    help="La base; por omisión <datos>/grn.db.")
+    cu.add_argument("--region", default=None,
+                    help="La región de AWS; por omisión %s."
+                         % agente.REGION_BEDROCK)
+    cu.add_argument("--perfil-aws", dest="perfil_aws", default=None)
+    cu.add_argument("--paralelo", type=int, default=1,
+                    help="Cuántos artículos a la vez. Las salidas no "
+                         "dependen de este número.")
+    cu.add_argument("--precios", default=None,
+                    help="ENTRADA,SALIDA en USD por millón de tokens, para "
+                         "un modelo sin precio en gasto.py.")
+    cu.set_defaults(func=cmd_curar)
 
     ca = sub.add_parser("calibracion",
                         help="El acuerdo con la llave de la calibración, por "

@@ -643,3 +643,48 @@ def crear_anotador(config, prompt, host=motor.HOST, herramientas="ninguna",
         return respuesta, agente
 
     return anotador
+
+
+def crear_lector(config, prompt, modelo=None, region=None, perfil_aws=None):
+    """El callable `lector(texto) -> respuesta` de `curador.ejecutar`: el
+    lector por artículo, con un modelo de Bedrock que pasa el mismo candado
+    que el juez (un Qwen o un gpt-oss con id explícito; nunca Claude).
+
+    Recibe el mensaje ya armado (un bloque del artículo, con sus oraciones
+    numeradas) y devuelve el texto del modelo con su `done_reason`, si se
+    truncó y su `uso`. Un `Agent` nuevo por llamada y sin herramientas: lo
+    leído de un artículo no llega al siguiente, y se puede llamar desde
+    varios hilos. `config` es una de `curador.CONFIGURACIONES`.
+
+    El id del modelo va explícito: aquí no hay modelo por omisión.
+    """
+    # Antes de importar Strands: un id que no pasa el candado no llega a nada.
+    modelo = validar_modelo_bedrock(modelo)
+    from strands import Agent
+    from strands.types.exceptions import (ContextWindowOverflowException,
+                                          MaxTokensReachedException)
+
+    lector_modelo = exigir_juez(crear_modelo(
+        config, modelo=modelo, proveedor="bedrock", region=region,
+        perfil_aws=perfil_aws))
+
+    def lector(texto):
+        agente = Agent(model=lector_modelo, system_prompt=prompt, tools=[],
+                       callback_handler=None)
+        exigir_juez(agente.model)
+        try:
+            resultado = agente(texto)
+        except MaxTokensReachedException:
+            return {"texto": _texto_del_ultimo(agente),
+                    "done_reason": "length", "truncado": True,
+                    "uso": _uso(agente)}
+        except ContextWindowOverflowException:
+            return {"texto": "", "done_reason": None, "truncado": False,
+                    "motivo": "contexto_excedido", "uso": _uso(agente)}
+        razon = getattr(resultado, "stop_reason", None)
+        return {"texto": str(resultado),
+                "done_reason": {"end_turn": "stop",
+                                "max_tokens": "length"}.get(razon, razon),
+                "truncado": razon == "max_tokens", "uso": _uso(agente)}
+
+    return lector

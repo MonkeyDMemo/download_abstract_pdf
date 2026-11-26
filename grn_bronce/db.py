@@ -473,6 +473,14 @@ def unidades_de(con, corrida_id, pmid):
         SQL_UNIDADES, (corrida_id, str(pmid))).fetchall()]
 
 
+def pmids_con_texto(con, corrida_id):
+    """Los PMID de los artículos que una corrida partió en oraciones,
+    ordenados como texto. Solo lee."""
+    return [f[0] for f in con.execute(
+        "SELECT DISTINCT pmid FROM texto_unidades WHERE corrida_id = ? "
+        "ORDER BY pmid", (corrida_id,)).fetchall()]
+
+
 SQL_PARES = """
 SELECT c.regulador_candidato tf, c.blanco_candidato blanco,
        COUNT(*)                 n_oraciones,

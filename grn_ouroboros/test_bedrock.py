@@ -458,6 +458,75 @@ class PruebasAnotadorBedrock(unittest.TestCase):
                              {"comentario": item["entidad_1"]})
 
 
+@unittest.skipUnless(TIENE_STRANDS, MOTIVO)
+class PruebasLectorBedrock(PruebasAnotadorBedrock):
+    """El lector por artículo (`crear_lector`), con el mismo cliente falso:
+    hereda el entorno sin red y, de paso, las pruebas del anotador."""
+
+    QWEN = "qwen.qwen3-235b-a22b-2507-v1:0"
+
+    def lector(self, config=None, **k):
+        from grn_ouroboros import curador
+        k.setdefault("modelo", self.QWEN)
+        return agente.crear_lector(config or curador.LECTOR, "Sistema.", **k)
+
+    def test_el_lector_manda_el_bloque_y_devuelve_texto_y_uso(self):
+        from grn_ouroboros import curador
+        lector = self.lector()
+        falso = self.clientes[0]
+        falso.texto = '{"relaciones": []}'
+        r = lector("[a0] Una oración inventada.")
+        self.assertEqual((r["done_reason"], r["truncado"]), ("stop", False))
+        self.assertEqual(r["uso"], {"entrada": 10, "salida": 5})
+        self.assertEqual(curador.interpretar(r), ("ok", []))
+        peticion = falso.peticiones[0]
+        self.assertEqual(peticion["modelId"], self.QWEN)
+        self.assertEqual(peticion["system"], [{"text": "Sistema."}])
+        self.assertEqual(peticion["messages"][-1]["content"],
+                         [{"text": "[a0] Una oración inventada."}])
+        self.assertEqual(peticion["inferenceConfig"],
+                         {"maxTokens": curador.MAX_TOKENS, "temperature": 0.0})
+        self.assertNotIn("toolConfig", peticion)
+        self.assertNotIn("additionalModelRequestFields", peticion)
+
+    def test_el_lector_con_gpt_oss_razona(self):
+        from grn_ouroboros import curador
+        lector = self.lector(curador.LECTOR_RAZONADOR,
+                             modelo="openai.gpt-oss-120b-1:0")
+        lector("[a0] Una oración inventada.")
+        peticion = self.clientes[0].peticiones[0]
+        self.assertEqual(peticion["additionalModelRequestFields"],
+                         {"reasoning_effort": "low"})
+        self.assertEqual(peticion["inferenceConfig"]["maxTokens"],
+                         curador.MAX_TOKENS)
+
+    def test_una_lectura_truncada(self):
+        from grn_ouroboros import curador
+        lector = self.lector()
+        self.clientes[0].texto = '{"relaciones": [{"oraciones": ["a0"'
+        self.clientes[0].razon = "max_tokens"
+        r = lector("[a0] Una oración inventada.")
+        self.assertTrue(r["truncado"])
+        self.assertEqual(curador.interpretar(r), ("truncada", []))
+
+    def test_el_lector_tampoco_es_claude(self):
+        from grn_ouroboros import curador
+        for modelo in ("anthropic.claude-3-5-sonnet", None,
+                       "us.anthropic.claude-sonnet-4-20250514-v1:0"):
+            with self.assertRaises(ValueError):
+                agente.crear_lector(curador.LECTOR, "Sistema.", modelo=modelo)
+        self.assertEqual(self.clientes, [])
+
+    def test_cada_lectura_empieza_de_cero(self):
+        lector = self.lector()
+        lector("primero")
+        lector("segundo")
+        segunda = self.clientes[0].peticiones[1]
+        self.assertEqual(len(segunda["messages"]), 1)
+        self.assertEqual(segunda["messages"][0]["content"],
+                         [{"text": "segundo"}])
+
+
 class PruebasEsquemaEnElPrompt(unittest.TestCase):
     """Sin `format`, la respuesta se lee del texto como en la ruta con
     herramientas: un cerco de código alrededor no la vuelve abstención."""

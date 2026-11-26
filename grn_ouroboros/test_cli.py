@@ -20,8 +20,10 @@ import types
 import unittest
 from unittest import mock
 
-from grn_ouroboros import (agente, anotar, calibracion, cli, evals, motor,
-                           rubrica, test_anotar, test_motor)
+from grn_bronce import db as bdb
+from grn_ouroboros import (agente, anotar, calibracion, cli, curador, evals,
+                           herramientas, motor, rubrica, test_anotar,
+                           test_curador, test_herramientas, test_motor)
 
 TIENE_EVALS = importlib.util.find_spec("strands_evals") is not None
 
@@ -531,6 +533,159 @@ class PruebasEvals(Base):
             self.assertTrue(os.path.isfile(os.path.join(
                 self.salida, nombre + ".json")))
         self.sin_oraciones(texto)
+
+
+class PruebasCurar(Base):
+    """`curar`: el lector por artículo, con un lector falso y una base de
+    juguete. Ni un PMID ni una oración llegan a la terminal."""
+
+    QWEN = "qwen.qwen3-235b-a22b-2507-v1:0"
+    PMIDS = ("70000001", "70000002", "70000003")
+
+    def setUp(self):
+        super().setUp()
+        self.db = os.path.join(self.tmp, "grn.db")
+        con = bdb.conectar(self.db)
+        self.corrida_bronce = bdb.abrir_corrida(con, "1", "m", "1")
+        for pmid in self.PMIDS:
+            con.execute(
+                """INSERT INTO documentos (pmid, titulo, anio, extraido_en)
+                   VALUES (?, 'Un título', '2020', ?)""", (pmid, bdb.ahora()))
+            # Una oración propia: dos artículos con el mismo texto serían
+            # la misma llamada.
+            propias = [("abstract", "", 2, "Isolate %s was used." % pmid[-1])]
+            for fuente, seccion, num, texto in (test_curador.UNIDADES
+                                                + propias):
+                bdb.guardar_unidad(con, self.corrida_bronce, {
+                    "pmid": pmid, "fuente_texto": fuente, "seccion": seccion,
+                    "num_oracion": num, "texto": texto, "offset_ini": 0,
+                    "offset_fin": len(texto), "contiguo": True})
+        con.commit()
+        con.close()
+        genes = os.path.join(self.tmp, "genes_pao1.tsv")
+        operones = os.path.join(self.tmp, "operones_pao1.tsv")
+        test_herramientas._tsv(genes, herramientas.COLUMNAS_GENES,
+                               test_herramientas.GENES)
+        test_herramientas._tsv(operones, ["operon", "miembros", "locus_tags",
+                                          "fuente"],
+                               test_herramientas.OPERONES)
+        recursos = herramientas.Recursos(genes, operones)
+        parche = mock.patch.object(herramientas, "Recursos",
+                                   lambda *a, **k: recursos)
+        parche.start()
+        self.addCleanup(parche.stop)
+        self.lector = test_curador.LectorFalso(
+            [test_curador._relacion(["x0", "x1"], "regA", "opeA")])
+        self.lectores = []
+
+        def fabrica(config, prompt, **otros):
+            self.lectores.append(dict(otros, config=config))
+            return self.lector
+
+        parche = mock.patch.object(agente, "crear_lector", fabrica)
+        parche.start()
+        self.addCleanup(parche.stop)
+
+    def curar(self, *extra, **cambios):
+        argumentos = {"--corrida-bronce": str(self.corrida_bronce),
+                      "--db": self.db, "--salida": self.salida,
+                      "--modelo": self.QWEN, "--tope-usd": "1"}
+        argumentos.update(cambios)
+        plano = [x for par in argumentos.items() for x in par]
+        return self.correr("curar", *(plano + list(extra)))
+
+    def sin_texto_ni_pmid(self, texto):
+        for pmid in self.PMIDS:
+            self.assertNotIn(pmid, texto)
+        for unidad in test_curador.UNIDADES:
+            self.assertNotIn(unidad[3], texto)
+
+    def test_lee_todos_y_solo_imprime_conteos(self):
+        codigo, texto = self.curar("--paralelo", "2")
+        self.assertEqual(codigo, cli.BIEN, texto)
+        self.assertEqual(self.ollama.peticiones, [])
+        self.assertEqual(len(self.lector.mensajes), 3)
+        self.assertIn("Leyendo 3 artículos (3 llamadas", texto)
+        self.assertIn("lecturas: ok 3", texto)
+        self.assertIn("valida 3", texto)
+        self.assertIn("pares de locus distintos: 1", texto)
+        self.assertIn("tope de gasto: US$", texto)
+        self.sin_texto_ni_pmid(texto)
+        f = self.lectores[0]
+        self.assertEqual((f["modelo"], f["region"], f["perfil_aws"],
+                          f["config"]["nombre"]),
+                         (self.QWEN, "us-west-2", None, "lector"))
+        with io.open(os.path.join(self.salida, curador.CORRIDA),
+                     encoding="utf-8") as f:
+            corrida = json.load(f)
+        self.assertEqual(corrida["entradas"]["modelo"]["modelo"], self.QWEN)
+        self.assertEqual(corrida["entradas"]["decodificacion"]["max_tokens"],
+                         curador.MAX_TOKENS)
+        self.assertEqual(corrida["configuracion"]["corrida_bronce"],
+                         self.corrida_bronce)
+        self.assertIn("boto3", corrida["versiones"])
+
+    def test_la_segunda_vez_no_llama(self):
+        self.assertEqual(self.curar()[0], cli.BIEN)
+        self.lector.mensajes = []
+        codigo, texto = self.curar("--paralelo", "3")
+        self.assertEqual(codigo, cli.BIEN, texto)
+        self.assertEqual(self.lector.mensajes, [])
+        self.assertIn("(3 ya en la caché)", texto)
+
+    def test_el_limite_da_una_muestra_fija_y_anidada(self):
+        self.assertEqual(self.curar("--limite", "1")[0], cli.BIEN)
+        self.assertEqual(len(self.lector.mensajes), 1)
+        # La de 2 contiene a la de 1: solo falta una llamada.
+        self.assertEqual(self.curar("--limite", "2")[0], cli.BIEN)
+        self.assertEqual(len(self.lector.mensajes), 2)
+
+    def test_la_lista_de_pmid(self):
+        lista = os.path.join(self.tmp, "pmids.tsv")
+        with io.open(lista, "w", encoding="utf-8") as f:
+            f.write("pmid\tnota\n# comentario\n%s\tx\n%s\n79999999\n%s\n"
+                    % (self.PMIDS[2], self.PMIDS[0], self.PMIDS[2]))
+        codigo, texto = self.curar("--pmids", lista)
+        self.assertEqual(codigo, cli.BIEN, texto)
+        self.assertEqual(len(self.lector.mensajes), 2)
+        self.assertIn("1 de los PMID pedidos no están en la corrida", texto)
+        self.sin_texto_ni_pmid(texto)
+
+    def test_el_candado_del_modelo(self):
+        for modelo in ("anthropic.claude-sonnet-4-v1:0",
+                       "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+                       "meta.llama3-70b-instruct-v1:0"):
+            codigo, texto = self.curar(**{"--modelo": modelo})
+            self.assertEqual(codigo, cli.ENTRADA, modelo)
+            self.assertIn("ERROR", texto)
+        self.assertEqual(self.lectores, [])
+        self.assertFalse(os.path.exists(self.salida))
+
+    def test_gpt_oss_va_con_el_razonador(self):
+        codigo, texto = self.curar(**{"--modelo": "openai.gpt-oss-120b-1:0"})
+        self.assertEqual(codigo, cli.ENTRADA)
+        self.assertIn("razona siempre", texto)
+        codigo, texto = self.curar("--config", "lector_razonador",
+                                   **{"--modelo": "openai.gpt-oss-120b-1:0"})
+        self.assertEqual(codigo, cli.BIEN, texto)
+        self.assertIn("razonamiento low", texto)
+        codigo, texto = self.curar("--config", "lector_razonador")
+        self.assertEqual(codigo, cli.ENTRADA)
+
+    def test_una_corrida_sin_texto_y_una_salida_prohibida(self):
+        codigo, texto = self.curar(**{"--corrida-bronce": "999"})
+        self.assertEqual(codigo, cli.ENTRADA)
+        self.assertIn("no tiene texto", texto)
+        codigo, texto = self.curar(**{"--salida": os.path.join(
+            self.tmp, "salidas", "revision", "x")})
+        self.assertEqual(codigo, cli.ENTRADA)
+
+    def test_el_tope_detiene_la_corrida(self):
+        codigo, texto = self.curar(**{"--tope-usd": "0.00001"})
+        self.assertEqual(codigo, cli.FALLA, texto)
+        self.assertIn("ALTO", texto)
+        self.assertEqual(self.lector.mensajes, [])
+        self.sin_texto_ni_pmid(texto)
 
 
 if __name__ == "__main__":
