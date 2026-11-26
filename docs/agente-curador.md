@@ -260,10 +260,12 @@ modelos: esas lecturas se reutilizan de la caché.
   - en las dos, la red dice `regulates` y el lector da signo: vale el del
     lector;
   - en las dos y la red ya trae signo (o es mixto): vale lo de la red.
-- La exportación (`etapa2/red_curador.py`) se escribe y se prueba mientras
-  los lectores leen, sin ver ninguna cifra de la base, y su commit se anota
-  aquí antes de medir. Se comprueba en la laptop que la red reescrita da los
-  mismos pares, signos y artículos que la original.
+- La exportación (`etapa2/red_curador.py --carpeta-contraste`) y la muestra
+  del jurado (`grn_ouroboros.cli muestra-curador`) se escribieron y se
+  probaron mientras los lectores leían, sin ver ninguna cifra de la base:
+  commit `11dbb97`, anterior a la medición. Comprobado en la laptop: la
+  corrida 27 reescrita da los mismos 11 596 pares de locus, con los mismos
+  signos y artículos, que la original (454 mixtos; 5 842 solo `regulates`).
 
 ### Qué se contrasta, una sola vez
 
