@@ -8,6 +8,47 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 25 de noviembre de 2026 (noche) — ¿tablas o material suplementario?
+
+La cuenta de la mañana (`cobertura_articulo`) decía que en 54 % de las
+relaciones el gen regulado no está en el texto del artículo citado, y lo leí
+como «está en tablas». Para acotarlo corrí la medición que ya existía,
+`cli tablas` (PLAN.md 3.4, punto 27), ahora sobre todos los artículos que
+cita la base y no solo los 5 mayores: `--cuantos 309`, en el servidor con
+`origin/main` (`ddbc10d`), corrida 25 y el XML de agosto. Solo conteos.
+
+- Las 2,077 exigibles (todos los estratos) citan **304 artículos**: 77 con
+  XML, 126 sin XML (el bronce leyó su resumen o su PDF) y **101 fuera del
+  corpus**.
+
+| Categoría | Filas | % |
+|---|---|---|
+| Regla b (ya cubierta por una oración del artículo citado) | 453 | 21.8 |
+| Sin XML del artículo citado | 996 | 48.0 |
+| Misma fila de una tabla | 1 | 0.0 |
+| Misma tabla | 97 | 4.7 |
+| Tabla y texto | 18 | 0.9 |
+| Solo texto, en oraciones distintas | 28 | 1.3 |
+| Ninguno | 437 | 21.1 |
+| Autorregulación | 46 | 2.2 |
+
+- De las 437 de «ninguno», 123 no tienen ninguno de los dos locus en el XML
+  y 314 tienen uno solo.
+- **Lectura.** Leer las tablas del XML daría a lo más 116 filas (5.6 %), y
+  «misma tabla» es la señal débil. Lo que pesa es lo que no está en el
+  artículo aunque se tenga su XML (21 %), que apunta al material
+  suplementario, y el texto que no se tiene (48 %).
+- **Corrección.** Las diapositivas, las tarjetas y el README decían que lo
+  que falta «está en tablas». Quedaron en: no está en la prosa, las tablas
+  del artículo explican poco y lo demás apunta al material suplementario y a
+  los artículos que no se tienen.
+- **Cautelas.** `tablas` lee solo XML, no el texto de los PDF; y es un piso,
+  porque un gen nombrado de una forma que el diccionario no conoce no cuenta.
+- Conteos en `salidas/fuentes/tablas_corrida25.json`; el informe, en el
+  servidor (`resultados/tablas-corrida25/TABLAS.md`).
+
+---
+
 ## 25 de noviembre de 2026 — el jurado de la corrida 25 y sus niveles contra la base
 
 Regla: desviación 1 de `docs/protocolo-mejoras-nov.md`, escrita antes de

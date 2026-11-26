@@ -154,9 +154,26 @@ genes en el artículo que la base cita (corrida 25):
 
 Las demás son autorregulaciones y casos sueltos. Con el artículo completo a
 la mano, en más de la mitad de las relaciones el gen regulado no está en
-ninguna oración: lo esperable es que esté en tablas o en material
-suplementario, que el sistema no lee. El conteo no distingue eso de un nombre
-que el diccionario no reconoce.
+ninguna oración.
+
+Una segunda cuenta mira el XML de los artículos citados, con sus tablas
+(`cli tablas`, sobre las 2 077 relaciones exigibles de todos los estratos).
+Esas relaciones citan 304 artículos: 77 con XML, 126 sin XML y 101 que no
+están en el corpus.
+
+| Dónde está la relación | Relaciones |
+|---|---|
+| Ya la cubre una oración del artículo citado | 453 (21.8 %) |
+| El artículo citado no tiene XML a la mano | 996 (48.0 %) |
+| Con XML: los dos genes en una tabla, o uno en tabla y otro en el texto | 116 (5.6 %) |
+| Con XML: en el texto, en oraciones distintas | 28 (1.3 %) |
+| Con XML: no están en el artículo, ni en el texto ni en sus tablas | 437 (21.1 %) |
+| Autorregulación | 46 |
+
+Leer las tablas del artículo daría poco. Lo que más pesa es el texto que no
+se tiene y lo que no está en el artículo: lo esperable es que venga de su
+material suplementario, que el sistema no baja. Las dos cuentas son un piso,
+porque un gen nombrado de una forma que el diccionario no conoce no cuenta.
 
 **Lo que se probó en noviembre**, con una regla por opción escrita antes de
 medir ([`docs/protocolo-mejoras-nov.md`](docs/protocolo-mejoras-nov.md)):
