@@ -142,9 +142,9 @@ caracteres sin las secciones excluidas, 2 446 llamadas.
 | Todo el corpus | US$5 a 7 (gpt-oss-120b) |
 | El jurado sobre lo que extraiga | unos US$0.002 por oración |
 
-El tope de la nube del servicio social es de US$30 y van unos US$27: la fase
-de humo cabe; de la 2 en adelante hace falta que el usuario fije un tope
-nuevo.
+El tope de la nube era de US$30, con unos US$28 gastados. El 25-nov el
+usuario lo subió en **US$15 para el agente curador**: alcanza para el
+desarrollo, una lectura de todo el corpus y el jurado.
 
 ## Fases
 
@@ -152,7 +152,7 @@ nuevo.
 |---|---|---|
 | 0 | Lo determinista: artículo en bloques, forma de la respuesta, comprobación de citas. Con pruebas, sin modelo | **Hecho** (`grn_ouroboros/curador.py`, `grn_bronce.db.unidades_de`) |
 | 1 | El lector con Strands, caché y tope de gasto; `cli curar`; humo con pocos artículos | Sigue |
-| 2 | Desarrollo con el oro propio y la tanda 1; elegir modelo y prompt | Necesita tope nuevo |
+| 2 | Desarrollo con el oro propio y la tanda 1; elegir modelo y prompt | Con tope desde el 25-nov |
 | 3 | Congelar, leer todo el corpus, medir en el servidor | Necesita la regla aprobada |
 | 4 | Tablas del XML; material suplementario; aprender de la base | Tesis |
 
@@ -169,7 +169,7 @@ nuevo.
 
 ## Decisiones abiertas
 
-1. **El tope de gasto** para las fases 2 y 3 (usuario).
+1. ~~El tope de gasto para las fases 2 y 3.~~ Resuelto el 25-nov: US$15.
 2. **El modelo lector.** Propuesta: probar gpt-oss-120b y Qwen3-235B en el
    desarrollo y quedarse con el que recupere más del oro propio con citas
    válidas; el otro queda en el jurado.

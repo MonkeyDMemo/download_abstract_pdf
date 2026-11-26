@@ -8,6 +8,65 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 25 de noviembre de 2026 (noche) — el reintento de descargas, la corrida 27 y el agente curador
+
+**El reintento** (`python cli.py fulltext`, solo las consultas de
+*P. aeruginosa*; respaldo `grn_respaldo_antes_reintento_20261125.db`)
+terminó sin error. El OA Service de PMC siguió sin responder; lo que entró,
+entró por XML de PMC y por PDF de Europe PMC.
+
+| Corpus | Con XML | Sin texto completo |
+|---|---|---|
+| `v0-agosto` | de 918 a 959 | de 925 a 816 |
+| `nuevos-20261104` | de 0 a 23 | de 13 a 11 |
+
+De los 816 de agosto, unos 600 no están en PubMed Central.
+
+**La corrida 27** (desviación 2 de `docs/protocolo-mejoras-nov.md`, escrita
+antes; respaldo `grn_respaldo_antes_corrida_reintento_20261125.db`):
+112 PDF convertidos, bronce con `--con-pdf --rehacer
+--conservar-anteriores` (48,828 oraciones candidatas; 592 documentos con
+texto de PDF, huella `e9ddff695e346626`) y flujo con las predicciones de la
+corrida 25 (110,654 reutilizadas y 8,055 clasificadas).
+
+| | Corrida 25 | Corrida 27 |
+|---|---|---|
+| Artículos con texto completo | 1,436 | 1,544 |
+| Aristas | 11,214 | 11,443 |
+| Dirigido sobre 1,560 | 732 (46.9 %) | 737 (47.2 %) |
+| Cualquier dirección | 765 | 770 |
+| Techo | 812 (52.1 %) | 820 (52.6 %) |
+| Signo cuando lo da | 335/386 | 335/387 |
+| Solo alta: aristas y dirigido | 1,971 y 470 | 2,009 y 465 |
+| Alta y media: aristas y dirigido | 2,850 y 567 | 2,911 y 565 |
+
+- **El jurado,** por herencia desde la corrida 25: 10,892 de las 11,443
+  primeras oraciones heredan; leyó 551 (467 llamadas por juez): 165 sí, 355
+  no y 31 dudosas. Gasto US$1.08, bajo el tope de US$1.5. Niveles: alta
+  2,009, media 902, al revés 769 y sin respaldo 7,763.
+- **Lectura.** 108 artículos más con texto dan 5 filas más: menos de un
+  punto, como en la opción A en proporción. La confianza alta recupera 5
+  filas menos que en la corrida 25: con el XML nuevo cambia la primera
+  oración de algunas aristas, y con ella su veredicto. Es ruido de ese
+  tamaño, no una pérdida.
+- Las diapositivas del comité se quedan con las cifras de la corrida 25.
+- Conteos en `salidas/fuentes/mejoras_c20.json`, clave
+  `corrida27_con_reintento`.
+
+**El agente curador.** El usuario pidió empezarlo. Es trabajo de la tesis
+(`docs/decisiones.md`, 22-oct) y así queda escrito en
+`docs/agente-curador.md`, con lo que se espera de él, cómo se mide y sus
+fases. Fase 0 hecha (`ade66cf`): `grn_bronce.db.unidades_de` y
+`grn_ouroboros/curador.py`, con el artículo en bloques de oraciones
+numeradas, la forma de la respuesta y la comprobación de las citas, sin
+modelo. Sobre la corrida 27: 2,356 artículos, 57.8 millones de caracteres
+sin las secciones excluidas y 2,446 llamadas.
+
+**El tope de la nube.** El usuario lo subió en US$15 para el agente curador
+(de US$30 a US$45). Gastado hasta aquí: unos US$28.
+
+---
+
 ## 25 de noviembre de 2026 (noche) — ¿tablas o material suplementario?
 
 La cuenta de la mañana (`cobertura_articulo`) decía que en 54 % de las
