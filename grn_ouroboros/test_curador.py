@@ -496,5 +496,78 @@ class PruebasEjecutar(Base):
             self._correr(LectorFalso([]))
 
 
+def _fila(pmid, citas, regulador, blanco, estado="valida", efecto="activates"):
+    return {"pmid": pmid, "oraciones": citas, "regulador": regulador,
+            "blanco": blanco, "nodo_regulador": regulador.split()[0],
+            "nodo_blanco": blanco.split()[0], "efecto": efecto,
+            "tipo": "no_se", "estado": estado}
+
+
+class PruebasMuestra(unittest.TestCase):
+
+    def setUp(self):
+        self.lecturas = {
+            "uno": [_fila("11", "x0|x1", "regA", "opeA"),
+                    _fila("11", "a0", "RegA", "opeA"),
+                    _fila("11", "x9", "regA", "opeA", estado="cita_inexistente"),
+                    _fila("22", "a1", "regA", "opeB")],
+            "dos": [_fila("11", "x1|x0", "RegA", "opeA", efecto="regulates"),
+                    _fila("33", "a0", "regA", "tag")],
+        }
+
+    def test_las_distintas_una_vez_y_con_sus_lectores(self):
+        todas = curador.muestra(self.lecturas, 99, 1)
+        self.assertEqual(len(todas), 4)
+        doble = [r for r in todas if len(r["lectores"]) == 2]
+        self.assertEqual(len(doble), 1)
+        # La misma relación aunque cambie el orden de las citas y la
+        # mayúscula; las etiquetas son las del primer lector en orden.
+        self.assertEqual((doble[0]["oraciones"], doble[0]["lectores"],
+                          doble[0]["efecto"]),
+                         ("x1|x0", ["dos", "uno"], "regulates"))
+        self.assertTrue(all(r["estado"] == "valida" for r in todas))
+
+    def test_el_sorteo_es_fijo_y_no_depende_del_orden(self):
+        a = curador.muestra(self.lecturas, 2, 7)
+        al_reves = dict((k, list(reversed(v)))
+                        for k, v in self.lecturas.items())
+        b = curador.muestra(al_reves, 2, 7)
+        llave = lambda r: (r["pmid"], sorted(r["oraciones"].split("|")),
+                           r["nodo_blanco"])
+        self.assertEqual(len(a), 2)
+        self.assertEqual([llave(r) for r in a], [llave(r) for r in b])
+        otra = [curador.muestra(self.lecturas, 2, s) for s in range(12)]
+        self.assertGreater(len(set(str([llave(r) for r in m])
+                                   for m in otra)), 1)
+
+    def test_los_items_del_jurado(self):
+        oraciones = curador.articulo(UNIDADES)
+        pedidas = []
+
+        def vecinas_de(pmid, fuente, num):
+            pedidas.append((pmid, fuente, num))
+            return {"anterior": "ANTES %s%d" % (fuente[0], num),
+                    "siguiente": None if num == 1 else "DESPUES"}
+
+        relaciones = [dict(_fila("11", "x1|x0", "the regA gene",
+                                 "opeA operon"), lectores=["uno", "dos"])]
+        items, contexto, llave = curador.items_del_jurado(
+            relaciones, lambda pmid: oraciones, vecinas_de)
+        self.assertEqual(items, [{
+            "id_item": "cur-0001",
+            "oracion": "Deletion of regA lowered the transcript. The "
+                       "transcript measured was opeA.",
+            "entidad_1": "regA", "entidad_2": "opeA"}])
+        # La anterior a la primera citada y la siguiente a la última.
+        self.assertEqual(pedidas, [("11", "xml", 0), ("11", "xml", 1)])
+        self.assertEqual(contexto, [{"id_item": "cur-0001",
+                                     "anterior": "ANTES x0", "siguiente": ""}])
+        self.assertEqual((llave[0]["id_item"], llave[0]["lectores"],
+                          llave[0]["oraciones"], llave[0]["pmid"]),
+                         ("cur-0001", "uno|dos", "x1|x0", "11"))
+        self.assertEqual(sorted(llave[0]), sorted(
+            curador.COLUMNAS_LLAVE_MUESTRA))
+
+
 if __name__ == "__main__":
     unittest.main()

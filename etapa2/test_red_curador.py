@@ -7,6 +7,7 @@ relaciones inventadas.
 
 import contextlib
 import io
+import json
 import os
 import shutil
 import sys
@@ -95,6 +96,174 @@ class PruebasRed(unittest.TestCase):
         self.assertEqual(renglones[1].split("\t")[:3],
                          ["fooR", "barA", "activates"])
         self.assertFalse(os.path.exists(salida + ".tmp"))
+
+
+def _rel(pmid, locus_r, locus_b, efecto, estado="valida"):
+    return {"pmid": pmid, "nodo_regulador": "r", "nodo_blanco": "b",
+            "locus_regulador": locus_r, "locus_blanco": locus_b,
+            "efecto": efecto, "estado": estado}
+
+
+def _tsv(ruta, columnas, filas):
+    with io.open(ruta, "w", encoding="utf-8", newline="") as f:
+        f.write("\t".join(columnas) + "\n")
+        for fila in filas:
+            f.write("\t".join(str(fila.get(c, "")) for c in columnas) + "\n")
+
+
+class PruebasPorLocus(unittest.TestCase):
+    """La red por par de locus, con una red de juguete: un operón, un gen
+    nombrado de dos maneras con signos distintos (mixto) y una
+    autorregulación."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.flujo = os.path.join(self.tmp, "corridaX")
+        os.makedirs(self.flujo)
+        red = [
+            {"tf": "FooR", "blanco": "barAB", "signo": "regulates",
+             "pmids": "1|2"},
+            {"tf": "FooR", "blanco": "zorK", "signo": "activates",
+             "pmids": "3"},
+            {"tf": "fooR", "blanco": "zorK", "signo": "represses",
+             "pmids": "4"},
+            {"tf": "FooR", "blanco": "quxB", "signo": "activates",
+             "pmids": "5"},
+            {"tf": "FooR", "blanco": "fooR", "signo": "regulates",
+             "pmids": "6", "autorregulacion": "true"},
+        ]
+        _tsv(os.path.join(self.flujo, "red.tsv"), R.COLUMNAS_RED,
+             [dict({"conflicto": "false", "autorregulacion": "false"}, **f)
+              for f in red])
+        evidencias = [("FooR", "barAB", "p1", "1"), ("FooR", "barAB", "p1", "2"),
+                      ("FooR", "zorK", "p2", "3"), ("fooR", "zorK", "p3", "4"),
+                      ("FooR", "quxB", "p4", "5"), ("FooR", "quxB", "p4", "7"),
+                      ("FooR", "fooR", "p5", "6")]
+        _tsv(os.path.join(self.flujo, "red_evidencias.tsv"),
+             R.COLUMNAS_EVIDENCIAS,
+             [dict(zip(("tf", "blanco", "id_par", "pmid"), e))
+              for e in evidencias])
+        pares = [("p1", ["PA0001"], ["PA0010", "PA0011"]),
+                 ("p2", ["PA0001"], ["PA0020"]), ("p3", ["PA0001"], ["PA0020"]),
+                 ("p4", ["PA0001"], ["PA0030"]), ("p5", ["PA0001"], ["PA0001"])]
+        with io.open(os.path.join(self.flujo, "pares.jsonl"), "w",
+                     encoding="utf-8") as f:
+            for i, a, b in pares:
+                f.write(json.dumps({"id_par": i, "tf": "x", "target": "y",
+                                    "tf_locus": a, "target_locus": b}) + "\n")
+        self.de_la_red = {
+            ("PA0001", "PA0010"): {"regulates": {"1", "2"}},
+            ("PA0001", "PA0011"): {"regulates": {"1", "2"}},
+            ("PA0001", "PA0020"): {"activates": {"3"}, "represses": {"4"}},
+            ("PA0001", "PA0030"): {"activates": {"5", "7"}},
+        }
+
+    def test_la_red_en_pares_de_locus(self):
+        self.assertEqual(C.pares_de_la_red(self.flujo), self.de_la_red)
+
+    def test_reescribir_la_red_no_cambia_nada(self):
+        salida = os.path.join(self.tmp, "locus")
+        conteos = C.carpeta_para_contraste(salida, unir_con=self.flujo)
+        self.assertEqual((conteos["pares_de_locus"], conteos["aristas"],
+                          conteos["pares_mixtos"]), (4, 5, 1))
+        # Lo que el contraste ve en la carpeta reescrita es lo mismo.
+        self.assertEqual(C.pares_de_la_red(salida), self.de_la_red)
+        self.assertEqual(
+            sorted(os.listdir(salida)),
+            ["derivada.json", "pares.jsonl", "red.tsv", "red_evidencias.tsv"])
+
+    def test_los_votos_por_par(self):
+        votos = C.votos_por_par([
+            _rel("1", "PA0001", "PA0010|PA0011", "activates"),
+            _rel("1", "PA0001", "PA0010", "activates"),
+            _rel("2", "PA0001", "PA0001", "activates"),
+        ])
+        self.assertEqual(votos, {
+            ("PA0001", "PA0010"): {("1", "activates")},
+            ("PA0001", "PA0011"): {("1", "activates")}})
+
+    def test_el_signo_del_curador_y_el_acuerdo(self):
+        uno = [_rel("1", "PA0001", "PA0010", "activates"),
+               _rel("2", "PA0001", "PA0040", "represses")]
+        otro = [_rel("1", "PA0001", "PA0010", "activates"),
+                _rel("3", "PA0001", "PA0010", "represses"),
+                _rel("4", "PA0001", "PA0010", "activates")]
+        juntos = C.pares_del_curador([uno, otro])
+        # El mismo artículo y efecto en los dos lectores es un voto: 2 a 1,
+        # que con mayoría 0.66 alcanza.
+        self.assertEqual(juntos, {
+            ("PA0001", "PA0010"): {"activates": {"1", "3", "4"}},
+            ("PA0001", "PA0040"): {"represses": {"2"}}})
+        self.assertEqual(sorted(C.pares_del_curador([uno, otro],
+                                                    solo_acuerdo=True)),
+                         [("PA0001", "PA0010")])
+        empate = C.pares_del_curador([otro[:2]])
+        self.assertEqual(list(empate[("PA0001", "PA0010")]), ["regulates"])
+
+    def test_la_union_por_par(self):
+        curador = {
+            ("PA0001", "PA0010"): {"activates": {"9"}},   # la red: regulates
+            ("PA0001", "PA0011"): {"regulates": {"9"}},   # ninguno da signo
+            ("PA0001", "PA0020"): {"activates": {"9"}},   # la red: mixto
+            ("PA0001", "PA0030"): {"represses": {"9"}},   # la red: activates
+            ("PA0001", "PA0050"): {"represses": {"9"}},   # la red no lo tiene
+        }
+        union, cuenta = C.unir_pares(self.de_la_red, curador)
+        self.assertEqual(union, {
+            ("PA0001", "PA0010"): {"activates": {"1", "2", "9"}},
+            ("PA0001", "PA0011"): {"regulates": {"1", "2"}},
+            ("PA0001", "PA0020"): {"activates": {"3"}, "represses": {"4"}},
+            ("PA0001", "PA0030"): {"activates": {"5", "7"}},
+            ("PA0001", "PA0050"): {"represses": {"9"}}})
+        self.assertEqual(dict(cuenta), {
+            "en_las_dos_signo_del_curador": 1, "en_las_dos_vale_la_red": 3,
+            "solo_curador": 1})
+        # No toca sus entradas.
+        self.assertEqual(self.de_la_red[("PA0001", "PA0010")],
+                         {"regulates": {"1", "2"}})
+
+    def test_la_carpeta_de_la_union(self):
+        relaciones = os.path.join(self.tmp, "relaciones.tsv")
+        _tsv(relaciones, ["pmid", "nodo_regulador", "nodo_blanco",
+                          "locus_regulador", "locus_blanco", "efecto",
+                          "estado"],
+             [_rel("9", "PA0001", "PA0010|PA0011", "activates"),
+              _rel("9", "PA0001", "PA0050", "represses"),
+              _rel("9", "PA0001", "PA0060", "represses", estado="sin_locus")])
+        salida = os.path.join(self.tmp, "union")
+        with contextlib.redirect_stdout(io.StringIO()) as dicho:
+            self.assertEqual(C.main(["--relaciones", relaciones,
+                                     "--carpeta-contraste", salida,
+                                     "--unir-con", self.flujo]), 0)
+        conteos = json.loads(dicho.getvalue())
+        self.assertEqual(conteos["union"], {
+            "en_las_dos_signo_del_curador": 2, "solo_curador": 1,
+            "solo_red": 2})
+        self.assertEqual((conteos["pares_del_curador"],
+                          conteos["pares_de_la_red"],
+                          conteos["pares_de_locus"]), (3, 4, 5))
+        visto = C.pares_de_la_red(salida)
+        self.assertEqual(visto[("PA0001", "PA0010")],
+                         {"activates": {"1", "2", "9"}})
+        self.assertEqual(visto[("PA0001", "PA0050")], {"represses": {"9"}})
+        self.assertEqual(visto[("PA0001", "PA0020")],
+                         self.de_la_red[("PA0001", "PA0020")])
+        # El lector solo, sin unir.
+        solo = os.path.join(self.tmp, "solo")
+        conteos = C.carpeta_para_contraste(solo, [relaciones])
+        self.assertEqual(sorted(C.pares_de_la_red(solo)),
+                         [("PA0001", "PA0010"), ("PA0001", "PA0011"),
+                          ("PA0001", "PA0050")])
+
+    def test_los_argumentos_que_no_van_juntos(self):
+        for argumentos in ([], ["--salida", "x", "--carpeta-contraste", "y"],
+                           ["--carpeta-contraste", os.path.join(self.tmp, "z")],
+                           ["--salida", "x", "--relaciones", "a",
+                            "--relaciones", "b"]):
+            with contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit):
+                    C.main(argumentos)
 
 
 if __name__ == "__main__":

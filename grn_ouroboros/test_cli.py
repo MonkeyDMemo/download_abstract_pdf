@@ -680,6 +680,50 @@ class PruebasCurar(Base):
             self.tmp, "salidas", "revision", "x")})
         self.assertEqual(codigo, cli.ENTRADA)
 
+    def test_la_muestra_para_el_jurado(self):
+        self.assertEqual(self.curar()[0], cli.BIEN)
+        relaciones = os.path.join(self.salida, curador.RELACIONES)
+        carpeta = os.path.join(self.tmp, "salidas", "ouroboros", "muestra")
+        hoja = os.path.join(carpeta, "hoja.csv")
+        ctx = os.path.join(carpeta, "contexto.csv")
+        llave = os.path.join(carpeta, "llave.csv")
+        argumentos = ["muestra-curador", "--relaciones", relaciones,
+                      "--lector", "uno", "--corrida-bronce",
+                      str(self.corrida_bronce), "--db", self.db, "--n", "2",
+                      "--semilla", "5", "--hoja", hoja, "--contexto", ctx,
+                      "--llave", llave]
+        codigo, texto = self.correr(*argumentos)
+        self.assertEqual(codigo, cli.BIEN, texto)
+        self.assertIn("3 relaciones válidas en 1 lecturas; en la muestra: 2 "
+                      "(2 con más de una oración citada", texto)
+        self.sin_texto_ni_pmid(texto)
+        # La hoja es una hoja de la rúbrica, y el contexto es el suyo.
+        items = calibracion.leer_hoja(hoja)
+        self.assertEqual([i["id_item"] for i in items],
+                         ["cur-0001", "cur-0002"])
+        self.assertEqual((items[0]["entidad_1"], items[0]["entidad_2"]),
+                         ("regA", "opeA"))
+        self.assertEqual(items[0]["oracion"],
+                         "Deletion of regA lowered the transcript. The "
+                         "transcript measured was opeA.")
+        from grn_ouroboros import contexto
+        vecinas = contexto.para_hoja(items, ctx)
+        self.assertEqual(vecinas["cur-0001"],
+                         {"anterior": "", "siguiente":
+                          "The tag gene did not change."})
+        with io.open(llave, encoding="utf-8-sig", newline="") as f:
+            filas = list(csv.DictReader(f))
+        self.assertEqual(sorted(filas[0]),
+                         sorted(curador.COLUMNAS_LLAVE_MUESTRA))
+        self.assertIn(filas[0]["pmid"], self.PMIDS)
+        # Un lector por archivo, y nada en la carpeta del experto.
+        self.assertEqual(self.correr(*(argumentos + ["--lector", "otro"]))[0],
+                         cli.ENTRADA)
+        prohibida = os.path.join(self.tmp, "salidas", "revision", "h.csv")
+        self.assertEqual(self.correr(*(argumentos[:-6] + [
+            "--hoja", prohibida, "--contexto", ctx, "--llave", llave]))[0],
+            cli.ENTRADA)
+
     def test_el_tope_detiene_la_corrida(self):
         codigo, texto = self.curar(**{"--tope-usd": "0.00001"})
         self.assertEqual(codigo, cli.FALLA, texto)

@@ -56,6 +56,7 @@ a los reintentos o el tope de gasto); 2 argumentos o entradas que no sirven;
 """
 
 import argparse
+import csv
 import hashlib
 import io
 import os
@@ -541,6 +542,66 @@ def cmd_curar(args):
     return BIEN
 
 
+def _escribir_csv(ruta, columnas, filas):
+    carpeta = os.path.dirname(os.path.abspath(ruta))
+    os.makedirs(carpeta, exist_ok=True)
+    with io.open(ruta, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=columnas)
+        w.writeheader()
+        for fila in filas:
+            w.writerow(dict((c, fila.get(c, "")) for c in columnas))
+
+
+def cmd_muestra_curador(args):
+    """Una muestra de las relaciones del lector, como hoja para el jurado.
+    Imprime conteos, nunca una oración ni un PMID."""
+    try:
+        for ruta in (args.hoja, args.contexto, args.llave):
+            anotar.validar_salida(ruta)
+        if args.n < 1:
+            raise ValueError("--n es un entero positivo.")
+        if len(args.lector) != len(args.relaciones):
+            raise ValueError("Va un --lector por cada --relaciones.")
+        if len(set(args.lector)) != len(args.lector):
+            raise ValueError("Los --lector tienen que ser distintos.")
+        lecturas = {}
+        for nombre, ruta in zip(args.lector, args.relaciones):
+            with io.open(ruta, encoding="utf-8", newline="") as f:
+                lecturas[nombre] = list(csv.DictReader(f, delimiter="\t"))
+        elegidas = curador.muestra(lecturas, args.n, args.semilla)
+        con = bdb.conectar_lectura(args.db or rutas.ruta("grn.db"))
+        try:
+            items, vecinas, llave = curador.items_del_jurado(
+                elegidas,
+                lambda pmid: curador.leer_articulo(con, args.corrida_bronce,
+                                                   pmid),
+                lambda pmid, fuente, num: bdb.vecinas(
+                    con, args.corrida_bronce, pmid, fuente, num))
+        finally:
+            con.close()
+        _escribir_csv(args.hoja, rubrica.COLUMNAS_HOJA, items)
+        contexto.escribir(args.contexto, [
+            dict(v, huella_oracion=contexto.huella_oracion(it["oracion"]))
+            for v, it in zip(vecinas, items)])
+        _escribir_csv(args.llave, curador.COLUMNAS_LLAVE_MUESTRA, llave)
+    except KeyError:
+        # Sin el valor: sería un identificador de oración o una columna.
+        log("ERROR: una relación cita una oración que no está en esa "
+            "corrida del bronce, o al archivo le falta una columna.")
+        return ENTRADA
+    except (ValueError, OSError, bdb.ErrorBase) as e:
+        log("ERROR: %s" % e)
+        return ENTRADA
+    validas = sum(1 for filas in lecturas.values() for f in filas
+                  if f["estado"] == "valida")
+    log("%d relaciones válidas en %d lecturas; en la muestra: %d (%d con más "
+        "de una oración citada, %d dadas por más de un lector)."
+        % (validas, len(lecturas), len(items),
+           sum(1 for r in elegidas if "|" in r["oraciones"]),
+           sum(1 for r in elegidas if len(r["lectores"]) > 1)))
+    return BIEN
+
+
 # --------------------------------------------------------- calibracion
 
 def cmd_calibracion(args):
@@ -787,6 +848,27 @@ def main(argv=None):
                     help="ENTRADA,SALIDA en USD por millón de tokens, para "
                          "un modelo sin precio en gasto.py.")
     cu.set_defaults(func=cmd_curar)
+
+    mu = sub.add_parser("muestra-curador",
+                        help="Una muestra al azar de las relaciones "
+                             "válidas del lector, como hoja y contexto "
+                             "para `anotar` (el jurado las relee).")
+    mu.add_argument("--relaciones", action="append", required=True,
+                    help="El relaciones.tsv de un lector; se repite.")
+    mu.add_argument("--lector", action="append", required=True,
+                    help="El nombre de ese lector, en el mismo orden.")
+    mu.add_argument("--corrida-bronce", dest="corrida_bronce", type=int,
+                    required=True)
+    mu.add_argument("--n", type=int, required=True)
+    mu.add_argument("--semilla", type=int, required=True)
+    mu.add_argument("--hoja", required=True, help="La hoja que se escribe.")
+    mu.add_argument("--contexto", required=True,
+                    help="El CSV de contexto de esa hoja.")
+    mu.add_argument("--llave", required=True,
+                    help="De qué relación sale cada ítem; no va al modelo.")
+    mu.add_argument("--db", default=None,
+                    help="La base; por omisión <datos>/grn.db.")
+    mu.set_defaults(func=cmd_muestra_curador)
 
     ca = sub.add_parser("calibracion",
                         help="El acuerdo con la llave de la calibración, por "

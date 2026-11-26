@@ -732,3 +732,79 @@ def ejecutar(articulos, salida, lector, entradas, recursos, paralelo=1,
         "configuracion": configuracion or {}, "cuando": _anotar.ahora(),
         "versiones": _anotar.versiones(paquetes), "resumen": resumen})
     return resumen
+
+
+# ------------------------------------------- una muestra para el jurado
+
+COLUMNAS_LLAVE_MUESTRA = ["id_item", "pmid", "oraciones", "regulador",
+                          "blanco", "nodo_regulador", "nodo_blanco", "efecto",
+                          "tipo", "lectores"]
+
+
+def muestra(lecturas, n, semilla):
+    """`n` relaciones válidas distintas, al azar con `semilla`, de las que
+    dan los lectores.
+
+    `lecturas` es {nombre del lector: filas de su `relaciones.tsv`}. Una
+    relación es la misma si tiene el mismo artículo, las mismas citas y los
+    mismos dos nodos, la dé un lector o varios: entra una vez, con los
+    lectores que la dieron en `lectores` y las etiquetas del primero. El
+    sorteo es sobre la lista ordenada, para que no dependa del orden de los
+    archivos. Si hay menos de `n`, van todas.
+    """
+    import random
+    distintas = {}
+    for lector in sorted(lecturas):
+        for fila in lecturas[lector]:
+            if fila["estado"] != "valida":
+                continue
+            llave = (fila["pmid"], "|".join(sorted(fila["oraciones"]
+                                                 .split("|"))),
+                     _operones.clave(fila["nodo_regulador"]),
+                     _operones.clave(fila["nodo_blanco"]))
+            if llave not in distintas:
+                distintas[llave] = dict(fila, lectores=[])
+            distintas[llave]["lectores"].append(lector)
+    llaves = sorted(distintas)
+    if len(llaves) > n:
+        llaves = sorted(random.Random(semilla).sample(llaves, n))
+    return [distintas[k] for k in llaves]
+
+
+def items_del_jurado(relaciones, articulo_de, vecinas_de, prefijo="cur"):
+    """(ítems de la hoja, filas del contexto, filas de la llave) para que el
+    jurado relea las relaciones de una muestra.
+
+    Cada ítem son las oraciones citadas, en el orden del artículo y unidas
+    con un espacio; la entidad 1 es el regulador y la 2 el blanco, con el
+    nombre que les dio el lector. El contexto es la oración anterior a la
+    primera citada y la siguiente a la última.
+
+    `articulo_de(pmid)` da las oraciones del artículo (`leer_articulo`) y
+    `vecinas_de(pmid, fuente, num)` las vecinas de una (`grn_bronce.db.
+    vecinas`): llegan inyectadas para que esto no abra la base.
+    """
+    items, contexto, llave = [], [], []
+    for i, r in enumerate(relaciones, 1):
+        por_id = dict((o.id, o) for o in articulo_de(r["pmid"]))
+        citadas = [por_id[c] for c in r["oraciones"].split("|")]
+        orden = dict((o.id, k) for k, o in enumerate(por_id.values()))
+        citadas.sort(key=lambda o: orden[o.id])
+        texto = " ".join(o.texto for o in citadas)
+        id_item = "%s-%04d" % (prefijo, i)
+        items.append({"id_item": id_item, "oracion": texto,
+                      "entidad_1": nucleo(r["regulador"]),
+                      "entidad_2": nucleo(r["blanco"])})
+        primera, ultima = citadas[0], citadas[-1]
+        contexto.append({
+            "id_item": id_item,
+            "anterior": vecinas_de(r["pmid"], primera.fuente,
+                                   primera.num)["anterior"] or "",
+            "siguiente": vecinas_de(r["pmid"], ultima.fuente,
+                                    ultima.num)["siguiente"] or ""})
+        llave.append(dict(
+            (c, r.get(c, "")) for c in COLUMNAS_LLAVE_MUESTRA
+            if c not in ("id_item", "lectores")))
+        llave[-1].update({"id_item": id_item,
+                          "lectores": "|".join(r["lectores"])})
+    return items, contexto, llave
