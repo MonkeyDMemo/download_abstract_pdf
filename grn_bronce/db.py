@@ -450,6 +450,29 @@ def vecinas(con, corrida_id, pmid, fuente_texto, num_oracion):
             "siguiente": por_numero.get(num + 1)}
 
 
+SQL_UNIDADES = """
+SELECT fuente_texto, seccion, num_oracion, texto
+  FROM texto_unidades
+ WHERE corrida_id = ? AND pmid = ?
+ ORDER BY CASE fuente_texto WHEN 'abstract' THEN 0 ELSE 1 END,
+          fuente_texto, num_oracion
+"""
+
+
+def unidades_de(con, corrida_id, pmid):
+    """Las oraciones de un artículo en una corrida, en orden de lectura:
+    primero el resumen y después el texto completo, cada uno por su número.
+
+    Solo lee. La usa el lector por artículo de `grn_ouroboros` (`curador`),
+    que necesita el artículo como lo partió el bronce para citar sus
+    oraciones por posición. Devuelve tuplas (fuente_texto, seccion,
+    num_oracion, texto): por posición y no por nombre, para que sirva con
+    cualquier conexión, como `vecinas`.
+    """
+    return [(f[0], f[1], f[2], f[3]) for f in con.execute(
+        SQL_UNIDADES, (corrida_id, str(pmid))).fetchall()]
+
+
 SQL_PARES = """
 SELECT c.regulador_candidato tf, c.blanco_candidato blanco,
        COUNT(*)                 n_oraciones,

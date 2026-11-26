@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """Las consultas de solo lectura del bronce que no son de corridas.
 
-Por ahora una: `vecinas()`, la oración en una posición y las dos que la
-rodean, para la herramienta `contexto` de `grn_ouroboros`. Las oraciones son
+Dos: `vecinas()`, la oración en una posición y las dos que la rodean, para
+la herramienta `contexto` de `grn_ouroboros`; y `unidades_de()`, el artículo
+entero en orden de lectura, para su lector por artículo. Las oraciones son
 sintéticas.
 
     python -m unittest grn_bronce.test_db
@@ -108,6 +109,45 @@ class PruebasVecinas(unittest.TestCase):
                  "siguiente": None})
         finally:
             lectura.close()
+
+
+class PruebasUnidades(unittest.TestCase):
+
+    def setUp(self):
+        self.con = bdb.conectar(":memory:")
+        self.addCleanup(self.con.close)
+        for pmid in ("1", "2"):
+            self.con.execute(
+                """INSERT INTO documentos (pmid, titulo, anio, extraido_en)
+                   VALUES (?, 'Un título', '2020', ?)""", (pmid, bdb.ahora()))
+        self.corrida = bdb.abrir_corrida(self.con, "1", "m", "1")
+        self.otra = bdb.abrir_corrida(self.con, "1", "m", "2")
+        # Guardadas en desorden: el orden lo pone la consulta.
+        _unidad(self.con, self.corrida, 2, "Cuerpo, segunda.")
+        _unidad(self.con, self.corrida, 1, "Resumen, segunda.",
+                fuente="abstract")
+        _unidad(self.con, self.corrida, 1, "Cuerpo, primera.")
+        _unidad(self.con, self.corrida, 0, "Resumen, primera.",
+                fuente="abstract")
+        _unidad(self.con, self.otra, 1, "De otra corrida.")
+        _unidad(self.con, self.corrida, 1, "De otro artículo.", pmid="2")
+
+    def test_el_resumen_va_primero_y_cada_fuente_por_su_numero(self):
+        self.assertEqual(
+            bdb.unidades_de(self.con, self.corrida, "1"),
+            [("abstract", "results", 0, "Resumen, primera."),
+             ("abstract", "results", 1, "Resumen, segunda."),
+             ("xml", "results", 1, "Cuerpo, primera."),
+             ("xml", "results", 2, "Cuerpo, segunda.")])
+
+    def test_otra_corrida_y_otro_articulo_no_se_mezclan(self):
+        self.assertEqual([u[3] for u in bdb.unidades_de(
+            self.con, self.otra, "1")], ["De otra corrida."])
+        self.assertEqual([u[3] for u in bdb.unidades_de(
+            self.con, self.corrida, 2)], ["De otro artículo."])
+
+    def test_un_articulo_que_no_esta_da_lista_vacia(self):
+        self.assertEqual(bdb.unidades_de(self.con, self.corrida, "99"), [])
 
 
 if __name__ == "__main__":
