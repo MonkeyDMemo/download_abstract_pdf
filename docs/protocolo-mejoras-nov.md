@@ -102,3 +102,22 @@ Es anterior a lanzar el jurado sobre la corrida 25.
   así que sus niveles pueden quedar algo más bajos que con el procedimiento
   completo. Se reporta cuántas oraciones heredan y cuántas se juzgaron.
 - **Tope:** US$4.4 entre los tres jueces.
+
+## Desviación 2 (25-nov-2026): la opción A otra vez, con el texto del reintento
+
+Es anterior a correr el bronce.
+
+- **Por qué:** el reintento de descargas del 25-nov
+  (`python cli.py fulltext`, solo las consultas de *P. aeruginosa*) dejó más
+  texto en `v0-agosto`: de 918 a 959 artículos con XML y de 925 a 816 sin
+  texto completo. El usuario pidió correr la red con él.
+- **Qué se hace:** lo mismo que en la opción A y con la misma regla. Una
+  corrida nueva del bronce (`--con-pdf --rehacer --conservar-anteriores`), el
+  flujo con las predicciones reutilizadas de la corrida 25 y el contraste en
+  el servidor. La cifra es el dirigido sobre las 1,560 filas «sin BioBERT», y
+  se reporta junto a la de la corrida 25, que no cambia.
+- **El jurado:** por herencia, como en la desviación 1, ahora desde la
+  corrida 25. Lee solo las primeras oraciones que no tenían veredicto, con un
+  tope de US$1.5 entre los tres jueces.
+- **Qué no se hace:** no hay variantes ni segunda corrida con otros
+  parámetros. Otra corrida solo se justifica si llega más texto.
