@@ -220,7 +220,7 @@ pasar el jurado sobre una muestra, no sobre todo lo extraído.
 | 0 | Lo determinista: artículo en bloques, forma de la respuesta, comprobación de citas. Con pruebas, sin modelo | **Hecho** (`grn_ouroboros/curador.py`, `grn_bronce.db.unidades_de`) |
 | 1 | El lector con Strands, caché y tope de gasto; `cli curar`; humo con 8 artículos | **Hecho** (`agente.crear_lector`, `curador.ejecutar`) |
 | 2 | Desarrollo con el oro propio; elegir modelo y prompt | **Hecho** el 25-nov con el oro propio; falta la tanda 1 |
-| 3 | Congelar, leer todo el corpus, medir en el servidor | Aprobada el 26-nov; protocolo abajo |
+| 3 | Congelar, leer todo el corpus, medir en el servidor | **Hecho** el 26-nov: aporta (protocolo y resultado abajo) |
 | 4 | Tablas del XML; material suplementario; aprender de la base | Tesis |
 
 ## Protocolo de la prueba (26-nov-2026)
@@ -328,7 +328,79 @@ sube: se mide con lo leído y se dice cuántos artículos faltaron.
 
 ### Desviaciones
 
-Ninguna al 26-nov, antes de leer.
+Ninguna de método. Dos jueces de la muestra se detuvieron en su tope porque
+el tope aparta el peor caso de cada llamada en curso; se retomaron de la
+caché con US$0.02 y US$0.03 más, y el jurado completo costó US$0.47, dentro
+de los US$0.5.
+
+### Resultado (26-nov-2026)
+
+Lectura: 2 356 artículos y 2 446 llamadas por lector. Ninguna se cortó por
+el tope.
+
+| | gpt-oss-120b | Qwen3-235B |
+|---|---|---|
+| Relaciones que devolvió | 11 556 | 17 786 |
+| Válidas | 3 257 | 4 671 |
+| Nombre fuera de las oraciones citadas | 2 688 | 4 221 |
+| Nombre que no lleva a un locus | 4 990 | 8 518 |
+| Cita que no existe | 432 | 11 |
+| Artículos con alguna válida | 919 | 919 |
+| Pares de locus | 1 773 | 2 485 |
+
+Entre los dos dan 2 809 pares de locus; 1 449 los dan los dos. De esos
+2 809, la red ya tenía 1 956 (en 371 decía `regulates` y el lector le puso
+signo) y 853 son nuevos.
+
+Contraste en el servidor (`18c8c16`), 1 560 filas de la cifra principal:
+
+| Red | Pares de locus | Dirigidas | Al revés | Signo de acuerdo | Signo contrario | Sin signo o mixto | Pares que la base no registra |
+|---|---|---|---|---|---|---|---|
+| `c27_locus` (control) | 11 596 | 737 (47.2 %) | 33 | 335 de 387 | 52 | 304 | 10 221 |
+| **`c27_union`** | 12 449 | **786 (50.4 %)** | 14 | **437 de 504** | 67 | 232 | 10 992 |
+| `c27_curador` | 2 809 | 553 (35.4 %) | 13 | 446 de 476 | 30 | 50 | 1 986 |
+| `c27_union_acuerdo` | 11 974 | 770 (49.4 %) | 16 | 408 de 470 | 62 | 253 | 10 551 |
+| `c27_union_gptoss` | 12 106 | 771 (49.4 %) | 17 | 417 de 480 | 63 | 244 | — |
+| `c27_union_qwen` | 12 317 | 785 (50.3 %) | 13 | 426 de 490 | 64 | 245 | — |
+
+El control dio lo mismo que la red original (737, 770 en cualquier dirección
+y 335 de 387): reescribir por par de locus no cambió nada.
+
+La regla, sobre `c27_union` contra el control:
+
+| Condición | Umbral | Medido | |
+|---|---|---|---|
+| Filas dirigidas ganadas | al menos 47 | 49 | Pasa, por 2 filas |
+| Filas con signo de acuerdo ganadas | al menos 60 | 102 | Pasa |
+| Guarda 1: acuerdo del signo nuevo | más de 73.7 % | 102 de 117 (87.2 %) | Pasa |
+| Guarda 2: el jurado confirma | al menos 25.4 % | 188 de 200 (94.0 %) | Pasa |
+
+**Resultado: aporta.** Bastaba una de las dos condiciones y se cumplen las
+dos; la de cobertura, apenas.
+
+Lo que hay que leer junto a eso:
+
+- **El aporte firme es el signo.** La red da signo a 387 filas y la unión a
+  504; acierta en la misma proporción (86.6 % y 86.7 %). El signo contrario
+  también sube, de 52 a 67.
+- **La cobertura sube 3.2 puntos,** de 47.2 % a 50.4 %. De las 49 filas, 19
+  eran pares que la red tenía al revés.
+- **Los lectores solos son una red chica y concentrada.** Con 2 809 pares
+  recuperan 553 filas; la red necesita 11 596 pares para 737. De los pares
+  del lector, 29 % están en la base (823 de 2 809); de los de la red, 12 %
+  (1 375 de 11 596). No es precisión: la base no registra todo lo cierto.
+- **El jurado no es independiente.** Sus tres jueces son de las familias de
+  los dos lectores. Con esa reserva: confirma 188 de 200; los tres jueces a
+  la vez, 140; las 43 que dieron los dos lectores, todas. En las
+  confirmadas con signo comparable, el del lector y el del jurado coinciden
+  en 132 de 136.
+- **Qwen aporta más que gpt-oss** (785 contra 771 unido a la red) y los dos
+  juntos apenas más que Qwen solo (786).
+- **Sigue sin medirse la precisión** contra el experto: su anotación está
+  cerrada.
+
+Gasto de la fase 3: lectura US$6.95 (2.86 y 4.09) y jurado US$0.47; US$7.42
+de los US$8 aprobados. Total de la nube: unos US$39.5 de US$45.
 
 ## Lo que la v0 no hace
 

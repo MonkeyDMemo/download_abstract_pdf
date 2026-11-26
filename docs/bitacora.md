@@ -8,6 +8,43 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 26 de noviembre de 2026 — el agente curador contra la base curada (fase 3)
+
+Protocolo, cifras y lectura completos en `docs/agente-curador.md`. El
+usuario aprobó los dos lectores, la regla y el gasto. Es trabajo de la tesis
+y exploratorio: la red oficial y las cifras del servicio social no cambian.
+
+Orden de los hechos: protocolo con commit (`038fa73`), lectura del corpus,
+exportación con commit (`11dbb97`, `2ba05f2`), una sola medición en el
+servidor (`18c8c16`).
+
+- **Lectura.** Los 2 356 artículos de la corrida 27 con gpt-oss-120b y
+  Qwen3-235B, prompt v0. Válidas: 3 257 y 4 671 relaciones; entre los dos,
+  2 809 pares de locus, 853 que la red no tenía.
+- **La unión se hace por par de locus** (`etapa2/red_curador.py
+  --carpeta-contraste`): unir por nombre fabricaría pares «mixtos» en el
+  contraste. La corrida 27 reescrita así da en el servidor lo mismo que la
+  original (737, 770, 335 de 387).
+
+| | Dirigidas de 1 560 | Signo de acuerdo | Signo contrario |
+|---|---|---|---|
+| Red (corrida 27) | 737 (47.2 %) | 335 de 387 | 52 |
+| Red ∪ los dos lectores | 786 (50.4 %) | 437 de 504 | 67 |
+| Los dos lectores solos | 553 (35.4 %) | 446 de 476 | 30 |
+
+- **Regla escrita antes: aporta.** Gana 49 filas dirigidas (umbral 47) y 102
+  con signo de acuerdo (umbral 60). El signo nuevo acierta en 102 de 117
+  (87.2 %, contra 73.7 % de decir siempre «activa»). El jurado confirma 188
+  de 200 relaciones de una muestra al azar.
+- **Reservas.** La cobertura pasa por 2 filas. El jurado es de las mismas
+  familias que los lectores. La precisión contra el experto no se puede
+  medir.
+- **Gasto:** US$7.42 (lectura 6.95, jurado 0.47), dentro de los US$8
+  aprobados. Total de la nube: unos US$39.5 de US$45.
+- Conteos en `salidas/fuentes/curador_fase3.json`.
+
+---
+
 ## 25 de noviembre de 2026 (noche) — el agente curador: fases 1 y 2
 
 Detalle y cifras en `docs/agente-curador.md`. Es trabajo de la tesis y
