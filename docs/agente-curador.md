@@ -1,8 +1,7 @@
 # El agente curador: un lector por artículo
 
-Plan del 25 de noviembre de 2026. **Todavía no es un protocolo.** Se vuelve
-protocolo, con fecha, huellas y commit, antes de la primera corrida de prueba
-(fase 3). Es trabajo de la tesis y es exploratorio: ninguna cifra del servicio
+Plan del 25 de noviembre de 2026. El protocolo de la prueba (fase 3) es del
+26-nov y está más abajo, con fecha, huellas y commit anteriores a la lectura. Es trabajo de la tesis y es exploratorio: ninguna cifra del servicio
 social depende de él, y la red oficial no cambia.
 
 ## Qué es
@@ -221,8 +220,113 @@ pasar el jurado sobre una muestra, no sobre todo lo extraído.
 | 0 | Lo determinista: artículo en bloques, forma de la respuesta, comprobación de citas. Con pruebas, sin modelo | **Hecho** (`grn_ouroboros/curador.py`, `grn_bronce.db.unidades_de`) |
 | 1 | El lector con Strands, caché y tope de gasto; `cli curar`; humo con 8 artículos | **Hecho** (`agente.crear_lector`, `curador.ejecutar`) |
 | 2 | Desarrollo con el oro propio; elegir modelo y prompt | **Hecho** el 25-nov con el oro propio; falta la tanda 1 |
-| 3 | Congelar, leer todo el corpus, medir en el servidor | Necesita la regla y los lectores aprobados |
+| 3 | Congelar, leer todo el corpus, medir en el servidor | Aprobada el 26-nov; protocolo abajo |
 | 4 | Tablas del XML; material suplementario; aprender de la base | Tesis |
+
+## Protocolo de la prueba (26-nov-2026)
+
+Escrito y con commit **antes** de leer el corpus y de medir. El usuario
+aprobó el 26-nov los dos lectores, la regla y el gasto. Lo que cambie
+después se anota abajo como desviación, antes de calcular.
+
+### Qué queda congelado
+
+| Qué | Valor |
+|---|---|
+| Prompt | `grn_ouroboros/prompts/curador_v0.md`, sha256 `0cf509b13c4cb0f7cae9272ffc8dfa0c0298b33a76378e76fe6126470462721d` (con saltos LF) |
+| Lector 1 | `openai.gpt-oss-120b-1:0`, config `lector_razonador` (razonamiento low, T 1.0, top_p 1.0, max_tokens 8192) |
+| Lector 2 | `qwen.qwen3-235b-a22b-2507-v1:0`, config `lector` (T 0, max_tokens 8192) |
+| Región | us-west-2 |
+| Texto | corrida 27 del bronce, 2 356 artículos, sin las secciones excluidas, bloques de 60 000 caracteres |
+| Código del lector y la comprobación | commit `18c8c16` |
+| Red contra la que se compara | `corrida27_run22`: 11 443 aristas; de 1 560 filas, 737 dirigidas y 770 en cualquier dirección; signo de acuerdo en 335 de las 387 a las que se lo da |
+
+Los 312 artículos del desarrollo ya están leídos con este prompt y estos
+modelos: esas lecturas se reutilizan de la caché.
+
+### Cómo se arma lo que se mide
+
+- **Por par dirigido de locus.** El contraste lleva cada arista a locus y,
+  si dos aristas del mismo par traen signos distintos, lo cuenta como
+  «mixto». Unir por nombre fabricaría mixtos donde la red dice `mexAB-oprM`
+  y el lector `mexA`. Por eso cada red se reescribe con una arista por par
+  de locus: la de la red, con los signos que ya tiene; la del lector, con el
+  suyo.
+- **El signo del lector por par:** un voto por artículo y efecto entre los
+  dos lectores, con la regla de mayoría de `red.py` (0.66).
+- **La unión, por par:**
+  - solo en la red: como está;
+  - solo en el lector: entra con el signo del lector;
+  - en las dos, la red dice `regulates` y el lector da signo: vale el del
+    lector;
+  - en las dos y la red ya trae signo (o es mixto): vale lo de la red.
+- La exportación (`etapa2/red_curador.py`) se escribe y se prueba mientras
+  los lectores leen, sin ver ninguna cifra de la base, y su commit se anota
+  aquí antes de medir. Se comprueba en la laptop que la red reescrita da los
+  mismos pares, signos y artículos que la original.
+
+### Qué se contrasta, una sola vez
+
+En el servidor, con `grn_verificacion.cli contraste` sobre las 1 560 filas
+de la cifra principal. Solo salen conteos.
+
+| Carpeta | Qué es | Papel |
+|---|---|---|
+| `c27_locus` | La red de la corrida 27 reescrita por par de locus | Control: tiene que dar 737, 770 y 335 de 387. Si no, la referencia de la regla es esta y se reporta la diferencia |
+| `c27_union` | Red ∪ los dos lectores | **Principal** |
+| `c27_curador` | Los dos lectores solos | Secundaria |
+| `c27_union_acuerdo` | Red ∪ solo los pares que dan los dos lectores | Secundaria |
+| `c27_union_gptoss`, `c27_union_qwen` | Red ∪ un lector | Secundarias |
+
+### La regla
+
+Sobre `c27_union` contra la referencia:
+
+| Resultado | Condición |
+|---|---|
+| Aporta | Gana al menos 47 filas dirigidas (3 puntos de 1 560), **o** gana al menos 60 filas con signo de acuerdo; y pasa las dos guardas |
+| No aporta | Gana menos de 16 filas dirigidas (1 punto) y menos de 20 con signo de acuerdo |
+| No concluyente | Lo demás, y también si cumple «aporta» pero falla una guarda |
+
+Guardas:
+
+1. **El signo nuevo le gana a «siempre activa».** De las filas a las que la
+   unión da signo y la referencia no, el acuerdo tiene que pasar de 73.7 %
+   (509 de 691: lo que acierta decir siempre «activa»). Se calcula con los
+   conteos: (acuerdo de la unión − acuerdo de la referencia) / (filas con
+   signo de la unión − filas con signo de la referencia).
+2. **El jurado confirma al lector al menos como a la red.** Muestra de 200
+   relaciones válidas, al azar con semilla 20261126, de las que dan los dos
+   lectores en todo el corpus. Cada ítem son las oraciones citadas, unidas.
+   Jurado v1 (tres jueces, basta uno). Confirmada: el jurado dice que sí y
+   en el sentido regulador → blanco. La tasa tiene que ser al menos 25.4 %
+   (2 911 de 11 443 aristas de la red). Los tres jueces son de las familias
+   de los dos lectores: es una segunda opinión, no un juez independiente.
+
+Se reportan además, sin regla: el signo contrario, los pares fuera de la
+base, cuántas relaciones cayeron en cada estado de la comprobación y
+cuántos pares dan los dos lectores.
+
+### Lo que ya se sabía al escribir esto
+
+- De la base, solo los conteos de la corrida 27 y los del 25-nov.
+- Los 312 artículos del desarrollo son parte del corpus. Sus lecturas se
+  miraron, y de ahí salieron las reglas deterministas de la comprobación
+  (operones, guiones, palabras que acompañan al nombre). El prompt v0 se
+  escribió antes de leer nada y no se cambió.
+- Los modelos pueden saber relaciones conocidas sin leerlas. La
+  comprobación exige el nombre en la oración citada, no que la oración
+  afirme la relación; para eso es la guarda 2.
+
+### Gasto
+
+Tope por lector: US$3.0 (gpt-oss-120b) y US$4.5 (Qwen3-235B). Jurado de la
+muestra: US$0.5. Total, a lo más US$8. Si un tope corta una lectura, no se
+sube: se mide con lo leído y se dice cuántos artículos faltaron.
+
+### Desviaciones
+
+Ninguna al 26-nov, antes de leer.
 
 ## Lo que la v0 no hace
 
