@@ -204,6 +204,26 @@ class PruebasVerificar(Base):
                               self.recursos)
         self.assertEqual(v["estado"], "entidad_fuera_de_la_cita")
 
+    def test_las_palabras_que_acompanan_al_nombre_no_son_el_nombre(self):
+        for con, sin in (("opeAB operon", "opeAB"), ("the opeA gene", "opeA"),
+                         ("opeA promoter region", "opeA"),
+                         ("RegA protein", "RegA"), ("opeA genes", "opeA"),
+                         ("regA regulon", "regA regulon"),
+                         ("ope system", "ope system"), ("operon", "operon"),
+                         ("opeA", "opeA")):
+            self.assertEqual(curador.nucleo(con), sin, con)
+        bloque = curador.articulo([
+            ("xml", "r", 0, "RegA activates the opeAB operon in vivo.")])
+        v = curador.verificar(
+            _relacion(["x0"], "RegA protein", "the opeAB operon"), bloque,
+            self.recursos)
+        self.assertEqual((v["estado"], v["nodo_blanco"], v["blanco"]),
+                         ("valida", "opeAB", "the opeAB operon"))
+        # El regulón de un gen no es el gen.
+        v = curador.verificar(_relacion(["x0"], "RegA", "regA regulon"),
+                              bloque, self.recursos)
+        self.assertNotEqual(v["estado"], "valida")
+
     def test_un_blanco_que_es_un_operon_del_catalogo(self):
         bloque = curador.articulo([
             ("xml", "r", 0, "RegA activates the OpeAB operon and opeXY.")])

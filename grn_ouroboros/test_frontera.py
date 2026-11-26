@@ -307,7 +307,7 @@ class PruebasPython38(unittest.TestCase):
 
 class PruebasPrompt(unittest.TestCase):
     """Cada prompt de `prompts/`: el v0 congelado, el v1 del jurado y el
-    borrador del lector por artículo."""
+    lector por artículo (su v0 y su v1)."""
 
     @classmethod
     def setUpClass(cls):
@@ -317,10 +317,10 @@ class PruebasPrompt(unittest.TestCase):
                                                       "*.md"))))
         cls.ventanas = cls.prompts["anotador_v0.md"]
 
-    def test_estan_los_tres(self):
+    def test_estan_los_cuatro(self):
         self.assertEqual(sorted(self.prompts),
                          ["anotador_v0.md", "anotador_v1.md",
-                          "curador_v0.md"])
+                          "curador_v0.md", "curador_v1.md"])
 
     def test_el_v0_sigue_congelado(self):
         """El sha256 del archivo de la enmienda 3 de protocolo-tanda2.md, con

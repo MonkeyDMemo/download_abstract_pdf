@@ -321,6 +321,21 @@ def validar_respuesta(objeto):
     return relaciones
 
 
+# Las palabras que acompañan a un nombre sin ser parte de él: `barA operon`,
+# `the barA gene`, `barA promoter region`. Se quitan para buscar el nombre, y
+# nada más: `fooR regulon` o `foo system` no son el gen `fooR`.
+_ACOMPANAN = re.compile(
+    r"^(?:the\s+)?(.+?)(?:\s+(?:operons?|genes?|promoters?(?:\s+region)?|"
+    r"locus|cluster|mrna|transcripts?|proteins?))+$", re.I)
+
+
+def nucleo(nombre):
+    """El nombre sin las palabras que lo acompañan (`_ACOMPANAN`)."""
+    nombre = " ".join(normalizar(nombre).split())
+    m = _ACOMPANAN.match(nombre)
+    return m.group(1).strip() if m else nombre
+
+
 def _aparece(nombre, textos, promotor=False):
     """Si el nombre está escrito en alguna de las oraciones, como palabra
     entera y sin distinguir mayúsculas: el gen `fooR` y su proteína `FooR`
@@ -391,12 +406,13 @@ def verificar(relacion, bloque, recursos):
         salida["estado"] = "cita_inexistente"
         return salida
     textos = [por_id[c].texto for c in relacion["oraciones"]]
-    if not (_aparece(relacion["regulador"], textos)
-            and _aparece(relacion["blanco"], textos, promotor=True)):
+    regulador, blanco = nucleo(relacion["regulador"]), nucleo(relacion["blanco"])
+    if not (_aparece(regulador, textos)
+            and _aparece(blanco, textos, promotor=True)):
         salida["estado"] = "entidad_fuera_de_la_cita"
         return salida
-    r = _resolver(relacion["regulador"], recursos)
-    b = _resolver(relacion["blanco"], recursos)
+    r = _resolver(regulador, recursos)
+    b = _resolver(blanco, recursos)
     salida.update({"locus_regulador": "|".join(r["locus"]),
                    "locus_blanco": "|".join(b["locus"]),
                    "nodo_regulador": r["nodo"], "nodo_blanco": b["nodo"]})
