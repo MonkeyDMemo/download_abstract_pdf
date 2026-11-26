@@ -33,9 +33,11 @@ La caché
 La llave de cada llamada es el sha256 de lo que decide la respuesta: el
 mensaje (el bloque con sus identificadores), la huella del prompt, el
 proveedor, el modelo y la región, la decodificación y la versión del esquema.
-Lo mismo dos veces no vuelve a llamar al modelo. La comprobación de las citas
-no entra a la llave: se rehace al escribir las salidas, así que un diccionario
-nuevo cambia `relaciones.tsv` sin pagar otra lectura.
+Lo mismo dos veces no vuelve a llamar al modelo. Lo que se guarda es el texto
+que devolvió el modelo. Leer ese texto (`interpretar`) y comprobar las citas
+(`verificar`) no entran a la llave: se rehacen al escribir las salidas, así
+que un diccionario nuevo o una regla de forma corregida cambian
+`relaciones.tsv` sin pagar otra lectura.
 
 Si el lector lanza una excepción, la corrida se detiene: «no pude preguntar»
 no es una respuesta. Lo ya leído queda en `lecturas.jsonl`, y volver a correr
@@ -70,6 +72,7 @@ import threading
 
 from grn_bronce import db as _bdb
 from grn_bronce import identificar as _identificar
+from grn_bronce import operones as _operones
 from grn_ouroboros import anotar as _anotar
 from grn_ouroboros import gasto as _gasto
 from grn_ouroboros import herramientas as _herramientas
@@ -98,7 +101,7 @@ MAX_RELACIONES = 200
 
 # El orden importa: una relación cae en el primer estado que le aplica.
 ESTADOS = ("cita_inexistente", "entidad_fuera_de_la_cita", "sin_locus",
-           "ambigua", "mismo_gen", "valida")
+           "ambigua", "regulador_operon", "mismo_gen", "valida")
 
 Oracion = collections.namedtuple("Oracion", "id fuente seccion num texto")
 
@@ -229,20 +232,61 @@ def esquema():
     }
 
 
+# Los guiones que no son el de ASCII (gpt-oss escribe U+2011 donde el texto
+# trae «-», y los PDF traen rayas donde el autor puso un guion) y los espacios
+# que no son el espacio. `mexAB‑oprM` y `mexAB-oprM` son el mismo nombre.
+_GUIONES = re.compile(u"[\u2010-\u2015\u2212\u00ad\ufe58\ufe63\uff0d]")
+_ESPACIOS = re.compile(u"[\u00a0\u2000-\u200b\u202f\u205f\u3000]")
+
+
+def normalizar(texto):
+    """El texto con guiones y espacios de ASCII. Solo para comparar nombres:
+    lo que se guarda y lo que lee el modelo no se toca."""
+    return _ESPACIOS.sub(" ", _GUIONES.sub("-", texto or ""))
+
+
 def _texto(valor, campo):
     if not isinstance(valor, str) or not valor.strip():
         raise RespuestaInvalida("«%s» tiene que ser un texto no vacío."
                                 % campo)
-    return valor.strip()
+    return " ".join(normalizar(valor).split())
 
 
-def validar_respuesta(objeto):
-    """Las relaciones de una respuesta, limpias y sin repetir.
+_CAMPOS = frozenset(("oraciones", "regulador", "blanco", "efecto", "tipo"))
 
-    Lanza `RespuestaInvalida` si la forma no es la de `esquema()`: una
-    respuesta a medias no se aprovecha por partes, porque no se sabría qué
-    faltó. Dos relaciones iguales (mismas citas, nombres y etiquetas) cuentan
-    una vez; el orden de las citas no importa.
+
+def _limpiar(r):
+    """Una relación con la forma de `esquema()`, limpia; si no la tiene,
+    `RespuestaInvalida`."""
+    if not isinstance(r, dict) or set(r) != _CAMPOS:
+        raise RespuestaInvalida("Cada relación lleva exactamente: %s."
+                                % ", ".join(sorted(_CAMPOS)))
+    citas = r["oraciones"]
+    if not isinstance(citas, list) or not 1 <= len(citas) <= MAX_CITAS:
+        raise RespuestaInvalida("«oraciones» lleva de 1 a %d "
+                                "identificadores." % MAX_CITAS)
+    citas = [_texto(c, "oraciones").strip("[]") for c in citas]
+    if len(set(citas)) != len(citas):
+        raise RespuestaInvalida("«oraciones» repite un identificador.")
+    if r["efecto"] not in EFECTOS or r["tipo"] not in TIPOS:
+        raise RespuestaInvalida("«efecto» o «tipo» fuera de sus valores.")
+    return collections.OrderedDict([
+        ("oraciones", citas),
+        ("regulador", _texto(r["regulador"], "regulador")),
+        ("blanco", _texto(r["blanco"], "blanco")),
+        ("efecto", r["efecto"]), ("tipo", r["tipo"])])
+
+
+def separar(objeto):
+    """(relaciones limpias y sin repetir, cuántas no tenían la forma).
+
+    Lanza `RespuestaInvalida` si lo que falla es la respuesta entera: no es
+    un objeto con «relaciones» y nada más, o la lista pasa de
+    `MAX_RELACIONES`. Una relación mal formada (más citas de las permitidas,
+    una etiqueta fuera de sus valores, un campo de más o de menos) se cuenta
+    y se deja fuera sin tirar las demás: el defecto es de esa relación, no de
+    la lectura. Dos relaciones iguales (mismas citas, nombres y etiquetas)
+    cuentan una vez; el orden de las citas no importa.
     """
     if not isinstance(objeto, dict) or set(objeto) != {"relaciones"}:
         raise RespuestaInvalida("La respuesta es un objeto con «relaciones» "
@@ -251,82 +295,118 @@ def validar_respuesta(objeto):
     if not isinstance(lista, list) or len(lista) > MAX_RELACIONES:
         raise RespuestaInvalida("«relaciones» es una lista de a lo más %d."
                                 % MAX_RELACIONES)
-    campos = {"oraciones", "regulador", "blanco", "efecto", "tipo"}
-    salida, vistas = [], set()
+    salida, vistas, mal = [], set(), 0
     for r in lista:
-        if not isinstance(r, dict) or set(r) != campos:
-            raise RespuestaInvalida("Cada relación lleva exactamente: %s."
-                                    % ", ".join(sorted(campos)))
-        citas = r["oraciones"]
-        if (not isinstance(citas, list) or not 1 <= len(citas) <= MAX_CITAS
-                or len(set(citas)) != len(citas)):
-            raise RespuestaInvalida("«oraciones» lleva de 1 a %d "
-                                    "identificadores distintos." % MAX_CITAS)
-        citas = [_texto(c, "oraciones").strip("[]") for c in citas]
-        if r["efecto"] not in EFECTOS or r["tipo"] not in TIPOS:
-            raise RespuestaInvalida("«efecto» o «tipo» fuera de sus valores.")
-        limpia = collections.OrderedDict([
-            ("oraciones", citas),
-            ("regulador", _texto(r["regulador"], "regulador")),
-            ("blanco", _texto(r["blanco"], "blanco")),
-            ("efecto", r["efecto"]), ("tipo", r["tipo"])])
-        llave = (tuple(sorted(citas)), limpia["regulador"], limpia["blanco"],
-                 limpia["efecto"], limpia["tipo"])
+        try:
+            limpia = _limpiar(r)
+        except RespuestaInvalida:
+            mal += 1
+            continue
+        llave = (tuple(sorted(limpia["oraciones"])), limpia["regulador"],
+                 limpia["blanco"], limpia["efecto"], limpia["tipo"])
         if llave not in vistas:
             vistas.add(llave)
             salida.append(limpia)
-    return salida
+    return salida, mal
 
 
-def _aparece(nombre, textos):
+def validar_respuesta(objeto):
+    """Las relaciones de una respuesta en la que **todas** tienen la forma de
+    `esquema()`; si alguna no, `RespuestaInvalida`. La versión estricta de
+    `separar`."""
+    relaciones, mal = separar(objeto)
+    if mal:
+        raise RespuestaInvalida("%d relaciones no tienen la forma del "
+                                "esquema." % mal)
+    return relaciones
+
+
+def _aparece(nombre, textos, promotor=False):
     """Si el nombre está escrito en alguna de las oraciones, como palabra
     entera y sin distinguir mayúsculas: el gen `fooR` y su proteína `FooR`
-    son la misma entidad (rúbrica §2)."""
-    patron = re.compile(r"(?<![A-Za-z0-9])%s(?![A-Za-z0-9])"
-                        % re.escape(nombre), re.I)
-    return any(patron.search(t) for t in textos)
+    son la misma entidad (rúbrica §2). Los guiones y los espacios se comparan
+    normalizados.
+
+    Con `promotor`, también vale la notación del promotor, una P pegada al
+    nombre (`PbarA`): la actividad del promotor de un gen es su expresión.
+    Solo se usa para el blanco.
+    """
+    patron = re.compile(r"(?<![A-Za-z0-9])%s%s(?![A-Za-z0-9])"
+                        % ("[Pp]?" if promotor else "",
+                           re.escape(normalizar(nombre))), re.I)
+    return any(patron.search(normalizar(t)) for t in textos)
 
 
-def _locus(nombre, recursos):
-    """(locus, estado) con el diccionario del bronce: un solo locus o nada."""
+def _resolver(nombre, recursos):
+    """{nodo, locus, operon, falla} de un nombre, con los recursos del
+    bronce y nada más.
+
+    Primero el diccionario de genes: un solo locus, o nada. Si no está ahí,
+    el catálogo de operones, **solo por tabla** (`grn_bronce.operones`): un
+    nombre que el catálogo no conoce no se expande leyéndolo. `nodo` es el
+    nombre con que la entidad va a la red: el símbolo del diccionario (el
+    locus si no tiene) o el operón como lo escribe la tabla, que es como los
+    nombra la red del paso 2. `locus` es una lista: los genes del operón, o
+    el único del gen.
+    """
+    nombre = normalizar(nombre)
     coincidencias = _herramientas.buscar_locus(
         nombre, recursos)["coincidencias"]
-    locus = sorted(set(c["locus_tag"] for c in coincidencias
-                       if c["locus_tag"]))
-    if len(locus) == 1:
-        return locus[0], None
-    return "", ("ambigua" if len(locus) > 1 else "sin_locus")
+    por_locus = dict((c["locus_tag"], c) for c in coincidencias
+                     if c["locus_tag"])
+    if len(por_locus) == 1:
+        c = list(por_locus.values())[0]
+        return {"nodo": c["simbolo"] or c["locus_tag"],
+                "locus": [c["locus_tag"]], "operon": False, "falla": None}
+    if len(por_locus) > 1:
+        return {"nodo": "", "locus": [], "operon": False, "falla": "ambigua"}
+    operon = recursos.operones_por_nombre.get(_operones.clave(nombre))
+    if operon is not None:
+        return {"nodo": operon["operon"], "locus": list(operon["locus_tags"]),
+                "operon": True, "falla": None}
+    return {"nodo": "", "locus": [], "operon": False, "falla": "sin_locus"}
 
 
 def verificar(relacion, bloque, recursos):
-    """La relación con su `estado` (uno de `ESTADOS`) y sus dos locus.
+    """La relación con su `estado` (uno de `ESTADOS`), sus locus y los
+    nombres con que va a la red (`nodo_regulador`, `nodo_blanco`).
 
     En orden: las citas están en el bloque; el regulador y el blanco están
     escritos en alguna oración citada (cada uno puede estar en una distinta:
     eso es una relación repartida en dos oraciones); cada nombre lleva a un
-    solo locus del diccionario; y no son el mismo gen. Solo `valida` entra a
-    la red; las demás se cuentan, porque dicen qué le falta al lector o al
-    diccionario.
+    solo locus del diccionario, o el blanco a un operón del catálogo; el
+    regulador es un gen y no un operón; y no son el mismo gen. Solo `valida`
+    entra a la red; las demás se cuentan, porque dicen qué le falta al lector
+    o al diccionario.
+
+    Un blanco que es un operón del catálogo es válido: `locus_blanco` trae
+    sus genes separados por `|` y `nodo_blanco` el nombre del operón, como en
+    la red del paso 2.
     """
     por_id = dict((o.id, o) for o in bloque)
     salida = collections.OrderedDict(relacion)
-    salida.update({"locus_regulador": "", "locus_blanco": ""})
+    salida.update({"locus_regulador": "", "locus_blanco": "",
+                   "nodo_regulador": "", "nodo_blanco": ""})
     if any(c not in por_id for c in relacion["oraciones"]):
         salida["estado"] = "cita_inexistente"
         return salida
     textos = [por_id[c].texto for c in relacion["oraciones"]]
     if not (_aparece(relacion["regulador"], textos)
-            and _aparece(relacion["blanco"], textos)):
+            and _aparece(relacion["blanco"], textos, promotor=True)):
         salida["estado"] = "entidad_fuera_de_la_cita"
         return salida
-    locus_r, falla_r = _locus(relacion["regulador"], recursos)
-    locus_b, falla_b = _locus(relacion["blanco"], recursos)
-    salida.update({"locus_regulador": locus_r, "locus_blanco": locus_b})
-    fallas = [f for f in (falla_r, falla_b) if f]
+    r = _resolver(relacion["regulador"], recursos)
+    b = _resolver(relacion["blanco"], recursos)
+    salida.update({"locus_regulador": "|".join(r["locus"]),
+                   "locus_blanco": "|".join(b["locus"]),
+                   "nodo_regulador": r["nodo"], "nodo_blanco": b["nodo"]})
+    fallas = [x["falla"] for x in (r, b) if x["falla"]]
     if fallas:
         salida["estado"] = ("sin_locus" if "sin_locus" in fallas
                             else "ambigua")
-    elif locus_r == locus_b:
+    elif r["operon"]:
+        salida["estado"] = "regulador_operon"
+    elif r["locus"] == b["locus"]:
         salida["estado"] = "mismo_gen"
     else:
         salida["estado"] = "valida"
@@ -366,8 +446,8 @@ PLANTILLA = ("Texto del artículo, parte {parte} de {partes}. Cada renglón es "
 ESTADOS_LECTURA = ("ok", "truncada", "contexto_excedido", "sin_json",
                    "respuesta_invalida")
 COLUMNAS_RELACIONES = ["pmid", "parte", "oraciones", "regulador", "blanco",
-                       "locus_regulador", "locus_blanco", "efecto", "tipo",
-                       "estado"]
+                       "nodo_regulador", "nodo_blanco", "locus_regulador",
+                       "locus_blanco", "efecto", "tipo", "estado"]
 AVISO_CADA = 25
 
 
@@ -427,20 +507,22 @@ def llave_cache(texto_mensaje, entradas):
 
 
 def interpretar(respuesta):
-    """(estado de `ESTADOS_LECTURA`, relaciones) de lo que devolvió el
-    lector. Una respuesta cortada no se aprovecha a medias."""
+    """(estado de `ESTADOS_LECTURA`, relaciones, cuántas mal formadas) de lo
+    que devolvió el lector. Una respuesta cortada no se aprovecha a medias:
+    no se sabría qué faltó."""
     if respuesta.get("motivo") == "contexto_excedido":
-        return "contexto_excedido", []
+        return "contexto_excedido", [], 0
     if respuesta.get("truncado"):
-        return "truncada", []
+        return "truncada", [], 0
     objeto = _anotar.extraer_json(
         _anotar.quitar_razonamiento(respuesta.get("texto") or ""))
     if objeto is None:
-        return "sin_json", []
+        return "sin_json", [], 0
     try:
-        return "ok", validar_respuesta(objeto)
+        relaciones, mal = separar(objeto)
     except RespuestaInvalida:
-        return "respuesta_invalida", []
+        return "respuesta_invalida", [], 0
+    return "ok", relaciones, mal
 
 
 def tareas(articulos, entradas, max_caracteres=MAX_CARACTERES):
@@ -492,18 +574,20 @@ def _escribir_json(ruta, objeto):
         f.write("\n")
 
 
-def filas_de(lista_de_tareas, hechas, recursos):
+def filas_de(lista_de_tareas, lecturas, recursos):
     """Las filas de `relaciones.tsv`: cada relación de cada lectura `ok`,
-    comprobada contra su bloque, en el orden de las tareas."""
+    comprobada contra su bloque, en el orden de las tareas. `lecturas` es
+    {llave: (estado, relaciones, mal formadas)}."""
     filas = []
     for t in lista_de_tareas:
-        registro = hechas[t["llave"]]
-        for relacion in registro.get("relaciones") or []:
+        for relacion in lecturas[t["llave"]][1]:
             v = verificar(relacion, t["bloque"], recursos)
             filas.append(collections.OrderedDict([
                 ("pmid", t["pmid"]), ("parte", t["parte"]),
                 ("oraciones", "|".join(v["oraciones"])),
                 ("regulador", v["regulador"]), ("blanco", v["blanco"]),
+                ("nodo_regulador", v["nodo_regulador"]),
+                ("nodo_blanco", v["nodo_blanco"]),
                 ("locus_regulador", v["locus_regulador"]),
                 ("locus_blanco", v["locus_blanco"]),
                 ("efecto", v["efecto"]), ("tipo", v["tipo"]),
@@ -556,15 +640,17 @@ def ejecutar(articulos, salida, lector, entradas, recursos, paralelo=1,
 
     def una(t):
         respuesta = lector(t["mensaje"])
-        estado, relaciones = interpretar(respuesta)
+        # Se guarda lo que dijo el modelo; qué relaciones trae se lee de ahí
+        # cada vez (`interpretar`), para que corregir una regla de forma no
+        # cueste otra lectura.
         registro = {
             "llave": t["llave"], "pmid": t["pmid"], "parte": t["parte"],
             "partes": t["partes"], "huella_bloque": huella_bloque(t["bloque"]),
-            "n_oraciones": len(t["bloque"]), "estado": estado,
-            "relaciones": relaciones, "cuando": _anotar.ahora(),
+            "n_oraciones": len(t["bloque"]), "cuando": _anotar.ahora(),
             "respuesta": {"texto": respuesta.get("texto") or "",
                           "done_reason": respuesta.get("done_reason"),
                           "truncado": bool(respuesta.get("truncado")),
+                          "motivo": respuesta.get("motivo"),
                           "uso": respuesta.get("uso")}}
         with candado:
             _anotar.anexar(ruta_lecturas, registro)
@@ -593,10 +679,13 @@ def ejecutar(articulos, salida, lector, entradas, recursos, paralelo=1,
         if error is not None:
             raise error
 
-    filas = filas_de(pendientes_de_leer, hechas, recursos)
-    _escribir_relaciones(os.path.join(salida, RELACIONES), filas)
     registros = [hechas[t["llave"]] for t in pendientes_de_leer]
-    lecturas = collections.Counter(r["estado"] for r in registros)
+    leidas = dict((r["llave"], interpretar(r["respuesta"]))
+                  for r in registros)
+    filas = filas_de(pendientes_de_leer, leidas, recursos)
+    _escribir_relaciones(os.path.join(salida, RELACIONES), filas)
+    lecturas = collections.Counter(leidas[t["llave"]][0]
+                                   for t in pendientes_de_leer)
     estados = collections.Counter(f["estado"] for f in filas)
     con_texto = set(t["pmid"] for t in pendientes_de_leer)
     resumen = collections.OrderedDict([
@@ -607,12 +696,14 @@ def ejecutar(articulos, salida, lector, entradas, recursos, paralelo=1,
         ("lecturas", collections.OrderedDict(
             (e, lecturas[e]) for e in ESTADOS_LECTURA)),
         ("relaciones", len(filas)),
+        ("relaciones_mal_formadas", sum(leidas[t["llave"]][2]
+                                        for t in pendientes_de_leer)),
         ("relaciones_por_estado", collections.OrderedDict(
             (e, estados[e]) for e in ESTADOS)),
         ("articulos_con_relacion_valida", len(set(
             f["pmid"] for f in filas if f["estado"] == "valida"))),
-        ("pares_de_locus_validos", len(set(
-            (f["locus_regulador"], f["locus_blanco"]) for f in filas
+        ("pares_validos", len(set(
+            (f["nodo_regulador"], f["nodo_blanco"]) for f in filas
             if f["estado"] == "valida"))),
     ])
     if precio is not None:

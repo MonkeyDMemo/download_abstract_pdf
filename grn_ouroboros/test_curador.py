@@ -10,6 +10,7 @@ import io
 import json
 import os
 import unittest
+from unittest import mock
 
 from grn_bronce import db as bdb
 from grn_ouroboros import curador
@@ -182,6 +183,48 @@ class PruebasVerificar(Base):
                               self.recursos)
         self.assertEqual(v["estado"], "ambigua")
 
+    def test_el_guion_del_texto_y_el_del_modelo(self):
+        bloque = curador.articulo([
+            ("pdf", "r", 0, u"RegA activates the opeAB\u2013tag operon.")])
+        v = curador.verificar(_relacion(["p0"], "RegA", u"opeAB\u2011tag"),
+                              bloque, self.recursos)
+        self.assertEqual((v["estado"], v["nodo_blanco"]),
+                         ("valida", "opeAB-tag"))
+
+    def test_el_promotor_del_blanco_es_el_blanco(self):
+        bloque = curador.articulo([
+            ("xml", "r", 0, "RegA inhibits PopeA transcription in vivo.")])
+        v = curador.verificar(_relacion(["x0"], "RegA", "opeA"), bloque,
+                              self.recursos)
+        self.assertEqual(v["estado"], "valida")
+        # La P solo vale para el blanco: el regulador va con su nombre.
+        bloque = curador.articulo([
+            ("xml", "r", 0, "The PregA fusion responds to opeA.")])
+        v = curador.verificar(_relacion(["x0"], "regA", "opeA"), bloque,
+                              self.recursos)
+        self.assertEqual(v["estado"], "entidad_fuera_de_la_cita")
+
+    def test_un_blanco_que_es_un_operon_del_catalogo(self):
+        bloque = curador.articulo([
+            ("xml", "r", 0, "RegA activates the OpeAB operon and opeXY.")])
+        v = curador.verificar(_relacion(["x0"], "RegA", "OpeAB"), bloque,
+                              self.recursos)
+        self.assertEqual(v["estado"], "valida")
+        self.assertEqual((v["nodo_regulador"], v["nodo_blanco"],
+                          v["locus_regulador"], v["locus_blanco"]),
+                         ("regA", "opeAB", "PA0001", "PA0003|PA0004"))
+        # Solo por tabla: un nombre que parece operón y no está, no se expande.
+        v = curador.verificar(_relacion(["x0"], "RegA", "opeXY"), bloque,
+                              self.recursos)
+        self.assertEqual(v["estado"], "sin_locus")
+
+    def test_un_operon_no_es_un_regulador(self):
+        bloque = curador.articulo([
+            ("xml", "r", 0, "The opeAB system represses tag here.")])
+        v = curador.verificar(_relacion(["x0"], "opeAB", "tag"), bloque,
+                              self.recursos)
+        self.assertEqual(v["estado"], "regulador_operon")
+
     def test_el_mismo_gen_no_es_una_arista(self):
         bloque = curador.articulo([
             ("xml", "r", 0, "RegA binds the PA0001 promoter.")])
@@ -244,7 +287,8 @@ class PruebasInterpretar(unittest.TestCase):
     def test_una_respuesta_buena(self):
         r = _relacion(["x0", "x1"], "regA", "opeA")
         self.assertEqual(curador.interpretar(_respuesta([r])),
-                         ("ok", curador.validar_respuesta({"relaciones": [r]})))
+                         ("ok", curador.validar_respuesta({"relaciones": [r]}),
+                          0))
         cercada = _respuesta([])
         cercada["texto"] = ("<think>veamos {</think>```json\n"
                             + json.dumps({"relaciones": [r]}) + "\n```")
@@ -259,13 +303,31 @@ class PruebasInterpretar(unittest.TestCase):
                                              motivo="contexto_excedido")),
             ("sin_json", dict(_respuesta([]), texto="No encontré nada.")),
             ("respuesta_invalida", dict(_respuesta([]),
-                                        texto='{"relaciones": [{"x": 1}]}')),
+                                        texto='{"relaciones": {"x": 1}}')),
             ("respuesta_invalida", dict(_respuesta([]),
                                         texto='{"otra": []}')),
         ]
         for estado, respuesta in casos:
-            self.assertEqual(curador.interpretar(respuesta), (estado, []),
+            self.assertEqual(curador.interpretar(respuesta), (estado, [], 0),
                              estado)
+
+    def test_una_relacion_mal_formada_no_tira_las_demas(self):
+        buena = _relacion(["x0", "x1"], "regA", "opeA")
+        malas = [_relacion(["x0", "x1", "x2", "x3"], "regA", "opeA"),
+                 _relacion(["x0"], "regA", "opeA", tipo="auto"),
+                 _relacion(["x0", "x0"], "regA", "opeA"),
+                 {"x": 1}, "texto"]
+        estado, relaciones, mal = curador.interpretar(
+            _respuesta([buena] + malas))
+        self.assertEqual((estado, len(relaciones), mal), ("ok", 1, 5))
+        with self.assertRaises(curador.RespuestaInvalida):
+            curador.validar_respuesta({"relaciones": [buena] + malas})
+
+    def test_los_guiones_y_espacios_raros_se_normalizan(self):
+        r = _relacion(["x0"], u"Reg\u2011A", u"opeAB\u2013tag\u00a0operon")
+        limpia = curador.validar_respuesta({"relaciones": [r]})[0]
+        self.assertEqual((limpia["regulador"], limpia["blanco"]),
+                         ("Reg-A", "opeAB-tag operon"))
 
     def test_la_configuracion(self):
         self.assertEqual(curador.configuracion("lector")["temperature"], 0.0)
@@ -310,17 +372,17 @@ class PruebasEjecutar(Base):
         # El artículo 22 solo tiene el resumen: x0 y x1 no existen ahí.
         self.assertEqual(dict(r["relaciones_por_estado"]),
                          {"cita_inexistente": 3, "entidad_fuera_de_la_cita": 2,
-                          "sin_locus": 0, "ambigua": 0, "mismo_gen": 0,
-                          "valida": 1})
+                          "sin_locus": 0, "ambigua": 0, "regulador_operon": 0,
+                          "mismo_gen": 0, "valida": 1})
         self.assertEqual(r["articulos_con_relacion_valida"], 1)
-        self.assertEqual(r["pares_de_locus_validos"], 1)
+        self.assertEqual(r["pares_validos"], 1)
         self.assertAlmostEqual(r["costo"]["usd_total"],
                                2 * (1000 * 1.0 + 100 * 2.0) / 1e6)
         filas = self._leer(curador.RELACIONES).splitlines()
         self.assertEqual(filas[0].split("\t"), curador.COLUMNAS_RELACIONES)
         self.assertEqual(filas[1].split("\t"),
-                         ["11", "1", "x0|x1", "regA", "opeA", "PA0001",
-                          "PA0003", "activates", "no_se", "valida"])
+                         ["11", "1", "x0|x1", "regA", "opeA", "regA", "opeA",
+                          "PA0001", "PA0003", "activates", "no_se", "valida"])
         self.assertEqual(len(filas), 7)
         corrida = json.loads(self._leer(curador.CORRIDA))
         self.assertEqual(corrida["entradas"], json.loads(json.dumps(ENTRADAS)))
@@ -329,6 +391,19 @@ class PruebasEjecutar(Base):
                     self._leer(curador.LECTURAS).splitlines()]
         self.assertEqual([x["pmid"] for x in lecturas], ["11", "22"])
         self.assertEqual(lecturas[0]["n_oraciones"], 6)
+        self.assertEqual(r["relaciones_mal_formadas"], 0)
+
+    def test_lo_guardado_se_vuelve_a_interpretar(self):
+        """Lo que se guarda es el texto del modelo: si la regla de forma
+        cambia, la misma lectura da otras relaciones sin otra llamada."""
+        self._correr(LectorFalso(self.relaciones))
+        lector = LectorFalso([])
+        with mock.patch.object(curador, "MAX_CITAS", 1):
+            r = self._correr(lector)
+        self.assertEqual(lector.mensajes, [])
+        # La de dos citas ya no tiene la forma; quedan dos por artículo.
+        self.assertEqual((r["relaciones"], r["relaciones_mal_formadas"]),
+                         (4, 2))
 
     def test_lo_ya_leido_no_se_vuelve_a_pedir(self):
         self._correr(LectorFalso(self.relaciones))

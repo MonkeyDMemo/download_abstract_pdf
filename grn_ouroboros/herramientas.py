@@ -148,6 +148,7 @@ class Recursos(object):
         self.corrida_bronce = corrida_bronce
         self._diccionario = None
         self._operones = None
+        self._por_nombre = None
         self._posiciones = None
 
     @property
@@ -174,6 +175,24 @@ class Recursos(object):
                     por_locus.setdefault(lt, []).append(entrada)
             self._operones = por_locus
         return self._operones
+
+    @property
+    def operones_por_nombre(self):
+        """{clave del nombre: {operon, locus_tags}} del mismo catálogo: el
+        nombre como lo escribe la tabla y sus genes. Un operón sin locus no
+        entra: no expande a nada. La clave es `operones.clave`, la del
+        bronce, para que `MexAB-OprM` y `mexAB-oprM` sean el mismo."""
+        if self._por_nombre is None:
+            por_nombre = {}
+            for fila in _operones.leer(self.ruta_operones):
+                nombre = fila["operon"].strip()
+                locus = sorted(set(x.strip() for x in
+                                   fila["locus_tags"].split("|") if x.strip()))
+                if nombre and locus:
+                    por_nombre.setdefault(_operones.clave(nombre), {
+                        "operon": nombre, "locus_tags": locus})
+            self._por_nombre = por_nombre
+        return self._por_nombre
 
     @property
     def posiciones(self):

@@ -126,8 +126,18 @@ LISTA_BLANCA = {
     # grn_bronce precisamente porque el paquete bronce no puede abrir el
     # oro: si la referencia entrara en la logica que extrae, las cifras
     # dejarian de medir lo que el pipeline encuentra.
+    # `evaluar_curador.py` mide la red del lector por artículo
+    # (`grn_ouroboros.curador`) contra el oro, con las funciones de
+    # `evaluar_oro.py`. Entra con la misma condición que los otros: es un
+    # EVALUADOR. Nadie lo importa, no escribe ningún archivo que el pipeline
+    # consuma y su salida es un informe. El lector y su prompt no nombran el
+    # oro: esta misma prueba los vigila. Lo que sí pasa, y está escrito en
+    # `docs/agente-curador.md`: el prompt del lector se ajusta mirando estas
+    # cifras, así que para el lector el oro es conjunto de DESARROLLO y sus
+    # cifras aquí no son su medición; la medición es contra la base curada.
     "oro_pseudomonas": {"evaluar_oro.py", "verificar_oro.py",
-                        "evaluar_cobertura_bronce.py"},
+                        "evaluar_cobertura_bronce.py",
+                        "evaluar_curador.py"},
     # `auditar_signo.py` PRODUCE auditoria_signo.tsv, no lo consume. Se agrega
     # a la lista blanca con esa condicion y no en general: la prueba
     # `test_auditar_signo_solo_escribe` de mas abajo comprueba que el nombre

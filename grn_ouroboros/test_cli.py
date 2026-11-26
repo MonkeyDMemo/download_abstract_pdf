@@ -608,7 +608,7 @@ class PruebasCurar(Base):
         self.assertIn("Leyendo 3 artículos (3 llamadas", texto)
         self.assertIn("lecturas: ok 3", texto)
         self.assertIn("valida 3", texto)
-        self.assertIn("pares de locus distintos: 1", texto)
+        self.assertIn("pares distintos: 1", texto)
         self.assertIn("tope de gasto: US$", texto)
         self.sin_texto_ni_pmid(texto)
         f = self.lectores[0]

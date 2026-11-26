@@ -435,13 +435,15 @@ def _articulos_a_leer(args):
 def _mostrar_curador(resumen):
     log("lecturas: %s" % ", ".join(
         "%s %d" % (k, v) for k, v in resumen["lecturas"].items() if v))
-    log("relaciones: %d (%s)" % (resumen["relaciones"], ", ".join(
-        "%s %d" % (k, v) for k, v in resumen["relaciones_por_estado"].items())))
-    log("artículos con alguna relación válida: %s; pares de locus distintos: "
-        "%d" % (_porcentaje(resumen["articulos_con_relacion_valida"],
-                            resumen["articulos"] -
-                            resumen["articulos_sin_texto"]),
-                resumen["pares_de_locus_validos"]))
+    log("relaciones: %d (%s); mal formadas y fuera: %d"
+        % (resumen["relaciones"], ", ".join(
+            "%s %d" % (k, v)
+            for k, v in resumen["relaciones_por_estado"].items()),
+           resumen["relaciones_mal_formadas"]))
+    log("artículos con alguna relación válida: %s; pares distintos: %d"
+        % (_porcentaje(resumen["articulos_con_relacion_valida"],
+                       resumen["articulos"] - resumen["articulos_sin_texto"]),
+           resumen["pares_validos"]))
 
 
 def cmd_curar(args):

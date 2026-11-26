@@ -478,7 +478,7 @@ class PruebasLectorBedrock(PruebasAnotadorBedrock):
         r = lector("[a0] Una oración inventada.")
         self.assertEqual((r["done_reason"], r["truncado"]), ("stop", False))
         self.assertEqual(r["uso"], {"entrada": 10, "salida": 5})
-        self.assertEqual(curador.interpretar(r), ("ok", []))
+        self.assertEqual(curador.interpretar(r), ("ok", [], 0))
         peticion = falso.peticiones[0]
         self.assertEqual(peticion["modelId"], self.QWEN)
         self.assertEqual(peticion["system"], [{"text": "Sistema."}])
@@ -507,7 +507,7 @@ class PruebasLectorBedrock(PruebasAnotadorBedrock):
         self.clientes[0].razon = "max_tokens"
         r = lector("[a0] Una oración inventada.")
         self.assertTrue(r["truncado"])
-        self.assertEqual(curador.interpretar(r), ("truncada", []))
+        self.assertEqual(curador.interpretar(r), ("truncada", [], 0))
 
     def test_el_lector_tampoco_es_claude(self):
         from grn_ouroboros import curador
