@@ -19,8 +19,11 @@ los artículos citados sigue pendiente del permiso del doctor.
 
 - **Reintento de descargas** (`salidas/fuentes/reintento_20261127.log`,
   respaldo `grn_respaldo_antes_reintento_20261127.db`). XML: nada pendiente.
-  PDF: en curso; en los primeros 97 intentos llegó 1 y el servicio abierto
-  de PMC no respondió en 24.
+  PDF: en curso, y hoy sí llegan: 89 en los primeros 124 intentos, todos de
+  Europe PMC. Los artículos de `v0-agosto` sin texto completo bajaron de 816
+  a 727 a esa altura. El servicio abierto de PMC no respondió en 31.
+  *(Una primera versión de esta entrada decía que había llegado 1 PDF en 97
+  intentos: conté mal el registro.)*
 - **Conteo contra la búsqueda amplia.** `cobertura_articulo --lista-pmids`
   recibe una lista pública y devuelve conteos; no acepta listas de menos de
   1 000 PMID, para que no sirva de consulta de pertenencia. La lista es la
