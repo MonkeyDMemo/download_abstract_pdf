@@ -2,7 +2,7 @@
 """Cuánto de la base está en el artículo que cita, y dónde.
 
     python -m grn_verificacion.cobertura_articulo --base XLSX --carpeta DIR
-        [--excluir-pmids TSV ...] [--hoja H] [--json J]
+        [--excluir-pmids TSV ...] [--hoja H] [--json J] [--lista-pmids TXT]
 
 Es la opción E de docs/protocolo-mejoras-nov.md hecha como conteo: no saca de
 la base la lista de artículos, mira los que ya están en el corpus. Sobre las
@@ -18,6 +18,13 @@ fuera del corpus):
   artículos citados distintos, o ninguno. Un locus que falta es un gen que el
   texto no nombra (tablas, material suplementario) o que el diccionario no
   reconoce.
+
+Con `--lista-pmids` (un PMID por renglón, por ejemplo el resultado de una
+búsqueda más amplia en PubMed) dice además cuántos de los artículos que la
+base cita y el corpus no tiene están en esa lista, y cuántas filas dependen
+de ellos. Sirve para decidir si ampliar el corpus vale la pena **sin sacar
+del servidor la lista de artículos de la base**: entra una lista pública y
+salen conteos.
 
 Lee la base en el servidor y escribe solo conteos. Un artículo cuenta como
 texto completo si el bronce leyó de él alguna unidad de XML o de PDF.
@@ -114,7 +121,65 @@ def contar(exigibles, loci, tipo, por_pmid):
     return salida
 
 
-def ejecutar(base, carpeta, excluir=(), hoja=None, aceptar_base_distinta=False):
+def leer_lista(ruta):
+    """El conjunto de PMID de un archivo de un PMID por renglón. Los
+    renglones vacíos, los que empiezan con # y un encabezado `pmid` no
+    cuentan. El error no dice la ruta ni el renglón."""
+    pmids = set()
+    try:
+        with io.open(ruta, encoding="utf-8-sig") as f:
+            for linea in f:
+                valor = linea.split("\t")[0].strip()
+                if not valor or valor.startswith("#") \
+                        or valor.lower() == "pmid":
+                    continue
+                if not valor.isdigit():
+                    raise ValueError("--lista-pmids: un renglón no es un "
+                                     "PMID.")
+                pmids.add(contraste._pmid(valor))
+    except OSError:
+        raise ValueError("No pude leer el archivo de --lista-pmids.") \
+            from None
+    return pmids
+
+
+def en_lista(exigibles, tipo, lista):
+    """Cuánto de lo que la base cita fuera del corpus está en `lista`.
+
+    Sobre las mismas filas que `contar` (sin el estrato de BioBERT). Un
+    artículo está fuera si el corpus no lo tiene (`tipo`). Una fila del grupo
+    «fuera» es la que no cita ningún artículo del corpus.
+    """
+    fuera, filas_fuera, filas_con = set(), 0, 0
+    resumen, filas_resumen_con = set(), 0
+    for fila in exigibles:
+        if contraste.estrato_de(fila) == "biobert":
+            continue
+        citados = list(fila["pmids"])
+        en_corpus = [tipo[p] for p in citados if p in tipo]
+        fuera.update(p for p in citados if p not in tipo)
+        if not en_corpus:
+            filas_fuera += 1
+            filas_con += any(p in lista for p in citados)
+        elif "completo" not in en_corpus:
+            resumen.update(p for p in citados if p in tipo)
+            filas_resumen_con += any(p in lista for p in citados
+                                     if p not in tipo)
+    return collections.OrderedDict([
+        ("pmids_de_la_lista", len(lista)),
+        ("articulos_del_corpus_en_la_lista",
+         sum(1 for p in tipo if p in lista)),
+        ("articulos_citados_fuera_del_corpus", len(fuera)),
+        ("de_esos_en_la_lista", len(fuera & lista)),
+        ("filas_que_solo_citan_fuera", filas_fuera),
+        ("de_esas_con_un_articulo_en_la_lista", filas_con),
+        ("filas_con_solo_resumen_que_citan_otro_de_la_lista",
+         filas_resumen_con),
+    ])
+
+
+def ejecutar(base, carpeta, excluir=(), hoja=None, aceptar_base_distinta=False,
+             lista_pmids=None):
     base = contraste._expandir(base, "--base")
     carpeta = contraste._expandir(carpeta, "--carpeta")
     excluir = [contraste._expandir(r, "--excluir-pmids")
@@ -135,12 +200,17 @@ def ejecutar(base, carpeta, excluir=(), hoja=None, aceptar_base_distinta=False):
     _, por_pmid = contraste._pares(oraciones, True)
     loci, tipo = loci_por_articulo(rutas["menciones"], oraciones)
     exigibles, _ = contraste.denominador(interacciones, pmids_excluir)
-    return collections.OrderedDict([
+    resultado = collections.OrderedDict([
         ("carpeta", os.path.basename(os.path.normpath(carpeta))),
         ("articulos_del_corpus", collections.OrderedDict(
             (g, sum(1 for t in tipo.values() if t == g))
             for g in ("completo", "resumen"))),
         ("por_grupo", contar(exigibles, loci, tipo, por_pmid))])
+    if lista_pmids:
+        resultado["en_la_lista"] = en_lista(
+            exigibles, tipo,
+            leer_lista(contraste._expandir(lista_pmids, "--lista-pmids")))
+    return resultado
 
 
 def lineas(resultado):
@@ -162,6 +232,17 @@ def lineas(resultado):
                    c["misma_oracion"], c["mismo_articulo"],
                    c["articulos_distintos"], c["solo_regulador"],
                    c["solo_blanco"], c["ninguno"]))
+    e = resultado.get("en_la_lista")
+    if e:
+        yield ("Lista de %d PMID (%d ya son del corpus). La base cita %d "
+               "artículos que el corpus no tiene; %d están en la lista. De "
+               "las %d filas que solo citan artículos de fuera, %d citan "
+               "alguno de la lista." % (
+                   e["pmids_de_la_lista"],
+                   e["articulos_del_corpus_en_la_lista"],
+                   e["articulos_citados_fuera_del_corpus"],
+                   e["de_esos_en_la_lista"], e["filas_que_solo_citan_fuera"],
+                   e["de_esas_con_un_articulo_en_la_lista"]))
 
 
 def main(argv=None):
@@ -173,13 +254,17 @@ def main(argv=None):
     ap.add_argument("--hoja", default=None)
     ap.add_argument("--aceptar-base-distinta", action="store_true")
     ap.add_argument("--json", default=None, help="Dónde guardar los conteos.")
+    ap.add_argument("--lista-pmids", dest="lista_pmids", default=None,
+                    help="Una lista pública de PMID, uno por renglón: cuenta "
+                         "cuántos artículos citados que el corpus no tiene "
+                         "están en ella.")
     args = ap.parse_args(argv)
     if not args.base:
         print("ERROR: falta --base (o BASE_CURADA en el entorno).")
         return 2
     try:
         resultado = ejecutar(args.base, args.carpeta, args.excluir, args.hoja,
-                             args.aceptar_base_distinta)
+                             args.aceptar_base_distinta, args.lista_pmids)
         texto = list(lineas(resultado))
         for linea in texto:
             contraste.reentrenar.verificar_publicable(linea)

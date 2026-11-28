@@ -74,6 +74,49 @@ class PruebasContar(unittest.TestCase):
                 r[g]["autorregulacion"] + sum(r[g][c] for c in ca.CASOS))
 
 
+class PruebasEnLista(unittest.TestCase):
+
+    def test_cuenta_articulos_y_filas_de_fuera(self):
+        tipo = {"1": "completo", "2": "resumen"}
+        filas = [fila(A, B, ["1"]), fila(A, C, ["2", "70"]),
+                 fila(A, D, ["70", "71"]), fila(B, D, ["72"]),
+                 fila(C, D, ["73"]), fila(A, B, ["74"], origen="biobert")]
+        r = ca.en_lista(filas, tipo, {"1", "70", "73", "99"})
+        self.assertEqual(r["pmids_de_la_lista"], 4)
+        self.assertEqual(r["articulos_del_corpus_en_la_lista"], 1)
+        # 70, 71, 72 y 73; el 74 es del estrato que no entra.
+        self.assertEqual(r["articulos_citados_fuera_del_corpus"], 4)
+        self.assertEqual(r["de_esos_en_la_lista"], 2)
+        self.assertEqual(r["filas_que_solo_citan_fuera"], 3)
+        self.assertEqual(r["de_esas_con_un_articulo_en_la_lista"], 2)
+        self.assertEqual(
+            r["filas_con_solo_resumen_que_citan_otro_de_la_lista"], 1)
+
+    def test_lee_la_lista_y_el_error_no_dice_la_ruta(self):
+        carpeta = tempfile.mkdtemp()
+        ruta = os.path.join(carpeta, "lista_secreta.txt")
+        with io.open(ruta, "w", encoding="utf-8") as f:
+            f.write("pmid\n# comentario\n123\n 456 \n\n123\n789\tx\n")
+        self.assertEqual(ca.leer_lista(ruta),
+                         set(contraste._pmid(p) for p in ("123", "456", "789")))
+        with io.open(ruta, "w", encoding="utf-8") as f:
+            f.write("123\nno-es\n")
+        for mala in (ruta, os.path.join(carpeta, "no_existe.txt")):
+            with self.assertRaises(ValueError) as e:
+                ca.leer_lista(mala)
+            self.assertNotIn("lista_secreta", str(e.exception))
+            self.assertNotIn("no_existe", str(e.exception))
+
+    def test_la_linea_pasa_el_filtro_de_publicacion(self):
+        resultado = {"carpeta": "c", "articulos_del_corpus":
+                     {"completo": 1, "resumen": 1},
+                     "por_grupo": {}, "en_la_lista": ca.en_lista(
+                         [fila(A, B, ["70"])], {"1": "completo"}, {"70"})}
+        for linea in ca.lineas(resultado):
+            contraste.reentrenar.verificar_publicable(linea)
+        self.assertIn("1 están en la lista", list(ca.lineas(resultado))[-1])
+
+
 class PruebasLoci(unittest.TestCase):
 
     def test_menciones_candidatas_y_tipo_de_texto(self):
