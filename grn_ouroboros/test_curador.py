@@ -224,6 +224,69 @@ class PruebasVerificar(Base):
                               bloque, self.recursos)
         self.assertNotEqual(v["estado"], "valida")
 
+    def test_completa_la_cita_con_la_oracion_de_junto(self):
+        # x0 nombra a regA y x1 a opeA: el lector citó solo una.
+        v = self.estado(["x1"], "regA", "opeA")
+        self.assertEqual(v["estado"], "entidad_fuera_de_la_cita")
+        self.assertEqual(v["citas_agregadas"], [])
+        v = curador.verificar(_relacion(["x1"], "regA", "opeA"), self.bloque,
+                              self.recursos, completar=True)
+        self.assertEqual((v["estado"], v["oraciones"], v["citas_agregadas"]),
+                         ("valida", ["x0", "x1"], ["x0"]))
+        # La siguiente también vale, y las citas quedan en orden.
+        v = curador.verificar(_relacion(["x0"], "regA", "opeA"), self.bloque,
+                              self.recursos, completar=True)
+        self.assertEqual((v["estado"], v["oraciones"], v["citas_agregadas"]),
+                         ("valida", ["x0", "x1"], ["x1"]))
+        # Si ya estaba completa, no agrega nada.
+        v = curador.verificar(_relacion(["x0", "x1"], "regA", "opeA"),
+                              self.bloque, self.recursos, completar=True)
+        self.assertEqual((v["oraciones"], v["citas_agregadas"]),
+                         (["x0", "x1"], []))
+
+    def test_completar_solo_mira_la_vecina_inmediata_del_mismo_texto(self):
+        # A dos oraciones no alcanza: x3 nombra a opeB y x1 no es su vecina.
+        v = curador.verificar(_relacion(["x1"], "regA", "opeB"), self.bloque,
+                              self.recursos, completar=True)
+        self.assertEqual(v["estado"], "entidad_fuera_de_la_cita")
+        # a1 (resumen) y x0 (cuerpo) van seguidas en el bloque, pero no son
+        # vecinas: son de textos distintos.
+        v = curador.verificar(_relacion(["a1"], "regA", "opeA"), self.bloque,
+                              self.recursos, completar=True)
+        self.assertEqual((v["estado"], v["oraciones"]),
+                         ("valida", ["a0", "a1"]))
+        bloque = curador.articulo([
+            ("abstract", "", 0, "We studied the opeA gene."),
+            ("xml", "r", 1, "RegA is a regulator.")])
+        v = curador.verificar(_relacion(["a0"], "regA", "opeA"), bloque,
+                              self.recursos, completar=True)
+        self.assertEqual(v["estado"], "entidad_fuera_de_la_cita")
+        # Un hueco en la numeración tampoco es vecindad.
+        bloque = curador.articulo([
+            ("xml", "r", 0, "RegA is a regulator."),
+            ("xml", "r", 5, "It activates opeA.")])
+        v = curador.verificar(_relacion(["x5"], "regA", "opeA"), bloque,
+                              self.recursos, completar=True)
+        self.assertEqual(v["estado"], "entidad_fuera_de_la_cita")
+
+    def test_completar_no_pasa_de_tres_citas(self):
+        bloque = curador.articulo([
+            ("xml", "r", 0, "RegA is a regulator."),
+            ("xml", "r", 1, "It was deleted."),
+            ("xml", "r", 2, "Growth was normal."),
+            ("xml", "r", 3, "The transcript fell."),
+            ("xml", "r", 4, "That transcript was opeA.")])
+        v = curador.verificar(_relacion(["x1", "x2", "x3"], "regA", "opeA"),
+                              bloque, self.recursos, completar=True)
+        self.assertEqual((v["estado"], v["oraciones"], v["citas_agregadas"]),
+                         ("entidad_fuera_de_la_cita", ["x1", "x2", "x3"], []))
+        # Con dos citas cabe una más: entra el regulador y falta el blanco.
+        v = curador.verificar(_relacion(["x1", "x3"], "regA", "opeA"), bloque,
+                              self.recursos, completar=True)
+        self.assertEqual((v["estado"], v["oraciones"], v["citas_agregadas"]),
+                         ("entidad_fuera_de_la_cita", ["x0", "x1", "x3"],
+                          ["x0"]))
+
     def test_un_blanco_que_es_un_operon_del_catalogo(self):
         bloque = curador.articulo([
             ("xml", "r", 0, "RegA activates the OpeAB operon and opeXY.")])
@@ -402,7 +465,8 @@ class PruebasEjecutar(Base):
         self.assertEqual(filas[0].split("\t"), curador.COLUMNAS_RELACIONES)
         self.assertEqual(filas[1].split("\t"),
                          ["11", "1", "x0|x1", "regA", "opeA", "regA", "opeA",
-                          "PA0001", "PA0003", "activates", "no_se", "valida"])
+                          "PA0001", "PA0003", "activates", "no_se", "valida",
+                          ""])
         self.assertEqual(len(filas), 7)
         corrida = json.loads(self._leer(curador.CORRIDA))
         self.assertEqual(corrida["entradas"], json.loads(json.dumps(ENTRADAS)))
@@ -412,6 +476,20 @@ class PruebasEjecutar(Base):
         self.assertEqual([x["pmid"] for x in lecturas], ["11", "22"])
         self.assertEqual(lecturas[0]["n_oraciones"], 6)
         self.assertEqual(r["relaciones_mal_formadas"], 0)
+
+    def test_completar_las_citas_no_vuelve_a_leer(self):
+        relaciones = [_relacion(["x1"], "regA", "opeA")]
+        r = self._correr(LectorFalso(relaciones))
+        self.assertEqual((r["relaciones_por_estado"]["valida"],
+                          r["validas_con_cita_completada"]), (0, 0))
+        otro = LectorFalso([])
+        r = self._correr(otro, completar=True)
+        self.assertEqual(otro.mensajes, [])
+        self.assertEqual((r["relaciones_por_estado"]["valida"],
+                          r["validas_con_cita_completada"]), (1, 1))
+        fila = self._leer(curador.RELACIONES).splitlines()[1].split("\t")
+        self.assertEqual((fila[2], fila[-2], fila[-1]),
+                         ("x0|x1", "valida", "x0"))
 
     def test_lo_guardado_se_vuelve_a_interpretar(self):
         """Lo que se guarda es el texto del modelo: si la regla de forma

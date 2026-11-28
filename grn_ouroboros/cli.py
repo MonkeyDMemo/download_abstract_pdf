@@ -441,10 +441,11 @@ def _mostrar_curador(resumen):
             "%s %d" % (k, v)
             for k, v in resumen["relaciones_por_estado"].items()),
            resumen["relaciones_mal_formadas"]))
-    log("artículos con alguna relación válida: %s; pares distintos: %d"
+    log("artículos con alguna relación válida: %s; pares distintos: %d; "
+        "válidas con una cita completada por el programa: %d"
         % (_porcentaje(resumen["articulos_con_relacion_valida"],
                        resumen["articulos"] - resumen["articulos_sin_texto"]),
-           resumen["pares_validos"]))
+           resumen["pares_validos"], resumen["validas_con_cita_completada"]))
 
 
 def cmd_curar(args):
@@ -511,14 +512,15 @@ def cmd_curar(args):
         proveedor="bedrock", model_id=modelo, region=region,
         paralelo=args.paralelo, tope_usd=tope.usd,
         corrida_bronce=args.corrida_bronce, limite=args.limite,
-        semilla=args.semilla,
+        semilla=args.semilla, completar_citas=bool(args.completar_citas),
         pmids=procedencia.huella(args.pmids) if args.pmids else None)
     try:
         resumen = curador.ejecutar(
             articulos, args.salida, lector, entradas, recursos,
             paralelo=args.paralelo, precio=precio,
             configuracion=configuracion, log=log,
-            paquetes=anotar.PAQUETES + agente.PAQUETES_BEDROCK)
+            paquetes=anotar.PAQUETES + agente.PAQUETES_BEDROCK,
+            completar=args.completar_citas)
     except curador.CarpetaOcupada as e:
         log("ERROR: %s" % e)
         return ENTRADA
@@ -847,6 +849,11 @@ def main(argv=None):
     cu.add_argument("--precios", default=None,
                     help="ENTRADA,SALIDA en USD por millón de tokens, para "
                          "un modelo sin precio en gasto.py.")
+    cu.add_argument("--completar-citas", dest="completar_citas",
+                    action="store_true",
+                    help="Si a las citas de una relación les falta un nombre "
+                         "y está en la oración de junto, agregarla. No "
+                         "vuelve a llamar al modelo.")
     cu.set_defaults(func=cmd_curar)
 
     mu = sub.add_parser("muestra-curador",

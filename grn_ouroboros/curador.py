@@ -382,7 +382,52 @@ def _resolver(nombre, recursos):
     return {"nodo": "", "locus": [], "operon": False, "falla": "sin_locus"}
 
 
-def verificar(relacion, bloque, recursos):
+def _completar(citas, bloque, regulador, blanco):
+    """(citas, agregadas): las citas más la oración vecina donde está
+    escrito el nombre que les falta.
+
+    El lector suele citar la oración que afirma la regulación y dejar fuera
+    la de junto, donde está el nombre («We deleted fooR. In the mutant, barA
+    expression was abolished»). Para cada nombre que no esté en las citas se
+    busca en la oración **inmediatamente anterior o siguiente** a una citada
+    (mismo texto y número contiguo, como los dio el bronce); primero la
+    anterior, y las citadas en el orden del artículo. Si está, esa oración
+    se agrega. Nunca se pasa de `MAX_CITAS`, y si el nombre no está ahí las
+    citas quedan como llegaron. Las agregadas se devuelven aparte para que
+    lo que puso el programa no se confunda con lo que citó el lector.
+    """
+    pos = dict((o.id, i) for i, o in enumerate(bloque))
+    originales = sorted(citas, key=pos.get)
+    actuales, agregadas = list(citas), []
+    for nombre, promotor in ((regulador, False), (blanco, True)):
+        if _aparece(nombre, [bloque[pos[c]].texto for c in actuales],
+                    promotor):
+            continue
+        if len(actuales) >= MAX_CITAS:
+            break
+        for c in originales:
+            citada = bloque[pos[c]]
+            vecina = None
+            for j in (pos[c] - 1, pos[c] + 1):
+                if not 0 <= j < len(bloque):
+                    continue
+                o = bloque[j]
+                if (o.fuente == citada.fuente
+                        and abs(o.num - citada.num) == 1
+                        and o.id not in actuales
+                        and _aparece(nombre, [o.texto], promotor)):
+                    vecina = o.id
+                    break
+            if vecina is not None:
+                actuales.append(vecina)
+                agregadas.append(vecina)
+                break
+    if agregadas:
+        actuales.sort(key=pos.get)
+    return actuales, agregadas
+
+
+def verificar(relacion, bloque, recursos, completar=False):
     """La relación con su `estado` (uno de `ESTADOS`), sus locus y los
     nombres con que va a la red (`nodo_regulador`, `nodo_blanco`).
 
@@ -397,16 +442,26 @@ def verificar(relacion, bloque, recursos):
     Un blanco que es un operón del catálogo es válido: `locus_blanco` trae
     sus genes separados por `|` y `nodo_blanco` el nombre del operón, como en
     la red del paso 2.
+
+    Con `completar`, si a las citas les falta un nombre y está en la oración
+    de junto, esa oración se agrega (`_completar`): `oraciones` trae las
+    citas completas y `citas_agregadas` las que puso el programa.
     """
     por_id = dict((o.id, o) for o in bloque)
     salida = collections.OrderedDict(relacion)
     salida.update({"locus_regulador": "", "locus_blanco": "",
-                   "nodo_regulador": "", "nodo_blanco": ""})
+                   "nodo_regulador": "", "nodo_blanco": "",
+                   "citas_agregadas": []})
     if any(c not in por_id for c in relacion["oraciones"]):
         salida["estado"] = "cita_inexistente"
         return salida
-    textos = [por_id[c].texto for c in relacion["oraciones"]]
     regulador, blanco = nucleo(relacion["regulador"]), nucleo(relacion["blanco"])
+    citas = list(relacion["oraciones"])
+    if completar:
+        citas, agregadas = _completar(citas, bloque, regulador, blanco)
+        salida["oraciones"] = citas
+        salida["citas_agregadas"] = agregadas
+    textos = [por_id[c].texto for c in citas]
     if not (_aparece(regulador, textos)
             and _aparece(blanco, textos, promotor=True)):
         salida["estado"] = "entidad_fuera_de_la_cita"
@@ -463,7 +518,8 @@ ESTADOS_LECTURA = ("ok", "truncada", "contexto_excedido", "sin_json",
                    "respuesta_invalida")
 COLUMNAS_RELACIONES = ["pmid", "parte", "oraciones", "regulador", "blanco",
                        "nodo_regulador", "nodo_blanco", "locus_regulador",
-                       "locus_blanco", "efecto", "tipo", "estado"]
+                       "locus_blanco", "efecto", "tipo", "estado",
+                       "citas_agregadas"]
 AVISO_CADA = 25
 
 
@@ -590,14 +646,14 @@ def _escribir_json(ruta, objeto):
         f.write("\n")
 
 
-def filas_de(lista_de_tareas, lecturas, recursos):
+def filas_de(lista_de_tareas, lecturas, recursos, completar=False):
     """Las filas de `relaciones.tsv`: cada relación de cada lectura `ok`,
     comprobada contra su bloque, en el orden de las tareas. `lecturas` es
     {llave: (estado, relaciones, mal formadas)}."""
     filas = []
     for t in lista_de_tareas:
         for relacion in lecturas[t["llave"]][1]:
-            v = verificar(relacion, t["bloque"], recursos)
+            v = verificar(relacion, t["bloque"], recursos, completar)
             filas.append(collections.OrderedDict([
                 ("pmid", t["pmid"]), ("parte", t["parte"]),
                 ("oraciones", "|".join(v["oraciones"])),
@@ -607,7 +663,8 @@ def filas_de(lista_de_tareas, lecturas, recursos):
                 ("locus_regulador", v["locus_regulador"]),
                 ("locus_blanco", v["locus_blanco"]),
                 ("efecto", v["efecto"]), ("tipo", v["tipo"]),
-                ("estado", v["estado"])]))
+                ("estado", v["estado"]),
+                ("citas_agregadas", "|".join(v["citas_agregadas"]))]))
     return filas
 
 
@@ -628,7 +685,8 @@ def _usd(registros, precio):
 
 def ejecutar(articulos, salida, lector, entradas, recursos, paralelo=1,
              precio=None, configuracion=None,
-             max_caracteres=MAX_CARACTERES, log=_nada, paquetes=()):
+             max_caracteres=MAX_CARACTERES, log=_nada, paquetes=(),
+             completar=False):
     """Lee los artículos y escribe las tres salidas; devuelve el resumen.
 
     `articulos` es [(pmid, [Oracion])]; `lector`, el callable que recibe el
@@ -698,7 +756,7 @@ def ejecutar(articulos, salida, lector, entradas, recursos, paralelo=1,
     registros = [hechas[t["llave"]] for t in pendientes_de_leer]
     leidas = dict((r["llave"], interpretar(r["respuesta"]))
                   for r in registros)
-    filas = filas_de(pendientes_de_leer, leidas, recursos)
+    filas = filas_de(pendientes_de_leer, leidas, recursos, completar)
     _escribir_relaciones(os.path.join(salida, RELACIONES), filas)
     lecturas = collections.Counter(leidas[t["llave"]][0]
                                    for t in pendientes_de_leer)
@@ -716,6 +774,9 @@ def ejecutar(articulos, salida, lector, entradas, recursos, paralelo=1,
                                         for t in pendientes_de_leer)),
         ("relaciones_por_estado", collections.OrderedDict(
             (e, estados[e]) for e in ESTADOS)),
+        ("validas_con_cita_completada", sum(
+            1 for f in filas
+            if f["estado"] == "valida" and f["citas_agregadas"])),
         ("articulos_con_relacion_valida", len(set(
             f["pmid"] for f in filas if f["estado"] == "valida"))),
         ("pares_validos", len(set(
@@ -738,7 +799,7 @@ def ejecutar(articulos, salida, lector, entradas, recursos, paralelo=1,
 
 COLUMNAS_LLAVE_MUESTRA = ["id_item", "pmid", "oraciones", "regulador",
                           "blanco", "nodo_regulador", "nodo_blanco", "efecto",
-                          "tipo", "lectores"]
+                          "tipo", "citas_agregadas", "lectores"]
 
 
 def muestra(lecturas, n, semilla):
