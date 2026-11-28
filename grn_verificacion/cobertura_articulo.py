@@ -24,7 +24,11 @@ búsqueda más amplia en PubMed) dice además cuántos de los artículos que la
 base cita y el corpus no tiene están en esa lista, y cuántas filas dependen
 de ellos. Sirve para decidir si ampliar el corpus vale la pena **sin sacar
 del servidor la lista de artículos de la base**: entra una lista pública y
-salen conteos.
+salen conteos. La lista tiene que traer al menos `MIN_LISTA` PMID: con una
+lista corta el conteo sería una consulta de pertenencia («¿la base cita este
+artículo?») y repetirla reconstruiría la lista, que solo autoriza el
+responsable de la base. Por lo mismo se corre **una vez por lista pública**,
+no con listas armadas para afinar la respuesta.
 
 Lee la base en el servidor y escribe solo conteos. Un artículo cuenta como
 texto completo si el bronce leyó de él alguna unidad de XML o de PDF.
@@ -121,6 +125,20 @@ def contar(exigibles, loci, tipo, por_pmid):
     return salida
 
 
+MIN_LISTA = 1000
+
+
+def lista_publica(ruta):
+    """La lista de `--lista-pmids`, o ValueError si es tan corta que el
+    conteo diría qué artículos cita la base."""
+    lista = leer_lista(ruta)
+    if len(lista) < MIN_LISTA:
+        raise ValueError("--lista-pmids: la lista necesita al menos %d PMID "
+                         "distintos; con menos, el conteo diría qué "
+                         "artículos cita la base." % MIN_LISTA)
+    return lista
+
+
 def leer_lista(ruta):
     """El conjunto de PMID de un archivo de un PMID por renglón. Los
     renglones vacíos, los que empiezan con # y un encabezado `pmid` no
@@ -184,6 +202,9 @@ def ejecutar(base, carpeta, excluir=(), hoja=None, aceptar_base_distinta=False,
     carpeta = contraste._expandir(carpeta, "--carpeta")
     excluir = [contraste._expandir(r, "--excluir-pmids")
                for r in contraste._como_lista(excluir)]
+    # Antes de abrir la base: una lista mal hecha no llega a contar nada.
+    lista = lista_publica(contraste._expandir(
+        lista_pmids, "--lista-pmids")) if lista_pmids else None
     for flag, ruta in [("--base", base)] + [("--excluir-pmids", r)
                                             for r in excluir]:
         if not os.path.isfile(ruta):
@@ -206,10 +227,8 @@ def ejecutar(base, carpeta, excluir=(), hoja=None, aceptar_base_distinta=False,
             (g, sum(1 for t in tipo.values() if t == g))
             for g in ("completo", "resumen"))),
         ("por_grupo", contar(exigibles, loci, tipo, por_pmid))])
-    if lista_pmids:
-        resultado["en_la_lista"] = en_lista(
-            exigibles, tipo,
-            leer_lista(contraste._expandir(lista_pmids, "--lista-pmids")))
+    if lista is not None:
+        resultado["en_la_lista"] = en_lista(exigibles, tipo, lista)
     return resultado
 
 

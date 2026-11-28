@@ -402,6 +402,63 @@ Lo que hay que leer junto a eso:
 Gasto de la fase 3: lectura US$6.95 (2.86 y 4.09) y jurado US$0.47; US$7.42
 de los US$8 aprobados. Total de la nube: unos US$39.5 de US$45.
 
+## Después de la prueba: lo que se prepara (27-nov-2026)
+
+Trabajo de desarrollo. Nada de esto se ha medido contra la base curada, y no
+se medirá hasta congelarlo en un protocolo nuevo.
+
+### Completar la cita con la oración de junto
+
+En la prueba, cerca de una de cada cuatro relaciones se descartó porque uno
+de los dos nombres no estaba en las oraciones citadas. En casi la mitad de
+esos casos el nombre está en la oración anterior o siguiente (1 094 de 2 688
+con gpt-oss-120b y 2 009 de 4 221 con Qwen3-235B, contado sobre las lecturas
+guardadas).
+
+`curar --completar-citas` agrega esa oración por programa: solo la
+inmediatamente anterior o siguiente a una citada, del mismo texto, sin pasar
+de tres citas. No vuelve a llamar al modelo. `citas_agregadas` dice cuáles
+puso el programa.
+
+En los 312 artículos de desarrollo, con las lecturas del v0:
+
+| | Válidas antes | Válidas con la regla | Completadas | Filas del oro propio | Signo mal |
+|---|---|---|---|---|---|
+| gpt-oss-120b | 1 150 | 1 251 | 101 | 113 → 114 de 176 | 1 → 0 |
+| Qwen3-235B | 1 731 | 1 901 | 170 | 119 → 119 de 176 | 1 → 1 |
+
+Da 9 a 10 % más relaciones válidas y no mueve el oro propio. Lo que no se
+sabe es si las relaciones que rescata son tan buenas como las demás: una
+oración vecina puede nombrar al gen por otra razón. Eso lo dirá una muestra
+con el jurado, no el oro.
+
+### El diccionario: Pseudomonas Genome DB sigue cerrada
+
+Cerca de la mitad de las relaciones de los lectores se descarta porque un
+nombre no lleva a un locus. De esos nombres, 1 017 tienen forma de gen y 276
+aparecen en dos o más artículos (`cdrA`, `kinB`, `vqsR`).
+
+La fuente que los tiene es Pseudomonas Genome DB, y es una vía cerrada
+(`CLAUDE.md`, `docs/hallazgos.md`): el sitio está tras un desafío de
+Cloudflare y su `robots.txt` prohíbe la recolección automatizada sin permiso
+escrito. No se raspa, tampoco con un navegador.
+
+Lo que sí se puede usar, medido el 27-nov sobre las lecturas guardadas:
+
+| Fuente | Nombres nuevos | Huecos que resuelve (de 1 017) | Relaciones que rescataría |
+|---|---|---|---|
+| GenBank `AE004091.2` y NCBI Gene | 4 | 7 | — |
+| Exportación del curador de PGD, 2021 (pública, BSD-3; ya es fuente de `grn_operones`) | 272 | 101 (46 de los 276 frecuentes) | 174 con gpt-oss y 318 con Qwen: 5 y 7 % más válidas |
+| Exportación del curador, versión 22.1 (llegó por correo) | 292 | 107 | 182 y 331 |
+| Base de operones con BioCyc (no redistribuible) | 57 | 20 | 78 y 111 |
+
+La exportación de 2021 solo nombra genes que están en un operón. La
+anotación completa se pide al curador de PGD (`pseudocap-mail@sfu.ca`), como
+se pidieron los operones.
+
+Queda sin decidir si se agrega la exportación de 2021 al diccionario: cambia
+`genes_pao1.tsv`, que usa todo el flujo, y pide una corrida nueva.
+
 ## Lo que la v0 no hace
 
 - **No aprende de la base curada.** Es de cero ejemplos. Aprender de ella

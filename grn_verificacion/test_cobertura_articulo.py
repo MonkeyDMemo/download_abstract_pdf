@@ -107,6 +107,32 @@ class PruebasEnLista(unittest.TestCase):
             self.assertNotIn("lista_secreta", str(e.exception))
             self.assertNotIn("no_existe", str(e.exception))
 
+    def test_una_lista_corta_no_se_cuenta(self):
+        # Con pocos PMID el conteo sería preguntar por artículos sueltos.
+        carpeta = tempfile.mkdtemp()
+        ruta = os.path.join(carpeta, "corta.txt")
+        with io.open(ruta, "w", encoding="utf-8") as f:
+            f.write("\n".join(str(n) for n in range(1, ca.MIN_LISTA)))
+        with self.assertRaises(ValueError) as e:
+            ca.lista_publica(ruta)
+        self.assertNotIn("corta", str(e.exception))
+        # Los repetidos no cuentan para llegar al mínimo.
+        with io.open(ruta, "a", encoding="utf-8") as f:
+            f.write("\n1\n2\n")
+        with self.assertRaises(ValueError):
+            ca.lista_publica(ruta)
+        with io.open(ruta, "a", encoding="utf-8") as f:
+            f.write("\n%d\n" % ca.MIN_LISTA)
+        self.assertEqual(len(ca.lista_publica(ruta)), ca.MIN_LISTA)
+        # Y falla antes de abrir la base.
+        with io.open(ruta, "w", encoding="utf-8") as f:
+            f.write("1\n2\n")
+        base = os.path.join(carpeta, "base.xlsx")
+        io.open(base, "w").close()
+        with self.assertRaises(ValueError) as e:
+            ca.ejecutar(base, carpeta, lista_pmids=ruta)
+        self.assertIn("--lista-pmids", str(e.exception))
+
     def test_la_linea_pasa_el_filtro_de_publicacion(self):
         resultado = {"carpeta": "c", "articulos_del_corpus":
                      {"completo": 1, "resumen": 1},

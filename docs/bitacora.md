@@ -8,6 +8,38 @@ Para el detalle técnico de cada punto está
 
 ---
 
+## 27 de noviembre de 2026 — plan de la semana y lo primero que salió
+
+El servicio tiene una semana más, hasta el miércoles 2 de diciembre por la
+tarde. El usuario aprobó el plan: ampliar el diccionario, completar la cita
+con la oración vecina, reintentar descargas, leer los 40 artículos nuevos
+con el agente, contar en el servidor cuántos artículos citados están en la
+búsqueda amplia de PubMed, y actualizar la memoria y las diapositivas. Bajar
+los artículos citados sigue pendiente del permiso del doctor.
+
+- **Reintento de descargas** (`salidas/fuentes/reintento_20261127.log`,
+  respaldo `grn_respaldo_antes_reintento_20261127.db`). XML: nada pendiente.
+  PDF: en curso; en los primeros 97 intentos llegó 1 y el servicio abierto
+  de PMC no respondió en 24.
+- **Conteo contra la búsqueda amplia.** `cobertura_articulo --lista-pmids`
+  recibe una lista pública y devuelve conteos; no acepta listas de menos de
+  1 000 PMID, para que no sirva de consulta de pertenencia. La lista es la
+  búsqueda de PubMed del tema al 27-nov: 14 518 PMID
+  (`salidas/fuentes/pubmed_tema_pmids.txt`); 2 235 de los 2 356 artículos
+  leídos están en ella. Falta correrlo en el servidor.
+- **Completar la cita** (`curar --completar-citas`): 9 a 10 % más relaciones
+  válidas en desarrollo, sin mover el oro propio. Detalle en
+  `docs/agente-curador.md`.
+- **El diccionario no se puede ampliar como estaba planeado.** El plan decía
+  Pseudomonas Genome DB, que es una vía cerrada por regla del proyecto. Las
+  fuentes de NCBI no traen esos nombres (resuelven 7 de 1 017). La
+  exportación pública del curador de PGD que ya usa `grn_operones` da 272
+  nombres nuevos y rescataría 5 a 7 % más relaciones del agente, no el 37 a
+  40 % que se había estimado como tope. Sin decidir.
+- Nube: US$0 hoy. Las lecturas se recalcularon desde la caché.
+
+---
+
 ## 26 de noviembre de 2026 — el agente curador contra la base curada (fase 3)
 
 Protocolo, cifras y lectura completos en `docs/agente-curador.md`. El
