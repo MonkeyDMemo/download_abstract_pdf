@@ -209,6 +209,66 @@ pertenencia a operón; hasta entonces la pertenencia solo anota. Mientras
 tanto, **no es rasgo del paso 2**. La pregunta está en
 `docs/operones-asesor.md` §8.
 
+## `alias_adicionales.tsv` — 266 nombres para 266 genes
+
+Columnas: `locus_tag`, `alias`, `fuente`. Es una capa aparte: **no cambia
+`genes_pao1.tsv`** y nadie la lee si no la pide. Agrega una superficie a una
+fila que ya existe; no crea genes ni cambia símbolos.
+
+### De dónde sale
+
+De la exportación de operones que el curador de Pseudomonas Genome DB entregó
+al laboratorio Greene, publicada con licencia BSD-3 en
+`greenelab/core-accessory-interactome` (commit `25539b82`,
+`data/metadata/PAO1-operons-2021-07-19.csv`). Es la misma foto que usa
+`grn_operones` (`fuentes.URL_PGD`). Cada fila trae un locus tag y el nombre
+del gen. sha256 del archivo: `605109c9c827d282…`; con otra huella,
+`generar` se niega.
+
+Se regenera con:
+
+    python -m grn_bronce.alias generar --pgd <PAO1-operons-2021-07-19.csv>
+
+No se toca `pseudomonas.com`, que sigue siendo una vía cerrada. La versión
+22.1 de la misma tabla llegó por correo del curador y no entra: no se ha
+declarado redistribuible.
+
+### Qué entra y qué no (27-nov-2026)
+
+De 3 816 filas de la fuente:
+
+| | Filas |
+|---|---|
+| Entran | 266 |
+| Sin nombre de gen (solo el locus tag) | 1 983 |
+| El diccionario ya tiene ese nombre para ese gen | 1 448 |
+| Nombre de tres caracteres o menos, o palabra común | 79 |
+| Repetidas (el gen sale en más de un operón) | 33 |
+| El nombre ya es de otro gen del diccionario | 3 |
+| Locus que el diccionario no tiene | 2 |
+| Nombre genérico de marco de lectura (`orfX`) | 2 |
+
+De los 266, 247 nombran un gen que solo tenía locus tag y 19 agregan un
+sinónimo a un gen con símbolo.
+
+### Cómo se reconoce un alias de esta capa
+
+En dos escrituras exactas: la de la fuente (`kinB`) y la de la proteína
+(`KinB`). Ninguna otra. Sin distinguir mayúsculas, `pcr2` casaba 43 veces con
+el vector `pCR2.1` y 3 con el gen; `nppC`, `mepM` y `lysE` casaban casi
+siempre con una sigla o un verbo. La medición está en el docstring de
+`grn_bronce/alias.py`.
+
+### Lo que no hace
+
+- **Solo nombra genes que están en un operón de esa tabla.** La anotación
+  completa de PGD tiene más nombres y hay que pedírsela a su curador.
+- **No la lee el bronce todavía.** Al 27-nov solo la usa el agente curador,
+  con `curar --alias-adicionales`.
+- En el texto que lee la corrida 27 del bronce, 211 de los 266 alias
+  aparecen alguna vez con esas dos escrituras: 11 108 menciones en 532
+  artículos.
+
 ## `palabras_comunes.txt` — 41 entradas
 
 Las superficies que colisionan con palabras inglesas comunes. Alimenta la

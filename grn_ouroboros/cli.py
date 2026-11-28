@@ -66,6 +66,7 @@ _RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _RAIZ not in sys.path:
     sys.path.insert(0, _RAIZ)
 
+from grn_bronce import alias  # noqa: E402
 from grn_bronce import db as bdb  # noqa: E402
 from grn_comun import procedencia, rutas  # noqa: E402
 from grn_ouroboros import (agente, anotar, calibracion, contexto,  # noqa: E402
@@ -468,7 +469,12 @@ def cmd_curar(args):
                              "dalo con --precios ENTRADA,SALIDA (USD por "
                              "millón de tokens)." % modelo)
         tope = gasto.Tope(args.tope_usd, precio)
-        recursos = herramientas.Recursos()
+        recursos = herramientas.Recursos(
+            ruta_alias=alias.RUTA if args.alias_adicionales else None)
+        huella_alias = (procedencia.huella_texto(alias.RUTA)
+                        if args.alias_adicionales else None)
+        # Leerla ya: una capa mal hecha falla antes de la primera lectura.
+        recursos.diccionario
     except (ValueError, OSError, bdb.ErrorBase) as e:
         log("ERROR: %s" % e)
         return ENTRADA
@@ -513,6 +519,7 @@ def cmd_curar(args):
         paralelo=args.paralelo, tope_usd=tope.usd,
         corrida_bronce=args.corrida_bronce, limite=args.limite,
         semilla=args.semilla, completar_citas=bool(args.completar_citas),
+        alias_adicionales=huella_alias,
         pmids=procedencia.huella(args.pmids) if args.pmids else None)
     try:
         resumen = curador.ejecutar(
@@ -849,6 +856,12 @@ def main(argv=None):
     cu.add_argument("--precios", default=None,
                     help="ENTRADA,SALIDA en USD por millón de tokens, para "
                          "un modelo sin precio en gasto.py.")
+    cu.add_argument("--alias-adicionales", dest="alias_adicionales",
+                    action="store_true",
+                    help="Resolver también los nombres de la capa de alias "
+                         "adicionales (grn_bronce/recursos/"
+                         "alias_adicionales.tsv). No vuelve a llamar al "
+                         "modelo.")
     cu.add_argument("--completar-citas", dest="completar_citas",
                     action="store_true",
                     help="Si a las citas de una relación les falta un nombre "

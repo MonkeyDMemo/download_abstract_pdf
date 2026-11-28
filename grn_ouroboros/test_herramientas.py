@@ -92,6 +92,41 @@ class PruebasBuscarLocus(Base):
         self.assertEqual([c["locus_tag"] for c in r["coincidencias"]],
                          ["PA0003", "PA0004"])
 
+    def test_la_capa_de_alias_lleva_al_locus_en_sus_dos_escrituras(self):
+        capa = os.path.join(self.tmp, "alias_adicionales.tsv")
+        _tsv(capa, ["locus_tag", "alias", "fuente"],
+             [("PA0003", "nuevB", "x"), ("PA0002", "tagZ", "x")])
+        con = H.Recursos(self.genes, self.operones, ruta_alias=capa)
+        for nombre in ("nuevB", "NuevB"):
+            self.assertEqual(
+                H.buscar_locus(nombre, con)["coincidencias"],
+                [{"locus_tag": "PA0003", "simbolo": "opeA"}], nombre)
+        # Ninguna otra escritura: así no casa la sigla ni la palabra.
+        for nombre in ("NUEVB", "nuevb", "Nuevb"):
+            self.assertEqual(H.buscar_locus(nombre, con)["coincidencias"],
+                             [], nombre)
+        # Sobre una fila sensible también, y lo que la fila ya reconocía
+        # sigue igual.
+        self.assertEqual(H.buscar_locus("TagZ", con)["coincidencias"][0]
+                         ["locus_tag"], "PA0002")
+        self.assertEqual(H.buscar_locus("Tag", con)["coincidencias"], [])
+        self.assertEqual(H.buscar_locus("OPEA", con)["coincidencias"][0]
+                         ["locus_tag"], "PA0003")
+        # Sin la capa, que es lo de omisión, el nombre no existe.
+        self.assertEqual(
+            H.buscar_locus("nuevB", self.recursos)["coincidencias"], [])
+
+    def test_la_capa_entra_a_las_huellas_solo_si_se_usa(self):
+        capa = os.path.join(self.tmp, "alias_adicionales.tsv")
+        _tsv(capa, ["locus_tag", "alias", "fuente"], [("PA0003", "nuevB", "x")])
+        sin = self.recursos.huellas("buscar_locus")
+        con = H.Recursos(self.genes, self.operones,
+                         ruta_alias=capa).huellas("buscar_locus")
+        self.assertNotIn("alias_adicionales.tsv", sin)
+        self.assertEqual(dict(con, **{"alias_adicionales.tsv": None}),
+                         dict(sin, **{"alias_adicionales.tsv": None}))
+        self.assertTrue(con["alias_adicionales.tsv"])
+
     def test_vacio_o_desconocido(self):
         for nombre in ("", "   ", None, "lacZ"):
             self.assertEqual(

@@ -41,6 +41,7 @@ import csv
 import io
 import os
 
+from grn_bronce import alias as _alias
 from grn_bronce import db as _bdb
 from grn_bronce import operones as _operones
 from grn_bronce.texto import normalizar_espacios
@@ -114,6 +115,10 @@ class _Diccionario(object):
                     self._exactas.setdefault(s, set()).add(i)
                 else:
                     self._insensibles.setdefault(s.lower(), set()).add(i)
+            # Los de la capa de alias adicionales: con su escritura exacta,
+            # sea como sea la fila (`grn_bronce/alias.py`).
+            for s in f.get("alias_exactos", ()):
+                self._exactas.setdefault(s, set()).add(i)
 
     def buscar(self, nombre):
         nombre = (nombre or "").strip()
@@ -137,12 +142,19 @@ class Recursos(object):
     `contexto`: la llave del sorteo (`llave.csv`), la base del proyecto y la
     corrida del bronce de la que salió la muestra (la 4 para las tandas de
     `corrida4_run22`).
+
+    `ruta_alias` es la capa de alias adicionales (`grn_bronce/alias.py`). Sin
+    ella, que es lo de omisión, el diccionario es `genes_pao1.tsv` tal cual:
+    el juez y las lecturas ya medidas no cambian. Con ella, cada alias de la
+    capa lleva a su locus en sus dos escrituras exactas.
     """
 
     def __init__(self, ruta_genes=RUTA_GENES, ruta_operones=RUTA_OPERONES,
-                 ruta_llave=None, ruta_db=None, corrida_bronce=None):
+                 ruta_llave=None, ruta_db=None, corrida_bronce=None,
+                 ruta_alias=None):
         self.ruta_genes = ruta_genes
         self.ruta_operones = ruta_operones
+        self.ruta_alias = ruta_alias
         self.ruta_llave = ruta_llave
         self.ruta_db = ruta_db
         self.corrida_bronce = corrida_bronce
@@ -154,7 +166,14 @@ class Recursos(object):
     @property
     def diccionario(self):
         if self._diccionario is None:
-            self._diccionario = _Diccionario(_leer_genes(self.ruta_genes))
+            filas = _leer_genes(self.ruta_genes)
+            if self.ruta_alias:
+                capa = _alias.por_locus(_alias.leer(self.ruta_alias))
+                for f in filas:
+                    f["alias_exactos"] = [
+                        forma for a in capa.get(f["locus_tag"], ())
+                        for forma in _alias.formas(a)]
+            self._diccionario = _Diccionario(filas)
         return self._diccionario
 
     @property
@@ -233,6 +252,9 @@ class Recursos(object):
         huellas = {"herramientas.py": procedencia.huella_texto(_ESTE),
                    "genes_pao1.tsv": procedencia.huella_texto(
                        self.ruta_genes)}
+        if self.ruta_alias:
+            huellas["alias_adicionales.tsv"] = procedencia.huella_texto(
+                self.ruta_alias)
         if cuales == "todas":
             huellas["operones_pao1.tsv"] = procedencia.huella_texto(
                 self.ruta_operones)

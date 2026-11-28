@@ -456,8 +456,31 @@ La exportación de 2021 solo nombra genes que están en un operón. La
 anotación completa se pide al curador de PGD (`pseudocap-mail@sfu.ca`), como
 se pidieron los operones.
 
-Queda sin decidir si se agrega la exportación de 2021 al diccionario: cambia
-`genes_pao1.tsv`, que usa todo el flujo, y pide una corrida nueva.
+**Decidido el 27-nov (el usuario): entra la exportación de 2021.** No como
+cambio a `genes_pao1.tsv`, que tiene una copia en `etapa2/` y `etapa2/` está
+congelada, sino como una capa aparte:
+`grn_bronce/recursos/alias_adicionales.tsv`, 266 nombres para 266 genes, que
+escribe `python -m grn_bronce.alias generar`. Reglas y procedencia en
+`grn_bronce/alias.py` y `grn_bronce/recursos/PROCEDENCIA.md`. Cada alias se
+reconoce solo en dos escrituras exactas (`kinB`, `KinB`): sin distinguir
+mayúsculas, `pcr2` casaba con el vector `pCR2.1` y `mepM` con la sigla de
+meropenem.
+
+El agente la usa con `curar --alias-adicionales`; sin la bandera, todo queda
+como en la prueba del 26-nov. En los 312 artículos de desarrollo, con las
+lecturas del v0 y sin volver a llamar al modelo:
+
+| Relaciones válidas | v0 | + cita completada | + alias | + las dos |
+|---|---|---|---|---|
+| gpt-oss-120b | 1 150 | 1 251 | 1 205 | 1 310 (14 % más) |
+| Qwen3-235B | 1 731 | 1 901 | 1 834 | 2 009 (16 % más) |
+
+Contra el oro propio, con las dos: gpt-oss recupera 115 de 176 (eran 113) y
+Qwen 119 (igual); ningún signo mal nuevo. El oro no puede decir más: son las
+relaciones famosas, que ya se resolvían.
+
+El bronce todavía no lee la capa. Para que la red la use hay que subir la
+versión de la identificación y hacer una corrida nueva.
 
 ## Lo que la v0 no hace
 

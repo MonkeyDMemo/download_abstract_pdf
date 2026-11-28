@@ -38,7 +38,15 @@ los artículos citados sigue pendiente del permiso del doctor.
   fuentes de NCBI no traen esos nombres (resuelven 7 de 1 017). La
   exportación pública del curador de PGD que ya usa `grn_operones` da 272
   nombres nuevos y rescataría 5 a 7 % más relaciones del agente, no el 37 a
-  40 % que se había estimado como tope. Sin decidir.
+  40 % que se había estimado como tope.
+- **Decisión del usuario: entran esos nombres.** Quedaron como una capa
+  aparte, `grn_bronce/recursos/alias_adicionales.tsv` (266 nombres para 266
+  genes), sin tocar `genes_pao1.tsv` ni `etapa2/`. Cada alias se reconoce
+  solo como `kinB` o `KinB`: medido en el corpus, sin esa regla `pcr2`
+  casaba con el vector `pCR2.1` y `mepM` con la sigla de meropenem. El
+  agente la usa con `curar --alias-adicionales`; en desarrollo, con la cita
+  completada, da 14 a 16 % más relaciones válidas. El bronce aún no la lee.
+  También se le pedirá la anotación completa al curador de PGD.
 - Nube: US$0 hoy. Las lecturas se recalcularon desde la caché.
 
 ---
